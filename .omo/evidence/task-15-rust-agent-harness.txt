@@ -1,0 +1,173 @@
+# Task 15 — harness-repomap: CSR PageRank + token-budgeted rendering
+
+Commit: feat(repomap): CSR PageRank + token-budgeted rendering
+Scope: harness-repomap crate ONLY (5 src modules + 4 test files) + a 3-line Cargo.lock
+hunk (harness-repomap gains its harness-ast dependency edge). ZERO new external crates
+(sole dep: in-workspace harness-ast, declared path+version per the deny wildcard rule).
+Root Cargo.toml untouched by this task (the imara-diff lines visible in the working tree
+are the PARALLEL TODO-16 WORKER's in-flight anchor — left unstaged, see dirty-worktree
+section).
+
+## What landed (plan todo 15, all six scope points)
+1. FILE GRAPH from tag tables — `graph::FileGraph::build((path, TagTable))`:
+   files sorted by path (stable node ids regardless of ingestion order, tested);
+   edges = same-symbol cross-file references (def-file ↔ ref-file, UNDIRECTED),
+   weight = referencing file's reference count.
+2. PERSONALIZED PAGERANK d=0.85 on CSR — `pagerank::solve` over a compressed-sparse-row
+   adjacency (row_offsets/col_indices/weights flat Vecs; NO Vec<Vec> adjacency anywhere);
+   personalization = uniform mass on focus set (`uniform_on`); dangling mass redistributes
+   to the personalization vector (standard); L1 tolerance configurable (default 1e-8) +
+   iteration cap (default 200) + converged/iterations surfaced; iteration order fixed →
+   bit-deterministic (tested).
+3. REFS-BY-NAME (forge Lattice §26) — the cross-reference index is
+   `BTreeMap<String /*symbol name*/, SymbolLinks>` where SymbolLinks carries def sites
+   (path + kind) and ref counts keyed by FILE PATH. No node id appears anywhere in the
+   index; ids exist only inside the derived CSR and never outlive a build → renames /
+   renumbering cannot dangle an edge. Locked by
+   `rebuild_after_rename_and_reorder_edges_survive_via_name_keys` (hub file renamed +
+   ingestion order shuffled → same links, same weights, via name keys).
+4. SIGNATURE-ONLY rendering — `path:` headers + indented `name:kind` lines
+   (TagTable carries no signature text today, so the binding's "else name+kind"
+   degradation applies; a signature column slots into the same line later); `    ...`
+   after cut symbol lists, `...` at column zero after a cut file list; render(0) = ""
+   (no ellipsis-only noise). Ordering: rank desc → path asc → symbol name asc (ties by
+   kind label) — all exact-content tested.
+5. ≤1k-TOKEN budget via BINARY SEARCH on density — density d = top-d files AND d symbols
+   per file; token counting = chars/4 rounded up (deterministic approximation, unicode
+   scalars not bytes — documented + exact-tested); binary search finds the LARGEST d
+   whose render fits (cost monotone in d, tested); search space tops at
+   max(file count, max per-file defs) so single-file repos can still raise symbol
+   density (bug caught by a red test, fixed); budget configurable (default 1000).
+6. Acceptance — 10k-file synthetic map ≤1k tokens AND <50 ms cold render (numbers below).
+
+## Design decisions + justifications
+- UNDIRECTED edges (binding text says "def-file ↔ ref-file"): both the definer of the
+  focus files' symbols and the referrer of the focus files' exports are map-relevant
+  neighbors; undirected personalized PageRank is the standard proximity measure.
+  (Aider's directed ref→def variant biases mass toward popular definer files;
+  undirected keeps neighborhood semantics for focus expansion.)
+- MULTI-DEF-SITE RULE: every referencing file links to EVERY file defining the name,
+  each edge carrying the full reference count. Rejected alternatives: "highest weight"
+  (undefined before ranking exists) and directory proximity (breaks on re-exports and
+  moved modules, arbitrary tie-breaks). Mirrors aider's proven behavior; fully
+  deterministic; tested (2 def sites + 1 referrer ⇒ both edges weight 2.0, def sites
+  NOT linked to each other).
+- Names kept in the index only when they actually produce a cross-file edge — external
+  symbols (std-lib calls with no repo def site) and same-file-only symbols stay out
+  (tested), keeping the 10k-file index lean.
+- Malformed-input handling is typed/bounded, never panicking: empty names skipped +
+  counted (`skipped_empty_names`), duplicate same-file defs collapse to one def site
+  (first kind wins), self-references produce no self-edges, duplicate input paths keep
+  the FIRST table + count (`duplicate_paths`), short rank/personalization vectors read
+  missing entries as 0, out-of-range focus ids skipped, unknown focus paths counted in
+  `focus_matched` with uniform fallback. NO unwrap/expect/panic in library code.
+- SIMD DECISION: scalar f64, justified by measurement. The power iteration is
+  gather/scatter bound over sparse adjacency (induced scatter into the rank vector),
+  not FLOP bound — SIMD lanes do not accelerate irregular indexed scatter. Measured
+  (release, this machine): 10k nodes/200k edges converge in 16 iterations with
+  build+rank+render = 1.63 s TOTAL (render-only 21.3 ms); 50k nodes/3.15M edges
+  converge in 14 iterations inside a 15.1 s total that is dominated by the
+  BTreeMap/String/PathBuf-heavy graph BUILD, not the solver. An explicit SIMD path
+  would add complexity (and likely unsafe) for no user-visible win at any size the
+  plan budgets; revisit only if a real-repo profile shows iteration dominating.
+  The known cost center for todo 35 is incremental graph reuse (cold full rebuild is
+  the expensive part at 50k scale).
+- Determinism: fixed CSR iteration order, splitmix64-seeded generator, sorted-path node
+  ids, BTreeMaps throughout — same inputs give byte-identical maps (tested at the
+  facade with 500-file repos and via 3 identical full-suite runs).
+
+## TDD note (strict red → green, 4 cycles)
+1. graph tests → RED (unresolved imports) → green after graph.rs (+ Csr build, synthetic
+   generator). One REAL bug caught by red-green: files were ingestion-ordered, not
+   sorted, despite the docs — restructured to sort before id assignment.
+2. pagerank solver tests → RED (solve/Ranking/uniform_on absent) → green. Assertions
+   hand-derived fixed points (star: x0 = 20/37 ≈ 0.5405, satellites bit-equal).
+3. render tests → RED (render module absent) → green after two test-side fixes
+   (日本語x = 4 chars = 1 token arithmetic; an inverted missing-ranks assertion) and
+   two REAL fixes it exposed: render(0) emitted a bare "..." (now empty) and
+   fit_budget capped density at file count (single-file repos could never show >1
+   symbol; cap now max(files, max-defs)).
+4. facade/acceptance tests → RED (repo_map/MapOptions absent) → green, incl. the 10k
+   acceptance with focus-top and timing asserts.
+Render-path optimization during cycle 4: hoisted the rank sort out of the binary-search
+probe loop (render-only at 10k debug dropped 206.8 ms → 76.9 ms; release 21.3 ms).
+The todo-1 scaffold smoke test in lib.rs was superseded by the crate's 34 real tests.
+
+## Commands + results (Windows 11, PowerShell, Rust 1.98; MSVC INCLUDE workaround from
+task-8 evidence applied for every cargo invocation — harness-ast grammar C compiles)
+- `cargo test -p harness-repomap` — 34 passed / 0 failed / 1 ignored (50k stress)
+  across 4 test binaries; run 3× — identical green every time
+- `cargo test --release -p harness-repomap` — 34 passed / 0 failed / 1 ignored
+- `cargo clippy -p harness-repomap --all-targets` — 0 warnings (workspace denies)
+- `cargo fmt -p harness-repomap -- --check` — clean
+- COMMITTED-TREE WORKTREE (HEAD 2bebeaa + this crate only; private CARGO_TARGET_DIR,
+  no exposure to the parallel worker's in-flight files):
+  `cargo test -p harness-repomap` 34/34 ok; `cargo clippy -p harness-repomap
+  --all-targets` clean; `cargo check --workspace` green (2m15s — whole committed
+  workspace + this crate compiles); `cargo deny check` — advisories ok, bans ok,
+  licenses ok, sources ok (initial bans FAILED on a wildcard path-dep — fixed by adding
+  version = "0.1.0" per repo convention); worktree Cargo.lock diff vs HEAD = exactly
+  the 3-line harness-ast edge, cargo-regenerated (no hand-merged lock).
+
+## QA channels
+- happy (10k-file synthetic repo, seed 42, focus = 2 hub-defining files):
+  tokens=988 (≤1000) density=29 iterations=16
+  DEBUG:  build+rank+render 4.95 s, render-only 76.9 ms
+  RELEASE: build+rank+render 1.63 s, render-only 21.3 ms  (< 50 ms budget ✓)
+  top-10 focus-ranked entries (release run):
+    top 0  src/m238/f4772.rs  rank=0.076338   <- FOCUS, ranks #0
+    top 1  src/m356/f7139.rs  rank=0.075964   <- FOCUS, ranks #1
+    top 2  src/m483/f9665.rs  rank=0.000969
+    top 3  src/m405/f8113.rs  rank=0.000916
+    top 4  src/m364/f7291.rs  rank=0.000861
+    top 5  src/m152/f3043.rs  rank=0.000720
+    top 6  src/m355/f7103.rs  rank=0.000649
+    top 7  src/m114/f2299.rs  rank=0.000630
+    top 8  src/m98/f1977.rs   rank=0.000615
+    top 9  src/m104/f2095.rs  rank=0.000585
+  (asserted top-5 membership for both focus files; ~78x rank drop after the hubs =
+  the intended heavy-tail.) Debug/release ranks identical to 6 printed decimals.
+- failure paths: empty repo → (text="", tokens=0, density=0), no panic, converged;
+  single-file repo → the file + its name-asc symbols; zero-reference graph → all
+  files in pure path order (uniform ranks), all ranks finite, no ellipsis.
+- hung_or_long: durations above; CI-safe generous asserts in-suite (render ≤5 s debug /
+  ≤50 ms release profile-gated; 10k total <60 s; 50k stress #[ignore]d, bounded
+  <120 s): 50k stress release = 3,146,128 edges, 14 iterations, tokens=986,
+  total 15.14 s, render-only 245.8 ms.
+
+## Adversarial classes
+- flaky ×3 ................ 3 identical full-suite runs; seeded generator (same seed ⇒
+                            identical FileGraph, tested; different seed ⇒ different,
+                            tested); no wall-clock/wall-randomness anywhere in the lib
+- hung_or_long ............ durations recorded above; all loops capped (max_iterations,
+                            binary search bounded by construction)
+- malformed input ......... empty names, duplicate defs, self-references, duplicate
+                            paths, short vectors, out-of-range ids — all typed/bounded
+                            (counters + lenient reads), all tested, none panic
+- stale_state ............. N/A: the map is stateless — rebuilt from tag tables per call
+- misleading_success ...... assertions are on rank ORDER, exact rendered strings,
+                            token counts, and fixed-point values — never bare booleans
+- new input parsing ....... weird paths (spaces, unicode dirs), unicode symbol names
+                            (日本語メソッド, naïve), SymbolKind::Other labels — tested
+- dirty_worktree .......... end-state git status: only harness-repomap/** + this
+                            evidence file + the 3-line staged Cargo.lock hunk; the
+                            todo-16 worker's root-Cargo.toml/Cargo.lock imara-diff
+                            lines left modified-unstaged for THEIR commit
+- others .................. N/A: no network surface, no TUI, no persistence in this todo
+
+## Parallel-worker coordination (shared-file discipline)
+- Zero new external deps ⇒ no root Cargo.toml need. Cargo.lock was the one shared file
+  my work touches; the working-tree lock also carries the worker's in-flight
+  imara-diff entries, so my commit stages a cargo-REGENERATED lock (worktree at HEAD +
+  my crate) containing exactly my 3-line dependency edge — staged via hash-object/
+  update-index so the worker's working-tree lock bytes were never touched. Their
+  imara-diff lock lines remain unstaged for their commit.
+- Private CARGO_TARGET_DIR (C:\ct-t15 / C:\ct-t15-wt) throughout — no build-lock
+  contention with the worker's shared C:\ct; both removed post-commit.
+- Root Cargo.toml re-read before/after my session: my diff never touched it.
+
+## Environment note
+Same MSVC pathology as task 8 (VS 18 Insiders cl.exe picked by cc-rs with broken
+include paths): every cargo invocation in this evidence ran with the task-8 INCLUDE
+workaround so harness-ast's tree-sitter grammar C compiles. Not persisted to repo
+config (CI runners have intact MSVC).

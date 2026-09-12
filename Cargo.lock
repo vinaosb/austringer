@@ -865,6 +865,9 @@ dependencies = [
 [[package]]
 name = "harness-repomap"
 version = "0.1.0"
+dependencies = [
+ "harness-ast",
+]
 
 [[package]]
 name = "harness-safety"
