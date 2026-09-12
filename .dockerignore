@@ -1,0 +1,5 @@
+# Build-context hygiene for the daemon+CLI image (Dockerfile) and the
+# multi-arch publish workflow.
+target/
+.git/
+.omo/

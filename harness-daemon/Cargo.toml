@@ -8,3 +8,8 @@ repository.workspace = true
 
 [lints]
 workspace = true
+
+# cargo-dist marks this crate as a distable package; its [[bin]] lands with
+# todo 35 (plan .omo/plans/rust-agent-harness.md). See root dist-workspace.toml.
+[package.metadata.dist]
+dist = true

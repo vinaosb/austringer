@@ -1,0 +1,73 @@
+# Multi-arch container image publish — cargo-dist custom publish job.
+#
+# Wired from dist-workspace.toml (publish-jobs = ["./publish-container"]);
+# release.yml's `custom-publish-container` job calls this reusable workflow
+# with the dist plan JSON as input. cargo-dist runs publish jobs only for real
+# publishing releases (never on PR dry-runs / plan-only runs); the explicit
+# tag guard below enforces the same contract independently: images are pushed
+# on release tags ONLY.
+#
+# Registry: GHCR via the empty-GITHUB_TOKEN pattern (job-scoped token,
+# permissions escalated by dist: packages:write, id-token:write — the latter
+# enables buildx provenance attestations on the pushed image).
+#
+# Consume path: CI-runner / agent consumption (gh-aw / Copilot-Actions
+# pattern, research .omo/research/harness-research.md §20) — the daemon +
+# CLI ride one image, amd64 + arm64.
+#
+# Action versions (verified against upstream tag lists 2026-09-12):
+#   actions/checkout@v6, docker/setup-qemu-action@v4,
+#   docker/setup-buildx-action@v4, docker/login-action@v4,
+#   docker/metadata-action@v6, docker/build-push-action@v7.
+name: Publish container image
+
+on:
+  workflow_call:
+    inputs:
+      # cargo-dist plan JSON (announcement_tag etc.), per
+      # https://opensource.axo.dev/cargo-dist/book/ci/customizing/
+      plan:
+        required: true
+        type: string
+
+jobs:
+  build-push-ghcr:
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # arm64 builds cross-compile inside the Dockerfile's rust stage; QEMU
+      # covers the runner-side emulation of the build container itself.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=${{ fromJSON(inputs.plan).announcement_tag }}
+            type=raw,value=latest,enable=${{ !fromJSON(inputs.plan).announcement_is_prerelease }}
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

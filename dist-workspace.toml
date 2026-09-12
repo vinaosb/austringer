@@ -1,0 +1,35 @@
+# cargo-dist workspace configuration.
+# Validated with cargo-dist 0.33.0 (latest stable release of
+# axodotdev/cargo-dist as verified 2026-09-12 via git ls-remote --tags).
+# Docs: https://opensource.axo.dev/cargo-dist/
+#
+# `dist generate-ci` consumes this file to produce .github/workflows/release.yml.
+# Regenerate after editing: `dist generate-ci` (cargo-dist 0.33.0 binary).
+
+[workspace]
+# Import the Cargo workspace at the repo root (dist's "cargo:" source).
+members = ["cargo:."]
+
+[dist]
+# Pinned: the release workflow installs exactly this version.
+cargo-dist-version = "0.33.0"
+ci = ["github"]
+# Shell installer (macOS/Linux) + PowerShell installer (Windows).
+installers = ["shell", "powershell"]
+# Native release targets. The linux/arm64 story is handled by the container
+# image (see publish-jobs below), not by native dist artifacts.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+# Custom publish phase job: builds + pushes the multi-arch (amd64+arm64)
+# daemon+CLI container image to GHCR. Reusable workflow file, per
+# https://opensource.axo.dev/cargo-dist/book/ci/customizing/
+publish-jobs = ["./publish-container"]
+# PRs touching release config only re-run `dist plan` (cheap dry-run), never
+# a full artifact build.
+pr-run-mode = "plan"
+# dist requires all distable packages to share the release tag's version;
+# the whole workspace moves in lockstep at 0.x (workspace.version).

@@ -1,0 +1,131 @@
+# CI — lint gates, nextest archive matrix, coverage, perf-gate stub.
+#
+# Design notes:
+#  * Toolchain pinned to the workspace MSRV (Cargo.toml rust-version = 1.98)
+#    via the same `rustup update <ver> && rustup default <ver>` pattern
+#    cargo-dist generates in release.yml.
+#  * Test strategy: `cargo nextest archive` per OS, then run-from-archive —
+#    build and execution are separated, and the archive is uploaded so a
+#    failure can be replayed locally with `cargo nextest run --archive-file`.
+#  * Coverage via cargo-llvm-cov's nextest backend; LCOV report uploaded as
+#    a workflow artifact (no third-party uploader — no token exists yet).
+#  * Live-model evals jobs DO NOT belong here: when todo 44 (evals +
+#    conformance) lands, its jobs go in a SEPARATE SCHEDULED-only workflow
+#    (goose policy — live-model sweeps never gate PRs). Do not add them to
+#    this file's PR path.
+#
+# PROCESS NOTE — vendored-upstream duplication gate (Kilo kilocode_change
+# discipline, research §11): this repo currently vendors NO upstream code.
+# If an upstream harness is ever vendored into this tree, vendored files
+# must carry annotated-change markers (upstream-ref + marker comments per
+# local hunk), and a duplication-check job gets added to this lint workflow:
+# diff vendored paths against the pinned upstream ref, fail when a hunk
+# lacks its annotation. This gate stays dormant while nothing is vendored.
+#
+# Action versions (majors; exact list verified against upstream tags
+# 2026-09-12): actions/checkout@v6, actions/upload-artifact@v7,
+# Swatinem/rust-cache@v2, taiki-e/install-action@v2.
+# Tool pins: cargo-nextest@0.9.144, cargo-deny@0.20.2, cargo-llvm-cov@0.9.1
+# (cargo-deny and nextest versions match the local dev environment).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Superseded runs on the same ref cancel; PR pushes do not cancel main runs
+# (distinct refs → distinct groups).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: fmt + clippy + deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2
+      - name: cargo-deny (advisories, bans, licenses)
+        run: cargo deny check
+
+  test:
+    name: nextest archive (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Build test archive
+        run: cargo nextest archive --workspace --archive-file nextest-archive.tar.zst
+      - name: Run tests from archive
+        run: cargo nextest run --archive-file nextest-archive.tar.zst
+      - name: Upload test archive
+        # Replayable artifact: `cargo nextest run --archive-file ...` locally.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nextest-archive-${{ matrix.os }}
+          path: nextest-archive.tar.zst
+
+  coverage:
+    name: cargo-llvm-cov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.9.1
+      - name: Generate LCOV report (nextest backend)
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-lcov
+          path: lcov.info
+
+  perf-gate:
+    # PLACEHOLDER — stays skipped until todo 43 (performance suite + CI
+    # gates) lands the real job: criterion + dhat, fail on >10% regression
+    # vs stored baseline, budgets per plan §Verification (CLI cold start
+    # <50 ms, daemon RSS <40 MB, repomap <10 ms, p99 render <16 ms,
+    # binary <40 MB stripped). `if: false` keeps it visible-but-skipped.
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'perf-gate placeholder (todo 43) - criterion/dhat budget gates not yet implemented'
