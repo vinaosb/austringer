@@ -1,12 +1,15 @@
-//! Core event model and append-only session log for the harness.
+//! Core event model, append-only session log, and agent loop for the
+//! harness.
 //!
-//! Scope (plan todo 4): a typed conversation-event taxonomy with a
+//! Scope (plan todos 4–5): a typed conversation-event taxonomy with a
 //! first-class LLM-visible/internal separation, multimodal content blocks
-//! whose image payloads live out-of-line under `<session>/media/`, and a
+//! whose image payloads live out-of-line under `<session>/media/`, a
 //! crash-tolerant append-only JSONL log with an explicit fsync policy and a
-//! degrade-to-read-only failure contract. A session is a directory
-//! containing `events.jsonl` and `media/`; the full session store is a later
-//! todo.
+//! degrade-to-read-only failure contract, and the operation-pipeline agent
+//! loop (cancellable mid-operation, focus-chain anchored, two-level
+//! completion, graceful-cancel status machine). A session is a directory
+//! containing `events.jsonl` and `media/`; the full session store is a
+//! later todo.
 //!
 //! Serialization is stable by construction: struct fields serialize in
 //! declaration order, dynamic maps serialize with sorted keys (serde_json's
@@ -16,5 +19,6 @@
 //! into the serialized form.
 #![deny(missing_docs)]
 
+pub mod agent_loop;
 pub mod event;
 pub mod log;

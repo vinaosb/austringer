@@ -10,7 +10,10 @@ use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 /// Write side of the session log: appends complete JSONL lines.
-pub trait EventSink {
+///
+/// `Send` is required so the writer (and the agent loop holding it) can
+/// move between threads/async contexts.
+pub trait EventSink: Send {
     /// Append one complete line (newline included) as a single write, then
     /// flush.
     ///

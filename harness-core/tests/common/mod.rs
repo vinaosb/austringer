@@ -6,6 +6,10 @@
 //! the full event taxonomy with structurally diverse payloads.
 #![allow(dead_code)]
 
+pub mod cancelkit;
+pub mod loopkit;
+pub mod stages_kit;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
