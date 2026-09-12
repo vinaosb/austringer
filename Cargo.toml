@@ -33,6 +33,16 @@ version = "0.1.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/placeholder-org/harness" # placeholder until the canonical repo URL exists (cargo-dist requires a GitHub-shaped URL)
 
+[workspace.dependencies]
+# Shared dependency versions. Serialization must stay sorted-key stable:
+# never enable serde_json's `preserve_order` feature anywhere (it swaps the
+# BTreeMap-backed Map for an insertion-ordered one and breaks the byte-stable
+# event format).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+blake3 = "1"
+
 [workspace.lints.rust]
 warnings = "deny"
 
