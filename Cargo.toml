@@ -48,6 +48,9 @@ tokio = { version = "1", features = ["sync", "time", "macros"] }
 # (no system SQLite). sqlx stays T24's choice; two-wrapper consolidation
 # is deferred to T24.
 rusqlite = { version = "0.40", features = ["bundled"] }
+# Todo-9 provider streams: skipped/malformed SSE events are logged through the
+# standard facade (lib never installs a subscriber; embedders own output).
+tracing = "0.1"
 # Todo-17 lexical search: tantivy BM25 index + ripgrep-family regex streaming.
 # Lexical only — vectors/embeddings are plan Scope-OUT. Tantivy defaults are
 # trimmed to mmap + lz4 (defaults would pull columnar-zstd-compression, whose

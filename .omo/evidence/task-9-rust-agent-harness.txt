@@ -1,0 +1,197 @@
+TASK 9: PROVIDER TRAIT + STREAMING + MID-STREAM RECOVERY (harness-providers)
+===============================================================================
+Date: 2026-09-12 | HEAD before: 512a662 | Commit: feat(providers): resilient streaming provider abstraction
+
+TDD RED RUNS (tests written first; API absent)
+----------------------------------------------
+Stage A (wire events + identity):
+  cargo test -p harness-providers --no-fail-fast =>
+    error[E0432]: unresolved import `harness_providers::identity`
+    error[E0432]: unresolved import `harness_providers::event`
+    error[E0432]: unresolved import `harness_providers::wire`
+  -> RED for the right reason (missing modules, not test bugs).
+Stage B (provider trait): error[E0432]: unresolved import `harness_providers::provider`.
+Stage D (recovery): error[E0432]: unresolved import `harness_providers::turn` / `state`.
+Stage E (adapter): unresolved import `harness_providers::adapter`.
+Each stage: red observed, then module implemented, then green (red->green per component).
+
+SCOPE DELIVERED (plan todo 9, binding)
+--------------------------------------
+harness-providers/src/ (every file <=250 pure LOC; docs on all public items; no unwrap/
+expect/panic in lib paths; clippy all=deny + warnings=deny clean):
+  identity.rs   ModelIdentity {provider, model} — explicit, NEVER inferred from endpoints;
+                CompletionRequest (+ content-derived blake3 TurnId: stable across re-issues;
+                headers excluded from the id); FallbackRequest -> acknowledge() ->
+                AcknowledgedFallback (the ONLY constructor outside deserialization) ->
+                CompletionRequest::with_fallback retargets identity + records the audit trail.
+                No API path swaps a live turn's model: structurally impossible.
+  event.rs      ProviderEvent {TextDelta, ToolCallStart, ToolCallDelta (stable call ids),
+                Usage, Finish{reason}} — EVERY variant carries the ModelIdentity it came
+                from; FinishReason vocabulary EndTurn/Length/ToolCall/Refusal; CompletedTurn
+                envelope (+ CompletedToolCall).
+  error.rs      ProviderStreamError (typed): Http{status,code,message}, Rejected
+                {NoChoices,OutputLimit,ContextLimit}, Disconnected{delivered_events},
+                IdleTimedOut{budget}, IdentityMismatch{requested,received},
+                InvalidArguments{call_id}, UnnamedToolCall{call_id}, StreamError{code,message},
+                RetryExhausted{attempts,last}, ResumeExhausted{resumes,delivered,last};
+                is_recoverable() classification (5xx/429/disconnect/idle recover; rest fatal).
+  provider.rs   dyn-safe #[async_trait] Provider {identity(), stream_completion()} returning
+                ProviderEventStream (pull-based over a boxed EventSource; DROPPING the stream
+                abandons the request — abandon-not-drain per the T5 seam contract).
+  wire.rs       map_wire_event(name, data, configured): SSE frames -> typed events; unknown/
+                malformed payloads SKIPPED+logged via tracing (stream continues; T2 parser
+                already tolerates torn frames); wire "model" field overrides the stamped
+                identity when the provider reports what it actually served (this is what
+                makes silent substitution DETECTABLE); complete "tool_call" events expand to
+                start+delta so assembly has one shape; in-stream "error" events map to the
+                typed StreamError.
+  retry.rs      RetryPolicy (exponential backoff, equal jitter = AWS scheme: uniform in
+                [base/2, base), capped at max_backoff); JitterSource injected: SeededJitter
+                (deterministic xorshift64*, no rand dep) + FixedJitter (test sequences).
+                RETRY BOUNDARY (documented in-module): transparent jittered retry is legal
+                ONLY while no event has been delivered to the consumer (accepted == 0);
+                after the first delivered event every failure escalates to RESUME.
+  state.rs      TurnState (accepted-offset, text, per-call arg assembly, usage, finish;
+                apply/advance_offset/envelope); DedupRegistry (mark_executed / contains /
+                executed / filters); TurnSnapshot (serde Serialize+Deserialize: request,
+                accepted, text, calls, usage, finish, executed, counters) — consumer-restart
+                resume; envelope is complete-or-error (UnnamedToolCall for orphaned calls,
+                InvalidArguments for unparseable args).
+  turn.rs       ResumableTurn: next_event()/complete()/mark_executed()/snapshot()/
+                from_snapshot()/turn_id()/dedup(). Consumer surface only.
+  recover.rs    The recovery engine (sibling impl block): open() re-issues the SAME request
+                (stable TurnId); Attempt{stream, cursor, replay_limit} — identical-replay
+                events at/below the limit are suppressed (no re-apply, no re-deliver);
+                recover() routes by phase: accepted==0 -> retry budget (RetryExhausted cap),
+                else resume budget (ResumeExhausted cap), jittered backoff sleep between
+                attempts; idle-timeout wraps every event wait (tokio::time::timeout) and
+                feeds the same machinery.
+  adapter.rs    InferenceAdapter implementing harness_core::agent_loop::Inference (the T5
+                seam): renders prompt via llm_visible() + focus block in the SAME format as
+                the T5 test kit (scripts/cassettes interchangeable); cancel raced via
+                select!(biased) -> abandon-not-drain (pre-cancel opens nothing; mid-flight
+                cancel drops the in-flight future = drops the stream); complete-or-error via
+                the envelope. DEP DIRECTION: providers -> core, permanent (core must never
+                depend back; core frozen this task, so the binding lives here and the seam
+                contract is TESTED today: inference_adapter.rs + inference_cancel_resilience.rs).
+
+tests/ (44 tests):
+  common/mod.rs      FakeBridge — a real Provider over FakeApi: maps CompletionRequest ONTO
+                     the T2 ProviderRequest shape (model+prompt+headers; mapped, not forked),
+                     serves scripted replies through the FakeApi rule queue, applies per-plan
+                     transport faults (DropAfterBytes(n) torn frames, CloseAfterEvents(n)
+                     clean cuts) on the returned byte stream; SseSource maps parsed frames
+                     through wire.rs.
+  common/turnkit.rs  recovery-test kit (configs, scripts, frame-offset math, drive()).
+  common/inferkit.rs adapter-test kit (fixtures: recorded llm-visible + internal events).
+  wire_events.rs (7) identity_fallback.rs (4) provider_stream.rs (1) retry_policy.rs (6)
+  chaos_drop_sweep.rs (5) chaos_budgets_fatal.rs (8) chaos_dedup.rs (1)
+  recovery_idle_cancel.rs (5) inference_adapter.rs (3) inference_cancel_resilience.rs (3)
+
+NEW DEPS (justified; deny-clean): tracing (workspace) — skipped/malformed-event logging
+through the standard facade (lib never installs a subscriber). harness-core (path) — the
+Inference seam owner, per the adapter direction above. No other additions; blake3/serde/
+thiserror/tokio/async-trait already workspace deps.
+
+QA CHANNELS
+-----------
+HAPPY (200-event stream through FakeApi over the dyn-safe trait):
+  test two_hundred_event_stream_completes_through_dyn_provider:
+    events delivered = 202 (200 text deltas + 1 usage + 1 Finish; message_start/done
+    skipped at the wire layer), assembled text = "tok0 tok1 ... tok199",
+    usage = {input:120, output:200}, finish = EndTurn, request reached the fake mapped
+    onto the T2 shape (model "claude-4-5", prompt intact).
+FAILURE (drop mid-tool-args -> resumed turn completes the tool ONCE):
+  test drop_mid_tool_args_resumed_turn_executes_the_tool_once:
+    byte-K tear inside the 2nd tool_call_delta frame; resume re-issues the IDENTICAL
+    request (served[0] == served[1], stable turn id); final state:
+      - dedup registry after execution: ["c1"]
+      - exactly-once: 1 complete call, tool start delivered exactly once, args assembled
+        WHOLE across the tear: {"cmd":"grep -r TODO src/"}
+      - final event sequence: [TextDelta "Running grep", ToolCallStart c1/bash,
+        ToolCallDelta, ToolCallDelta, Usage, Finish(ToolCall)] — equal to the no-fault
+        reference run (no duplicates beyond dedup, no losses).
+  Byte-K sweep: drop_at_byte_k_across_the_stream_recovers_exactly_once probes 9 K values
+  (mid-first-frame, mid-text, at/inside call-start, INSIDE both args deltas, boundary
+  before usage, mid-finish, torn trailing sentinel) — each recovers exactly-once; the torn
+  sentinel after Finish correctly completes WITHOUT re-issue (served=1), everything else
+  re-issues once (served=2).
+
+ACCEPTANCE (plan todo 9)
+------------------------
+- chaos drop-at-byte-K incl. mid-args: chaos_drop_sweep.rs (above).
+- repeated_interruptions: drop_resume_drop_resume_drop_resume_still_exactly_once
+  (3 tears at 3 different points + success; sequence + envelope equal to reference).
+- idle-timeout deterministic under paused clock: idle_timeout_fires_and_recovery_
+  completes_the_turn (5s budget vs 30s virtual stall -> cut + resume completes);
+  permanently_hung_stream_surfaces_typed_idle_exhaustion (ResumeExhausted{resumes:2,
+  last=IdleTimedOut{budget:5s}}); events_below_the_idle_budget_never_trip_the_timeout
+  (healthy pacing untouched).
+- retry-with-jitter seeded determinism: retry_policy.rs (same seed -> identical sequences
+  x3; FixedJitter exact windows; cap enforced) + transient_server_error_retries_then_
+  completes (2x HTTP-500 then success, no duplicate events).
+
+ADVERSARIAL CLASSES
+-------------------
+cancel/resume: cancellation_abandons_the_stream_and_errors (pre-cancel: 0 requests;
+  mid-flight: 1 request, abandon-not-drain, no re-issue);
+  abandoning_a_next_event_future_leaves_the_turn_resumable (dropped poll future ->
+  coherent turn -> snapshot -> resume exactly-once).
+repeated_interruptions: drop_resume_drop_resume_drop_resume_still_exactly_once.
+hung_or_long_commands: both idle-timeout probes (paused clock, tokio time).
+flaky_tests: all async tests under start_paused (auto-advance; zero wall-clock sleeps in
+  correctness paths); 3x identical full-crate runs: RUN1/2/3 ALL-GREEN [44 tests];
+  jitter/clock injected (FixedJitter/SeededJitter).
+malformed input: malformed_or_unknown_events_are_skipped_not_fatal (9 malformed shapes ->
+  Skipped+logged, stream continues; wired through SseSource in every bridge-driven test).
+misleading_success_output: every chaos probe asserts FULL event sequences + envelopes +
+  dedup-registry state against a no-fault reference run — never bare booleans.
+stale_state: snapshot_preserves_registry_and_counters_across_restart + JSON round-trip
+  inside abandoning_a_next_event_future_leaves_the_turn_resumable (serde string boundary
+  simulates cross-process restart; accepted offset + registry + counters preserved).
+dirty_worktree: post-commit `git status` recorded below; harness-search/* + the tantivy
+block in root Cargo.toml + shared Cargo.lock entries belong to the PARALLEL todo-17 worker
+(in-flight, uncommitted by me; the root [workspace.dependencies] merge is line-distinct,
+both sides appended per the shared-file protocol).
+
+GATES (exact commands + results)
+--------------------------------
+cargo fmt -p harness-providers                                    -> exit 0
+cargo clippy -p harness-providers --all-targets                   -> exit 0
+  (workspace lints: rust warnings=deny + clippy all=deny active => zero diagnostics)
+cargo deny check                                                  -> PASS
+  (warnings only: duplicate hashbrown/syn/windows-sys versions + unused license
+  allowlist entries — both configured warn-level in deny.toml)
+cargo test -p harness-providers                                   -> 44 passed / 0 failed
+cargo test -p harness-providers x3 (flaky probe)                  -> ALL-GREEN x3
+cargo test --workspace --no-fail-fast                             -> 306 passed / 0 failed
+  (238 pre-existing + 44 mine + 24 from the parallel worker's in-flight harness-search;
+   workspace green TOGETHER, so no worktree isolation run was triggered)
+Pure-LOC audit: max file 227 (recovery_idle_cancel.rs); src max 223 (turn.rs).
+
+ENVIRONMENT NOTE (pre-existing machine fault, worked around in-session; NOT committed)
+--------------------------------------------------------------------------------------
+MSVC installs "VS2022 Enterprise" and "VS18 Insiders" on this box lack VC include dirs
+(no stdarg.h); only C:\BuildTools\VC\Tools\MSVC\14.44.35207 is complete. cc-rs auto-discovery
+picks the headerless Insiders cl.exe, so libsqlite3-sys (via harness-core -> rusqlite
+bundled, pulled into providers by the new core dep) failed to compile in this shell.
+Fix (per-invocation env, no repo change): CC=C:\BuildTools\...\cl.exe + INCLUDE/LIB
+pointing at BuildTools + Windows SDK 10.0.26100.0. The parallel worker hit the same
+environment fault independently (their root-Cargo.toml comment re zstd-sys).
+
+RESIDUAL RISKS / NOTES
+----------------------
+- Offset-based replay suppression assumes the resume replay is identical up to the offset
+  (prefix-cache-backed replays are; the FakeApi replays byte-identically). DIVERGENT
+  replays re-emitting an executed call PAST the window are caught by the dedup registry
+  (proven in chaos_dedup.rs); divergent TEXT past the window is inherently non-dedupable
+  and is treated as new content (documented in turn.rs module docs).
+- InferenceError's payload is still String at the harness-core seam ("Todo 9 replaces the
+  payload with typed variants" per its doc comment); core is frozen for this task, so the
+  adapter renders the typed error faithfully into Failure(...) — the typed surface lives in
+  harness_providers::error and is asserted directly in the chaos suites. Migration of the
+  core enum is a 1-line core change for whoever next owns harness-core.
+- RetryExhausted/ResumeExhausted last-error boxes are Box<ProviderStreamError> (recursive
+  type); PartialEq derives make them fully assertable in tests.
+- Real-transport adapters (todo 10) reuse wire.rs + provider.rs EventSource; the FakeBridge
+  stays a test instrument (tests/common) by design.
