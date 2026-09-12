@@ -8,3 +8,181 @@ repository.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Default grammar set: small (keeps cold builds ~4 C compilations) and covers
+# the file types a Rust agent harness touches most — Cargo/config (toml),
+# manifests/lockfiles/tool output (json), the harness' own sources (rust),
+# and build scripts (bash). Swap-in of further grammars is `langs-extra`.
+default = ["lang-rust", "lang-toml", "lang-json", "lang-bash"]
+# Opt-in: extends coverage to 50 languages total (see lib.rs docs for the
+# full surface listing). Deliberately NOT default — compiling all 46 extra
+# grammars costs minutes of C compilation and is a one-time `--features`
+# choice for hosts that want breadth.
+langs-extra = [
+    "lang-python",
+    "lang-javascript",
+    "lang-typescript",
+    "lang-tsx",
+    "lang-go",
+    "lang-c",
+    "lang-cpp",
+    "lang-c-sharp",
+    "lang-java",
+    "lang-swift",
+    "lang-scala",
+    "lang-ruby",
+    "lang-php",
+    "lang-lua",
+    "lang-r",
+    "lang-julia",
+    "lang-haskell",
+    "lang-ocaml",
+    "lang-ocaml-interface",
+    "lang-elixir",
+    "lang-erlang",
+    "lang-yaml",
+    "lang-html",
+    "lang-css",
+    "lang-graphql",
+    "lang-zig",
+    "lang-nix",
+    "lang-make",
+    "lang-cmake",
+    "lang-hcl",
+    "lang-regex",
+    "lang-dart",
+    "lang-elm",
+    "lang-rst",
+    "lang-solidity",
+    "lang-scheme",
+    "lang-commonlisp",
+    "lang-elisp",
+    "lang-powershell",
+    "lang-groovy",
+    "lang-nim",
+    "lang-objc",
+    "lang-verilog",
+    "lang-fsharp",
+    "lang-fortran",
+    "lang-matlab",
+]
+# Per-language gates. `dep:` wiring keeps unselected grammars out of the
+# build graph entirely (feature resolution, not runtime branching).
+lang-rust = ["dep:tree-sitter-rust"]
+lang-toml = ["dep:tree-sitter-toml-ng"]
+lang-json = ["dep:tree-sitter-json"]
+lang-bash = ["dep:tree-sitter-bash"]
+lang-python = ["dep:tree-sitter-python"]
+lang-javascript = ["dep:tree-sitter-javascript"]
+lang-typescript = ["dep:tree-sitter-typescript"]
+lang-tsx = ["dep:tree-sitter-typescript"]
+lang-go = ["dep:tree-sitter-go"]
+lang-c = ["dep:tree-sitter-c"]
+lang-cpp = ["dep:tree-sitter-cpp"]
+lang-c-sharp = ["dep:tree-sitter-c-sharp"]
+lang-java = ["dep:tree-sitter-java"]
+lang-swift = ["dep:tree-sitter-swift"]
+lang-scala = ["dep:tree-sitter-scala"]
+lang-ruby = ["dep:tree-sitter-ruby"]
+lang-php = ["dep:tree-sitter-php"]
+lang-lua = ["dep:tree-sitter-lua"]
+lang-r = ["dep:tree-sitter-r"]
+lang-julia = ["dep:tree-sitter-julia"]
+lang-haskell = ["dep:tree-sitter-haskell"]
+lang-ocaml = ["dep:tree-sitter-ocaml"]
+lang-ocaml-interface = ["dep:tree-sitter-ocaml"]
+lang-elixir = ["dep:tree-sitter-elixir"]
+lang-erlang = ["dep:tree-sitter-erlang"]
+lang-yaml = ["dep:tree-sitter-yaml"]
+lang-html = ["dep:tree-sitter-html"]
+lang-css = ["dep:tree-sitter-css"]
+lang-graphql = ["dep:tree-sitter-graphql"]
+lang-zig = ["dep:tree-sitter-zig"]
+lang-nix = ["dep:tree-sitter-nix"]
+lang-make = ["dep:tree-sitter-make"]
+lang-cmake = ["dep:tree-sitter-cmake"]
+lang-hcl = ["dep:tree-sitter-hcl"]
+lang-regex = ["dep:tree-sitter-regex"]
+lang-dart = ["dep:tree-sitter-dart"]
+lang-elm = ["dep:tree-sitter-elm"]
+lang-rst = ["dep:tree-sitter-rst"]
+lang-solidity = ["dep:tree-sitter-solidity"]
+lang-scheme = ["dep:tree-sitter-scheme"]
+lang-commonlisp = ["dep:tree-sitter-commonlisp"]
+lang-elisp = ["dep:tree-sitter-elisp"]
+lang-powershell = ["dep:tree-sitter-powershell"]
+lang-groovy = ["dep:tree-sitter-groovy"]
+lang-nim = ["dep:tree-sitter-nim"]
+lang-objc = ["dep:tree-sitter-objc"]
+lang-verilog = ["dep:tree-sitter-verilog"]
+lang-fsharp = ["dep:tree-sitter-fsharp"]
+lang-fortran = ["dep:tree-sitter-fortran"]
+lang-matlab = ["dep:tree-sitter-matlab"]
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
+tree-sitter.workspace = true
+
+# Grammar crates: every one returns tree-sitter-language's `LanguageFn`
+# (version-independent ABI wrapper), so they cannot disagree with the
+# facade version above. Grammar crates still on the legacy direct-facade
+# binding (markdown, kotlin, dockerfile, sql, scss, vim, vue, svelte, org,
+# bibtex, wgsl, perl, clojure, vimdoc on crates.io today) are excluded:
+# their normal-dependency facade pin trips cargo's `links = "tree-sitter"`
+# single-copy rule against facade 0.27; toml-ng replaces the abandoned
+# tree-sitter-toml.
+tree-sitter-rust = { version = "0.24", optional = true }
+tree-sitter-toml-ng = { version = "0.7", optional = true }
+tree-sitter-json = { version = "0.24", optional = true }
+tree-sitter-bash = { version = "0.25", optional = true }
+tree-sitter-python = { version = "0.25", optional = true }
+tree-sitter-javascript = { version = "0.25", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+tree-sitter-go = { version = "0.25", optional = true }
+tree-sitter-c = { version = "0.24", optional = true }
+tree-sitter-cpp = { version = "0.23", optional = true }
+tree-sitter-c-sharp = { version = "0.23", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }
+tree-sitter-swift = { version = "0.7", optional = true }
+tree-sitter-scala = { version = "0.26", optional = true }
+tree-sitter-ruby = { version = "0.23", optional = true }
+tree-sitter-php = { version = "0.24", optional = true }
+tree-sitter-lua = { version = "0.5", optional = true }
+tree-sitter-r = { version = "1.3", optional = true }
+tree-sitter-julia = { version = "0.23", optional = true }
+tree-sitter-haskell = { version = "0.23", optional = true }
+tree-sitter-ocaml = { version = "0.25", optional = true }
+tree-sitter-elixir = { version = "0.3", optional = true }
+tree-sitter-erlang = { version = "0.20", optional = true }
+tree-sitter-yaml = { version = "0.7", optional = true }
+tree-sitter-html = { version = "0.23", optional = true }
+tree-sitter-css = { version = "0.25", optional = true }
+tree-sitter-graphql = { version = "0.2", optional = true }
+tree-sitter-zig = { version = "1.1", optional = true }
+tree-sitter-nix = { version = "0.3", optional = true }
+tree-sitter-make = { version = "1.1", optional = true }
+tree-sitter-cmake = { version = "0.7", optional = true }
+tree-sitter-hcl = { version = "1.1", optional = true }
+tree-sitter-regex = { version = "0.25", optional = true }
+tree-sitter-dart = { version = "0.2", optional = true }
+tree-sitter-elm = { version = "5.9", optional = true }
+tree-sitter-rst = { version = "0.2", optional = true }
+tree-sitter-solidity = { version = "1.2", optional = true }
+tree-sitter-scheme = { version = "0.24", optional = true }
+tree-sitter-commonlisp = { version = "0.4", optional = true }
+tree-sitter-elisp = { version = "1.7", optional = true }
+tree-sitter-powershell = { version = "0.26", optional = true }
+tree-sitter-groovy = { version = "0.1", optional = true }
+tree-sitter-nim = { version = "0.1", optional = true }
+tree-sitter-objc = { version = "3.0", optional = true }
+tree-sitter-verilog = { version = "1.0", optional = true }
+tree-sitter-fsharp = { version = "0.3", optional = true }
+tree-sitter-fortran = { version = "0.6", optional = true }
+tree-sitter-matlab = { version = "1.3", optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

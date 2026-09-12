@@ -1,0 +1,1 @@
+(normal_command (identifier) @name.reference.call)

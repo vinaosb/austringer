@@ -61,6 +61,11 @@ ignore = "0.4"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 tempfile = "3"
+# Todo-14 parse/tag engine: tree-sitter facade + the LanguageFn ABI shim that
+# every grammar crate returns; grammar crates themselves are optional deps
+# local to harness-ast (48 of them, feature-gated per language).
+tree-sitter = "0.27"
+tree-sitter-language = "0.1"
 
 [workspace.lints.rust]
 warnings = "deny"

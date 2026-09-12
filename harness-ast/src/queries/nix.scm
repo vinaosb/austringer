@@ -1,0 +1,1 @@
+(binding (attrpath) @name.definition.variable)
