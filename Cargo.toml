@@ -52,7 +52,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # standard facade (lib never installs a subscriber; embedders own output).
 tracing = "0.1"
 # Todo-17 lexical search: tantivy BM25 index + ripgrep-family regex streaming.
-# Lexical only ΓÇö vectors/embeddings are plan Scope-OUT. Tantivy defaults are
+# Lexical only — vectors/embeddings are plan Scope-OUT. Tantivy defaults are
 # trimmed to mmap + lz4 (defaults would pull columnar-zstd-compression, whose
 # zstd-sys C build breaks the MSVC toolchain in this environment); no
 # stemmer/stopwords extras.
@@ -67,7 +67,7 @@ tempfile = "3"
 tree-sitter = "0.27"
 tree-sitter-language = "0.1"
 # Todo-18 RSS-sampled bounded LSP guard: per-process resident-set sampling.
-# sysinfo (pure Rust) is chosen over hand-rolled Win32 PSAPI bindings ΓÇö same
+# sysinfo (pure Rust) is chosen over hand-rolled Win32 PSAPI bindings — same
 # data, no unsafe; the guard refreshes ONE targeted pid per sample, never the
 # whole process table.
 sysinfo = "0.39"
@@ -92,6 +92,23 @@ base64ct = { version = "1", default-features = false, features = ["alloc"] }
 # Chunk type of reqwest's response byte streams (reqwest 0.12 no longer
 # re-exports it); already in the tree transitively via hyper.
 bytes = "1"
+# Todo-19 PTY pipeline: wezterm's portable-pty is the plan-named PTY
+# abstraction (ConPTY on Windows, openpty on Unix) and the only crate that
+# exposes the spawned child's process handle (`Child::as_raw_handle`), which
+# the kill-tree Job-Object assignment needs. Runtime deps are all permissive
+# (winapi/shared_library/nix/filedescriptor/serial2).
+portable-pty = "0.9"
+# Todo-19 terminal emulation: doy's vt100 grid parser (vte underneath) — the
+# screen-delta model renders through its cell grid (ANSI/SGR-free contents,
+# incremental state machine, wide-char aware). Chosen over termwiz (full
+# wezterm subsystem) and avt (no cell API for final-screen rendering).
+vt100 = "0.16"
+# Todo-19 Windows kill trees: Job Objects with KILL_ON_JOB_CLOSE +
+# assign_process + pid enumeration via a safe wrapper, avoiding hand-rolled
+# windows-sys FFI in harness-exec.
+win32job = "2"
+# Todo-19 Unix kill trees: PR_SET_PDEATHSIG + setpgid/killpg (cfg(unix) only).
+libc = "0.2"
 
 [workspace.lints.rust]
 warnings = "deny"

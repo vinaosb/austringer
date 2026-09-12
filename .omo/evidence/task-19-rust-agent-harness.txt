@@ -1,0 +1,171 @@
+# Task 19 - harness-exec: screen-delta PTY pipeline + kill trees
+
+Commit: feat(exec): screen-delta PTY + kill trees
+Scope: harness-exec crate + root Cargo.toml dep lines (portable-pty 0.9, vt100 0.16,
+win32job 2, libc 0.2) + Cargo.lock. Nothing else touched (core/providers untouched;
+.omo only this evidence file).
+
+## Implementation shape (files, all <=250 pure LOC)
+- src/lib.rs (15) - crate docs: screen-delta canonicality, window law, kill domains
+- src/window.rs (46) - WINDOWED OUTPUT LAW: >75 lines => first 25 + last 50 +
+  "[... N lines omitted ...]"; total may exceed the excerpt (virtual totals) so the
+  marker names the TRUE elided count
+- src/transcript.rs (53) - bounded scrollback capture: head 25 + tail 50 + count +
+  lossy flag; composed() yields the bounded excerpt with overlap arithmetic
+- src/screen.rs (236) - ScreenModel over vt100::Parser: slice discipline (printable
+  runs bounded by wrap budget, \n/\v/\f, CSI/OSC slices with introducer handling),
+  O(1) scroll capture on \n-at-bottom (confirm via new top row), wrap-byte scroll
+  capture at bottom-right, full snapshot+shift-diff resync for ESC/redraw paths,
+  alternate-screen capture suspension, resize, ANSI/SGR-free rendering, invalid
+  UTF-8 skipped (vt100 typed skip - never a panic)
+- src/spill.rs (120) - RawSpool: memory-bounded raw-stream spill; buffers to IoCap
+  then streams to temp file + incremental blake3; finish => fsync + rename into the
+  T6 SpillStore layout. REUSE JUSTIFICATION: SpillStore::store(&[u8]) needs the whole
+  payload in RAM (a 100MB output would be a 100MB allocation), so the streaming
+  writer reuses the store's directory contract + SpillStore::read recovery + IoCap
+  threshold semantics, and rolls only the streaming write itself
+- src/kill.rs (73) - TreeGuard: Windows Job Object KILL_ON_JOB_CLOSE assigned at
+  spawn (drop = terminate tree, kernel-enforced even if WE crash); Unix
+  PR_SET_PDEATHSIG(SIGKILL) + setsid fork/exec hook + killpg. Documented gaps:
+  (1) microsecond assign race (todo 20 suspended-resume), (2) ShellExecuteEx
+  grandchildren escape jobs (verified on this machine; todo 26 sandbox is the
+  enforcement point)
+- src/spawn.rs (138) - platform split: Windows portable-pty ConPTY spawn (child
+  handle => job); Unix owns the fork/exec path (std Command over the openpty slave
+  + pdeathsig pre_exec) because portable-pty's CommandBuilder has no pre_exec seam
+- src/spec.rs (57) - ExecSpec (mandatory timeout, 120x40 default), ExecStatus
+  (Completed/TimedOut/Cancelled), ExecOutcome (NO raw-bytes field - structural
+  law), MAX_COMMAND_TIMEOUT ceiling 24h, typed ExecError
+- src/runner.rs (239) - PtyRunner: reader thread (Pump: screen + spool + TERMINAL
+  QUERY RESPONDER), waiter thread, 25ms poll loop, kill trees on timeout/cancel,
+  straggler reaping on guard drop, windowed model_text + spill notice composition;
+  fresh ScreenModel + fresh PTY per run (stale state structurally impossible)
+- src/pending.rs (68) - PendingCommandSet: push/inspect/apply (sequential, stops at
+  first non-success, remainder stays queued)/abort; CommandRunner seam shared with
+  live mode
+- tests: window_law (6), screen_model (15), spill_stream (4), pending_set (6),
+  pty_live (10), pty_chaos (4) = 45 tests; pty_qa (4, #[ignore] evidence channels)
+
+## Terminal query responder (key Windows finding, verified on this machine)
+ConPTY/conhost sends ESC[6n (DSR cursor) and blocks the ENTIRE child until answered
+(~60s timeout per query; measured: `cmd /c echo` never completing, 30s test
+timeouts). Fix: the pump answers ESC[6n from the screen model's tracked cursor
+(ESC[row;colR) and ESC[c with ESC[?1;2c (VT100+AVO). This is todo 20's
+"DA1/DA1-query proactive injection" pathology fix, pulled into todo 19 because
+NOTHING runs through ConPTY without it. Verified: identical spawn hangs without the
+responder, completes in 1.5s with it (probe logs in dev notes).
+
+## Commands + results (Windows 11, PowerShell, Rust 1.98, debug profile)
+- cargo test -p harness-exec => 45 passed / 0 failed / 4 ignored (QA channels),
+  run 5x consecutively, identical results every run (flaky x3 satisfied)
+- cargo clippy -p harness-exec --all-targets => clean under workspace deny(all)
+- cargo fmt -p harness-exec -- --check => clean
+- cargo deny check => advisories ok, bans ok, licenses ok, sources ok (only
+  pre-existing multiple-versions warnings, now also covering the parallel todo-10
+  worker's reqwest tree)
+- cfg(unix) proof: cargo check + clippy --target x86_64-unknown-linux-gnu on an
+  exact-source shim crate (harness-exec sources + type-only stand-ins for the two
+  harness-core types; the real crate cannot cross-check because harness-core's
+  bundled sqlite needs a linux C compiler this machine lacks) => clean, found and
+  fixed one real issue (CommandBuilder import was windows-only)
+- grep escape hatches (src): zero unwrap()/expect()/panic!/todo! in lib paths
+
+## TDD discipline disclosure (honest)
+- window_law: strict red (naive passthrough stub) -> green implementation
+- pty_live/pty_chaos: tests written first; the query-responder bug produced
+  genuinely red suites (7/10 TimedOut) until the root cause was fixed
+- screen_model: tests written against the API while the emulator was implemented
+  (transitional deny(warnings) stub friction); 6 tests failed red during
+  implementation iterations (scroll counting, alt-screen CSI slicing, blank-shift
+  false positives, trailing-space trimming) and were fixed to green
+- spill_stream/pending_set: implementation landed before their first test run
+  (one genuine red: byte-count arithmetic); red phases thinner than strict TDD
+
+## QA channels (pasted from `cargo test -p harness-exec --test pty_qa -- --ignored --nocapture`)
+
+### happy: cargo --version through the PTY
+    status: Completed { exit_code: 0 }
+    elapsed: 4.2474439s
+    model_text (   35 bytes):
+      | cargo 1.98.0 (797e8a9bc 2026-08-05)
+
+### progress-bar: 150 carriage-return frames -> single final line
+    BEFORE screen-delta (what a raw byte pump would emit, per frame):
+      `rloading   1%`rloading   2%`rloading   3%`r...`rloading 100%`
+    AFTER screen-delta (model-facing, 161 bytes):
+      | [output spilled: 4161 raw bytes -> spill pointer
+      |   blake3:716cd1b54f17227df370b482cd6b35d27f7d2e58c63a62a791c04cea2e65d4ea;
+      |   full stream recoverable]
+      | qa-complete-19
+    (the \r-frame spam itself exceeded the 4 KiB inline cap and spilled; the model
+    sees one final line + pointer, zero intermediate frames)
+
+### failure: timeout on a tree (cmd -> start /b ping + ping), enumeration proof
+    BEFORE: PING.EXE count = 0 (machine baseline)
+    AFTER: status=TimedOut elapsed=4.4237072s PING.EXE count = 0 (baseline 0)
+    (the kill tree erases both pings + cmd; sysinfo enumeration is the oracle,
+    also asserted in-suite for cancel, 3x repeated interruptions, and
+    normal-completion straggler reaping)
+
+### 100MB generator -> spill pointer + bounded window (real 100 MB through ConPTY)
+    generator file: 104,857,564 bytes
+    status=Completed { exit_code: 0 } wall=182.9s (ConPTY ~0.57 MB/s)
+    model_text: 8,282 bytes / 77 windowed lines (budget 16 KiB / 75 lines)
+    total transcript lines recorded: 961,996
+    spill pointer: blake3:b4b978188d2fd663079e9f03f75b0f0ccdafc5b332b320b8b7283b8ea7d0e403
+                   (104,857,625 raw bytes)
+    spill recovered via SpillStore::read: 104,857,625 bytes (exact; slightly larger
+    than the file because ConPTY re-encodes output with VT sequences)
+
+## Adversarial coverage
+- hung_or_long_commands: timeout_kills_the_whole_tree_no_orphans,
+  repeated_interruptions (x3 kill->respawn->kill, zero orphans each round),
+  MAX_COMMAND_TIMEOUT ceiling + mandatory non-zero timeout (structural)
+- cancel/resume: cancel_mid_command (typed Cancelled status, tree killed,
+  enumeration-proof, cancel beats a 120s timeout); resume-after-cancel = rerun
+  (single commands; batch remainder stays queued - N/A for single run) - covered
+- malformed input: binary_garbage (invalid UTF-8 + C0/C1 flood through the REAL
+  pty, lossy skip, bounded); binary_flood (100KB PRNG), ansi_escape_flood (5k CSI)
+  at screen-model level - covered
+- new input parsing: CSI/OSC slicing incl. introducer bytes, cursor-weird
+  sequences (tui_redraw with absolute positioning), resize mid-run bounded,
+  chunking invariance (whole vs piecewise feeds identical) - covered
+- repeated_interruptions: pty_chaos round loop - covered
+- flaky x3: five consecutive identical full-suite runs - covered
+- misleading_success: assertions are content-based (windowed text contains the
+  echo/cargo line, marker strings pinned, first/middle/tail line identity) and
+  enumeration-count based (sysinfo before/after) - covered
+- stale_state: pty_reuse test (fresh screen per command, marker isolation);
+  structurally a new ScreenModel + PTY per run - covered
+- dirty_worktree: N/A - harness-exec never touches git or the worktree; commands
+  run with caller-supplied cwd; no git invocations anywhere in the crate
+- scope N/A: no schema surfaces (todo 6 owns), no provider identity (todo 9)
+
+## Parallel-worktree disclosure
+- root Cargo.toml: re-read immediately before edit; appended distinct dependency
+  lines after the todo-10 worker's reqwest/futures-util/sha2/base64ct block; no
+  overlap, no conflict encountered
+- harness-core (todo-11 worker) was transiently uncompilable mid-task
+  (context/effort.rs in-flight); per the shared-file discipline all proof runs
+  used `cargo test -p harness-exec` and the core had stabilized by gate time
+- cargo package-cache/build-dir lock waits ("Blocking waiting for file lock")
+  observed and resolved naturally; no git lock contention (no git operations
+  until my own single commit)
+
+## Environment note
+The documented CC/INCLUDE/LIB machine quirk (task-8 evidence ~L220) recurred
+(C1083 stdarg.h in libsqlite3-sys); session fix: INCLUDE =
+C:\BuildTools\VC\Tools\MSVC\14.44.35207\include + Windows Kits 10.0.26100.0
+{ucrt,shared,um,winrt,cppwinrt}. Not persisted to repo config.
+
+## Known limitations / risks (forwarded to todo 20 + 26)
+1. ConPTY read after kill: reader thread joined with a 3s grace; a still-blocked
+   reader is detached (shared state is complete without it) - the full
+   read-close+destroy hardening is todo 20
+2. Job-assign microsecond race + ShellExecuteEx escapes (kill.rs docs) - todo 20/26
+3. Scroll-region LF mid-screen with intact top row is unverifiable without a full
+   diff (documented attribution limit in screen.rs; alt-screen TUIs are exact;
+   spill is the lossless record)
+4. Unix path (PDEATHSIG spawn, killpg) is typecheck-proven on
+   x86_64-unknown-linux-gnu but NOT runtime-tested on this Windows machine - CI
+   matrix (todo 3) owns the runtime proof
