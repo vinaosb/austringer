@@ -21,6 +21,7 @@
 
 pub mod agent_loop;
 pub mod autonomy;
+pub mod budget;
 pub mod context;
 pub mod event;
 pub mod inspectors;

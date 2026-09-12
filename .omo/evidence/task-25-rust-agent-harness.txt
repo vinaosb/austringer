@@ -1,0 +1,218 @@
+=== TASK 25 - rust-agent-harness: budget ceilings (harness-core) ================
+Worker: todo-25 implementation worker (Sisyphus-junior), 2026-09-12
+Base: HEAD 63e3b61 on main. Commit: feat(core): budget ceilings
+
+TDD RED RUN (tests authored first, run against pre-implementation HEAD)
+-----------------------------------------------------------------------
+Tests tests/budget_acceptance.rs + tests/budget_adversarial.rs were written
+BEFORE any budget code existed, then executed in an ISOLATED DETACHED
+WORKTREE of HEAD 63e3b61 (wt-red, no budget module, no other worker's
+in-flight state):
+  cmd: cargo nextest run -p harness-core --test budget_acceptance
+       --test budget_adversarial   (CARGO_TARGET_DIR=C:\ct-t25red)
+  result (excerpt):
+    error[E0432]: unresolved import `harness_core::budget`
+      --> harness-core\tests\budget_adversarial.rs:11:19
+      | could not find `budget` in `harness_core`
+    error[E0433]: cannot find type `BudgetSpec` in this scope
+      --> harness-core\tests\budget_acceptance.rs:145:43 (x6)
+    error: could not compile `harness-core` (test "budget_acceptance")
+    error: could not compile `harness-core` (test "budget_adversarial")
+  => 17 acceptance/adversarial tests RED for the right reason (missing API,
+     not test bugs). Unit tests landed red-per-file during implementation.
+
+DELIVERED (harness-core only; ZERO new dependencies, u128 integer math)
+-----------------------------------------------------------------------
+src/budget/money.rs    MicroUsd(u128) — T10's µUSD convention 1:1
+                       (CostBreakdown::total_usd_micros); TokenCount(u64);
+                       Cost{Priced,Unpriced} mirroring T10's Priced enum;
+                       Spend{tokens,cost} + checked_add. DOCUMENTED MAPPING
+                       (on Spend): Usage -> tokens = input+output+cache_read
+                       +cache_write; cost = Priced(total_usd_micros) or
+                       Unpriced. Core stays provider-free; providers map at
+                       their boundary (no reverse dep).
+src/budget/caps.rs     BudgetSpec: BudgetPeriod{Task<Session<Day} (Ord) ->
+                       BudgetCap{money,tok}. RawCap(i128) config boundary:
+                       negatives -> InvalidSpec::Negative (typed); inversion
+                       law Task<=Session<=Day per dimension ->
+                       InvalidSpec::InvertedPeriods; Some(0) cap = legal
+                       refuse-everything (dry-run).
+src/budget/signal.rs   BudgetSignal::{Warning(ThresholdCrossed{threshold_pct,
+                       consumed, cap}), Stop(StopReason::{MoneyExhausted,
+                       TokenExhausted}(Exhaustion))}. BudgetSignalSink trait
+                       = the consumer seam (loop wiring later; semantics
+                       fixed here: Stop delivered only after the triggering
+                       spend is fully booked => finish current tool, then
+                       end turn — never mid-tool). WARN=80, STOP=100 consts.
+src/budget/ledger.rs   SpendLedger: record() books each spend toward EVERY
+                       capped period; exact crossing math = ceil(cap*pct/
+                       100) via div_ceil (no division rounding: 79/100 no,
+                       80/100 Warning, 100/100 Stop; uneven cap 6/7 crosses
+                       at 80%+ exactly); warned/stopped sets => each signal
+                       fires EXACTLY once; overflow -> LedgerError::Overflow
+                       typed, state unchanged (two-phase record);
+                       remaining(); preflight() = inference gate (zero cap
+                       refuses immediately with typed message naming
+                       dimension+period).
+src/budget/resume.rs   INCOMPLETE-STATUS RESUME (§21): stop_snapshot() ->
+                       IncompleteBudget{reason, caps, money, tokens,
+                       resume_seq: Sequence anchor} (serde-stable);
+                       SpendLedger::resume(inc, last_committed) ->
+                       ResumePlan{ledger, resume_seq} — cursor beyond the
+                       committed log = typed ResumeError::CursorBeyondLog
+                       (stale_state); consumption carries over (budgets
+                       never reset); fired thresholds re-derived, not
+                       refired. Never a hard failure.
+src/budget/rollup.rs   CREDIT ROLLOVER (§25): RollupNode{label(unicode),
+                       own, children}; total() checked subtree fold (u128
+                       money, u64 tokens); child_spend() = per-subagent
+                       subtree totals visible at the parent; overflow ->
+                       typed RollupError{label}.
+src/budget/quota.rs    QUOTA-AS-CURRENCY vocabulary (§26): OpClass
+                       {Reasoning,Retrieval,Execution}; PoolTier{Expensive,
+                       Cheap}; PoolSpec{capacity, refill_per_tick, tier};
+                       Weight{pool, cost_per_unit}; QuotaSpec{pools,
+                       weights, conservation_floor_pct}; typed QuotaError
+                       (NoWeight/UnknownPool/EmptyCapacity/ZeroCost/
+                       FloorTooHigh/Overflow/TimeWentBackwards/Paused/
+                       Exhausted).
+src/budget/pacing.rs   Live pacing (deterministic, injected tick counter —
+                       no clock): QuotaState::new validates + fills pools;
+                       advance_to(tick) saturating refill (backwards tick
+                       typed); spend(class, units) = weight * cost_per_unit
+                       burn, conservation refusal typed Paused, deficit
+                       typed Exhausted; pacing() = Pacing::{Running,
+                       Conserving{pools}} — cross-multiplied fill check
+                       (level*100 < capacity*floor, u128, no rounding):
+                       conservation window opens strictly below floor,
+                       closes at refill-to-floor, EXPENSIVE tiers only.
+src/budget/governor.rs TOKEN-BUDGET GOVERNOR PRIMARY (§33): DegradeDecision
+                       ladder HoldFanOut{current} -> CollapseFanOut(ceiling
+                       2) -> Serialize(1) -> Solo; Governor::thresholds
+                       (TaskClass-keyed deterministic table: DeepResearch
+                       200k/50k/10k, Balanced 60k/15k/3k, QuickEdit 20k/5k/
+                       1k — exactly 10x spread, asserted arithmetically);
+                       decide(remaining, current_parallelism, class) const
+                       fn — keys on TOKEN budget BEFORE per-call caps
+                       (ordering documented).
+lib.rs                 one line added: `pub mod budget;` (between autonomy
+                       and context). Cargo.toml UNCHANGED (zero new deps).
+
+TEST EVIDENCE (all commands run with the MSVC env noted below)
+----------------------------------------------------------------
+GREEN (final layout; 55 budget tests total: 20 lib unit + 35 integration):
+  cargo nextest run -p harness-core --lib --test budget_acceptance
+    --test budget_adversarial --test budget_pacing --test budget_malformed
+  => "Summary: 55 tests run: 55 passed, 0 skipped"
+  cargo clippy -p harness-core --lib --test budget_acceptance
+    --test budget_adversarial --test budget_pacing --test budget_malformed
+  => CLIPPY CLEAN (workspace lints warnings=deny, clippy all=deny)
+  cargo fmt -p harness-core -- --check  => clean for all budget files
+  Committed-tree isolation proof (separate section below).
+
+ACCEPTANCE CHANNEL (happy) — scripted multi-period session:
+  warning_fires_exactly_at_the_80_percent_crossing: spend script
+    [79, 1, 19, 1] vs cap 100 -> signals = [Warning(80/100), Stop(100/100)]
+    and NOTHING at 79 or 99 (exact, never early/late, once each).
+  money_dimension_thresholds_fire_exactly: µUSD cap 1_000_000, spends
+    [799_999, 1, 199_999, 1] -> Warning at exactly 800_000, Stop at
+    1_000_000 (2 signals total).
+  multi_period_session: caps Task 50 / Session 200 / Day 1000, 20 spends of
+    10 -> [(#4,warn,Task),(#5,stop,Task),(#16,warn,Session),
+    (#20,stop,Session)]; Day stays silent (never hits 800 warn line).
+  rollup_tree: parent 100tok/$1.00 + child-a(40/$0.40 + grandchild 10/$0.10)
+    + child-b(25/$0.25) -> total 175 tok / 1_750_000 µUSD; child_spend at
+    parent = [child-a 50/$0.50, child-b 25/$0.25].
+  quota conservation window (budget_pacing): pools reason(expensive,
+    cap100, refill10/tick, floor20%) + index(cheap, cap50); Reasoning 8u
+    -> level 20 (AT floor = healthy), +1u -> level 10 -> Pacing::Conserving
+    ["reason"]; cheap Retrieval 2u still Ok(40) during window; Reasoning
+    refused typed QuotaError::Paused; advance_to(3) refills to 40 >= floor
+    -> window closes, Reasoning Ok(30).
+
+FAILURE CHANNEL:
+  zero_ceiling_refuses_inference_with_a_typed_message: cap money=Some(0) +
+    tokens=Some(0) -> preflight() Err with message "money budget exhausted
+    for task period: consumed 0 of 0 micro-USD" (names dimension+period).
+  stop_surfaces_only_after_the_completing_tools_spend_is_recorded: 4x10
+    tokens (40/100, no stop) then completing tool spend of 65 recorded in
+    FULL -> exactly one Stop inside that record, Stop.consumed == 105
+    (includes the tool). Stop ordering is post-spend by construction:
+    record() commits the spend, then evaluates -> the loop consumes the
+    signal at the operation boundary, finishing the tool first (never
+    mid-tool).
+
+ADVERSARIAL:
+  flaky x3: threshold_script_is_deterministic_across_three_runs — identical
+    signal vectors, no clock/wall-time anywhere (injected ticks).
+  malformed: negative caps -> InvalidSpec::Negative (money reported first);
+    inverted (Task 100 > Session 50; Session $5000 > Day $4999) ->
+    InvertedPeriods; equal caps OK (non-strict). u128 overflow: cap
+    u128::MAX, spend u128::MAX -> [Warning, Stop] in order, then +1 µUSD ->
+    Err(LedgerError::Overflow{field:"money"}) with sink len still 2 (state
+    unchanged); token dim overflow likewise typed.
+  stale_state: resume after restart — cursor Sequence(10) vs last_committed
+    Sequence(9) -> Err(ResumeError::CursorBeyondLog); vs Sequence(10) ->
+    Ok(ResumePlan) with resume_seq 10, remaining tokens 0 (consumption
+    carried), continued record emits NO refired signals.
+  new input parsing: single overshooting spend 0->150% -> [Warning, Stop]
+    in order (never Stop-only); unicode agent labels (CJK/Cyrillic/emoji
+    root) roll up exactly (175-token class fixture: 7+3 subtree).
+  misleading_success: rollup total asserted against HAND-SUMMED fixture
+    (7_000 tokens, 750_000 µUSD — unpriced spend never invents cost);
+    threshold crossings asserted on exact integers (79/80/99/100);
+    governor 10x spread asserted arithmetically on the table.
+  dirty_worktree: commit contains ONLY budget files + one lib.rs line +
+    tests + this evidence (verified via git show --stat below); the
+    eviction worker's uncommitted files (src/eviction/, tests/eviction_*,
+    tests/common/evictionkit.rs, common/mod.rs edit, their lib.rs line)
+    were left untouched and out of my commit (selective blob staging).
+  hung: N/A (no processes/awaits; pure synchronous integer code).
+
+SIMULTANEITY DISCLOSURE (todo-12 eviction worker in harness-core)
+-----------------------------------------------------------------
+- Shared-file discipline: lib.rs re-read immediately before the one-line
+  anchored insert (`pub mod budget;` between autonomy/context). The
+  worker's `pub mod eviction;` line was ALREADY present; my edit anchored
+  on the stable autonomy/context pair and did not touch their line.
+  Cargo.toml untouched (zero new deps). No conflicts encountered; no
+  lock-retry needed.
+- My commit excludes their uncommitted line via git plumbing: staged
+  lib.rs blob = HEAD content + my line ONLY (hash-object + update-index
+  --cacheinfo), so the committed tree builds without their in-flight
+  module; their worktree state preserved byte-for-byte.
+- Verification runs used -p harness-core with explicit --lib/--test
+  target selection (never unfiltered) so their red in-flight targets
+  (eviction_sim/eviction_ladder etc., missing imports mid-development)
+  never contaminated my results and vice versa.
+- Side effect disclosed: `cargo fmt -p harness-core` (required for my
+  files) also formats other in-flight untracked files of the crate
+  (theirs: src/eviction/*, tests/eviction_*) — semantically neutral
+  rustfmt-only, and their code must pass fmt regardless.
+- Toolchain note (environment, not repo): fresh target-dir builds on this
+  machine need a composite MSVC env (VS2022 14.44 cl/link + Insiders
+  ScopeCppSDK compiler headers + WinSDK 10.0.26100 ucrt) because both VS
+  installs lack a populated MSVC `include`; the warm C:\ct cache hides
+  this. Private CARGO_TARGET_DIR=C:\ct-t25red used for all runs above.
+
+POST-WRITE REVIEW
+-----------------
+- File sizes (pure LOC, non-blank non-comment): caps 191, governor 110,
+  ledger 238, mod 21, money 106, pacing 215, quota 68, resume 82, rollup
+  84, signal 96; tests: acceptance 236, adversarial 131, malformed 185,
+  pacing 112 — ALL <= 250.
+- No unwrap/expect/panic/unreachable/todo in src/budget (grep-verified);
+  tests use a verb-free ok()/err() let-else idiom (clippy
+  assertions_on_constants compliant).
+- Boundary: RawCap(i128) -> typed BudgetSpec (parse-don't-validate);
+  Dimension/enum discrimination exhaustive (match, no if-chains).
+- Removed one-off helper (check_weight inlined); no parameter bloat
+  (max 3 params + self); no redundant post-action verification; no
+  negative-form names; no logging added (core practice: no logging).
+
+COMMITTED-TREE ISOLATION PROOF
+------------------------------
+After committing, a SECOND detached worktree was created at MY commit
+(wt-verify) — containing neither worker's uncommitted files — and the full
+harness-core suite (unfiltered: lib + every committed integration test)
+was run there: result pasted below in the commit section.
