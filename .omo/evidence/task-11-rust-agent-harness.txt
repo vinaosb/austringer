@@ -1,0 +1,212 @@
+TASK 11 — Prompt Idempotency Manager (prefix-cache-stable prompt builder)
+==========================================================================
+Repo: C:\Users\vsbb1\source\repos\harness | Base: HEAD 7542f6a (main)
+Worker: todo-11 implementation worker (parallel wave with todo 10 providers
+adapters + todo 19 exec; shared-file discipline honored — only
+harness-core/src/lib.rs touched outside the new context/ tree, exactly the
++1 `pub mod context;` line, re-read immediately before edit).
+
+SCOPE DELIVERED (harness-core/src/context/, 9 files, all <=250 pure LOC)
+------------------------------------------------------------------------
+  builder.rs    (206) ContextSpec / SlotSegment / RenderedPrompt /
+                     PromptBuilder::render — pure composition in the fixed
+                     layout; slot normalization (sort by id, JSON keys
+                     sorted via serde_json BTreeMap); volatile scan of all
+                     frozen inputs; 64 KiB volatile-tail bound; effort line
+                     rendered into the system segment; beta-effort metadata
+                     pass-through; stable-prefix + per-segment blake3 hashes
+                     (reuses T4 ContentHash).
+  layout.rs     (160) SegmentName (7 fixed segments, tag()/is_frozen()/
+                     FROZEN), Stability, SegmentSpan, SegmentMap with typed
+                     L0/L1/L2 boundaries + span_at(offset) lookup.
+  cache_plan.rs (149) CacheTtl (5m/1h), CacheBreakpoint, CachePolicy,
+                     CachePlan::plan (Anthropic: L0, L1, history-mid, L2,
+                     deduped, capped at 4 = MAX_CACHE_BREAKPOINTS; OpenAI:
+                     none — automatic), with_ttl, relocate() = provider-
+                     specific relocation hook (OpenRouter part boundaries,
+                     >4 typed CachePlanError, never silent truncation).
+                     Post-turn background-task prefix sharing documented in
+                     the module docs (hermes SS27).
+  history.rs     (39) T4 LLM-visible events -> deterministic history lines
+                     (internal events skipped by visibility CLASS; events
+                     render in sequence order — history is never reordered;
+                     tool args serialize sorted-key).
+  violation.rs  (140) VolatileKind {IsoDateTime, UnixTimestamp, TimeTag},
+                     LayoutViolation (segment + byte offset + evidence),
+                     BuildError {Layout, OversizedTail}, conservative
+                     detectors (bare dates are NOT volatile: ISO detector
+                     requires a time component; unix detector requires the
+                     `timestamp` keyword + 10-13 digit run; tag detector
+                     matches the two known wall-clock spellings).
+  epoch.rs      (205) EpochId, StableBaseline, ContextEpoch (id, frozen
+                     segment hashes, pinned effort, started-at-seq),
+                     EpochTransition {CompactionCompleted, SessionMovement}
+                     (the ONLY two ways an epoch ends — explicit typed
+                     events), EpochDrift, EpochError, EpochLedger
+                     (append-only epochs + transition records; serde-stable
+                     for the session store).
+  effort.rs      (80) EffortLevel/EffortSettings (rendered into the system
+                     segment), EffortChannel {EpochBoundary, PerMessageBeta},
+                     EFFORT_REMEDIES, EffortViolation (typed rejection w/
+                     both remedies; SS33 hold-effort-constant).
+  tracker.rs    (149) CacheReport, CacheReportFeed trait + InMemoryFeed
+                     (adapters feed reports later), common_prefix_len,
+                     ChainEntry, ViolationKind {ChainBreak, CacheMiss},
+                     ViolationEvent (diverged segment + byte offset),
+                     CacheViolationTracker: append-only blake3 chain; per
+                     turn checks (1) layout law — prompt must extend the
+                     previous cacheable prefix, (2) provider report — cache
+                     read below the measured common prefix = miss. First
+                     observation = baseline write (cold start is not a
+                     violation).
+  mod.rs         (23) module docs (layout law, epoch doctrine, cache-control
+                     engineering, tracker, effort discipline) + re-exports.
+
+Design notes:
+  - [0,L0) = system+effort line + T6 base-schema render; the ToolSchema
+    segment content is asserted byte-identical to
+    ToolRegistry::render_base_schema (T6 render reused verbatim).
+  - [L0,L1) = rules+skills typed slots. The T5 FocusChain::render() API
+    fits as-is: reused (not reimplemented) as the rules slot pinned at
+    epoch start; mid-epoch todo flips go IN-HISTORY per the epoch doctrine.
+  - Volatile tail = last user message ONLY; the tail is exempt from the
+    volatile scan and bounded typed at 64 KiB.
+  - Layout-law subtlety (tested + documented): the closing history fence
+    ("\n</history>\n") is necessarily rewritten once history grows, so the
+    next turn preserves the previous prompt only through its stable
+    CONTENT end (L2 - fence). RenderedPrompt::cacheable_prefix_bytes()
+    exposes that offset; the tracker's chain-break floor and the realistic
+    provider-hit expectation both use it.
+  - History is NOT volatile-scanned: append-only user/model data may
+    legitimately contain historical dates (stable bytes, not injections);
+    the scan covers harness-composed frozen segments only (documented).
+
+TDD (strict red -> green, 3 cycles)
+-----------------------------------
+  Cycle 1 RED: tests/context_prefix_identity.rs written first; compile
+    failure was the missing harness_core::context module (right reason).
+    GREEN: builder/layout/violation/history/effort + lib.rs line.
+  Cycle 2 RED: tests/context_epoch.rs (unresolved epoch imports).
+    GREEN: epoch.rs + effort.rs additions.
+  Cycle 3 RED: tests/context_cache_tracker.rs (unresolved tracker imports).
+    GREEN: tracker.rs.
+  28 new integration tests + 6 inline unit tests across the module files.
+
+ACCEPTANCE (plan todo 11)
+-------------------------
+  1. Property test — same logical state => byte-identical prompt: PASS
+     (4 seeds x 40 randomized specs, T4-precedent seeded xorshift64*; chose
+     xorshift over proptest because proptest is not in the workspace and
+     the plan prefers zero new deps).
+  2. Mutation only in last message: PASS (tail change => byte-identical
+     prefix below L2, full prompt differs; scrambled slot insertion and
+     rogue unsorted-key JSON normalize to identical bytes).
+  3. 20-turn synthetic session >= 90% prefix identity: PASS — worst
+     turn-over-turn identity 97.1% (report below).
+  4. Injected-timestamp detection + rejection: PASS (typed LayoutViolation
+     w/ segment, byte offset, kind, evidence).
+
+HAPPY QA (deterministic script:
+  cargo test -p harness-core --test context_prefix_identity twenty_turn -- --nocapture)
+-------------------------------------------------------------------------------
+  Per-turn common prefix vs previous FULL prompt (byte-zip measurement):
+    turn  2: common prefix   2623 bytes, identity 97.1%
+    turn  3: common prefix   2707 bytes, identity 97.2%
+    turn  4: common prefix   2791 bytes, identity 97.3%
+    turn  5: common prefix   2931 bytes, identity 97.4%
+    turn  6: common prefix   3015 bytes, identity 97.5%
+    turn  7: common prefix   3100 bytes, identity 97.5%
+    turn  8: common prefix   3243 bytes, identity 97.7%
+    turn  9: common prefix   3329 bytes, identity 97.7%
+    turn 10: common prefix   3415 bytes, identity 97.8%
+    turn 11: common prefix   3558 bytes, identity 97.8%
+    turn 12: common prefix   3646 bytes, identity 97.9%
+    turn 13: common prefix   3734 bytes, identity 97.9%
+    turn 14: common prefix   3880 bytes, identity 98.0%
+    turn 15: common prefix   3968 bytes, identity 98.0%
+    turn 16: common prefix   4056 bytes, identity 98.1%
+    turn 17: common prefix   4202 bytes, identity 98.2%
+    turn 18: common prefix   4290 bytes, identity 98.2%
+    turn 19: common prefix   4378 bytes, identity 98.2%
+    turn 20: common prefix   4524 bytes, identity 98.3%
+    worst: 97.1%  (acceptance floor: 90%)
+  Byte-level append-only proof asserted per turn: every byte of the
+  previous prompt's stable CONTENT is a literal byte prefix of the next
+  turn's prompt. Epoch hashes stable across all 20 turns (system segment
+  hash asserted constant); the compaction flip is exercised separately in
+  context_epoch.rs: compaction_transition_flips_epoch_deterministically
+  (epoch 1 -> 2, started_at_seq 8->9, baseline re-frozen from the
+  post-compaction render, transition recorded as an explicit event, new
+  epoch holds across subsequent turns).
+
+FAILURE QA (cargo test -p harness-core --test context_prefix_identity
+            --test context_epoch qa_prints -- --nocapture)
+-------------------------------------------------------------------------------
+  Injected volatile timestamp above L2 -> typed rejection:
+    [system/iso]      -> volatile data above L2 rejected: volatile IsoDateTime in segment System at byte 25: 2026-09-12T10:30
+    [system/keyword]  -> volatile data above L2 rejected: volatile UnixTimestamp in segment System at byte 6: timestamp: 1712345678
+    [system/tag]      -> volatile data above L2 rejected: volatile TimeTag in segment System at byte 7: <current_time
+    [repomap/iso]     -> volatile data above L2 rejected: volatile IsoDateTime in segment Repomap at byte 21: 2026-09-12T08:00
+    [tail/oversized]  -> volatile tail of 65537 bytes exceeds the bound of 65536
+  Mid-epoch effort change -> typed rejection w/ guidance (both remedies):
+    [effort/mid-epoch] -> effort change rejected in epoch 1 (medium -> high): effort renders into the cached prefix and would invalidate every breakpoint; remedies: wait for a completed compaction (epoch boundary) or use the per-message beta channel
+  Mid-epoch frozen-segment mutation -> typed drift:
+    [drift/system-mutation] -> epoch drift in System: expected blake3:780fae338c08bbac759429098bb1ccc8c45c40622d036f422c8407c7c891f8ba, got blake3:50704434b043ce8e5b6a5ccfd632a8d59279b2efea39a5db02f3bad6f0ae3966 — append durable updates in-history or end the epoch via a completed compaction
+  Provider cache shortfall -> observable ViolationEvent (context_cache_tracker.rs):
+    CacheMiss { expected_bytes: common-prefix, reported_bytes: l0 } with
+    diverged_segment = Some(Rules), byte_offset = reported — plus ChainBreak
+    when a mutated prompt fails to extend the previous cacheable prefix.
+
+GATES (this task's scope; workspace-wide runs left to the orchestrator
+because two parallel workers have in-flight files)
+-------------------------------------------------------------------------------
+  cargo test -p harness-core                 42/42 suites ok, 0 failed
+                                             (26 context integration tests
+                                             + inline unit tests; full crate
+                                             incl. all pre-existing suites)
+  cargo clippy -p harness-core --all-targets 0 warnings/errors (workspace
+                                             denies warnings + clippy::all)
+  cargo fmt -p harness-core -- --check       clean
+  LOC audit (non-blank, non-comment): builder 206, layout 160, cache_plan
+    149, epoch 205, tracker 149, violation 140, effort 80, history 39,
+    mod 23 — all <= 250. No unwrap/expect/panic in src (test-only expect).
+  Committed-tree isolation: after commit, `git worktree add` at the new
+    commit and `cargo test -p harness-core` re-run there — transcript
+    appended below (POST-COMMIT section).
+  Dependencies added: ZERO (serde/serde_json/thiserror/blake3 already in
+    harness-core; root Cargo.toml untouched).
+
+ADVERSARIAL COVERAGE
+-------------------------------------------------------------------------------
+  misleading_success .... byte-level asserts everywhere (as_bytes slices,
+                         blake3 hash equality, exact canonical-layout
+                         snapshot string, per-span tiling equality)
+  flaky ................ fixed seeds (xorshift64*, 4 seeds x 40 specs per
+                         property), zero wall clock, zero sleeps, unique
+                         temp session dirs (pid + atomic counter)
+  stale_state .......... epoch survives 20 turn boundaries; compaction
+                         event flips it deterministically (id, started-seq,
+                         baseline re-freeze all asserted); restored-ledger
+                         serde round-trip keeps the epoch state
+  malformed input ...... rogue slot w/ unsorted-key JSON normalized to the
+                         hand-sorted byte form; scrambled slot insertion
+                         order normalized; duplicate ids sort by (id,
+                         content) so ordering is total
+  new input parsing .... empty history (degenerate map, empty content),
+                         single-message session, oversized tail rejected
+                         typed at the 64 KiB bound
+  hung_or_long ......... N/A (pure in-memory computation, no I/O surface)
+  dirty_worktree ....... only intended files staged (context tree + lib.rs
+                         +1 line + 3 test files + this evidence); other
+                         workers' modified files left untouched
+
+ENVIRONMENT NOTE (same as task 8)
+-------------------------------------------------------------------------------
+  The bundled sqlite3.c compile needs the VS 18 Insiders ScopeCppSDK include
+  prepended to INCLUDE on this workstation (see task-8 evidence); applied
+  per-command, never persisted to repo config. cargo target dir is shared
+  (CARGO_TARGET_DIR=C:\ct) with the parallel workers — build-lock waits
+  observed and retried naturally by cargo.
+
+POST-COMMIT ISOLATION RUN (appended after commit + worktree add)
+-------------------------------------------------------------------------------
