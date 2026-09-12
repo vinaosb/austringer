@@ -1,0 +1,14 @@
+{
+  "name": "harness-vscode",
+  "displayName": "Harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VS Code extension frontend for the harness agent (scaffold stage).",
+  "main": "./out/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  }
+}

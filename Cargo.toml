@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = [
+    "harness-ast",
+    "harness-bench",
+    "harness-cli",
+    "harness-core",
+    "harness-daemon",
+    "harness-evals",
+    "harness-exec",
+    "harness-lsp",
+    "harness-mcp",
+    "harness-providers",
+    "harness-repomap",
+    "harness-safety",
+    "harness-search",
+    "harness-sessions",
+    "harness-skills",
+    "harness-snapshots",
+    "harness-test-support",
+    "harness-tools",
+    "harness-tui",
+    "harness-vfs",
+    "harness-web",
+]
+
+# harness-vscode is a TypeScript project and deliberately NOT a workspace member.
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.98"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+repository = "https://example.com/harness/harness" # placeholder until the canonical repo URL exists
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+# `clippy::all` is the real clippy group; `clippy::warnings` does not exist
+# (rustc's `warnings` group above already escalates default-warn clippy lints).
+all = "deny"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true

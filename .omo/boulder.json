@@ -1,0 +1,14 @@
+{
+  "schema_version": 2,
+  "active_work_id": "rust-agent-harness-v1",
+  "works": {
+    "rust-agent-harness-v1": {
+      "work_id": "rust-agent-harness-v1",
+      "active_plan": ".omo/plans/rust-agent-harness.md",
+      "plan_name": "rust-agent-harness",
+      "session_ids": ["opencode:orchestrator"],
+      "status": "active",
+      "worktree_path": null
+    }
+  }
+}
