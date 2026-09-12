@@ -51,6 +51,28 @@ pub trait PermissionStore: Send + Sync {
 
     /// Drops all session-scoped grants (session end). Forever grants stay.
     fn clear_session(&self) -> Result<(), StoreError>;
+
+    /// Records a grant with an optional duration; the store's clock turns
+    /// it into an expiry, after which [`PermissionStore::lookup`] no longer
+    /// honors it. The default drops the duration (no expiry).
+    fn record_timed(&self, grant: &Grant, duration: Option<u64>) -> Result<(), StoreError> {
+        let _ = duration;
+        self.record(grant)
+    }
+
+    /// Records one denial (an `n` answer) for repetition feedback. The
+    /// default is a no-op counter (the SQLite store persists them).
+    fn record_denial(&self, tool: &str, target: Option<&str>) -> Result<(), StoreError> {
+        let _ = (tool, target);
+        Ok(())
+    }
+
+    /// How many denials are recorded for this tool + target (0 when
+    /// unrecorded or unsupported).
+    fn denial_count(&self, tool: &str, target: Option<&str>) -> u32 {
+        let _ = (tool, target);
+        0
+    }
 }
 
 /// The grant map key: tool plus optional normalized target.
@@ -61,6 +83,7 @@ type GrantKey = (String, Option<String>);
 #[derive(Debug, Clone, Default)]
 pub struct MemoryStore {
     inner: Arc<Mutex<HashMap<GrantKey, GrantScope>>>,
+    denials: Arc<Mutex<HashMap<GrantKey, u32>>>,
 }
 
 impl MemoryStore {
@@ -102,6 +125,28 @@ impl PermissionStore for MemoryStore {
         self.lock()?
             .retain(|_, scope| *scope != GrantScope::Session);
         Ok(())
+    }
+
+    fn record_denial(&self, tool: &str, target: Option<&str>) -> Result<(), StoreError> {
+        let key = (tool.to_owned(), Self::normalize(target));
+        let mut denials = self.denials.lock().map_err(|_| StoreError {
+            message: "memory store mutex poisoned".to_owned(),
+        })?;
+        let count = denials.entry(key).or_insert(0);
+        *count += 1;
+        Ok(())
+    }
+
+    fn denial_count(&self, tool: &str, target: Option<&str>) -> u32 {
+        self.denials
+            .lock()
+            .ok()
+            .and_then(|denials| {
+                denials
+                    .get(&(tool.to_owned(), Self::normalize(target)))
+                    .copied()
+            })
+            .unwrap_or(0)
     }
 }
 

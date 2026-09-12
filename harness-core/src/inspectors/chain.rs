@@ -77,17 +77,31 @@ impl InspectorChain {
     /// installs the SQLite-backed store here).
     #[must_use]
     pub fn with_store(config: InspectorConfig, store: Arc<dyn PermissionStore>) -> Self {
+        Self::with_prefix_inspectors(config, store, Vec::new())
+    }
+
+    /// Builds the default chain with caller-supplied inspectors run
+    /// BEFORE the default order (todo 8's autonomy gate mounts here).
+    /// Prefix inspectors follow the standard precedence: their
+    /// `Deny`/`Intervene` short-circuits, their authoritative `Allow`
+    /// suppresses later ask-generators, their `Ask` routes through the
+    /// chain's ask policy.
+    #[must_use]
+    pub fn with_prefix_inspectors(
+        config: InspectorConfig,
+        store: Arc<dyn PermissionStore>,
+        prefix: Vec<Box<dyn CallInspector>>,
+    ) -> Self {
         let redactor = TranscriptRedactor::from_globs(config.secret_files.patterns.clone());
-        let inspectors: Vec<Box<dyn CallInspector>> = vec![
-            Box::new(PermissionInspector::new(
-                config.permission,
-                store.clone(),
-                redactor.clone(),
-            )),
-            Box::new(SecretFileInspector::new(config.secret_files)),
-            Box::new(RepetitionInspector::new(config.repetition)),
-            Box::new(SecurityInspector::new(config.security)),
-        ];
+        let mut inspectors: Vec<Box<dyn CallInspector>> = prefix;
+        inspectors.push(Box::new(PermissionInspector::new(
+            config.permission,
+            store.clone(),
+            redactor.clone(),
+        )));
+        inspectors.push(Box::new(SecretFileInspector::new(config.secret_files)));
+        inspectors.push(Box::new(RepetitionInspector::new(config.repetition)));
+        inspectors.push(Box::new(SecurityInspector::new(config.security)));
         Self {
             inspectors,
             ask_policy: Box::new(RefuseAsks),

@@ -20,6 +20,7 @@
 #![deny(missing_docs)]
 
 pub mod agent_loop;
+pub mod autonomy;
 pub mod event;
 pub mod inspectors;
 pub mod log;

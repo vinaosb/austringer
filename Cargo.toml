@@ -44,6 +44,10 @@ thiserror = "2"
 blake3 = "1"
 async-trait = "0.1"
 tokio = { version = "1", features = ["sync", "time", "macros"] }
+# Todo-8 permission store: bundled compiles the public-domain sqlite3.c
+# (no system SQLite). sqlx stays T24's choice; two-wrapper consolidation
+# is deferred to T24.
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 [workspace.lints.rust]
 warnings = "deny"

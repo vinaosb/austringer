@@ -6,6 +6,7 @@
 //! the full event taxonomy with structurally diverse payloads.
 #![allow(dead_code)]
 
+pub mod autonomykit;
 pub mod cancelkit;
 pub mod inspectorkit;
 pub mod loopkit;

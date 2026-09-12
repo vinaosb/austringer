@@ -118,6 +118,15 @@ impl AgentLoop {
         &self.plan_gate
     }
 
+    /// Replaces the plan gate handle. The wiring point for todo 8's
+    /// artifact-review sync: a [`PlanGate`] shared with the autonomy
+    /// `/mode` command replaces the loop-local default, so review-policy
+    /// transitions are enforced by the completion gate without reopening
+    /// the session.
+    pub fn set_plan_gate(&mut self, gate: PlanGate) {
+        self.plan_gate = gate;
+    }
+
     /// The in-memory event mirror (log is the durable truth).
     #[must_use]
     pub fn events(&self) -> &[RecordedEvent] {

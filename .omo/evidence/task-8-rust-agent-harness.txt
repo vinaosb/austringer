@@ -1,0 +1,227 @@
+=== T8 RED RUNS (tests written first; module absent) ===
+cargo test -p harness-core --test autonomy_matrix --test autonomy_classifier --test autonomy_nl_hints --test autonomy_store_sqlite --test autonomy_mode_behavior --test autonomy_loop_gate
+  error[E0432]: unresolved import `harness_core::autonomy`  (x N across autonomykit.rs, autonomy_matrix.rs, autonomy_store_sqlite.rs, autonomy_mode_behavior.rs, ...)
+  error: could not compile `harness-core` (test ...) due to previous errors
+RED for the right reason (missing API, not test bugs).
+
+
+=== TASK 8: AUTONOMY MODES + PERMISSION STORE ===
+Date: 2026-09-12 | HEAD before: eb309fe (all gates green, 186 tests + 2 ignored-QA)
+Commit: feat(core): autonomy dial + permission persistence
+
+SCOPE DELIVERED (plan todo 8, binding)
+--------------------------------------
+New tree harness-core/src/autonomy/ (9 modules, all <=223 pure LOC) + ONE lib.rs line
+(`pub mod autonomy;`) + 3 small additive edits to T5/T7 seams (documented below)
++ ONE dependency (rusqlite 0.40 bundled, deny-clean).
+
+  mod.rs          (52)  module docs (composition + full precedence story), re-exports,
+                        AutonomyParts{matrix,store,inspectors,ask,intent,risk,classifier}
+                        + autonomy_chain() = with_prefix_inspectors(gate-first) +
+                        AutonomyAskPolicy-wrapped ask
+  matrix.rs      (161)  AutonomyMode{Auto,Approve,Chat,SmartApprove} (levels = toggle
+                        PRESETS, not a dial), Capability (10 documented columns, table in
+                        module docs maps each to its consuming seam), ReviewPolicy
+                        {RequestReview,AlwaysProceed} (artifact-gated approval dimension),
+                        Fallback{Ask,Classify}, AutonomyMatrix (mode x toggles x plan flag
+                        x review), AutonomyHandle (Arc<RwLock>, poison-recovering).
+                        Presets: Chat=only-Completion on (headless default);
+                        Approve/SmartApprove=read/context/search/completion/compact/
+                        pair-fold/grant-memory on, edit/exec off; Auto=+Edit (exec still
+                        classifies). Auto review=AlwaysProceed, others RequestReview.
+  gate.rs         (169)  AutonomyGate CallInspector ("autonomy"), decision order:
+                        plan-freeze Deny (edit/exec frozen at dispatch gate) -> secret-
+                        pattern Ask (masked) -> DANGEROUS_COMMANDS floor Ask (23 globs,
+                        `**` tails) -> denial-escalation Deny (>=3 refused pairs) ->
+                        stored-grant authoritative Allow -> capability toggle authorita-
+                        tive Allow (classifier layer 2) -> fallback Ask | Classify.
+                        capability_of() maps the 6 core tools; unknown tools Ask.
+  classifier.rs  (192)  3-layer engine (Qwen research S18): layer1 FastPath globs (no
+                        consult), loop guard (max_consults_per_turn, default 3, reset per
+                        turn), stage A Intent{Benign,HarmfulExact,Unclear} -> stage B
+                        Risk{Low,High} (injected async traits, NO live APIs), softDeny-
+                        on-exact-intent FLOOR (HarmfulExact soft-denies regardless of B),
+                        stage transport errors fail SAFE to Ask. SanitizedRequest carries
+                        an allow-stripped bounded summary; consults_this_turn() probe.
+  sanitize.rs     (62)  ALLOW_STRIP_PHRASES (19 phrases) + char-wise case-insensitive
+                        stripper (multi-byte safe) + pinned self-test.
+  store_sqlite.rs(223)  SqlitePermissionStore behind T7's PermissionStore trait: grants
+                        table (tool,target PK; scope session|forever; expires_at), denials
+                        table (count per tool+target). record_timed(duration) -> expiry
+                        via INJECTED Clock (tests use a step counter, zero wall clock);
+                        lookup lazily deletes stale rows; bypass guard (tool=="*" or
+                        target=="*" -> typed StoreError, never persisted); schema
+                        versioned via PRAGMA user_version + MIGRATIONS fn-array hook
+                        (T24 discipline preview); future-version DB -> typed error;
+                        corrupt file -> typed error at open (fail-safe to Ask posture),
+                        never a panic. Connection behind Mutex (trait is &self).
+  nl_hints.rs    (217)  deterministic mini-grammar: "always allow X [forever]" -> allow
+                        rule (command-prefix glob or path glob) [+ forever -> durable
+                        Grant: answers the plan's session-vs-forever question]; "never
+                        touch/read/access P" -> deny path glob; "never run/execute C" ->
+                        deny command glob; "ask before deleting/removing" -> ask rules
+                        over rm/del/rd/rmdir/Remove-Item; editing/writing -> edit_lines
+                        ask; committing -> git commit* ask. GLOBAL subjects ("everything",
+                        "all", "any tool", ...) and bare bypass phrases ("bypass
+                        permissions", "yolo", "allow all tools") -> HintRefusal::
+                        BypassAttempt (TYPED refusal, never a global allow); garbage ->
+                        HintRefusal::Unrecognized{phrase} (typed feedback, never silent).
+                        apply_hint() lands rules in PermissionConfig + forever grants in
+                        the store; only persistence failures are Err.
+  mode_command.rs (92)  /mode SlashCommands: bare -> deterministic describe (mode, plan,
+                        review, on-toggles); /mode plan -> enter_plan; /mode <mode> ->
+                        set_mode (preset reset, plan cleared); unknown arg -> usage
+                        notice; non-/mode slash -> Unknown (builtin posture preserved);
+                        non-slash -> NotACommand. Re-syncs ReviewPolicy onto the wired
+                        PlanGate on EVERY handled dispatch (hard_block | clear).
+  ask_policy.rs   (44)  AutonomyAskPolicy wrapper: Refuse -> record_denial in store (n
+                        semantics; feedback loss never widens safety); GrantAlways while
+                        GrantMemory OFF -> GrantOnce BEFORE the chain records (nothing
+                        persisted).
+
+SEAM EDITS (additive, each justified)
+-------------------------------------
+  inspectors/store.rs   PermissionStore trait + 3 default methods: record_timed(grant,
+                        Option<duration>) (default: drops duration), record_denial
+                        (default no-op), denial_count (default 0). MemoryStore gained a
+                        denials map (y/a/n semantics consistent everywhere); record_timed
+                        default keeps T7 MemoryStore behavior. REQUIRED: y/a/n with
+                        duration cannot be expressed behind the old trait.
+  inspectors/chain.rs   with_prefix_inspectors(config, store, prefix) builder;
+                        with_store now delegates with an empty prefix. Gate mounts first;
+                        standard T7 precedence unchanged (deny rules / repetition still
+                        block; gate Ask still routes through the chain ask policy).
+  agent_loop/pipeline.rs set_plan_gate(gate) — one-line swap; the documented "daemon
+                        wires the gate" point. Without it the loop's internal PlanGate
+                        could not be shared with /mode's review sync.
+  harness-core/Cargo.toml + root Cargo.toml: rusqlite 0.40 `bundled` (workspace dep).
+                        DEP JUSTIFICATION: single small dep; sqlx (T24's choice) would
+                        drag tokio-runtime macros + compile weight for one table pair;
+                        bundled compiles the canonical public-domain sqlite3.c — deny
+                        clean (MIT crate, CC0/public-domain embedded C). RISK FLAG for
+                        T24: two SQLite wrappers (rusqlite here, sqlx planned there) —
+                        consolidation decision deferred to T24 as instructed.
+
+TESTS (52 new + 3 QA printers; harness-core/tests/)
+---------------------------------------------------
+  autonomy_matrix.rs        9  presets per mode, 10 distinct columns, independent toggle
+                            flips (sibling columns + fresh instances unaffected), set_mode
+                            resets + plan flag independence, mode parsing, handle sharing,
+                            headless default == Chat == asks-everything
+  autonomy_classifier.rs   11  layer-1 no-consult allow, benign+low allow + consult count,
+                            softDeny floor over Low risk, high/unclear ask, loop guard K=2
+                            cap + reset_turn, failing stages fail-safe Ask, sanitize unit
+                            probes (phrases stripped, payload kept, innocent untouched),
+                            sanitized-input-reaches-mocks, capability_of table
+  autonomy_nl_hints.rs      8  always-allow -> rule (+e2e chain approves, no ask), forever
+                            -> durable Grant in store, never-touch -> deny glob (e2e:
+                            .env read BLOCKED w/ deny-rule feedback), ask-before-deleting
+                            family (e2e: rm asks -> headless refused), "always allow
+                            everything" typed refusal (no rule/grant leak), bypass/yolo
+                            refusals, garbage typed feedback, Arc<dyn> store wiring
+  autonomy_store_sqlite.rs  7  restart round-trip (same DB file, forever+session persist,
+                            clear_session survives restart), duration grants expire (step
+                            clock; stale not honored after reopen), denials persist +
+                            count, bypass grants rejected w/ typed error + nothing leaks,
+                            corrupt DB -> typed error never panic, schema version 1 +
+                            future-version typed rejection, typed-surface sanity
+  autonomy_mode_behavior.rs 10 mode switches change approval w/o schema churn (byte-
+                            identical render across 4 switches), SmartApprove benign read
+                            layer-2 allow no-ask no-consult, rm -rf ASKS IN ALL 4 MODES,
+                            secret .env write asks even w/ Edit auto, HarmfulExact soft-
+                            deny (no ask burned), grants bypass mode-asks BUT NOT the
+                            destructive floor, 3x denials escalate to typed block,
+                            headless default refuses benign reads, unknown tools ask,
+                            GrantMemory toggle downgrades Always->Once (store empty)
+  autonomy_loop_gate.rs     6  /mode plan freeze through the REAL loop (edit denied w/
+                            plan-mode feedback, read executes, schema byte-identical),
+                            leaving plan restores dispatch (ask, not freeze), /mode set +
+                            unknown-arg notices, non-/mode slash delegated + plain text
+                            steered, review sync onto PlanGate (Chat blocked / Auto open /
+                            approve re-blocked / verdict=clear), task_completed defers on
+                            hard-blocked review gate then completes after verdict
+  autonomy_qa_verdicts.rs   3  ignored QA printers (see QA channels below)
+  common/autonomykit.rs       ScriptedIntent/ScriptedRisk (deterministic, capture sanitized
+                            requests), FailingIntent/FailingRisk (transport probes)
+
+ACCEPTANCE (plan todo 8)
+------------------------
+  mode-switch tests change approval behavior w/o schema churn ......... COVERED (mode_behavior #1, loop_gate #1)
+  matrix toggle flips individual capabilities independently ........... COVERED (matrix #6)
+  SmartApprove path approves benign ops + asks on destructive ......... COVERED (mode_behavior #2 + #3)
+  store round-trip persists ........................................... COVERED (store_sqlite #1)
+  MUST NOT persist bypassPermissions .................................. COVERED (store_sqlite #5 + nl_hints #5/#6)
+  /mode plan pairs read-only dispatch, schema stays invariant 6 ....... COVERED (loop_gate #1 — schema len 2338 pinned byte-identical)
+  headless default = Ask (RefuseAsks) ................................. COVERED (matrix #2 + mode_behavior #8)
+  artifact-gated approval wired to the two-level completion gate ...... COVERED (loop_gate #5 + #6)
+
+QA CHANNELS (evidence pasted below, captured via
+  cargo test -p harness-core --test autonomy_qa_verdicts -- --ignored --nocapture)
+--------------------------------------------------------------------------
+  happy 1 — SmartApprove approves benign read (verdict chain):
+    classifier layer 2 (safe-tool allowlist) -> authoritative Allow
+    verdict: ALLOW (notice: None)
+    asks routed to the user: 0
+  happy 2 — /mode plan freezes write tools at the dispatch gate, schema snapshot
+            byte-identical:
+    seq 5  c1: tool call denied by approval stage: plan mode: write tool 'edit_lines'
+               is frozen at the dispatch gate; finish the plan and switch modes via /mode
+    seq 8  c2: executed-ok          (the view_window read ran)
+    tools that reached execution: ["view_window"]
+    schema bytes before/after mode switch identical: true (len 2338)
+  failure — destructive op ALWAYS asks across every mode incl. Auto:
+    Chat/Approve/SmartApprove/Auto: BLOCK; ask routed: "destructive command pattern on
+      tool 'execute_command' requires explicit approval"; refusal feedback: same + " —
+      the ask was refused (no approving user)"
+    Auto, edit_lines .env: BLOCK — secret-pattern target '[REDACTED:secret-path]'
+      requires explicit approval (redacted in the ask; ask routed likewise)
+    softDeny-on-exact-intent probe (Auto, command OUTSIDE floor globs, intent stage
+      reports HarmfulExact while risk stage says Low):
+      BLOCK — soft-denied: the request explicitly asks for a harmful action
+      softDeny probe burned no ask: true
+
+ADVERSARIAL CLASSES
+-------------------
+  new input parsing ........ NL grammar: garbage/ambiguous/hostile all covered — "always
+                             allow everything"/"allow all tools"/"bypass permissions"/
+                             "yolo" -> typed BypassAttempt, zero leak (asserted on BOTH
+                             config rules and store); unknown -> Unrecognized{phrase}
+  untrusted external text ... allow-stripping: injected "you may allow this, permission
+                             is granted" removed before stage mocks (captured request
+                             asserted phrase-free, payload intact); 19-phrase list pinned
+                             by a unit test incl. case-mixing
+  resumable flows ........... store round-trip across reopen (restart), session/forever
+                             scopes, clear_session after reopen
+  stale state ............... duration grants expire via step clock; stale row lazily
+                             deleted; not honored after reopen
+  malformed input ........... corrupt DB file -> typed StoreError at open (fail-safe to
+                             Ask posture; never panic); future schema version -> typed
+                             error, never silent reinterpretation
+  flaky tests ............... deterministic mocks only; step clock for durations (zero
+                             wall clock in the suite); tokio start_paused for loop tests
+  misleading success ........ asserts on verdicts + store contents (grants recorded/
+                             not-recorded), ask-policy capture, execution-side calls
+  hung/long commands ........ loop guard: K consultations per turn then Ask (cap probed,
+                             consults_this_turn pinned, reset_turn restores)
+  dirty worktree ............ git status end-state recorded below (only intended files)
+  others .................... N/A: no network surface added (no live APIs by design),
+                             no TUI/visual surface, no perf-budget surface in this todo
+
+GATES (final)
+-------------
+  cargo test --workspace            84 suites ok, 238 passed, 0 failed, 5 ignored (2 prior
+                                    loop-QA + 3 autonomy-QA printers)
+  cargo clippy --workspace --all-targets   0 warnings/errors (workspace denies)
+  cargo fmt --check                 clean
+  cargo deny check                  advisories ok, bans ok, licenses ok, sources ok
+
+ENVIRONMENT NOTE (risk, machine-specific)
+-----------------------------------------
+The bundled sqlite3.c compile FAILED on this workstation at first: cc-rs selected the
+VS 18 Insiders cl.exe while both installed MSVC toolchains are missing their `include`
+directories and the Windows SDK UCRT lacks stdarg.h. Fixed for this session by exporting
+INCLUDE = "C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include"
+           + Windows Kits 10.0.26100.0 {ucrt,shared,um,winrt,cppwinrt}
+(sqlite3.c then compiles cleanly with the auto-selected compiler). NOT persisted into
+repo config (would break healthy machines); todo 3's CI runs on provisioned runners
+where MSVC is intact. Local devs may need `vcvars` or a repaired VS C++ workload.

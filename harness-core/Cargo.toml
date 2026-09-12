@@ -16,7 +16,9 @@ thiserror.workspace = true
 blake3.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
+rusqlite.workspace = true
 
 [dev-dependencies]
 harness-test-support = { path = "../harness-test-support", version = "0.1.0" }
+rusqlite.workspace = true
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "test-util"] }
