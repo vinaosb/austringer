@@ -21,5 +21,6 @@
 
 pub mod agent_loop;
 pub mod event;
+pub mod inspectors;
 pub mod log;
 pub mod tools;

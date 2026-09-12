@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 pub mod cancelkit;
+pub mod inspectorkit;
 pub mod loopkit;
 pub mod stages_kit;
 

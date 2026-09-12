@@ -1,0 +1,176 @@
+=== T7 RED RUNS (tests written first; pieces absent) ===
+Cycle 1 (permission/repetition tests, module absent):
+  cargo test -p harness-core --test inspectors_permission --test inspectors_repetition
+    error[E0433]: could not find `inspectors` in `harness_core` (x N)
+    error: could not compile `harness-core` (test ...) due to previous errors
+Cycle 2+3 (chain seam / security / safe-outputs tests, chain+security+safe_outputs absent):
+  cargo test -p harness-core --test inspectors_chain_seam --test inspectors_security_safe_outputs
+    error[E0432]: unresolved import `harness_core::inspectors::chain`
+    error[E0432]: unresolved import `harness_core::inspectors::safe_outputs`
+    error[E0432]: unresolved import `harness_core::inspectors::security`
+RED for the right reason (missing API, not test bugs).
+
+
+=== TASK 7: INSPECTOR CHAIN (permissions, repetition, optional LLM reviewer) ===
+Date: 2026-09-12 | HEAD before: 7747324 (worker's todo-6 landed mid-task: a820ea9+7747324)
+Commit: feat(core): tool inspector chain
+
+SCOPE DELIVERED (plan todo 7, binding)
+--------------------------------------
+New tree harness-core/src/inspectors/ (9 modules, all <=221 pure LOC) + ONE lib.rs line
+(`pub mod inspectors;`) + shared-test-file one-liner (tests/common/mod.rs: pub mod inspectorkit).
+ZERO new dependencies (uses serde/serde_json/thiserror/blake3/tokio/async-trait already in crate).
+
+  mod.rs         module docs: chain order, verdict precedence, the seam contract
+  verdict.rs     Verdict{Allow{authoritative}, Ask{reason,notice_on_approval}, Deny, Intervene}
+                 + CallInspector async trait (name + inspect(&PendingCall))
+  glob.rs        FAIL-CLOSED glob engine, hand-rolled (no new deps): tokens compiled from
+                 pattern (`*` non-separator run, `**` crosses, `?`, `[a-c]`/`[!...]` classes
+                 never crossing `/`, `\x` escapes), DP matcher (poly-time, no backtracking
+                 blowup), candidates normalized `\`->`/`, case-sensitive, no dotfile
+                 special-casing. Zero-directory gitignore cases: leading `**/` matches bare
+                 name; interior `/**/` also matches single `/`. Malformed (empty, unclosed
+                 class, trailing escape, reversed range) => typed InvalidGlob => can never
+                 yield an allow (fail closed; rule + allowlist constructors propagate it).
+  permission.rs  PermissionInspector: Rule{effect, tool-glob, optional TargetRule{kind:
+                 Path|Command, glob}}; target extraction convention PATH_KEYS/COMMAND_KEYS
+                 (documented; normalizes separators). Lattice: deny rule > stored grant >
+                 allow rule > ask rule > NO OPINION (neutral pass; the chain's fallback ask
+                 covers the no-rule case so specific guards can raise their own ask).
+                 Feedback strings redact secret-looking targets via the shared redactor.
+  store.rs       PermissionStore trait (&self + interior mutability so chain and inspector
+                 share one store; todo-8 SQLite drops in behind it): record/lookup/
+                 clear_session over Grant{tool, target, scope: Session|Forever} + AskPolicy
+                 async trait (AskRequest{tool, target: REAL for the human, reason: REDACTED
+                 for the model} -> Refuse | GrantOnce | GrantAlways(scope)) + RefuseAsks
+                 headless default + MemoryStore (Arc<Mutex<HashMap>>, clone shares).
+  repetition.rs  RepetitionInspector: identity = blake3(tool + NUL + canonical sorted-key
+                 JSON args) — call_id excluded (correlation, not identity); key order
+                 irrelevant. Sliding window (default 32) of fingerprints; trips when the
+                 current call is the Nth (default 3) occurrence in-window -> typed
+                 Intervene (block + model-feedback suggesting variation; NOT suppressible
+                 by authoritative allow); keeps tripping while occurrences stay >= N.
+  secret_files.rs SECRET-FILE READ GUARD: DEFAULT_SECRET_PATTERNS (.env*, *id_rsa*, *.pem,
+                 *.p12, *credentials*, .npmrc, .netrc, *keychain*; config-extensible via
+                 SecretFileConfig/TranscriptRedactor::try_new — full path OR basename match)
+                 + DEFAULT_READ_TOOLS globs -> matching read calls ASK with redacted reason
+                 and notice_on_approval; TranscriptRedactor{is_secret_path, mask_path ->
+                 "[REDACTED:secret-path]"} shared with permission feedback and the chain.
+  security.rs    OPTIONAL SecurityInspector, OFF BY DEFAULT: enabled + configurable marker
+                 substrings (tool name or any string value at any nesting depth) route to
+                 an injected async RiskReviewer (NO live API; tests inject mocks); review
+                 timeout => Deny "timed out ... failing closed"; enabled-without-reviewer
+                 => DenyReviewer denies (fail closed); denial feedback carries the reason.
+  safe_outputs.rs gh-aw SAFE-OUTPUTS (output side; wiring point = todo-6 executors):
+                 OutputBudget (8192-char default cap; truncation leaves an EXPLICIT
+                 "[... output truncated: showing N of M characters ...]" marker — never
+                 silent elision) + WriteChannel (ONE validated write channel: typed glob
+                 allowlist, default EMPTY = read-only-by-default; WriteRefused typed error;
+                 malformed allowlist entries fail closed at construction) + ThreatScanner
+                 trait (NoThreatScan no-op default) + SafeOutputs::sanitize(blocks) ->
+                 SanitizedOutput{blocks, quarantined reasons, truncated}: scan first
+                 (flagged text replaced by typed quarantine notice, payload DROPPED), cap
+                 after; image blocks pass through (out-of-line hashes).
+  chain.rs       InspectorChain: canonical order [permission, secret-files, repetition,
+                 security]; evaluate(): first Deny/Intervene short-circuits -> Block
+                 {feedback} (deny always wins); authoritative Allow suppresses later Ask
+                 generators where policy says so; first surviving Ask -> AskPolicy
+                 (Refuse=>Block w/ redacted reason, GrantOnce=>Allow{notice},
+                 GrantAlways=>store.record + Allow{notice}); NO inspector had an opinion &&
+                 no authoritative allow => chain fallback ask "no matching permission rule"
+                 (fail toward the user, target masked if secret). Implements the T5
+                 ToolApproval trait: decisions positional per ctx.pending_calls; Allow
+                 notices appended as System events through the T4 append-only writer.
+                 EXECUTION IMPOSSIBLE BEFORE THE CHAIN PASSES (structural): the loop's
+                 ToolExecution stage only runs calls the approval stage kept; bypassing
+                 the chain requires constructing the execution call directly.
+
+MUST-NOT-EXECUTE-BEFORE-CHAIN-PASSES: structural via the T5 seam (chain = ToolApproval
+impl; T5's approval() records deny feedback as ToolResult and keeps only allowed calls
+for execution). Pinned by deny_blocks_execution_and_returns_model_feedback (executor
+captures EMPTY) + mixed_batch_executes_only_the_allowed_calls (1 of 2 executes).
+
+ACCEPTANCE (plan): pattern-matching tests (glob allow/ask/deny matrix) = 8 tests in
+inspectors_glob + 4 in inspectors_permission; repetition trips EXACTLY at N=3 (2 pass,
+3rd blocked w/ feedback) = trips_exactly_at_third_identical_call + 6 more; memory
+(session 'a' grant auto-allows subsequent matching calls) = secret_read_a_grant... +
+stored_grant_auto_allows... + deny_rule_beats_stored_grant.
+
+QA EVIDENCE
+-----------
+HAPPY (allow-rule short-circuit -> execution proceeds), test
+allow_rule_short_circuits_the_chain_and_executes (full AgentLoop, chain in
+StageSet.approval, RecordingExecutor in StageSet.execution; rule Rule::tool(Allow,
+"view_*"); call view_window{path:"src/main.rs"}):
+  transcript: PermissionInspector Allow (authoritative) -> CaptureAsks.asked() == []
+  ("allow must short-circuit ask generation") -> executor.calls() == [view_window
+  src/main.rs] -> tool_result_texts(events) == ["c1: executed-ok"].
+  cargo test -p harness-core --test inspectors_chain_seam => 4 passed.
+
+FAILURE (deny returns model-feedback), test deny_blocks_execution_and_returns_model_
+feedback (deny rule "read_file **/*.pem", call read_file{path:"keys/prod.pem"}):
+  the structured deny result the model sees (ToolResult event, byte-asserted):
+    c1: tool call denied by approval stage: permission denied: tool 'read_file' target
+    '[REDACTED:secret-path]' matched deny rule '**/*.pem'
+  executor saw ZERO calls.
+
+SECRET-FILE (reading .env in default config produces ASK + transcript redaction),
+tests secret_read_in_default_config_produces_an_ask_verdict / ..._approved_once...:
+  ASK verdict (AskRequest routed to the approving human — real target; reason redacted):
+    AskRequest { tool: "view_window", target: Some(".env"),
+                 reason: "approval required: secret-file read (the file path is redacted
+                 here and will only be read if the user approves)" }
+  Headless default (RefuseAsks) -> Block feedback: "{reason} — the ask was refused (no
+  approving user)" — no ".env" anywhere in feedback.
+  On 'y' (GrantOnce): executor receives the REAL path ".env"; transcript gains the
+  System notice "secret-file read approved: the file path and any contents stay redacted
+  from the transcript ([REDACTED])"; second identical call asks again (queue empty ->
+  denied). On 'a' (GrantAlways Session): exactly ONE ask ever; MemoryStore.lookup(
+  "view_window", Some(".env")) == Some(Session); clear_session() revokes it.
+
+ADVERSARIAL CLASSES
+-------------------
+untrusted external text: PoisonScanner mock flags "ignore previous instructions" payload
+-> block replaced by typed quarantine notice, payload never enters output
+(threat_scanner_quarantines_poisoned_output_blocks).
+malformed input: malformed_globs_fail_closed ("", "[unclosed", "trailing\", "[]",
+"[z-a]" => Err, never a permissive matcher; Rule/WriteChannel constructors propagate);
+empty_and_odd_arguments_never_panic (empty tool, null args, empty/non-string path, array
+args — graceful).
+new input parsing: unicode (鍵.pem, 漢/字), 278-char path under a/**, metacharacters in
+candidate literals (report[1].pem matches *.pem), escapes (a\* matches "a*" only),
+Windows separator normalization on candidates only.
+misleading_success_output: verdicts + full feedback payloads asserted (exact deny string
+byte-equal; Ask reasons content-checked), never bare booleans.
+hung_or_long_commands: HungReviewer + start_paused tokio clock -> timeout Deny
+"timed out ... failing closed" (deterministic, no wall clock).
+flaky_tests: all deterministic (scripted queues, virtual time, fixed configs).
+dirty_worktree: git status captured at end (below).
+
+GATES (all green)
+-----------------
+  cargo test --workspace                 => 187 passed, 0 failed (138 in harness-core;
+                                           43 new inspector tests across 9 binaries)
+  cargo clippy --workspace --all-targets => 0 errors (workspace lints: warnings=deny,
+                                           clippy all=deny)
+  rustfmt (my files only; parallel-worker files untouched) => clean
+  pure LOC: every new file <=238 (ceiling 250); zero unwrap/expect/panic in lib paths;
+  all public items documented (deny(missing_docs) enforced)
+
+SHARED-FILE DISCIPLINE (parallel worker on src/tools same crate)
+-----------------------------------------------------------------
+lib.rs re-read immediately before the one-line edit (worker's `pub mod tools;` had landed
+in between — anchored on the stable event/log pair, no conflict). Worker committed
+a820ea9 + 7747324 mid-task; my commit goes on top, no amend/reset. One transient stale-
+rlib race on target/ (their build vs mine) resolved via cargo clean -p harness-core.
+
+BOUNDARY NOTES (documented in code for todos 6/8/9/27)
+------------------------------------------------------
+- ToolCall events carry the model's own request verbatim (recorded at inference, before
+  approval; log is append-only): record-time argument masking + ToolResult-content
+  masking route through TranscriptRedactor in the todo-6 executor wiring; everything the
+  APPROVAL layer emits (deny feedback, ask reasons, approval notices) is redacted now.
+- Command-prefix globs span the whole command string (spaces are not separators); the
+  dangerous-substitution guard (cargo * vs "cargo build && curl evil") is todo 27.
+- SafeOutputs sanitize/WriteChannel validate are called by executors on the output side;
+  the approval chain runs pre-execution and cannot do it.
