@@ -94,13 +94,7 @@ fn usage_and_finish_vocabulary_map() {
     else {
         panic!("expected Usage");
     };
-    assert_eq!(
-        usage,
-        Usage {
-            input_tokens: 12,
-            output_tokens: 34
-        }
-    );
+    assert_eq!(usage, Usage::new(12, 34));
 
     let MappedEvent::Event(ProviderEvent::Finish { reason, .. }) =
         single("message_stop", json!({ "type": "message_stop" }))

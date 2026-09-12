@@ -54,13 +54,7 @@ async fn two_hundred_event_stream_completes_through_dyn_provider() {
         texts.concat(),
         (0..200).map(|i| format!("tok{i} ")).collect::<String>()
     );
-    assert_eq!(
-        usage,
-        Some(Usage {
-            input_tokens: 120,
-            output_tokens: 200
-        })
-    );
+    assert_eq!(usage, Some(Usage::new(120, 200)));
     assert_eq!(finish, Some(FinishReason::EndTurn));
 
     // The request reached the fake mapped ONTO the T2 shape (model + prompt).

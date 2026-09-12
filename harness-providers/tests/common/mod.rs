@@ -8,8 +8,10 @@
 
 #![allow(dead_code)]
 
+pub mod frames;
 pub mod inferkit;
 pub mod turnkit;
+pub mod wirekit;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};

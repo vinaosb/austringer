@@ -11,6 +11,50 @@ pub struct Usage {
     pub input_tokens: u64,
     /// Tokens produced by the completion side.
     pub output_tokens: u64,
+    /// Prompt tokens served from the provider's read cache (billed at the
+    /// cache-read rate, not the input rate). Zero when the provider does not
+    /// report cache detail.
+    #[serde(default)]
+    pub cache_read_tokens: u64,
+    /// Prompt tokens written into the provider's cache this request
+    /// (Anthropic cache writes bill above the input rate).
+    #[serde(default)]
+    pub cache_write_tokens: u64,
+}
+
+impl Default for Usage {
+    fn default() -> Self {
+        Self::new(0, 0)
+    }
+}
+
+impl Usage {
+    /// Usage with input/output counts and no cache detail.
+    #[must_use]
+    pub fn new(input_tokens: u64, output_tokens: u64) -> Self {
+        Self {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+        }
+    }
+
+    /// Usage with full cache detail.
+    #[must_use]
+    pub fn with_cache(
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_read_tokens: u64,
+        cache_write_tokens: u64,
+    ) -> Self {
+        Self {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+        }
+    }
 }
 
 /// Why a model turn finished (the finish-reason vocabulary).

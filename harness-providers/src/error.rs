@@ -42,6 +42,14 @@ pub enum ProviderStreamError {
         /// Events already delivered to the consumer before the drop.
         delivered_events: u64,
     },
+    /// Transport-level failure (connect, timeout, TLS, I/O, framing) from
+    /// the injected [`crate::transport::Transport`]. Always retry-class.
+    #[error("transport failure: {0}")]
+    Transport(crate::transport::TransportFailure),
+    /// Credential acquisition failed before the request could be sent
+    /// (static key misconfig, expired login, auth-endpoint outage).
+    #[error("authentication failed: {0}")]
+    Auth(Box<crate::auth::AuthError>),
     /// No event arrived within the configured idle budget.
     #[error("no provider event within idle budget {budget:?}")]
     IdleTimedOut {
@@ -109,7 +117,8 @@ impl ProviderStreamError {
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::Http { status, .. } => *status >= 500 || *status == 429,
-            Self::Disconnected { .. } | Self::IdleTimedOut { .. } => true,
+            Self::Transport(_) | Self::Disconnected { .. } | Self::IdleTimedOut { .. } => true,
+            Self::Auth(inner) => matches!(**inner, crate::auth::AuthError::Transport(_)),
             Self::Rejected(_)
             | Self::IdentityMismatch { .. }
             | Self::InvalidArguments { .. }

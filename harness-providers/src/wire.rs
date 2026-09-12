@@ -81,6 +81,8 @@ pub fn map_wire_event(name: &str, data: &Value, configured: &ModelIdentity) -> V
             usage: Usage {
                 input_tokens: u64_field(data, "input_tokens"),
                 output_tokens: u64_field(data, "output_tokens"),
+                cache_read_tokens: u64_field(data, "cache_read_tokens"),
+                cache_write_tokens: u64_field(data, "cache_write_tokens"),
             },
         })],
         "message_stop" => vec![event(ProviderEvent::Finish {

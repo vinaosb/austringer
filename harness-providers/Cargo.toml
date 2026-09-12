@@ -9,6 +9,17 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Production HTTP transport over reqwest (rustls-tls, no default features).
+# Tests never enable it: they inject an in-memory Transport. Off => the crate
+# is transport-seam-only and builds with zero networking deps.
+default = ["reqwest-transport"]
+reqwest-transport = ["dep:reqwest", "dep:futures-util", "dep:bytes"]
+# OS-keyring-backed SecretStore (Windows Credential Manager / macOS Keychain /
+# Linux secret service). Off by default: refresh tokens stay in-process unless
+# the embedder opts into OS persistence.
+keyring = ["dep:keyring"]
+
 [dependencies]
 # Adapter direction: providers -> core. harness-core owns the Inference seam
 # (todo 5 contract: llm_visible context, abandon-on-cancel, complete-or-error)
@@ -22,6 +33,16 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 blake3.workspace = true
+# Todo-10: production transport (default feature) + PKCE digest/encoding.
+reqwest = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+sha2.workspace = true
+base64ct.workspace = true
+# OS-keyring SecretStore backend: windows-native (Credential Manager) +
+# apple-native (Keychain) are target-gated inside the crate;
+# sync-secret-service is the Linux path. No crypto-pinning features needed.
+keyring = { version = "3", default-features = false, features = ["sync-secret-service", "windows-native", "apple-native"], optional = true }
 
 [dev-dependencies]
 harness-test-support = { path = "../harness-test-support", version = "0.1.0" }

@@ -13,16 +13,24 @@
 #![deny(missing_docs)]
 
 pub mod adapter;
+pub mod adapters;
+pub mod auth;
+pub mod cost;
 pub mod error;
 pub mod event;
 pub mod identity;
 pub mod provider;
 pub mod retry;
 pub mod state;
+pub mod transport;
 pub mod turn;
 pub mod wire;
 
+#[cfg(feature = "reqwest-transport")]
+pub mod transport_reqwest;
+
 mod recover;
+mod sse;
 
 #[test]
 fn workspace_scaffold_smoke() {

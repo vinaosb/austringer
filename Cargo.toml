@@ -52,7 +52,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # standard facade (lib never installs a subscriber; embedders own output).
 tracing = "0.1"
 # Todo-17 lexical search: tantivy BM25 index + ripgrep-family regex streaming.
-# Lexical only — vectors/embeddings are plan Scope-OUT. Tantivy defaults are
+# Lexical only ΓÇö vectors/embeddings are plan Scope-OUT. Tantivy defaults are
 # trimmed to mmap + lz4 (defaults would pull columnar-zstd-compression, whose
 # zstd-sys C build breaks the MSVC toolchain in this environment); no
 # stemmer/stopwords extras.
@@ -67,10 +67,31 @@ tempfile = "3"
 tree-sitter = "0.27"
 tree-sitter-language = "0.1"
 # Todo-18 RSS-sampled bounded LSP guard: per-process resident-set sampling.
-# sysinfo (pure Rust) is chosen over hand-rolled Win32 PSAPI bindings — same
+# sysinfo (pure Rust) is chosen over hand-rolled Win32 PSAPI bindings ΓÇö same
 # data, no unsafe; the guard refreshes ONE targeted pid per sample, never the
 # whole process table.
 sysinfo = "0.39"
+# Todo-10 provider adapters: the workspace's first real HTTP client.
+# default-features=false + rustls-tls-native-roots keeps the tree off
+# native-tls/openssl (C builds) and on rustls/ring only, trusting the OS
+# certificate store (enterprise proxies/custom CAs) instead of the bundled
+# webpki-roots crate, whose CDLA-Permissive-2.0 data license is outside the
+# reviewed deny.toml allow-list. "stream" enables chunked response bodies
+# (bytes_stream) for SSE. json/gzip/cookies/charset stay off — the adapters
+# serialize their own sorted-key JSON and speak raw SSE.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream"] }
+# Driving reqwest's futures-core-based chunk streams (StreamExt::next) in the
+# production transport; no async runtime alternatives pulled in.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# Todo-10 OAuth device-flow PKCE: the S256 challenge is base64url(SHA-256)
+# by RFC 7636 — RustCrypto sha2 (pure Rust), not a hand-rolled digest.
+sha2 = "0.10"
+# base64url encoding of the PKCE challenge (pure Rust, no default features
+# needed beyond alloc).
+base64ct = { version = "1", default-features = false, features = ["alloc"] }
+# Chunk type of reqwest's response byte streams (reqwest 0.12 no longer
+# re-exports it); already in the tree transitively via hyper.
+bytes = "1"
 
 [workspace.lints.rust]
 warnings = "deny"
