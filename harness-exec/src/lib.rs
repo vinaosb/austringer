@@ -1,4 +1,5 @@
-//! PTY pipeline, process supervision, and pre-flight checks (plan todo 19).
+//! PTY pipeline, process supervision, ConPTY hardening, and the WSL2
+//! bridge (plan todos 19–20).
 //!
 //! # Canonical output: the screen-delta model
 //!
@@ -26,7 +27,26 @@
 //! deliberately, on timeout, or because our process died — terminates the
 //! whole tree), or on Unix a dedicated process group plus
 //! `PR_SET_PDEATHSIG(SIGKILL)` set between `fork` and `exec` so the kernel
-//! reaps children even if this process crashes. See [`kill`].
+//! reaps children even if this process crashes. See [`kill`] and the
+//! teardown-order contract in [`runner`].
+//!
+//! # Windows pathologies (todo 20)
+//!
+//! The three classic ConPTY failure shapes are structurally fixed and
+//! pinned by fixtures in `tests/pathologies.rs`: the headless reader
+//! hang (ordered teardown EOFs the blocked reader —
+//! [`spec::ExecOutcome::reader_joined`] proves the join), the
+//! Arc-shutdown assertion on mid-run teardown (kill-tree-first RAII
+//! ordering), and the DA1/DSR 60 s query hang (the [`query`] responder
+//! answers in milliseconds, measured).
+//!
+//! # WSL2 bridge
+//!
+//! [`wsl`] adds OPTIONAL Linux routing: `RunIn::Wsl` resolves through
+//! `wsl.exe --exec` with typed in-memory `C:\` ↔ `/mnt/c` mapping, and a
+//! WSL-free machine is a typed [`wsl::WslStatus::NoWsl`] — default
+//! operation never probes WSL at all. Windows default shells resolve
+//! pwsh → powershell → cmd ([`shell`]).
 //!
 //! # Deferred batch execution
 //!
@@ -34,19 +54,27 @@
 //! apply-on-approval alongside file edits (Plandex pattern) without ever
 //! replacing live execution via [`runner::PtyRunner`].
 
+pub mod cancel;
+pub mod fsutil;
 pub mod kill;
 pub mod pending;
 pub mod runner;
 pub mod screen;
+#[cfg(windows)]
+pub mod shell;
 pub mod spawn;
 pub mod spec;
 pub mod spill;
 pub mod transcript;
 pub mod window;
+pub mod wsl;
 
+mod query;
+
+pub use cancel::CancelToken;
 pub use pending::{ApplyReport, CommandRunner, PendingCommandSet};
-pub use runner::{CancelToken, PtyRunner};
+pub use runner::PtyRunner;
 pub use screen::{ScreenModel, ScreenView};
-pub use spec::{ExecError, ExecOutcome, ExecSpec, ExecStatus, ScreenSize};
+pub use spec::{ExecError, ExecOutcome, ExecSpec, ExecStatus, RunIn, ScreenSize};
 pub use spill::SpilledOutput;
 pub use window::Windowed;

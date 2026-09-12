@@ -1,0 +1,186 @@
+# Task 20 - harness-exec: ConPTY supervisor hardening + WSL2 bridge
+
+Commit: feat(exec): ConPTY hardening + WSL2 bridge
+Scope: harness-exec crate ONLY (no root Cargo.toml change - ZERO new deps; std covers
+retry/long-path/OneDrive/wsl-probing/shell-probing). .omo untouched except this file.
+
+## Isolation disclosure (parallel-worker protocol)
+Two parallel workers own harness-core this round (eviction T12 + budgets T25). Their
+mid-flight WIP in the shared tree BROKE harness-core compilation during this task
+(E0423/E0382/E0616 in harness-core/src/eviction/*). Per protocol ALL builds/tests ran
+in a git worktree at committed HEAD 63e3b61 (C:\Users\vsbb1\AppData\Local\Temp\
+opencode\t20) with a private CARGO_TARGET_DIR, my harness-exec changes mirrored in;
+the shared-tree harness-core WIP was never touched or committed. unix cross-check via
+the T19 shim-crate method (exact harness-exec sources + type stand-ins for the three
+harness-core types; direct cross-compile still impossible: bundled sqlite needs a
+linux cc).
+
+## Implementation shape (all files <=250 pure LOC; largest runner.rs 235)
+- src/runner.rs (235) - TEARDOWN HARDENING (pathologies a+b): TreeAndMaster RAII guard
+  enforcing kill-tree -> close-writer -> close-master ORDER structurally (Drop runs it
+  even on early unwind); ClosePseudoConsole executed on a dedicated thread joined with
+  a 3s bound so a wedged conhost can never hang a run; reader joined AFTER master
+  close (conhost death EOFs the blocked duplicate-handle ReadFile - the fix for the
+  leaked-reader pathology); reader_joined surfaced in ExecOutcome; WSL routing
+  resolved before spawn; Pump's writer now shared (Arc<Mutex<Option<..>>>) so teardown
+  can close the stdin pipe while the reader thread lives
+- src/cancel.rs (19) - CancelToken extracted (LOC ceiling; unchanged semantics,
+  runner re-exports for path stability)
+- src/query.rs (95) - terminal-query responder extracted from runner + 3 unit tests
+  (exactly-one-answer per query, split-across-reads matching, no traffic for
+  non-query escapes) - the reactive flow-A safety net
+- src/wsl.rs (213) - WSL2 bridge: typed WslStatus {Available{exe,version: Wsl1|Wsl2|
+  Unknown}, NoWsl, NoDistribution, ProbeFailed}; detection = wsl.exe found (System32
+  then PATH) + `wsl.exe --exec true` exit-0 oracle (a distro that actually executes)
+  + version sniffed from `--status`; decode_wsl_output handles UTF-16LE-vs-UTF8
+  defensively (current wsl.exe emits UTF-16LE when piped - verified on this machine);
+  in-memory mapping windows_to_wsl (C:\x -> /mnt/c/x; mixed separators ok; UNC/`\\wsl$`
+  typed-unsupported) + wsl_to_windows reverse, round-trip tested; RunIn::Wsl routing
+  builds `wsl.exe --exec prog args...` with absolute-drive-path args mapped; Native
+  NEVER probes WSL (no-WSL machine: zero cost, zero errors); cached OnceLock for the
+  real probe
+- src/shell.rs (79, cfg windows) - pwsh > powershell > cmd resolution, order
+  documented ON the type; cmd floor resolves from absolute System32 even off-PATH;
+  config override pins one kind (typed NotFound if missing); ExeFinder trait =
+  hermetic tests, PathFinder = real PATH scan
+- src/fsutil.rs (94) - ERROR_SHARING_VIOLATION(32) retry with doubling backoff
+  (default 6 tries ~310ms); long_path (\\?\ prefix for every absolute path - no
+  length threshold to get wrong; relative/UNC/already-extended pass through);
+  OnedriveStatus detection (pure fn vs explicit roots, case-insensitive,
+  separator-normalized + env wrapper over %OneDrive%/%OneDriveCommercial%/
+  %OneDriveConsumer%); wired into spill.rs create/rename/mkdir with long paths;
+  PtyRunner::with_spill_root records + spill_root_onedrive() surfaces the warning.
+  FOLLOW-UP NOTE (documented in fsutil header): harness-tools edit paths adopt these
+  helpers in T22 pre-flight - not wired there this round by scope
+- src/spec.rs - RunIn enum + ExecSpec.run_in; ExecError::WslUnavailable{status} +
+  From<WslStatus>; ExecOutcome.reader_joined
+- tests/pathologies.rs (6) - THE core fixtures, bounded wall-time asserts (see below)
+- tests/wsl_bridge.rs (17) - mapping both directions + edges, decode quirks (UTF-16/
+  UTF-8/garbage), fake-probe detection matrix (available/missing/no-distro/probe-fail/
+  version-garbage/wsl1), routing resolution incl. typed-unavailable, LIVE bridge run
+- tests/shell_default.rs (7), tests/fs_contention.rs (9 - real share_mode(0) lock
+  held by another thread, >260-char real IO round-trip, OneDrive pure classification)
+- tests/common/mod.rs - live_gate(): per-binary mutex serializing live-ConPTY tests
+  (the suite's own parallelism was self-inflicted conhost load)
+- tests/pty_live.rs - oversized_output timeout 30s -> 240s + gate (flake fix)
+- tests/pty_qa.rs - 3 new ignored evidence channels (timings, teardown enumeration,
+  WSL typed statuses)
+
+## Pathology analysis (measured on this machine, Windows 11, conhost current)
+(a) HEADLESS wait/read hang: portable-pty 0.9's ConPTY reader is a plain duplicated
+    pipe handle in a BLOCKING ReadFile (no shutdown channel in filedescriptor 0.8.3 -
+    verified by reading both crates' sources). T19 detached a still-blocked reader
+    after 3s => thread+handle leak per stuck run. Fix = ordered teardown: job kill
+    (tree dead) -> writer close (conhost input-thread EOF) -> master close on a
+    bounded thread (ClosePseudoConsole tears conhost down => pipe EOF => the blocked
+    reader returns) => reader JOINED. Fixture: 10 quick headless runs, each < 8s,
+    reader_joined=true every round (QA timings: runs 0.34-2.9s, total 9.48s), plus a
+    grandchild-holding-pipe variant (start /b ping + exit 0) that still joins.
+(b) Arc shutdown assertion / mid-run drop: the assertion class is portable-pty's
+    inner Arc<Mutex<Inner>> teardown racing a live child (its lock().unwrap()s poison-
+    panic, and ClosePseudoConsole-while-client-alive). Fix = TreeAndMaster RAII:
+    KILL_ON_JOB_CLOSE job close FIRST, master close strictly after, writer in between;
+    close runs on a bounded thread so even a wedged teardown cannot hang the run.
+    Fixtures: pre-cancelled token vs 120s active tree x10 rounds (all Cancelled,
+    bounded, zero orphans by PING.EXE enumeration, reader joined) + 4 concurrent
+    active runs tearing down simultaneously (no deadlock, no panic).
+(c) DA1 ESC[c 60s hang - MEASURED, JUSTIFIED: the hang has TWO flows. Flow A
+    (conhost->terminal queries on the master read side) is answered by the reactive
+    responder in pump latency - this is why anything runs through ConPTY at all (T19's
+    original hang measurement). Flow B (a CHILD writing ESC[c) is answered BY conhost
+    itself in ~0ms: observed live during fixture development - the reply
+    ESC[?61;6;7;21;22;23;24;28;32;42c is injected into the console input buffer and
+    echoed to the screen as caret-notation text. PROACTIVE PRE-INJECTION REJECTED:
+    flow A is already ms-fast, and pre-injecting a reply for flow B would feed stray
+    keyboard input to every child that never queries. Fixtures pin both: child
+    writes DA1+DSR, reads replies via [Console]::ReadKey (the way VT-aware apps
+    read), completes < 5s with replies seen (conhost self-answer path B), and the
+    responder's matching is unit-pinned in src/query.rs (flow A). First fixture draft
+    used $stdin.Read (line-buffered) - it blocked BECAUSE the reply carries no
+    newline; that failure mode is documented here as the measurement evidence.
+
+## Flake fix (verifier-flagged pty_live::oversized_output, disclosed)
+Root cause: 4MB through a real ConPTY exceeded the 30s default under parallel-build
+load bursts. Fix: wall-time budget 240s (absorbs external load) + live_gate()
+serializes the suite's own ConPTY tests (removes self-inflicted contention).
+REPRODUCTION PROTOCOL EXECUTED (load = full workspace cargo builds in parallel):
+  R1: 10/10 ok in 50.35s - under 4m10s cold workspace build (covered whole round)
+  R2: 10/10 ok in 49.30s - under dual lanes (debug cold + release cold)
+  R3: 10/10 ok in 35.50s - release lane still running (11m23s total)
+Calm baseline ~31s: load inflation is real (~60%) and absorbed.
+
+## Commands + results (all in the committed-HEAD worktree, MSVC INCLUDE workaround
+from task-8 evidence L220-226 applied per invocation; never persisted to repo)
+  cargo test -p harness-exec => 13 suites, 87 passed / 0 failed / 4+3 QA-ignored,
+  x3 consecutive: RUN1 exit=0 87/0, RUN2 exit=0 87/0, RUN3 exit=0 87/0
+  cargo test -p harness-exec --test pty_live (under load) => 3x 10/10 (above)
+  cargo clippy -p harness-exec --all-targets => clean (workspace denies all)
+  cargo fmt -p harness-exec -- --check => clean
+  cargo deny check => advisories ok, bans ok, licenses ok, sources ok (no dep changes)
+  unix proof: shim-workspace cargo check + clippy -p harness-exec --target
+  x86_64-unknown-linux-gnu => clean (cfg(unix) paths compile under deny lints)
+  grep escape hatches (src): zero unwrap/expect/panic in lib paths (poison-tolerant
+  lock() everywhere; bounded joins; detached-reader last resort is typed + reported)
+
+## QA evidence channels (--ignored --nocapture, pasted essentials)
+happy headless: run1 2.90s run4 0.67s run5 0.36s ... run10 0.69s; TOTAL 9.48s for 10
+  runs; reader_joined=true all rounds; status Completed{0} all rounds
+failure runaway-children-die-with-parent (NEW drop path): pre-cancelled vs
+  "start /b ping 600 + ping 600": status=Cancelled elapsed=2.88s reader_joined=true
+  PING.EXE after=0 (baseline 0) by enumeration
+WSL typed: this machine Available{exe=C:\Windows\System32\wsl.exe, version: Wsl2};
+  no-WSL probe => NoWsl; typed error string: "WSL routing unavailable: wsl.exe not
+  found (native-only machine)"; live bridge: RunIn::Wsl `echo BRIDGE-20-OK` =>
+  Completed{0}, marker in model text, 8.97s wall (WSL VM round-trip)
+
+## Adversarial channels
+  hung_or_long_commands ... pathology fixtures ARE bounded-wall-time asserts (a: 10x
+                              <8s + gate grandchild variant; b: 10 rounds <8s + 4
+                              concurrent; c: <5s vs the 60s pathology)
+  flaky x3 under load ........ pty_live 3/3 green under sustained parallel builds
+  cancel/resume .............. drop-mid-active-run fixtures (pre-cancelled + delayed
+                              cancel threads) - teardown ordering + enumeration
+  malformed .................. garbage env/paths: binary garbage test (T19, still
+                              green), wsl output garbage decode (typed), weird paths:
+                              >260-char real IO + \\?\ forms (fs_contention), UNC +
+                              non-drive inputs typed-unsupported (wsl_bridge)
+  stale_state ................ fresh ScreenModel per run (T19 suite re-run green);
+                              shell resolution re-probes each call (config change
+                              picked up; stale_state suite green)
+  new input parsing .......... wsl.exe UTF-16LE/UTF-8/garbage decode + weird exit
+                              codes => typed statuses (6-case probe matrix)
+  misleading_success ........ reader_joined + status asserted separately; teardown
+                              ordering asserted via enumeration oracle + timing bounds
+  dirty_worktree ............ parallel workers' .omo/harness-core WIP untouched;
+                              final commit contains ONLY harness-exec + this file
+                              (verified via git status; phantom-EOL M entries have
+                              empty diffs and do not stage)
+
+## TDD discipline disclosure (honest)
+- wsl_bridge / shell_default / fs_contention / pathologies: written FIRST, confirmed
+  RED (E0412/E0609 unresolved imports + missing fields), then implemented to green
+- fixture iterations that stayed honest: DA1 fixture's first draft (line-buffered
+  $stdin.Read) reproduced the ORIGINAL 30s-hang shape against ALREADY-working code -
+  investigation produced the flow-A/flow-B measurement above and a corrected oracle
+  (ReadKey); long_path absolute-path expectation corrected AFTER deciding extend-all
+  (test asserted a length threshold the implementation deliberately lacks)
+- teardown hardening: reader_joined field made the leak observable; before the
+  reorder, runner tests could not distinguish joined from detached
+- query.rs unit tests added when the pathologies comment claimed them
+
+## Environment notes
+- wsl.exe present with docker-desktop (WSL2); `wsl --exec true` exit 0 (bridge tests
+  run LIVE here); `wsl --status` output confirmed UTF-16LE (decode heuristic grounded)
+- pwsh present via WindowsApps PATH (live shell resolution = Pwsh)
+- CI matrix remains T3-deferred (per plan); Windows-local green x3 is this task's
+  acceptance bar
+
+## Risks / known gaps
+- detached-closer thread on a wedged conhost leaks one thread until conhost exits
+  (bounded, typed false in reader_joined only when reader grace also exceeded -
+  never observed in any run; fixtures assert against it)
+- WSL2 kill semantics: job close kills wsl.exe; the distro-side child dies with the
+  relay (WSL session teardown) but that is WSL behavior, not our kernel guarantee -
+  documented; the T26 sandbox owns cross-boundary enforcement
+- ShellExecuteEx grandchildren escaping the Job Object: pre-existing T19-documented
+  gap, T26's enforcement point (unchanged this round)

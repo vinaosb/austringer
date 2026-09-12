@@ -1,5 +1,5 @@
-//! QA evidence channels (plan todo 19). Ignored by default — run with
-//! `cargo test -p harness-exec --test pty_qa -- --ignored --nocapture`
+//! QA evidence channels (plan todos 19 + 20). Ignored by default — run
+//! with `cargo test -p harness-exec --test pty_qa -- --ignored --nocapture`
 //! and paste the output into the evidence file.
 
 mod common;
@@ -142,4 +142,85 @@ fn qa_100mb_output_spills_bounded() {
         spill.raw_bytes > 90 * 1024 * 1024,
         "nearly all raw bytes captured"
     );
+}
+
+#[test]
+#[ignore = "qa evidence channel: todo 20 headless pathology timings"]
+fn qa_headless_pathology_timings() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let runner = runner_with_temp_spill(&dir);
+    println!("== QA todo-20 (a) headless completion: 10 runs, timings + reader join ==");
+    let mut total = Duration::ZERO;
+    for round in 1..=10 {
+        let outcome = runner
+            .run(&spec("cmd", &["/c", "echo", "qa-headless-20"]))
+            .expect("run");
+        total += outcome.elapsed;
+        println!(
+            "  run {round:2}: {:>8.2?}  status={:?}  reader_joined={}",
+            outcome.elapsed, outcome.status, outcome.reader_joined
+        );
+        assert_eq!(outcome.status, ExecStatus::Completed { exit_code: 0 });
+        assert!(outcome.reader_joined);
+    }
+    println!("  TOTAL: {total:?} (pathology bound: every run < 8 s, no hang)");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "qa evidence channel: todo 20 teardown enumeration under new drop path"]
+fn qa_teardown_enumeration_under_new_drop_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let runner = runner_with_temp_spill(&dir);
+    let mut system = System::new();
+    let baseline = count_processes(&mut system, "PING.EXE");
+    println!("== QA todo-20 (b) mid-active-run teardown: enumeration under new drop path ==");
+    println!("-- BEFORE: PING.EXE count = {baseline} (machine baseline)");
+    let command = "start /b ping -n 600 127.0.0.1 > NUL & ping -n 600 127.0.0.1 > NUL";
+    let cancel = harness_exec::runner::CancelToken::new();
+    cancel.cancel();
+    let started = Instant::now();
+    let outcome = runner
+        .run_with_cancel(
+            &spec_with_timeout("cmd", &["/c", command], Duration::from_secs(120)),
+            &cancel,
+        )
+        .expect("run");
+    let after = common::wait_until(
+        || count_processes(&mut system, "PING.EXE"),
+        |count| *count <= baseline,
+    );
+    println!(
+        "-- AFTER: status={:?} elapsed={:?} reader_joined={} PING.EXE count={after} (baseline {baseline})",
+        outcome.status,
+        started.elapsed(),
+        outcome.reader_joined
+    );
+    assert_eq!(outcome.status, ExecStatus::Cancelled);
+    assert_eq!(after, baseline, "runaway children die with the parent");
+}
+
+#[test]
+#[ignore = "qa evidence channel: todo 20 WSL typed statuses"]
+fn qa_wsl_typed_statuses() {
+    println!("== QA todo-20 WSL bridge: typed statuses ==");
+    let real = harness_exec::wsl::detect_wsl();
+    println!("-- this machine: {real:?}");
+    struct NoWsl;
+    impl harness_exec::wsl::WslProbe for NoWsl {
+        fn find_wsl_exe(&self) -> Option<std::path::PathBuf> {
+            None
+        }
+        fn run_wsl(&self, _args: &[&str]) -> Option<(i32, harness_exec::wsl::WslProbeOutput)> {
+            None
+        }
+    }
+    let unavailable = harness_exec::wsl::detect_wsl_with(&NoWsl);
+    println!("-- no-WSL machine: {unavailable:?}");
+    let error = harness_exec::spec::ExecError::from(unavailable.clone());
+    println!("-- typed error surfaced: {error}");
+    assert_eq!(unavailable, harness_exec::wsl::WslStatus::NoWsl);
+    if let harness_exec::wsl::WslStatus::Available { version, .. } = &real {
+        println!("-- routing available, default version {version:?} (bridge target = Wsl2)");
+    }
 }

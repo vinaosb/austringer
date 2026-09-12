@@ -24,6 +24,8 @@ use std::path::PathBuf;
 use harness_core::event::ContentHash;
 use harness_core::tools::{IoCap, SpillStore};
 
+use crate::fsutil::{RetryBudget, long_path, retry_sharing_violation};
+
 /// Pointer to a spilled raw stream: recovery key and size.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpilledOutput {
@@ -121,13 +123,19 @@ impl RawSpool {
                     let _ = fs::remove_file(&temp);
                     return Ok(None);
                 };
-                let target = store.path_for(&hash);
+                let target = long_path(&store.path_for(&hash));
+                let temp = long_path(&temp);
                 if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent)?;
+                    let parent = parent.to_path_buf();
+                    retry_sharing_violation(&RetryBudget::default(), || {
+                        fs::create_dir_all(&parent)
+                    })?;
                 }
                 // Content addressing: an identical stream spilled
                 // concurrently makes the losing rename a no-op success.
-                if let Err(error) = fs::rename(&temp, &target) {
+                let rename =
+                    retry_sharing_violation(&RetryBudget::default(), || fs::rename(&temp, &target));
+                if let Err(error) = rename {
                     if !target.exists() {
                         return Err(error);
                     }
@@ -147,10 +155,14 @@ impl RawSpool {
             self.sink = None;
             return Ok(());
         };
-        let temp = store
-            .path_for(&self.pointer_hash())
-            .with_extension(format!("tmp-{}", std::process::id()));
-        let mut file = File::create(&temp)?;
+        let temp = long_path(
+            &store
+                .path_for(&self.pointer_hash())
+                .with_extension(format!("tmp-{}", std::process::id())),
+        );
+        let temp_for_create = temp.clone();
+        let mut file =
+            retry_sharing_violation(&RetryBudget::default(), || File::create(&temp_for_create))?;
         file.write_all(buffered)?;
         self.sink = Some(Sink::Streaming { file, temp });
         Ok(())

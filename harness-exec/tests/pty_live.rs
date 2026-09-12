@@ -11,6 +11,7 @@ use harness_exec::spec::{ExecError, ExecStatus};
 
 #[test]
 fn echo_through_pty_yields_bounded_windowed_text() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     let outcome = runner
@@ -29,6 +30,7 @@ fn echo_through_pty_yields_bounded_windowed_text() {
 #[cfg(windows)]
 #[test]
 fn cargo_version_style_command_renders_cleanly() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     let outcome = runner.run(&spec("cargo", &["--version"])).expect("run");
@@ -44,6 +46,7 @@ fn cargo_version_style_command_renders_cleanly() {
 
 #[test]
 fn nonzero_exit_code_surfaces_typed() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     let outcome = runner.run(&spec("cmd", &["/c", "exit 42"])).expect("run");
@@ -81,12 +84,17 @@ fn timeout_validation_rejects_zero_and_over_ceiling() {
 
 #[test]
 fn oversized_output_spills_with_recoverable_pointer() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let big = common::big_text_file(dir.path(), 4 * 1024 * 1024, "SPAM-LINE-0123456789");
     let runner = runner_with_temp_spill(&dir);
-    let outcome = runner
-        .run(&spec("cmd", &["/c", "type", &big.to_string_lossy()]))
-        .expect("run");
+    // Todo-20 flake fix: 4 MB through a real ConPTY took >30 s under
+    // parallel-build load bursts (the verifier's TimedOut flake); the
+    // wall-time budget now absorbs external load, while live_gate()
+    // absorbs this suite's own parallelism.
+    let mut command = spec("cmd", &["/c", "type", &big.to_string_lossy()]);
+    command.timeout = Duration::from_secs(240);
+    let outcome = runner.run(&command).expect("run");
     assert_eq!(outcome.status, ExecStatus::Completed { exit_code: 0 });
 
     // The window law bounds the model text with an omission marker.
@@ -116,6 +124,7 @@ fn oversized_output_spills_with_recoverable_pointer() {
 
 #[test]
 fn pty_reuse_starts_a_fresh_screen_per_command() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     let first = runner
@@ -137,6 +146,7 @@ fn pty_reuse_starts_a_fresh_screen_per_command() {
 #[cfg(windows)]
 #[test]
 fn binary_garbage_through_the_real_pty_never_panics() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     let script = "$b = [byte[]](0..255) * 8; $o = [Console]::OpenStandardOutput(); $o.Write($b, 0, $b.Length); $o.Flush()";
@@ -150,6 +160,7 @@ fn binary_garbage_through_the_real_pty_never_panics() {
 #[cfg(windows)]
 #[test]
 fn tui_redraw_live_renders_final_frame() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     let script = "$e = [char]27; [Console]::Write(\"$e[2J$e[HFRAME-ONE-19$e[3;5HMENU$e[2J$e[HFINAL-FRAME-19\")";
@@ -167,6 +178,7 @@ fn tui_redraw_live_renders_final_frame() {
 #[cfg(windows)]
 #[test]
 fn live_progress_bar_yields_one_final_line() {
+    let _gate = common::live_gate();
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     let script = "1..100 | ForEach-Object { [Console]::Write(\"`rstep {0,3}%\" -f $_); Start-Sleep -Milliseconds 2 }; [Console]::Write(\"`rdone-live-19    \"); [Console]::WriteLine(\"\")";

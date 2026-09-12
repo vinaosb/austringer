@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use harness_exec::pending::{CommandRunner, PendingCommandSet};
 use harness_exec::runner::CancelToken;
-use harness_exec::spec::{ExecError, ExecOutcome, ExecSpec, ExecStatus, ScreenSize};
+use harness_exec::spec::{ExecError, ExecOutcome, ExecSpec, ExecStatus, RunIn, ScreenSize};
 
 fn spec(name: &str) -> ExecSpec {
     ExecSpec {
@@ -16,6 +16,7 @@ fn spec(name: &str) -> ExecSpec {
         env: Default::default(),
         timeout: Duration::from_secs(5),
         size: ScreenSize::default(),
+        run_in: RunIn::Native,
     }
 }
 
@@ -26,6 +27,7 @@ fn outcome(status: ExecStatus) -> ExecOutcome {
         spill: None,
         total_lines: 0,
         elapsed: Duration::from_secs(0),
+        reader_joined: true,
     }
 }
 

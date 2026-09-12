@@ -4,10 +4,11 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use harness_exec::runner::PtyRunner;
-use harness_exec::spec::{ExecSpec, ScreenSize};
+use harness_exec::spec::{ExecSpec, RunIn, ScreenSize};
 
 pub fn spec(program: &str, args: &[&str]) -> ExecSpec {
     ExecSpec {
@@ -17,6 +18,7 @@ pub fn spec(program: &str, args: &[&str]) -> ExecSpec {
         env: Default::default(),
         timeout: Duration::from_secs(30),
         size: ScreenSize::default(),
+        run_in: RunIn::Native,
     }
 }
 
@@ -36,6 +38,23 @@ pub fn unique_stem(prefix: &str) -> String {
         "{prefix}-{}-{}",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+/// Serializes live-ConPTY tests within this binary (todo 20 flake fix):
+/// real terminals contend for conhost attention under parallel load, and
+/// cargo's default thread-per-test parallelism multiplies that load.
+/// External load (parallel builds) is absorbed by generous spec timeouts
+/// instead — this gate only removes the suite's own self-inflicted
+/// contention.
+pub struct LiveGate(std::sync::MutexGuard<'static, ()>);
+
+pub fn live_gate() -> LiveGate {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    LiveGate(
+        GATE.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
     )
 }
 
