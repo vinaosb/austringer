@@ -72,7 +72,7 @@ async fn oversized_result_spills_with_pointer_and_first_bytes() {
         .expect("dispatch");
 
     let spill = result.spill.as_ref().expect("oversized result spills");
-    assert_eq!(spill.total_bytes, 10 * 1024 as u64);
+    assert_eq!(spill.total_bytes, 10 * 1024u64);
     assert_eq!(spill.prefix.len(), IoCap::DEFAULT.max_inline_bytes);
     assert_eq!(spill.prefix, &output[..IoCap::DEFAULT.max_inline_bytes]);
     // The observation carries the pointer and the first-N preview, bounded.
