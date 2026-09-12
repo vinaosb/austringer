@@ -48,6 +48,16 @@ tokio = { version = "1", features = ["sync", "time", "macros"] }
 # (no system SQLite). sqlx stays T24's choice; two-wrapper consolidation
 # is deferred to T24.
 rusqlite = { version = "0.40", features = ["bundled"] }
+# Todo-17 lexical search: tantivy BM25 index + ripgrep-family regex streaming.
+# Lexical only — vectors/embeddings are plan Scope-OUT. Tantivy defaults are
+# trimmed to mmap + lz4 (defaults would pull columnar-zstd-compression, whose
+# zstd-sys C build breaks the MSVC toolchain in this environment); no
+# stemmer/stopwords extras.
+tantivy = { version = "0.26", default-features = false, features = ["mmap", "lz4-compression"] }
+ignore = "0.4"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+tempfile = "3"
 
 [workspace.lints.rust]
 warnings = "deny"

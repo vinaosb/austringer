@@ -1,0 +1,98 @@
+# Task 17 — harness-search: Tantivy BM25 + streaming grep (lexical only, no vectors)
+
+Commit: feat(search): lexical index, no vectors
+Scope: harness-search crate + root Cargo.toml dep lines (tantivy/ignore/grep-regex/grep-searcher/tempfile) + tests.
+Explicitly NOT added (plan Scope-OUT guardrail): any embedding/vector/semantic dependency. BM25 + regex only.
+Direct `regex` dep was dropped mid-implementation (defs extractor is a hand-rolled token parser; grep uses
+grep-regex), keeping the new-dep surface minimal.
+
+## Implementation shape (files, all <=250 pure LOC)
+- src/lib.rs — crate docs incl. documented lock policy + binary-safety contract
+- src/error.rs — typed SearchError (IndexLocked / IncompatibleIndex / InvalidQuery / InvalidRegex / Io / Engine)
+- src/options.rs — IndexOptions + GrepOptions caps (docs on every field)
+- src/walk.rs — shared `ignore`-crate walk (gitignore honored, index dir pruned, symlinks not followed)
+- src/schema.rs — tantivy schema: path(STRING|STORED key) mtime/size(stored numerics) content(TEXT) head(TEXT|STORED snippet source) defs(TEXT boosted)
+- src/defs.rs — lexical definition-symbol extractor (fn/struct/enum/trait/impl/type/mod/const/static/macro_rules/class/interface/def/func/function/module; real symbol tables come with harness-ast todo 14)
+- src/collector.rs — custom DocAddress collector (AllQuery enumeration for incremental diff)
+- src/index.rs — CodeIndex::open/refresh/refresh_with: mtime+size diff, classify-then-write (transient read failure keeps old doc), rename = remove+add
+- src/search.rs — BM25 search, defs boost 5.0, tantivy SnippetGenerator bounded to 200 chars
+- src/grep.rs — grep_stream: lazy iterator, custom Sink (lossy UTF-8), BinaryDetection::quit(0x00), merge-gap dedupe, hit/snippet caps
+- tests/{common,index_contract,index_staleness,index_perf,grep_stream} — 26 tests
+
+Concurrency choice (documented in lib.rs + index.rs): tantivy's built-in directory write lock
+(`meta.lock`; LockFileEx on Windows / flock on Unix), held per refresh only; competing writer
+gets typed SearchError::IndexLocked; readers lock-free on committed snapshots.
+
+## Commands + results (Windows 11, PowerShell, Rust 1.98, debug profile)
+- `cargo test -p harness-search` — 26 passed / 0 failed (2 lib + 9 grep + 8 contract + 2 perf + 5 staleness), run 3x, identical results each time (flaky_tests: seeded XorShift64 corpus, deterministic)
+- `cargo clippy -p harness-search --all-targets` — clean under workspace deny(all) lints
+- `cargo fmt -p harness-search --check` — clean
+- `cargo deny check` — ok (advisories/bans/licenses/sources; only pre-existing multiple-versions warnings)
+- `cargo check --workspace --all-targets` — Finished, exit 0 (see env note)
+
+## Acceptance (plan): 10k cold <5s, warm query <20ms, 1-of-10k incremental <500ms + touched==1
+Measured over three consecutive full-suite runs (budgets asserted in-test with wide CI-safe bounds;
+plan budgets recorded, not gated, per flakiness instructions):
+- cold index of 10,002 docs (10k synth + invalid-UTF-8 file + 300KB-single-line file; binary blob skipped;
+  gitignored path excluded): 1.97s / 1.84s / 1.85s (plan 5s) — assert <15s CI-safe
+- warm query `widget_4242` (best of 3 after warmup, exact hit asserted mod_042/file_04242.rs):
+  214.1us / 202.1us / 164.6us (plan 20ms) — assert <200ms CI-safe
+- incremental modify of 1 file among 10k: touched==1 (updated==1, docs stays 10,002)
+  in 292.4ms / 249.2ms / 237.7ms (plan 500ms) — hard assert touched==1, time assert <2s CI-safe
+- no-op refresh: touched==0 (asserted in staleness suite)
+
+## QA happy channel: ranked definition-first results (top-5, 'quartz rune' on 10k corpus)
+  mod_012/file_00112.rs  score=5.235
+  mod_012/file_00412.rs  score=5.235
+  mod_012/file_00612.rs  score=5.235
+  mod_012/file_00712.rs  score=5.235
+  mod_012/file_00812.rs  score=5.235
+Symbol query `alpha_widget`: def_site.rs ranks above call_site.rs with 3 call occurrences
+(definition_ranks_above_references_when_symbol_searched) — defs-field boost 5.0 beats raw tf.
+
+## QA failure channel
+- Binary blob (NUL bytes + 'binary_needle_payload'): index — skipped_binary==1, search 'binary_needle'
+  returns 0 hits, sibling text file unaffected, no panic; grep — BinaryDetection::quit yields 0 hits,
+  stream completes. Index stays clean (docs_indexed exact).
+- Gitignored path (real `git init` + `.gitignore` ignoring ignored_dir/): excluded from BOTH index
+  (added==1 only visible file; hidden_marker unreachable) and grep (0 hits HIDDEN_NEEDLE, 1 hit VISIBLE_NEEDLE).
+
+## Adversarial classes
+- malformed_input: invalid-UTF-8 file indexed lossily (ASCII needle found) and grepped lossily
+  (snippet contains needle); 300KB single-line file — doc indexed, BM25 cannot match inside it
+  (single token exceeds tantivy's long-token filter — asserted explicitly), grep finds the needle with
+  snippet bounded to 512 bytes; oversize files (>cap, cap set to 64KiB in tests) skipped by both paths.
+- stale_state: modify (updated==1, new symbol searchable, old content replaced), delete (removed==1,
+  docs 10,001, query for deleted file's symbol returns empty), rename (removed==1 + added==1, exactly
+  one doc for the new path) — all between queries on a live index.
+- new_input_parsing: invalid regexes '(' '*' '(?P<' '[a-' -> typed SearchError::InvalidRegex (never panic);
+  anchored '^pub fn', literal 'fn(42' (fixed_strings), case-insensitive modes work; invalid BM25 queries
+  'fn (' '"unclosed' 'unknownfield:x' 'a AND' -> typed SearchError::InvalidQuery.
+- hung_or_long_commands: durations recorded above; all big-corpus ops bounded (10k index <2s,
+  incremental <300ms; grep hit cap truncates work — take(10) with cap 5 returns 5).
+- flaky_tests: seeded corpus (XorShift64), full suite x3 identical green; perf asserts use wide
+  CI-safe bounds while plan budgets recorded via eprintln (above).
+- misleading_success_output: asserts pin doc counts (added==10,002; docs_indexed==10,002;
+  unchanged==COUNT-1), exact hit paths, snippet contents, and line ranges (merged window (1,5)/(9,9)) —
+  not booleans.
+- dirty_worktree: git status at end distinguishes parallel-worker files (harness-providers/*, tracing
+  dep line, .omo state) from this task's files; commit staged only task-17 files (surgical index for
+  the shared root Cargo.toml; Cargo.lock committed whole as derived data covering both workers' deps).
+- resource_leak / subprocess / network / injection / authz / crypto / pII: N/A — pure local library,
+  no subprocesses (tests' `git init` is the only spawn, hermetic), no network, no secrets.
+
+## Environment disclosure (not caused by this task)
+This machine's MSVC installs are header-less (VS18 Insiders 14.50 toolset ships cl.exe without
+include/lib; VS2022 14.44 path absent); the only complete header set is the bundled
+VS18 `SDK\ScopeCppSDK\vc15\VC\include`. cc-rs therefore fails ('vcruntime.h'/'stdarg.h' not found)
+for ANY C-compiling crate (libsqlite3-sys, zstd-sys) unless INCLUDE is prepended with the ScopeCppSDK
+include dir. Tantivy was pinned to default-features=false (mmap+lz4 only) partly for minimality and
+partly because default `columnar-zstd-compression` pulls zstd-sys, which cannot build here.
+Verification workaround used for workspace-wide checks:
+  $env:INCLUDE="C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include;$env:INCLUDE"
+harness-search itself compiles no C and is unaffected; harness-core and the parallel worker's
+harness-providers both `cargo check --workspace --all-targets` green under the workaround.
+
+## Shared-file discipline (parallel worker on todo 9)
+Root Cargo.toml edited once with an anchored append after the worker's tracing block (their lines
+untouched, left uncommitted for them); re-read before every edit; no amend/reset; single commit on top.
