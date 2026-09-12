@@ -1,0 +1,141 @@
+# Task 18 — harness-lsp: headless navigation client
+
+Commit: feat(lsp): headless navigation client
+Scope: harness-lsp crate + root Cargo.toml dep line (sysinfo) + tests. harness-ast/core/search untouched.
+
+## Install disclosure
+rust-analyzer was NOT on PATH (rustup shim present, component absent):
+`rustup component add rust-analyzer` → rust-analyzer 1.98.0 (88d9e12a 2026-08-18). Used only by
+the #[ignore]d golden tests; the fast suite never spawns it.
+
+## Implementation shape (19 src files, all ≤250 pure LOC; max router.rs 242)
+- src/proto.rs — bounded LSP base-protocol framing: Content-Length parse, lying-length rejection
+  (BodyOverrun BEFORE any body read), header-cap overrun, LF tolerance. Never-OOM is typed.
+- src/uri.rs — file↔URI percent codec (unreserved + '/' + ':' raw; decode tolerant, lossy UTF-8).
+- src/position.rs — UTF-16 code-unit → char-index conversion (clamping, panic-free).
+- src/config.rs — per-language table (rust-analyzer / gopls / typescript-language-server --stdio
+  [raw tsserver speaks no LSP] / clangd / pyright-langserver --stdio), extension routing,
+  deterministic Backoff (no jitter: per-language restarts are serialized; determinism buys
+  testable timings), RssGuardConfig, LspConfig::with_server overrides. Availability = user PATH.
+- src/provider.rs — LspProvider trait (languages/goto_definition/find_references/hover), typed
+  Answer { Locations | Hover | DegradedToSearch(reason, hint) }, HoverText (bounded at
+  construction), IdeBridgeStub (registered, returns LspError::BridgeNotWired — todo 38 wires it).
+- src/render.rs — <25-token location rendering approximated by LOCATION_BUDGET_CHARS=100
+  (~4 chars/token, conservative vs BPE); truncation marker "+N"; MAX_LOCATIONS=20 typed bound.
+- src/native.rs — ServerHandle: spawn (kill_on_drop — no orphans; kill-trees are todo 19/20) /
+  attach (mock LS + future IDE bridge seam; pid-less → outside the RSS guard). request() with
+  per-request timeout + clean cancel (drop = abandoned pending entry, server never corrupted).
+- src/wire.rs — reader loop: response routing by id, server-initiated requests answered with the
+  spec-safe generic result null, death drain (Closed vs Malformed cause), Weak<Inner> so
+  background tasks never form a leak cycle with the writer.
+- src/stderr.rs — bounded stderr capture (4 KiB read cap/line, 512 chars retained, 8-line ring)
+  or user StderrHook; server stderr NEVER reaches host stderr.
+- src/handshake.rs — initialize (UTF-8 position negotiation, processId, rootUri, workspaceFolders,
+  clientInfo) / initialized / shutdown+exit with hard-kill fallback; hung-init → typed
+  InitializeTimeout + process kill (outer deadline owns the failure mode; wire budget doubled).
+- src/docs.rs — per-slot document tracker (didOpen v1 / didChange v+1 / last-synced text cache
+  for UTF-16 conversion). Cleared per (re)spawn: a new server has seen no documents.
+- src/recovery.rs — Slot state machine: Idle/Ready/Crashed/Degraded; lazy spawn; deterministic
+  backoff (b1=initial); max_restarts=1 default ⇒ crash#1 → restart, crash#2 → DegradedToSearch.
+  Sync death hook (std-mutex state) safe from the reader task; lifecycle serialized per language.
+- src/events.rs + take_events — RouterEvent {ServerSpawned, RestartScheduled(attempt, wait),
+  ServerRestarted, ServerCrashed, Degraded(reason), RssCapped(rss, cap)} — the QA channel.
+- src/ask.rs — the navigation pipeline: bridge-first routing, ensure_ready, didOpen/didChange
+  sync, one in-call crash retry, wire→Answer translation (0-based→1-based; UTF-16 conversion via
+  slot text cache or bounded disk read).
+- src/router.rs — LspRouter: set_bridge (IDE-as-toolbox priority: bridge > own; prefer_bridge
+  flag), set_server_factory (in-process/bridge transports, restart-aware), attach_server,
+  notify_did_change, shutdown, start_guard, server_languages/server_pid introspection.
+  Implements LspProvider itself (one provider nests another — the seam for todo 38).
+- src/guard.rs — RSS-sampled bounded LSP (forge §26): RssProbe trait + SysinfoProbe (targeted
+  single-PID refresh — a handful of syscalls per server per tick, never a table scan; default
+  30 s interval ⇒ unmeasurable, cheap enough to run always), GuardTarget, enforce_once,
+  run_guard_loop. Guard kills flow into the normal crash machinery (backoff → degrade).
+
+## Token-budget documentation
+"<25-token locations" is approximated by characters: LOCATION_BUDGET_CHARS = 100 ≈ 25 tokens at
+~4 chars/token for path/number text (conservative vs common BPE tokenizers); the budget bounds
+the WHOLE rendered list with a "+N" elision marker. Hover budget 480 chars. Documented in
+render.rs module docs; asserted in tests (pure.rs + routing.rs bounded-locations test).
+
+## Commands + results (Windows 11, PowerShell, Rust 1.98, debug profile)
+- `cargo test -p harness-lsp` — 52 passed / 0 failed / 4 ignored, run 3×, identical results
+  (2 lib + 8 framing + 11 handle + 6 lifecycle + 10 pure + 10 routing + 5 guard; deterministic:
+  duplex-simplex mock pipes, fake probes, real-clock backoff of 40 ms only)
+- `cargo test -p harness-lsp --test golden_rust_analyzer -- --ignored --nocapture` — 4 passed
+  (real rust-analyzer 1.98.0; ~10-12 s wall)
+- `cargo clippy -p harness-lsp --all-targets` — clean under workspace deny(all)+deny(warnings)
+- `cargo fmt -p harness-lsp -- --check` — clean
+- `cargo deny check` — advisories/bans/licenses/sources ok
+- `cargo check --workspace --all-targets` — Finished, exit 0 (needs the task-8 INCLUDE/LIB env
+  workaround on THIS machine for the C-compiling crates libsqlite3-sys/tree-sitter grammars —
+  machine quirk, not my deps; harness-lsp deps are pure Rust)
+
+## QA — happy channel: rust-analyzer golden goto (real server, real answers)
+Fixture crate (tempdir): src/lib.rs line 1 `pub fn golden_target() -> u32 {`, line 6 `    golden_target()`.
+goto_definition at (6,5) returns EXACTLY:
+  file = <fixture>/src/lib.rs  line = 1  column = 8   (0-based wire {line:0,character:7} → 1-based)
+hover on the definition → 38 chars, contains "pub fn golden_target() -> u32" (bounded ≤480).
+find_references → 2 locations (definition + caller).
+
+## QA — failure channel: kill -9 mid-session → restart w/ backoff → second kill → degraded
+Real rust-analyzer (taskkill /F /PID, tree-kill avoided: RA's transient children resist /T —
+documented in the test):
+  1. goto ✓ (server pid A); events: ServerSpawned
+  2. taskkill /F /PID A → event: ServerCrashed { language: Rust }
+  3. goto → RestartScheduled { attempt: 1, wait: 40 ms } (deterministic initial backoff;
+     wall-clock gap 2.4-2.8 s = backoff + rust-analyzer re-init+index) → ServerRestarted
+     → locations served by NEW pid B ≠ A
+  4. taskkill /F /PID B → ServerCrashed → next goto returns
+     DegradedToSearch { reason: RestartBudgetExhausted { crashes: 2 },
+                         hint: "LSP degraded: retry navigation with harness-search lexical search" }
+     (typed fallback RESULT; no dependency on harness-search — the seam is the hint + variant)
+  Backoff values are exact (Backoff::wait_for is pure; lifecycle.rs asserts
+  RestartScheduled.wait == 40 ms == initial) — "paused/injected clock" equivalence achieved by
+  deterministic no-jitter backoff + event-channel observation instead of tokio paused clocks
+  (mock pipes need real IO wakeups; timings asserted, not slept-on).
+
+## Adversarial classes
+- hung_or_long_commands: hung initialize → typed InitializeTimeout + server killed + restart
+  w/ backoff → degrade after budget (lifecycle::hung_initialize_times_out_then_restarts_then_degrades;
+  handle::hung_initialize_is_a_typed_timeout asserts the exact waited Duration).
+- malformed input: garbage on stdout → MissingContentLength/BodyOverrun/HeaderOverrun typed, no
+  OOM, session restarts (framing.rs; handle::garbage_frames_fail_typed_without_oom); lying
+  Content-Length 1 GiB rejected BEFORE reading (framing::lying_content_length_is_rejected_without_reading);
+  stderr garbage → bounded ring, never host stderr (handle::stderr_is_captured_never_printed).
+- cancel/resume: request future dropped mid-flight → pending entry survives until response/death,
+  same connection keeps serving (handle::cancelled_request_is_cleanly_dropped_and_server_survives).
+- stale_state: didChange full-text sync → fresh positions (lifecycle did-change tests w/ mock
+  version tracking; golden did_change_refreshes_positions_in_the_live_server w/ real RA: def
+  moves 1→4 after 3-line insert; per-slot doc reset after restart re-issues didOpen — caught by
+  the golden "file not found" failure and fixed).
+- resumable: same LspConfig clone → fresh router re-serves (a_restarted_router_reuses_the_configured_table).
+- flaky: goldens are #[ignore]d heavy (real spawn + indexing); fast suite deterministic ×3.
+  Golden polls-for-readiness (RA answers empty while loading) instead of racing.
+- misleading_success: exact file:line:col asserted (golden goto 1:8; mock 0-based→1-based
+  conversion asserted); payloads inspected (didChange carries full new text + version 2);
+  error variants matched structurally, not by message substring.
+- dirty_worktree: parallel worker committed feat(ast) at 0621bb8 BEFORE my commit; my diff
+  touches only harness-lsp/** + the sysinfo lines in root Cargo.toml + Cargo.lock + this file.
+  Root Cargo.toml edit was anchored after their tree-sitter block (re-read before edit).
+- untrusted external text: server JSON is parse-only (serde_json, default recursion cap),
+  positions clamped, URIs percent-decoded lossily, never eval'd; 500-ref response bounded to
+  MAX_LOCATIONS=20 typed (location_lists_are_bounded_to_max_locations).
+- Others N/A: no network egress (stdio only), no model calls, no filesystem writes outside
+  tempdirs, no telemetry.
+
+## Bridges / IDE-as-toolbox (JetBrains §24)
+LspProvider is the seam. NativeSpawned = LspRouter itself; IdeBridgeStub is registered-shaped
+(endpoint string stored, languages declared) but unwired (todo 38). Priority: bridge > own —
+when prefer_bridge (default) and the bridge covers a language, NO native server is spawned for
+it (routing::bridge_takes_priority_and_native_never_spawns asserts server_languages() == [] with
+rust-analyzer configured AND installed; prefer_bridge=false ignores the bridge; mixed coverage
+routes Rust→native mock, Go→bridge). Degradation is a typed RESULT pointing at harness-search
+(the hint constant lives in provider.rs) — no hard dependency.
+
+## Residual risks / notes
+- Child kill is per-process (kill_on_drop + start_kill); full kill-TREES (Job Objects) are
+  todo 19/20 — RA's transient proc-macro children can outlive a kill briefly.
+- request_timeout (60 s default) covers cold-index first navigation; misconfigured tiny values
+  would kill-and-restart healthy-but-slow servers (documented; backoff absorbs it).
+- take_events is single-take (first caller owns the stream) — embedders wire it once.

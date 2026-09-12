@@ -66,6 +66,11 @@ tempfile = "3"
 # local to harness-ast (48 of them, feature-gated per language).
 tree-sitter = "0.27"
 tree-sitter-language = "0.1"
+# Todo-18 RSS-sampled bounded LSP guard: per-process resident-set sampling.
+# sysinfo (pure Rust) is chosen over hand-rolled Win32 PSAPI bindings — same
+# data, no unsafe; the guard refreshes ONE targeted pid per sample, never the
+# whole process table.
+sysinfo = "0.39"
 
 [workspace.lints.rust]
 warnings = "deny"
