@@ -109,6 +109,11 @@ vt100 = "0.16"
 win32job = "2"
 # Todo-19 Unix kill trees: PR_SET_PDEATHSIG + setpgid/killpg (cfg(unix) only).
 libc = "0.2"
+# Todo-16 semantic hunk staging: plan-named imara-diff (git-ported Histogram,
+# outperforms Myers 10-100% on real code, solid on pathological inputs).
+# Pure Rust over hashbrown/memchr already in the tree — no new transitive
+# crates; the similar crate is rejected (slower on kernel-scale diffs).
+imara-diff = "0.2"
 
 [workspace.lints.rust]
 warnings = "deny"
