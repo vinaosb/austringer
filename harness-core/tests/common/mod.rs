@@ -8,6 +8,7 @@
 
 pub mod autonomykit;
 pub mod cancelkit;
+pub mod evictionkit;
 pub mod inspectorkit;
 pub mod loopkit;
 pub mod stages_kit;

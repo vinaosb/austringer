@@ -24,6 +24,7 @@ pub mod autonomy;
 pub mod budget;
 pub mod context;
 pub mod event;
+pub mod eviction;
 pub mod inspectors;
 pub mod log;
 pub mod tools;
