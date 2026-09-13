@@ -114,6 +114,30 @@ libc = "0.2"
 # Pure Rust over hashbrown/memchr already in the tree — no new transitive
 # crates; the similar crate is rejected (slower on kernel-scale diffs).
 imara-diff = "0.2"
+# Todo-21 transactional shadows: reflink-copy drives FICLONE (btrfs/XFS),
+# APFS clonefile, and Windows ReFS/Dev Drive block cloning. Its
+# reflink_or_copy silently falls back to a plain copy per call, which the
+# shadow layer detects via the return value (Ok(None) = reflink,
+# Ok(Some(_)) = copy) so the chosen backing is always disclosed honestly.
+# Pure Rust; dev-dependency tree adds no C builds.
+reflink-copy = "0.1"
+# Todo-21 shadow worktree fallback: gitoxide, plan-named over git2 (pure
+# Rust, no C deps). Default features are OFF; only `sha1` is added because
+# object ids cannot exist without it (gix-hash refuses to build otherwise —
+# pure-Rust sha1_smol). The fallback only reads HEAD trees/blobs and writes
+# refs through the always-on odb + ref store. gix 0.87 has NO
+# linked-worktree *creation* (verified against docs.rs gix-0.87.1), so the
+# backing materializes the committed tree itself; "worktree+odb" therefore
+# collapses to odb+refs.
+gix = { version = "0.87", default-features = false, features = ["sha1"] }
+
+# Todo-24 sessions store: encryption at rest. XChaCha20-Poly1305 AEAD +
+# argon2 KDF (both RustCrypto, pure Rust — no new C builds on any OS).
+chacha20poly1305 = "0.11"
+argon2 = "0.6"
+# Todo-24 sessions store: OS entropy for per-session data keys, AEAD
+# nonces, and argon2 salts (tiny; already transitively in the tree).
+getrandom = "0.3"
 
 [workspace.lints.rust]
 warnings = "deny"
