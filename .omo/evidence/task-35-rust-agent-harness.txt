@@ -1,0 +1,303 @@
+TASK 35 — Daemon: protocol + multi-attach + web serving (harness-daemon)
+=========================================================================
+Date: 2026-09-13 | HEAD at start: c50ec2d (confirmed) | Worker: T35 implementation worker
+Toolchain: Rust 1.98 / edition 2024 / lints warnings=deny + clippy all=deny (workspace)
+
+────────────────────────────────────────────────────────────────────────
+1. WHAT LANDED (scope clause → module map)
+────────────────────────────────────────────────────────────────────────
+All 15 binding clauses implemented in harness-daemon (src split, every
+file ≤250 code lines excluding #[cfg(test)]):
+
+ 1. TRANSPORTS — axum WS (`ws.rs`, `server.rs`), SSE (`handlers.rs`),
+    interprocess local-socket IPC named pipe on Windows / UDS on Unix
+    (`ipc.rs`). ONE typed client protocol (`protocol.rs`, v1, internally
+    tagged, bounded decode) driven by ONE transport pump (`transport.rs`)
+    shared by all three transports.
+ 2. MULTI-CLIENT ATTACH — `attach.rs` (SessionHost + client registry +
+    per-session cap) + `events.rs` (EventHub: monotonic ids, bounded
+    replay ring). Shared permission queue: the ask broadcasts to every
+    attached client; ONE valid answer resolves for ALL
+    (`mediation.rs` — verified byte-level in tests below).
+ 3. WEB ASSETS — `web.rs` serves harness-web bytes (placeholder SPA)
+    with content-type + cache headers (no-cache for HTML entry, immutable
+    for hashed artifacts). Asset registry added to harness-web lib
+    (disclosed; the assets crate is the designated owner).
+ 4. AUTH — `auth.rs`: 127.0.0.1 bind + generated 32-byte token
+    (hex, OS entropy), PEER-ADDRESS trust (loopback check on the
+    kernel-reported peer), NEVER Host-trust — plus a defensive Host
+    allowlist (loopback names only) so rebinding probes are refused
+    before token evaluation. Negative regression tests pinned (below).
+ 5. URL-ADDRESSABLE SESSIONS — stable ids in routes: GET /s/{sid} (SPA
+    deep-link page, public), /s/{sid}/attach (WS), /s/{sid}/events
+    (SSE), /s/{sid}/cmd (POST). Deep-link test pinned.
+ 6. MULTI-CLIENT PERMISSION MEDIATION (Qwen §18) — `mediation.rs`:
+    4 policies (FirstResponder default, Designated, ConsensusQuorum
+    fail-closed on any deny, LocalOnly), CANCEL-VOTE sentinel (any
+    client withdraws a pending ask; malformed ids typed-rejected,
+    untrusted ids never reach the mediator — auth layer), N1
+    synchronous-timeout invariant: exactly one of answer XOR cancel XOR
+    timeout ever resolves (resolve_once gate under mutex; race between
+    timeout arm and late answer yields the winner, never double).
+ 7. TYPED SSE EVENT SCHEMA + RESYNC — `events.rs` + `protocol.rs`:
+    monotonic gap-free ids, bounded replay ring (configurable capacity),
+    slow-client eviction (broadcast Lagged → StateResyncRequired +
+    Snapshot; delta-skipping reducer: clients behind ring head skip
+    deltas and resync without losing the session).
+ 8. ACTIVE-SESSION REGISTRY — `registry.rs`: PID-keyed entries with
+    boot-id liveness proofs reusing T24's LeaseProbe
+    (SysinfoLeaseProbe prod / FakeLeaseProbe tests); sweep reaps
+    PidDead / HeartbeatStale / BootIdChanged.
+ 9. SCHEDULER + NOTIFICATION EMITTER — `scheduler.rs`: hand-rolled
+    five-field cron engine over epoch minutes (JUSTIFIED over the `cron`
+    crate: no chrono dependency, pure integer math, deterministic under
+    injected clocks — flaky-immune; UTC-minute alignment documented,
+    DST/local firing is T41). Bounded catch-up (1 day). `notify.rs`:
+    typed NotificationSink trait + fan-out Notifier (TracingSink,
+    MemorySink now; OSC 777 + system notifiers land T41 on the same
+    trait — per plan).
+ 10. DURABLE-EXECUTION OPTION (Cursor Temporal §19 pattern, NOT the
+    dependency) — `journal.rs` (steps, content-addressed activity ids =
+    blake3(name‖input), append-only JSONL, torn-tail tolerant),
+    `durable.rs` (TurnWorkflow: begin/finish, signal_with_start
+    Started/Delivered, child workflows in their own journal files),
+    `activity.rs` (JournalingExecutor replay-first; retry_activity
+    retries the ACTIVITY, never the inference). DEFAULT ON
+    (DaemonConfig.durable = true), journals under
+    {data}/journal/{session}/{turn}.jsonl. Overhead: one JSONL append
+    per step + fsync on turn boundaries only. Production-history replay
+    test: a NON-DETERMINISTIC executor is consulted ZERO times when the
+    journal covers the history. The T5 loop runs inside the turn
+    workflow harness (`engine.rs` run_turn ↔ TurnWorkflow).
+ 11. REMOTE-WORKER SPLIT-BRAIN (Cursor §19) — `worker.rs`: agent loop
+    stays in the daemon; tool execution routes to workers over
+    OUTBOUND-ONLY connections (workers dial IN to /worker; no inbound
+    ports on the user side). stdio MCP stays worker-side, HTTP MCP
+    proxied by the daemon (route_mcp). CREDENTIALS NEVER CO-LOCATED:
+    the DaemonToWorker vocabulary has no credential-capable field —
+    pinned by wire-shape test; workers get scoped ToolGrants only;
+    ungranted tools fail closed (NotGranted). Worker drop mid-tool is
+    typed (WorkerDropped) and the session continues (split-brain
+    preserve tests).
+ 12. OUTPOSTS RECONCILIATION (Devin §22) — `outposts.rs`: ClaimLedger
+    over NAMED QUEUES; claim_next FIFO with deadline; sweep() expires
+    claims and RE-ENQUEUES the session (self-heal); healed sessions
+    reclaimable by another worker.
+ 13. ZERO-DOWNTIME RELOAD (jcode §32) — `reload.rs`: unix keeps true
+    exec() semantics (same PID, fd passed with CLOEXEC cleared);
+    Windows performs SOCKET HANDOFF BY INHERITANCE (SetHandleInformation
+    + spawn + adopt; proven across a real process boundary in
+    reload::tests::socket_handoff_survives_process_boundary — child
+    adopts the handle, accepts, echoes). DIVERGENCE DISCLOSED: Windows
+    has no exec(); the successor is a new PID holding the SAME socket
+    (zero-downtime for clients; PID continuity is unix-only). Successor
+    Winsock lazy-init handled (WSANOTINITIALISED 10093 found + fixed in
+    QA — probe log in evidence §6). STALE-SOCKET REAPING: the IPC
+    listener uses GenericNamespaced names (abstract namespace on Linux,
+    \\.\pipe\ on Windows) — no filesystem socket corpses exist by
+    construction; dead-process reaping is the registry's job (§8).
+ 14. OPTIONAL OTel EXPORT (Grok posture) — `otel.rs`: DOUBLE opt-in
+    (config.enabled AND env HARNESS_TELEMETRY=1 AND endpoint), 4
+    independent content gates (prompts/responses/tool_details/
+    tool_content) all closed by default (content-free), secret-scrubbing
+    (sk-/ghp_/xoxb-/AKIA/Bearer-eyJ shapes), mTLS-ready config surface
+    (MtlsConfig validated, wiring documented for T41), fire-and-forget
+    HTTP transport (telemetry never fails the daemon).
+ 15. ACCEPTANCE — two simultaneous clients see IDENTICAL state
+    (byte-level frame equality asserted over a real axum server AND the
+    real binary); permission answered once applies to both; NEGATIVE:
+    spoofed Host + no/invalid token refused (401/403) — regression
+    tests for the CVE-2026-82533 class.
+
+Composition (no re-implementation): AgentLoop hosted per session
+(`engine.rs`) with the T7 InspectorChain over Default (empty) rules →
+everything ASKS → routed through MediatedAskPolicy (the daemon's ask
+seam) — wrapped in ReservedAwareApproval so the loop-reserved
+task_completed signal never asks (bug found by red test: two asks per
+turn incl. the reserved tool; fixed + regression-covered). Tool
+execution = WorkerToolExecutor (split-brain + journaling + diff
+forwarding onto the event stream). Sessions/journals/leases compose T24
+primitives; the binary factory injects an UnconfiguredInference stub
+until T40 wires the T9 provider (frontends + protocol fully exercisable
+without a provider; disclosed in the stub's error text).
+
+────────────────────────────────────────────────────────────────────────
+2. TESTS (exact commands + results)
+────────────────────────────────────────────────────────────────────────
+Env: task-13/29 MSVC shell recipe (INCLUDE/LIB), private target dir
+%TEMP%\opencode\target-task-35 (three parallel workers share the repo).
+
+  cargo test -p harness-daemon
+    lib:        87 passed, 0 failed  (incl. reload cross-process handoff)
+    bin:         0 tests
+    auth_http:   6 passed  (negative auth + deep link + SPA)
+    engine:      6 passed  (two-client identical, deny, steer, cap,
+                            journal, content-addressed activities)
+    ipc:         2 passed  (wrong token refused; two-client shared ask)
+    ws_e2e:      4 passed  (identical streams + shared permission,
+                            malformed bounded, slow-client resync,
+                            idle timeout)
+    => 106 passed, 0 failed (0.4-2.6s wall)
+
+  Determinism (flaky ×3): cargo test -p harness-daemon × 3 →
+    identical 106/106 every run.
+
+  CI harness parity: cargo nextest run -p harness-daemon
+    => Summary: 105 tests run: 105 passed, 0 skipped (196s; the reload
+       handoff test spawns a child process under nextest, counted once)
+
+  cargo clippy -p harness-daemon --all-targets → clean (warnings=deny)
+  cargo fmt -p harness-daemon -- --check → clean
+  cargo test -p harness-web → 1 passed (asset registry regression)
+  cargo deny check → advisories ok, bans ok, licenses ok, sources ok
+    (multiple-versions stays at the policy's "warn" level; interprocess
+     2.4.4 MIT/Apache-2.0 fits the allow-list; dev-only
+     tokio-tungstenite tree adds no C builds)
+
+────────────────────────────────────────────────────────────────────────
+3. MANUAL QA (real binary: target debug\harness-daemon.exe)
+────────────────────────────────────────────────────────────────────────
+Driver: cargo run -p harness-daemon --example qa_transcript (spawns the
+real binary, drives reqwest + real WS clients). Transcript:
+
+=== DAEMON BANNER (loopback bind, generated token) ===
+listening on http://127.0.0.1:18908 token=274c41f1…c943d2
+
+[HAPPY] GET / → HTTP 200 | content-type=text/html; charset=utf-8
+  cache-control=no-cache | (placeholder SPA bytes served)
+[HAPPY] GET /s/qa-session (deep link) → HTTP 200 text/html (paste-able,
+  attachable from any client)
+[FAILURE 1] no token        → HTTP 401 unauthorized
+[FAILURE 2] wrong token     → HTTP 401 unauthorized
+[FAILURE 3] spoofed Host (evil.example.com) + VALID token
+                             → HTTP 403 host header refused
+[FAILURE 4] spoofed Host + NO token
+                             → HTTP 403 host header refused
+[HAPPY] two simultaneous WS clients (submit → typed failure turn, no
+  provider configured):
+  A| {"type":"state_resync_required","last_event_id":0}
+  A| {"type":"snapshot","frames":[]}
+  A| {"type":"hello_ack","version":1,"last_event_id":0}
+  A| {"type":"event","frame":{"id":1,"event":{"type":"turn_started","turn":1}}}
+  A| {"type":"event","frame":{"id":2,"event":{"type":"recorded","seq":1,"event":{"type":"user","blocks":[{"type":"text","text":"hello qa"}]}}}}
+  A| {"type":"event","frame":{"id":3,"event":{"type":"turn_finished","turn":1,"outcome":"failed::InferenceExhausted { cause: \"no provider configured (daemon hosts the loop; provider wiring lands with todo 40)\", retries: 0 }"}}}
+  B| (frame-for-frame identical to A, all five frames)
+  BYTE-IDENTICAL STREAMS: true
+[HAPPY] SSE /s/qa-session/events → HTTP 200 text/event-stream;
+  data: {"type":"state_resync_required",...} + data: {"type":"snapshot",
+  "frames":[…turn events…]} — same typed protocol, snapshot replay.
+
+Slow-client forced resync (ws_e2e::slow_client_is_force_resynced_and_
+session_survives): client stops reading, 600 events flood the ring,
+client resumes → state_resync_required + snapshot received, session
+continues (fresh attach still served). PASS.
+Claim-expiry self-heal (outposts::claim_expiry_self_heals_session_back_
+to_queue + healed_session_is_reclaimable_by_another_worker): claim
+deadline passes → sweep re-enqueues the session on its ORIGINAL queue →
+second worker reclaims. PASS.
+
+────────────────────────────────────────────────────────────────────────
+4. ADVERSARIAL SCENARIOS
+────────────────────────────────────────────────────────────────────────
+ cancel/resume: client disconnect mid-ask → ask times out N1-exactly-once
+   (mediation::synchronous_timeout_resolves_once, paused time); worker
+   drop mid-tool → typed WorkerDropped, session + replacement worker
+   continue (worker::worker_drop_mid_tool_is_typed_and_session_continues;
+   stages::worker_executor_surfaces_failure_as_tool_text).
+ malformed: protocol garbage frames → typed MalformedFrame error, 3
+   strikes → close (ws_e2e malformed test; ipc same path); oversized
+   frames rejected before parse (protocol::oversized_frame_rejected_
+   before_parse); IPC reads hard-bounded per line (ipc.rs read_bounded_
+   line).
+ untrusted text: ALL client input bounded before parsing
+   (protocol::validate_client: text ≤64KiB, ids ≤128 printable);
+   asserts never echo untrusted bytes.
+ hung_or_long: idle read timeout (config) → Bye + close, session
+   survives (ws_e2e idle test); slow-client eviction (above); worker
+   call timeout typed (WorkerRouter.call_timeout).
+ flaky ×3: scheduler + mediation run on injected clocks (paused tokio
+   time / epoch-minute math); full suite ×3 identical (§2).
+ stale_state: resync correctness (events.rs suite: behind-ring-head →
+   resync, inside-ring → exact delta, live continues after resync);
+   registry reaping (dead pid / stale heartbeat / reboot).
+ repeated_interruptions: per-session attach cap (default 64) bounds
+   reconnect storms (client_cap_bounds_attach_storm); broadcast is
+   bounded capacity (lag → resync, never unbounded buffers).
+ misleading_success: byte-level frame equality across clients asserted
+   (not just "both got something"); protocol roundtrips + determinism
+   of encoding pinned; production-history replay asserts ZERO inner
+   executor calls (non-determinism guard).
+ dirty_worktree: only task-35 files staged (root Cargo.toml/Cargo.lock,
+   harness-daemon/**, harness-web/src/lib.rs, this evidence file);
+   sibling workers' .omo/skills churn untouched.
+ Others N/A per task card.
+
+────────────────────────────────────────────────────────────────────────
+5. DEPENDENCIES (root-manifest discipline; each justified)
+────────────────────────────────────────────────────────────────────────
+NEW workspace deps (root Cargo.toml, comment-justified in place):
+  axum = "0.8" (ws) — promoted from harness-mcp's dev-dep where T29
+    already served rmcp's StreamableHttpService on axum; already locked
+    at 0.8.9 via rmcp, so no new vendor code.
+  interprocess = "2.4" (tokio) — one-codebase named-pipe/UDS IPC
+    transport; pure Rust, default features off, tokio feature only.
+Crate-local (harness-daemon):
+  tokio +[rt-multi-thread,net,io-util] on the workspace baseline
+    (runtime + TCP + IPC halves); dev +[macros,test-util,process].
+  tokio-tungstenite 0.28 DEV-ONLY — the only WS client able to exercise
+    the real axum WS transport from tests; pure Rust, not in any
+    production tree.
+  reqwest (workspace) — OTel export transport only.
+  windows-sys (workspace features) cfg(windows) — SetHandleInformation
+    for the reload handoff; libc cfg(unix) — CLOEXEC clear.
+NO other new deps. No chrono (cron hand-rolled, §1.9). No tower/uuid
+  direct deps (unneeded; tokens = getrandom+hex, ids = blake3).
+
+────────────────────────────────────────────────────────────────────────
+6. DISCLOSURES & BUGS CAUGHT BY QA
+───────────────────────────────────────────────────────────────────────
+ • Windows reload: PID changes (no exec on Windows); socket continuity
+   proven cross-process. Unix = true exec (same PID), cfg-gated.
+ • Winsock lazy-init: a successor that adopts a socket before any
+   network call hits WSANOTINITIALISED (10093); fixed in adopt() via a
+   throwaway UDP bind (std's one-time WSAStartup), zero FFI.
+ • tokio from_std requires non-blocking sockets: the binary initially
+   served nothing (kernel accepted via backlog; reactor never fired);
+   fixed with set_nonblocking(true) before from_std. Found in manual QA.
+ • SharedSteerer initially shadowed the loop's own submit queue (turn
+   prompts never recorded as user events) — caught by the binary QA
+   transcript, fixed (drains both queues), regression-covered.
+ • Engine events publish at turn boundaries (AgentLoop owns its event
+   mirror inside run()); permission asks stream LIVE mid-turn through
+   the control bus. Documented; mid-turn event streaming is a T36 input.
+ • Binary ships an UnconfiguredInference stub (provider wiring is T40);
+   all protocol/attach/auth surfaces fully exercisable without one.
+ • Binary does not yet run the scheduler/registry sweep loops (modules
+   + tests land now; long-running composition belongs to T41 cron-of-
+   packs which consumes them).
+ • LOC accounting: code lines exclude doc comments/blank lines; every
+   file ≤250 (largest: otel.rs 233). No unwrap/expect/panic! in any
+   non-test src (grep-verified).
+ • MSVC env workaround (task-13/29 recipe) shell-scoped for every
+   invocation; private target dir target-task-35; nothing repo-side.
+ • Worktree isolation proof: see §7 (appended post-commit).
+
+────────────────────────────────────────────────────────────────────────
+7. COMMITTED-TREE WORKTREE ISOLATION
+────────────────────────────────────────────────────────────────────────
+(commit + fresh-checkout worktree test appended after commit)
+
+------------------------------------------------------------------------
+7. COMMITTED-TREE WORKTREE ISOLATION (proof)
+------------------------------------------------------------------------
+ Commit: 41c66cf "feat(daemon): multi-client protocol + scheduler +
+ hardened auth" (single commit; parent bc83de6 � a sibling skills
+ worker landed between c50ec2d and this commit; unrelated to this task).
+ Fresh detached worktree at 41c66cf (%TEMP%\opencode\task-35-worktree),
+ private fresh target dir (target-task-35-worktree, no shared caches):
+   cargo test -p harness-daemon
+     => 106 passed, 0 failed (lib 87 + bin 0 + auth_http 6 + engine 6
+        + ipc 2 + ws_e2e 4 + reload-handoff filtered run 1)
+ The committed tree builds and passes without the working copy.
+ Note: sibling-worker files (.omo plans, skills) are NOT part of this
+ commit and were not touched (dirty_worktree distinction).

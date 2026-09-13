@@ -180,6 +180,19 @@ regex = "1"
 # JsonSchema derives whose generated code names the schemars crate
 # directly (the rmcp re-export is not enough); same 1.x line rmcp 3.3 uses.
 schemars = "1"
+# Todo-35 daemon HTTP/WS/SSE surface: axum 0.8, promoted from harness-mcp's
+# dev-dependency where todo 29 already served rmcp's StreamableHttpService
+# on it (tests/mcp_http.rs). Already locked at 0.8.9 via rmcp's
+# transport-streamable-http-server feature, so declaring it here pins no new
+# vendor code; the `ws` feature is the daemon's WebSocket transport. Pure
+# Rust (tower/hyper already in the tree).
+axum = { version = "0.8", features = ["ws"] }
+# Todo-35 daemon IPC transport: interprocess local sockets give named pipes
+# (Windows) and Unix-domain sockets behind one codebase via
+# GenericNamespaced names. 2.4.4, pure Rust, default features off; only
+# `tokio` is enabled (the async listener/stream impls). No platform
+# feature flags exist — the OS backend is selected at compile time.
+interprocess = { version = "2.4", features = ["tokio"] }
 
 [workspace.lints.rust]
 warnings = "deny"

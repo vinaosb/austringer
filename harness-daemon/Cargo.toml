@@ -9,7 +9,46 @@ repository.workspace = true
 [lints]
 workspace = true
 
-# cargo-dist marks this crate as a distable package; its [[bin]] lands with
-# todo 35 (plan .omo/plans/rust-agent-harness.md). See root dist-workspace.toml.
+# cargo-dist marks this crate as a distable package; the [[bin]] target is
+# src/bin/harness-daemon.rs (plan todo 35). See root dist-workspace.toml.
 [package.metadata.dist]
 dist = true
+
+[dependencies]
+harness-core = { path = "../harness-core", version = "0.1.0" }
+harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
+harness-web = { path = "../harness-web", version = "0.1.0" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+axum.workspace = true
+interprocess.workspace = true
+# Daemon-added features over the workspace tokio baseline (sync/time/macros):
+# a multi-thread runtime, TCP listeners for the HTTP surface, and async
+# read/write halves for IPC line framing.
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util"] }
+# OTel exporter transport (optional path; double-gated at runtime).
+reqwest.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Reload handoff: SetHandleInformation marks the listening socket
+# inheritable before spawning the successor (workspace features already
+# cover Win32_Foundation).
+windows-sys.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# Reload handoff: clearing CLOEXEC on the listener fd before exec(2).
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+# WS client for integration tests against the real axum WebSocket transport
+# (axum is server-side only). Pure Rust, dev-only.
+tokio-tungstenite = "0.28"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util", "process"] }
