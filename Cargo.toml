@@ -21,6 +21,7 @@ members = [
     "harness-tools",
     "harness-tui",
     "harness-vfs",
+    "harness-wasm",
     "harness-web",
 ]
 
@@ -193,6 +194,17 @@ axum = { version = "0.8", features = ["ws"] }
 # `tokio` is enabled (the async listener/stream impls). No platform
 # feature flags exist — the OS backend is selected at compile time.
 interprocess = { version = "2.4", features = ["tokio"] }
+# Todo-45 WASM plugin runtime: wasmtime, WASI-0.2-era engine line (v38).
+# Deliberately NOT a default dependency of any crate - harness-wasm gates it
+# behind its `wasm-plugins` feature (default off; the plugin runtime must not
+# weight the default build). Minimal feature set, everything else off:
+# component-model/gc/threads/cache/profiling/pooling/async trees stay out.
+# `cranelift` (pure-Rust compiler) + `runtime` + `std` + `wat` (fixtures are
+# authored in WebAssembly text - no wasm32 target or component toolchain
+# needed). Note: the `runtime` feature builds a small C trampoline via cc
+# (the known MSVC-toolchain caveat, see .omo/evidence/task-13). Fuel metering
+# and ResourceLimiter need no cargo features of their own.
+wasmtime = { version = "38", default-features = false, features = ["cranelift", "runtime", "std", "wat"] }
 
 [workspace.lints.rust]
 warnings = "deny"
