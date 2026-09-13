@@ -184,3 +184,28 @@ WSL typed: this machine Available{exe=C:\Windows\System32\wsl.exe, version: Wsl2
   documented; the T26 sandbox owns cross-boundary enforcement
 - ShellExecuteEx grandchildren escaping the Job Object: pre-existing T19-documented
   gap, T26's enforcement point (unchanged this round)
+
+## Follow-up fix (T20 fixture bounds follow-up)
+Commit: test(exec): load-tolerant pathology bounds
+Scope: harness-exec/tests/pathologies.rs + tests/common/mod.rs ONLY (zero src/).
+Problem: absolute wall-time bounds went red under heavy parallel machine load
+(observed: DA1 whole-run <5s bound vs 6.5s powershell spawn under load; headless
+10-run <30s vs 49.5s under load) even though INTERNAL metrics prove the pathologies
+fixed (DA1-MS=7, DSR-MS=10 - ms-level).
+Fix:
+- PRIMARY pass criteria are now the internal observables: DA1-MS/DSR-MS query
+  response latencies (<5000ms), reader_joined (teardown ordering), and PING.EXE
+  orphan enumerations.
+- Wall-time bounds are either relaxed to 5x calm (PATHOLOGY_BOUND 8s->40s,
+  DA1_BOUND 5s->25s) or made RELATIVE to a measured spawn baseline within the same
+  run (scaled_bound = k x spawn-baseline, floored). Choice documented per fixture.
+- No fixture deleted or skipped; all 6 pathology fixtures intact.
+Verification (all with task-8 MSVC INCLUDE workaround):
+- cargo test -p harness-exec --test pathologies x3 calm: 6/6 green each
+  (73.30s, 159.75s, 140.91s)
+- load reproduction x3 while background cargo build ran: 6/6 green each
+  (55.35s, 87.50s, 93.30s)
+- full -p harness-exec suite: all suites green (pathologies 6/6)
+- cargo fmt -p harness-exec --check: clean
+- clippy: harness-exec clean; workspace clippy blocked by parallel-worker WIP in
+  harness-core/src/compaction/segments.rs (untracked, not this change)

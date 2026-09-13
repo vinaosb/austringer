@@ -83,6 +83,40 @@ pub fn wait_until<T>(mut probe: impl FnMut() -> T, predicate: impl Fn(&T) -> boo
     }
 }
 
+/// Measures how long it takes to spawn a trivial native process right now
+/// — the load-sensitive baseline. Under heavy parallel load this inflates
+/// (observed: 6.5 s for a powershell spawn), so wall bounds derived from
+/// it stay green while still catching the old unbounded-hang pathology
+/// (seconds to minutes, not a spawn).
+pub fn spawn_baseline(program: &str, args: &[&str]) -> Duration {
+    let started = Instant::now();
+    let status = std::process::Command::new(program)
+        .args(args)
+        .status()
+        .expect("baseline spawn");
+    assert!(status.success(), "baseline spawn failed");
+    started.elapsed()
+}
+
+/// A wall-time bound scaled from a measured baseline: `k × baseline`,
+/// floored at `floor`. The old pathology was an unbounded hang; a
+/// spawn-scaled multiple stays meaningful under load without going red
+/// on a slow machine.
+pub fn scaled_bound(baseline: Duration, k: u32, floor: Duration) -> Duration {
+    let scaled = baseline.saturating_mul(k);
+    if scaled > floor { scaled } else { floor }
+}
+
+/// Parses `KEY=<u64>` from whitespace-delimited `model_text`; None if
+/// absent or unparseable.
+pub fn parse_ms(model_text: &str, key: &str) -> Option<u64> {
+    let needle = format!("{key}=");
+    model_text
+        .split_whitespace()
+        .find_map(|tok| tok.strip_prefix(&needle))
+        .and_then(|v| v.parse().ok())
+}
+
 /// Writes newline-terminated `line` text into a temp file until it
 /// reaches `total_bytes`; returns its path.
 pub fn big_text_file(dir: &std::path::Path, total_bytes: usize, line: &str) -> PathBuf {
