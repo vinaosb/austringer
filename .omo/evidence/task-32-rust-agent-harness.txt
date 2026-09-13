@@ -1,0 +1,193 @@
+TASK 32 - Registry: spec + reference server (rust-agent-harness)
+==============================================================
+Worker: task-32 implementation worker (Sisyphus-junior). Date: 2026-09-13.
+Base: HEAD bc1fa58 on main (feat(daemon): multi-client protocol + scheduler + hardened auth) - confirmed at start (git rev-parse HEAD = bc1fa586e0bb5e0186301443ba1f356b89cc3b7c).
+
+Parallel workers disclosed: ONE (WASM todo 45: harness-wasm crate / harness-daemon/src/wasm).
+Overlap analysis: ZERO file overlap with my tree (harness-skills/src/registry/** + tests + one
+lib.rs line). The parallel worker's in-flight edits (workspace Cargo.toml/Cargo.lock showing the
+new harness-wasm member) were NOT touched by me and are NOT part of my commit. The lib.rs module
+line `pub mod registry;` is exclusively mine per task assignment: re-read immediately before the
+single anchored edit; applied cleanly on first attempt (no lock-retry needed - the WASM worker
+owns no harness-skills files). Proof of isolation: post-commit worktree run of the full
+harness-skills suite from the committed tree (below).
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+New module harness-skills/src/registry/ (13 files, all <=250 pure LOC; count = non-blank
+non-comment lines):
+  mod.rs         (29)  module doctrine + public re-export surface
+  protocol.rs   (107)  static index format (index.json) + RegistryStore transport seam +
+                       RegistryIndex::parse (bounded, validated, never evaluated) + lexical
+                       search + ReviewTicket/ReviewAcceptance (hash-bound trust review)
+  packfile.rs   (190)  the .hpk pack document: files/shared/rules/mcp_servers/secret_params/
+                       bundle; items are DECLARATIVE DATA ONLY; MAX_PACK_BYTES=8MiB pre-parse
+                       gate; validators (item name, secret name, version, hash/pin, glob,
+                       relpath) - untrusted text is charset-rejected, unicode names are NOT
+                       loader-safe and are typed rejects (unicode CONTENT round-trips verbatim)
+  store.rs      (216)  REFERENCE SERVER: build_registry_from_packs_dir turns the shipped T33
+                       packs tree into index.json + content-addressed packs/<blake3>.hpk
+                       (deterministic: same tree => byte-identical hashes, two-phase bundle
+                       pinning proof in tests); add_pack publishes marketplace items;
+                       LocalDirStore = default OFFLINE transport (files only - zero network
+                       code in the crate; HTTP transport is the daemon's RegistryStore impl
+                       over the same layout, opt-in)
+  signatures.rs  (43)  keyed-blake3 pack signatures (zero new deps; blake3 already present) +
+                       SignatureVerifier object-safe trait (ed25519 upgrade seam for daemon);
+                       constant-time compare
+  governance.rs (136)  Authority Org>Team>Project>User; highest authority wins, deny wins
+                       ties (forbidden-lists sort first at equal authority); forbid-'*' =
+                       Lockdown UNLESS the same authority explicitly lists the plugin
+                       required/optional => plugin-specific GovernanceDeny (conflict surfaces,
+                       install still denied)
+  bundles.rs   (101)   managed bundle manifests (Devin 22): pinned required plugins, optional
+                       names, forbidden globs (vs bundle's own candidates AND the installed
+                       set), secret refs; bundles cannot nest
+  writes.rs    (115)   WriteSet: ALL surface changes staged BEFORE any disk write (fail-closed
+                       install); mcp.json merge keeps {{secret:NAME}} placeholders - secret
+                       VALUES never enter config files (T29 templating discipline)
+  install.rs   (225)   the pipeline: governance -> review gate -> signature presence ->
+                       fetch+PIN/HASH VERIFY -> signature verify -> bounded parse -> secret
+                       resolvability gate -> bundle plugin resolution (pins vs index BEFORE
+                       any write) -> single committed WriteSet -> ledger upsert; typed
+                       InstallReceipt with plain-language INSTALL WARNING (consent.rs pattern)
+  lock.rs      (125)   registry-lock.json LEDGER (hermes 27): per-entry content hash, source,
+                       per-file/per-mcp pins, review provenance; RegistryLedger::diff =
+                       ledger-vs-ledger upgrade diff
+  drift.rs     (215)   ledger-vs-disk tamper detection: Missing/Modified/Unexpected drift +
+                       diff_disk was/now rows; mcp entries hashed via canonical JSON
+  manager.rs   (126)   RegistryManager: search / installed (list) / review_ticket / remove
+                       (files solely owned deleted, mcp entries dropped, dirs pruned) - the
+                       typed API surface for the CLI + Web manager frontends (todo 37/39)
+  error.rs     (128)   24-variant typed RegistryError (no panics, no stringly retries)
+
+Plus: harness-skills/src/lib.rs - exactly ONE owned line added (`pub mod registry;`,
+alphabetically anchored), and 4 test suites + shared helper:
+  tests/registry_reference_server.rs (8)  index format, determinism, content addressing,
+                                           corrupt/missing/oversized index, search, signatures
+  tests/registry_install.rs (7)            happy channel + scopes + signed + review + remove +
+                                           upgrade ledger-diff + manager search
+  tests/registry_failures.rs (10)          tamper/mismatch/lockdown/signature/corrupt/secret/
+                                           untrusted-text/ledger-corrupt channels
+  tests/registry_bundles.rs (6)            one-unit install, SHA pin mismatch, missing plugin/
+                                           secret, forbidden glob vs installed set, governance
+  tests/registry_common/mod.rs             shared fixtures (real packs tree + synth helpers)
+
+TDD (strict red-green)
+-------------------------------------------------------------------------------
+RED (captured before any implementation existed): the four suites were committed to the repo
+first by the interrupted prior attempt of this same task; running them produced
+  error[E0432]: unresolved import `harness_skills::registry`    (cargo test -p harness-skills
+  --test registry_install) - module-does-not-exist = the correct red reason.
+Behavioral reds during green (each fixed at root cause, never by weakening a test):
+  - governance same-authority conflict installed instead of denying: the prior GovernanceStack
+    sort comparator was inverted (permissive-first); fixed to forbidden-first at equal
+    authority.
+  - synth manifests used Rust \u{1f680} escapes = invalid JSON (IndexCorrupt); fixed to \ud83d\ude80.
+  - prior test bug: forbidden-glob-vs-installed test used a bundle whose forbidden list
+    ("telemetry-*") could never match the asserted pattern "extra-*"; given its own
+    INSTALLED_CONFLICT_JSON with forbidden "extra-*" (assertions unchanged).
+  - prior code bug: bundles.rs validated secret_refs ("TEAM_TOKEN") with the lowercase-kebab
+    item-name validator, which the untrusted-text test itself proves must reject uppercase;
+    secret refs now use validate_secret_name (UPPER_SNAKE).
+
+VERIFICATION (exact commands + results; private target dir
+C:\Users\vsbb1\AppData\Local\Temp\opencode\task-32-target throughout, MSVC per task-13 recipe)
+-------------------------------------------------------------------------------
+  cargo test -p harness-skills --offline
+    -> exit=0  total_passed=105  total_failed=0   (entire crate: registry 31 + T30/T31/T33
+       suites - zero regressions)
+  cargo clippy -p harness-skills --all-targets --offline
+    -> clean (workspace lints: warnings=deny + clippy all=deny; fresh rebuild after artifact
+       purge to defeat caching, 3m23s)
+  cargo fmt -p harness-skills        -> applied (rustfmt clean)
+  flaky x3: cargo test -p harness-skills --test registry_install --test registry_failures
+  --test registry_bundles --test registry_reference_server --offline --no-fail-fast
+    -> run 1: passed=31 failed=0 | run 2: passed=31 failed=0 | run 3: passed=31 failed=0
+  no-unwrap/expect/panic grep over src/registry: the one .expect() found (lock.rs parent())
+    was replaced with a typed error; final grep = 0 matches in src (tests use expect/unwrap
+    idiomatically on fixtures only)
+  no-phone-home (structural): grep for TcpStream|reqwest|http over src/registry = 0 matches;
+    the crate has no network dependency at all - the default store reads local files.
+
+QA CHANNELS (pasted)
+-------------------------------------------------------------------------------
+happy - offline install of the T33 dotnet pack from a local registry dir, pin+hash verify +
+ledger entry + manifest sync through the REAL T30 loader
+  (cargo test -p harness-skills --test registry_install --offline):
+  test offline_install_from_local_dir_pins_verifies_and_syncs_manifest ... ok
+  test signed_registry_installs_with_verifier_and_fails_closed_without_one ... ok
+  test review_ticket_binds_to_hash_and_required_review_gates_install ... ok
+  test remove_uninstalls_files_ledger_and_loader_visibility ... ok
+  test project_and_global_scopes_write_to_their_own_roots ... ok
+  test upgrade_replaces_provenance_and_the_ledger_diff_shows_what_moved ... ok
+  test manager_search_is_the_frontend_surface_over_the_store ... ok
+  test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+  The happy test asserts CONTENT, not counts: SKILL.md on disk contains "name: dotnet";
+  ledger entry content_hash == receipt pin; per-file pin != pack pin; verify_entry clean;
+  SkillLoader::vendor_root routes "how do I structure an ef core migration" -> dotnet and
+  invoke() resolves {{shared:...}} partials from the installed skills/_shared/.
+
+failure - tampered pack file => typed hash mismatch + ledger diff shows tamper + forbidden-
+plugin glob deny (cargo test -p harness-skills --test registry_failures --offline -- --test-threads=1):
+  test tampered_pack_file_is_rejected_by_hash_with_nothing_written ... ok
+  test ledger_diff_shows_on_disk_tamper_after_clean_install ... ok
+  test unexpected_files_inside_a_pack_dir_are_drift ... ok
+  test governance_glob_deny_and_star_lockdown_are_typed_rejections ... ok
+  test bad_signature_and_required_signature_are_typed ... ok
+  test corrupt_pack_json_with_valid_hash_is_typed_pack_corrupt ... ok
+  test pack_size_is_capped_before_parse ... ok
+  test missing_secret_fails_closed_and_values_never_enter_config_files ... ok
+  test untrusted_index_text_is_validated_not_evaluated ... ok
+  test corrupt_ledger_is_typed_and_missing_ledger_lists_empty ... ok
+  test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+  Channel highlights: tampered .hpk => HashMismatch{expected=index pin, actual=blake3(served
+  bytes)} with NOTHING on disk and NO ledger entry; post-install SKILL.md tamper => Drift::
+  Modified{key=skills/dotnet/SKILL.md, was=ledger pin, now=disk hash}; secret test asserts the
+  placeholder {{secret:ACME_TOKEN}} stays in mcp.json and the value "s3cr3t-value" never lands
+  in any config file; forbid-'*' => Lockdown, same-authority require conflict => GovernanceDeny.
+
+ADVERSARIAL MATRIX
+-------------------------------------------------------------------------------
+malformed         : corrupt index (IndexCorrupt), missing index (IndexMissing), oversized
+                    index/pack rejected BEFORE parse (IndexTooLarge/PackTooLarge), corrupt
+                    pack JSON with valid hash (PackCorrupt), corrupt ledger (LedgerCorrupt),
+                    corrupt bundle.json (PackCorrupt), mcp.json reuse validated. Covered.
+untrusted_text    : registry indexes/pack files are untrusted - bounded parse + charset
+                    validators (names/versions/pins/globs/relpaths/secret names); traversal
+                    ("../evil", "dot/net", control chars) typed-rejected; NO eval anywhere.
+                    Covered (untrusted_index_text_is_validated_not_evaluated).
+stale_state       : ledger vs disk drift - Modified/Missing/Unexpected + mcp entry drift +
+                    diff_disk was/now rows; restore clears drift. Covered.
+new_input_parsing : unicode summaries (CJK + emoji) round-trip verbatim through index and
+                    packs; unicode/control-char NAMES are loader-unsafe and typed-rejected by
+                    design. Covered.
+flaky             : 3x repeat of all 31 registry tests = 31/31 each run. Covered.
+misleading_success: assertions target INSTALLED CONTENT (file text, ledger pins, loader
+                    routing) not return-shapes; hash-mismatch asserts zero disk artifacts. Covered.
+dirty_worktree    : distinguished - commit stages ONLY the registry tree + tests + evidence +
+                    one lib.rs line; the parallel WASM worker's Cargo.toml/Cargo.lock/.omo
+                    churn and pre-existing modified evidence files are left untouched.
+hung              : N/A (no network, no subprocesses, no timers in the registry path; suite
+                    finishes in ~1.2s single-threaded).
+others            : N/A one-line (see hung; no UI, no daemon wiring in this task's scope).
+
+DESIGN DECISIONS (for reviewers)
+-------------------------------------------------------------------------------
+- Signatures = keyed-blake3, NOT ed25519: zero new dependencies (task hint "justify whatever
+  lands"), authentic under the self-hosted registry model (operator holds the key); the
+  object-safe SignatureVerifier trait is the asymmetric seam the daemon can swap in.
+- Scope choice: Scope::project/global write the SAME .harness layout at their own roots; the
+  scope decision is the frontend's (todo 37/39) - the API takes the scope as a typed value.
+- Secrets: install verifies RESOLVABILITY only; values are discarded after the check. Config
+  files keep {{secret:NAME}} placeholders; runtime substitution belongs to the daemon's secret
+  store (T29). A pack declaring a secret that cannot resolve => MissingSecret, nothing written.
+- mcp_servers values are serde_json::Value passthrough BY DESIGN (declarative config patch,
+  Roo 10): the registry pins and verifies their bytes but never interprets the schema; server
+  names are validated; secrets inside them remain placeholders.
+- The T30 skills-lock.json and this registry-lock.json are deliberately separate files with
+  separate schemas: skills-lock pins whatever a directory scan finds; registry-lock records
+  what the registry verified-installed.
+
+Commit: feat(registry): verified pack distribution (single commit; exactly the files listed
+above + this evidence file).

@@ -44,6 +44,7 @@ pub mod loader;
 pub mod lock;
 pub mod migrate;
 pub mod pack;
+pub mod registry;
 pub mod routing;
 pub mod rules;
 pub mod skill;
