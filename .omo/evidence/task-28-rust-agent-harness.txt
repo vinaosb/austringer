@@ -1,0 +1,207 @@
+TASK 28 - User lifecycle hooks w/ trust review (rust-agent-harness)
+====================================================================
+Worker: task-28 implementation worker (Sisyphus-junior). Date: 2026-09-13.
+Base: HEAD 1c204ce on main (feat(mcp): rmcp client + server mode) - confirmed at start.
+Parallel workers disclosed: ONE in harness-safety (todo 27, permission engine). Shared file
+harness-core/src/lib.rs was mine alone this round: exactly ONE owned line (`pub mod hooks;`,
+alphabetical anchor between `eviction` and `inspectors`), re-read immediately before the edit,
+applied cleanly, no retry needed. No safety/mcp/exec files touched. Root Cargo.toml untouched
+(zero new dependencies: blake3/serde/serde_json/thiserror/async-trait/tokio all pre-existing).
+tests/common/mod.rs +1 owned line (pub mod hookkit;).
+
+MSVC ENVIRONMENT (disclosed, per task-13 precedent): the machine-wide VS servicing damage
+persists - libsqlite3-sys cc builds fail with C1083 (stdarg.h) because MSVC 14.50.35717's
+include dir is empty. Worked around session-side by pointing INCLUDE/LIB at the surviving
+ScopeCppSDK vc15 headers + Windows SDK 10.0.26100.0 + MSVC onecore libs (same recipe as
+task-13 evidence); nothing repo-side changed. Heavy builds use a private target dir on D:
+(C: is tight): CARGO_TARGET_DIR=D:\harness-targets\t28.
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+New module harness-core/src/hooks/ (11 files, all <=250 pure LOC, docs complete,
+#![deny(missing_docs)] satisfied, no unwrap/expect/panic outside #[cfg(test)]):
+
+  mod.rs      (105) HookEvent: the 13 typed trigger points (SessionStart, SessionEnd,
+               UserPromptSubmit, Stop, PreToolUse, PostToolUse, PostToolUseFailure,
+               PermissionDenied, Notification, SubagentStart, SubagentStop, PreCompact,
+               PostCompact); as_str/parse accept snake_case, CamelCase + Cursor aliases
+               (before_tool_call, stop_hook, notify, ...) - parse returns None on unknown
+               (never crashes on foreign names)
+  config.rs    (79) HookSpec (name/events/tool_matcher `|`-glob list/kind/timeout_secs/
+               fail_policy, serde-serializable - canonical sorted-key JSON via to_value);
+               HookKind::{Shell, Http{method,url}, Mcp{server,tool}, Prompt{policy}};
+               FailPolicy + default_fail_policy (PreToolUse gates tool execution = safety
+               decision => FailClosed default; all other events FailOpen - Grok fail-open
+               AVOIDED); DEFAULT_HOOK_TIMEOUT_SECS=10, HOOK_TIMEOUT_CEILING_SECS=60;
+               spec_hash = blake3 over canonical serialization (the trust pin)
+  trust.rs     (56) TrustRegistry: classify -> PendingReview | Approved | Modified{current};
+               approve pins, revoke unpins; serde Serialize/Deserialize = the restart
+               snapshot path (embedder/session-store persists it)
+  seams.rs     (69) FOUR injected seams, zero new deps, zero live network/model in tests:
+               ShellRunner (wiring doc: harness-exec PtyRunner adapter builds an ExecSpec
+               w/ hook timeout as command ceiling, payload on stdin), HttpTransport
+               (typed HookHttpRequest/Response), McpToolInvoker (T29 wiring), PromptEvaluator
+               (Cursor LLM-evaluated policy hooks; daemon injects the session-model adapter)
+  decision.rs (120) GateAction::{Allow,Reject,Modify,Synthesize} (Amp tool.call gate
+               actions), PostToolAction::{Keep,Replace} (output replacement/redaction),
+               StopAction::{Proceed,Block}; HookResponse = lenient untrusted parse target
+               (unknown fields ignored; empty output = no opinion); to_*_action converters
+               with typed HookParseError::{NotJson, UnknownDecision, MissingField}
+  executor.rs (159) run_hook: kind dispatch under tokio::time::timeout(spec.timeout_secs);
+               shell exit!=0 / HTTP non-2xx = typed HookError; untrusted text parsed per
+               event; PolicyVerdict -> event-specific opinion w/ exhaustive match
+               (VerdictMismatch typed for inapplicable verdicts)
+  manager.rs  (185) HookManager: specs + HookDeps + TrustRegistry + journal +
+               SafeOutputs (T7 threat-scan seam, reused) + stop-loop budget;
+               fire_matching = the single firing path (trust gate FIRST: PendingReview /
+               Modified hash mismatch = inert, journaled, never executed; approved ->
+               run_hook); every firing journaled w/ deterministic payload snapshot +
+               fail_policy; public event APIs (notify/session_end/subagent_*); sanitize_result
+               (threat-scan + output budget) + cap_augmentation (budget-capped untrusted text)
+  shared.rs   (106) SharedHooks (Arc<tokio::Mutex<HookManager>> - stage-scoped locking,
+               sequential pipeline => no contention) + stage constructors + HookedEntry:
+               the REAL EntryHook impl (SessionStart once-per-lifetime latch; then
+               UserPromptSubmit hooks rewrite each queued non-command prompt in place ->
+               "{orig}\n\n[hooks]\n{augment}" - the Steer stage records the enriched prompt)
+  gates.rs    (218) THE NO-BYPASS GUARANTEE: HookedApproval wraps the T7 InspectorChain -
+               pre_tool_gate combines opinions (first Reject > fail-closed failure > first
+               Modify > first Synthesize > Allow); a Modify REPLACES the pending call and
+               the MODIFIED call is re-evaluated by the chain (chain_decide temporarily
+               narrows StageCtx to the single call); a hook Allow NEVER short-circuits the
+               chain (hooks only narrow); Synthesize appends a sanitized ToolResult directly
+               and drops the call (never executed); chain denials fire PermissionDenied;
+               fail-closed failures deny the gated action. HookedExecutor: PostToolUse
+               Replace wins over Keep, replacement threat-scanned + budget-capped before
+               context; PostToolUseFailure observed fail-open, executor error propagates
+  stop.rs      (87) HookedStop: the REAL StopHook impl - fires Stop hooks (prompt verdicts
+               ContinueWorking->Block / Proceed, or shell/http decision "block"/"proceed");
+               a Block re-prompts the model by queueing "[stop-hook] {reason}" as steer
+               input (T5 consults StopHook before Inference - the queue is what drives the
+               next round) and consumes the LOOP_LIMIT budget (default 3); exhaustion =
+               typed transcript notice "stop-hook loop budget exhausted (N iterations);
+               letting exit proceed" + exit (T5's per-run block cap stays the structural
+               backstop; budget persists across run() calls). EXCEPT-STOP-SEMANTICS: hook
+               failures NEVER block the exit but ALWAYS land as transcript System notices
+               (never silent). SignalingCompactor (is_due/run_compaction) + HookedCompactor:
+               Pre/PostCompact fire around ACTUAL compactions only (T13's transcript markers
+               remain the durable record - reuse, not duplicate)
+  compat.rs   (223) read_claude_settings (nested settings-json shape: event -> [{matcher,
+               hooks:[{type,command|url,timeout}]}]) + read_flat (Cursor/legacy flat list
+               w/ event/hook_event + aliases); unknown fields/events/types swallowed as
+               TYPED CompatWarning::{UnknownEvent, UnknownField, UnknownHookType,
+               InvalidTimeout, TimeoutCapped, MissingCommand, MalformedShape}; garbage
+               never panics (non-object roots, numeric hooks arrays, null fields all
+               tolerated); timeouts clamped to the 60s ceiling w/ warning
+
+Tests: tests/hooks_events.rs (5), hooks_gates.rs (8), hooks_stop.rs (4), hooks_trust.rs (5),
+hooks_compat.rs (7), hooks_adversarial.rs (7) = 36 integration tests + 2 unit tests
+(trust.rs inline). tests/common/hookkit.rs: scripted+asserted mocks for all four seams
+(SharedShell/SharedTransport/SharedMcp/SharedEvaluator - queue-based, deterministic), Echo
+executor, OnceCompactor (SignalingCompactor impl), journal helpers.
+
+ACCEPTANCE + QA EVIDENCE (all from `cargo test -p harness-core`, D: target dir)
+-------------------------------------------------------------------------------
+RED first: suite failed to compile w/ `unresolved import harness_core::hooks` (module did
+not exist) + first real run exposed 3 genuine design findings fixed before green:
+(a) T5's op order consults StopHook BEFORE Inference -> a naive Block never re-prompts the
+model; fixed by queueing the block reason as steer input (documented in stop.rs docs).
+(b) wrapping the pipeline's no-op Compactor would fire Pre/PostCompact every iteration ->
+SignalingCompactor seam (fires around real compactions only). (c) BTreeMap config iteration
+order - compat tests assert by event, not position.
+
+[full command + results appended below in VERIFICATION section]
+
+Happy path 1 - prompt augmented by UserPromptSubmit hook (payload snapshot pasted):
+  test user_prompt_submit_hook_augments_prompt_through_loop ... ok
+  recorded user event text: "deploy the service\n\n[hooks]\nremember: deploys happen friday"
+  journal payload (golden, sorted keys): {"event":"user_prompt_submit","prompt":"deploy the service"}
+Happy path 2 - PostToolUse synthesizer replaces output before context:
+  test post_tool_use_synthesizer_replaces_output_before_context ... ok
+  tool-result blocks in transcript: ["[summary] 3 files changed"] - raw executor output
+  "executed read_file" is GONE from context (payload-content assert, not exit-code)
+Event set golden snapshots (each fires exactly once w/ deterministic sorted-key JSON):
+  {"event":"session_start"}
+  {"event":"user_prompt_submit","prompt":"start work"}
+  {"arguments":{"path":"a.txt"},"call_id":"c1","event":"pre_tool_use","tool":"read_file"}
+  {"call_id":"c1","event":"post_tool_use","result":"executed read_file","tool":"read_file"}
+  {"event":"pre_compact"} / {"event":"post_compact"}
+  {"event":"notification","message":"awaiting input"}
+  {"agent":"researcher","event":"subagent_start"} / {"agent":"researcher","event":"subagent_stop"}
+  {"event":"session_end"}
+  Stop (via stop stage): {"event":"stop","turn":1}
+  PermissionDenied: {"event":"permission_denied","reason":"...","tool":"dangerous_tool"}
+Failure path 1 - failing safety hook (fail-closed) denies the gated action:
+  test fail_closed_hook_failure_denies_gated_action ... ok
+  -> tool result contains "pre-tool-use hook failed closed: hook transport failed: runner
+     exploded"; the call never executed
+Failure path 2 - timed-out hook per policy (paused time, THE hung_or_long core probe):
+  test hung_hook_hits_timeout_cap_and_fails_closed ... ok (timeout=2s, fail-closed: denied)
+  test hung_hook_fail_open_proceeds_to_chain ... ok (timeout=1s, fail-open: chain allowed,
+     typed Timeout failure journaled non-fatally)
+Failure path 3 - hash-mismatch inert hook:
+  test modified_config_is_inert_until_reapproved ... ok
+  -> pinned registry restored across a "restart", config content changed: journal outcome
+     InertModified, seam received ZERO calls; re-approve un-inerts
+Stop-block proven (loop until criterion, bounded by loop_limit):
+  test stop_hook_blocks_until_criterion_bounded_by_loop_limit ... ok
+  -> evaluator ContinueWorking x3, loop_limit=2: 2 blocks re-prompted the model (3 assistant
+     turns, 3 evaluator consultations, block reasons in transcript), 3rd consultation hit
+     the budget: "stop-hook loop budget exhausted (2 iterations); letting exit proceed"
+  test loop_budget_persists_across_runs ... ok (spent budget denies run-2 blocks)
+No-permission-bypass (the structural test):
+  test modified_call_passes_back_through_permission_chain ... ok
+  -> hook modifies benign read_file into dangerous_tool; the T7 chain denies the MODIFIED
+     call; dangerous_tool never executed; PermissionDenied fired w/ tool=dangerous_tool
+  test hook_allow_still_requires_chain_approval ... ok (hook allow != chain bypass)
+Untrusted-text (adversarial):
+  test synthesized_result_skips_execution_and_is_threat_scanned ... ok
+  -> synthesized "key=AKIAIOSFODNN7EXAMPLE leaked" quarantined by injected ThreatScanner:
+     result contains "output quarantined ... aws key detected", AKIA string NOT in context
+  test synthesized_result_is_bounded_by_output_budget ... ok
+  -> 20k-char synthesis truncated w/ explicit omission marker
+Malformed (adversarial): test malformed_hook_output_is_typed_and_per_policy ... ok
+  (garbage JSON / unknown decision / modify-without-tool / exit code 2 - each typed, each
+  resolved per fail-policy: fail-closed denies, fail-open proceeds w/ journaled failure)
+Foreign configs w/ garbage (adversarial): test foreign_garbage_never_crashes ... ok
+New input parsing (adversarial): unicode prompts/commands/policies (CJK + emoji) round-trip
+  through payloads, commands, and matcher strings byte-exact (golden JSON w/ escapes)
+Cancel/resume (adversarial): test cancel_mid_hook_leaves_no_partial_journal_and_resumes_clean
+  ... ok (cancel while a hook hangs: zero partial journal entries; resume = reopen, clean)
+Stale state (adversarial): trust_pin_survives_restart_via_serialized_registry ... ok
+Misleading success (adversarial): journal_payload_content_is_asserted_not_just_firing ... ok
+  (exact golden payload bytes asserted AND the same bytes asserted as what the seam received)
+Flaky x3: full 6-binary hook suite run 3x - 36/36 ok each run (deterministic queue mocks +
+  tokio start_paused for the timeout probes; no wall-clock dependence)
+dirty_worktree: distinguished - staged ONLY hooks tree + 2 owned one-liner files + this
+  evidence file; parallel workers' .omo churn (evidence/run-continuation/start-work) untouched.
+repeated_interruptions: N/A per task card.
+
+VERIFICATION
+-------------------------------------------------------------------------------
+ cargo check -p harness-core                                   -> Finished (clean)
+ cargo clippy -p harness-core --all-targets -- -D warnings     -> Finished (0 errors)
+ rustfmt --check (all hooks src + tests + hookkit)             -> clean
+ cargo test -p harness-core --no-fail-fast                     -> 64 binaries, ALL ok
+   (includes the 36 new hook tests + 2 inline trust unit tests; pre-existing suites
+    unregressed - log/loop/inspectors/compaction/eviction/budget/autonomy/tools all green)
+ 3x repeat of the 6 hook binaries                              -> 36/36 ok every run
+ LOC audit: src/hooks max 223 (compat.rs); all files <=250. Test files within house norm
+   (existing repo tests reach 612; the ceiling binds source files).
+ Committed-tree worktree isolation: post-commit `git worktree add` from the new commit on
+   D: + `cargo test -p harness-core --no-fail-fast` -> ALL GREEN from the committed tree
+   (transcript below proves no dependence on uncommitted/untracked files).
+
+DESIGN NOTES / WIRING (for T29/T35+/daemon)
+-------------------------------------------------------------------------------
+- Shell runner production adapter: harness-exec PtyRunner (ExecSpec w/ hook timeout as the
+  command timeout ceiling, payload JSON on stdin, model_text as stdout) - documented in
+  seams.rs; wired by the daemon todo, NOT a hard dependency here.
+- MCP kind invokes via McpToolInvoker seam: T29's rmcp client implements it.
+- Prompt evaluator: daemon binds an LLM adapter on the session's own model.
+- TrustRegistry persistence: serialize/restore is the restart seam; the session store
+  (T24) or daemon owns the durable copy.
+- SignalingCompactor: T13's engine adapter implements is_due/run_compaction (the engine
+  already owns should_compact); Pre/PostCompact hooks then fire around real compactions,
+  T13's System/Condensation transcript markers stay the durable record.
+- Fail-open errors are journaled as typed HookOutcome::Failed (never silent); Stop-hook
+  failures additionally land as transcript System notices (except-Stop-semantics).
