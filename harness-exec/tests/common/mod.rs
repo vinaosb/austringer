@@ -2,6 +2,8 @@
 
 #![allow(dead_code, reason = "shared test helpers")]
 
+pub mod preflightkit;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};

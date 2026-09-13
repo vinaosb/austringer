@@ -11,10 +11,21 @@ workspace = true
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
+# Todo-22 pre-flight (a): the AST gate — touched-file parse validation
+# (is_error/is_missing diagnostics) over the default grammar set.
+harness-ast = { path = "../harness-ast", version = "0.1.0" }
+# Todo-22 pre-flight: gates run INSIDE a T21 shadow; the corrective cycle
+# revises applied edits through ShadowHandle and the caller commits after.
+harness-vfs = { path = "../harness-vfs", version = "0.1.0" }
 portable-pty.workspace = true
 vt100.workspace = true
 blake3.workspace = true
 thiserror.workspace = true
+# Todo-22 pre-flight (c): cargo-check structured extraction parses the
+# T19-bounded screen text for brace-balanced JSON diagnostic objects.
+serde_json.workspace = true
+# Todo-22 jsonscan: typed Deserialize structs for cargo diagnostic objects.
+serde.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 win32job.workspace = true

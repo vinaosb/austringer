@@ -1618,9 +1618,13 @@ name = "harness-exec"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "harness-ast",
  "harness-core",
+ "harness-vfs",
  "libc",
  "portable-pty",
+ "serde",
+ "serde_json",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.20",

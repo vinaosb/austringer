@@ -65,6 +65,7 @@ pub(crate) mod gc;
 pub(crate) mod manifest;
 pub(crate) mod paths;
 pub(crate) mod reflink;
+pub(crate) mod revise;
 pub(crate) mod shadow;
 pub(crate) mod store;
 pub(crate) mod worktree;

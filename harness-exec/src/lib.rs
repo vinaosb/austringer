@@ -58,6 +58,7 @@ pub mod cancel;
 pub mod fsutil;
 pub mod kill;
 pub mod pending;
+pub mod preflight;
 pub mod runner;
 pub mod screen;
 #[cfg(windows)]

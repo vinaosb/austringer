@@ -1,0 +1,280 @@
+TASK 22 - Deterministic pre-flight (rust-agent-harness)
+==============================================================
+
+Worker: task-22 implementation worker (Sisyphus-junior). Date: 2026-09-13.
+Base: started at HEAD d9cbb96 (confirmed); the parallel T23 snapshots
+worker committed 45a72d2 mid-run (no file overlap: harness-snapshots +
+Cargo.lock only) — this commit lands on top of 45a72d2. Parallel workers
+disclosed: harness-snapshots (T23, committed during this task) +
+harness-mcp (T29, uncommitted while I ran). Shared-file footprint:
+harness-exec/src/lib.rs (+1 line `pub mod preflight;`, anchored between
+`pending` and `runner`), harness-vfs/src/lib.rs (+1 line
+`pub(crate) mod revise;`), harness-exec/tests/common/mod.rs (+1 line
+`pub mod preflightkit;` after the allow attribute), harness-exec/
+Cargo.toml (+5 dep lines w/ justification comments; see INCIDENT below).
+No snapshots/mcp files touched.
+
+ENVIRONMENT INCIDENT (disclosed, recipe per .omo/evidence/task-13): the
+VS servicing incident is STILL LIVE — VS2022 MSVC 14.44 include dir is
+empty (0 headers) and VS18 Insiders MSVC 14.50.35717 include is empty
+too; cl.exe survives at 14.50 with lib/onecore/x64 populated. Session
+workaround applied per the task-13 recipe:
+  INCLUDE = C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\
+            ScopeCppSDK\vc15\VC\include;Windows SDK 10.0.26100.0
+            ucrt+shared+um
+  LIB     = VS18 14.50.35717\lib\onecore\x64;SDK ucrt\x64+um\x64
+Nothing repo-side changed. Shared target dir C:\ct (CARGO_TARGET_DIR)
+made the parallel workers rebuild-thrash on env differences; long lock
+waits absorbed by generous timeouts.
+
+PARALLEL-WORKER INCIDENT (disclosed): mid-run, harness-exec/Cargo.toml
+was silently reverted to HEAD content (my 5 dependency lines removed)
+by an external writer — surfaced as E0433 "cannot find crate harness_vfs"
+in an otherwise-green suite. Re-read + re-applied the identical edit
+(anchor retry discipline); all shared-file lines re-verified present
+before commit. Root cause beyond my scope (snapshots/mcp worker or
+tooling); watch for it in later tasks.
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+New module harness-exec/src/preflight/ (12 files, all <=250 pure LOC):
+  mod.rs       (167) doctrine + PreFlight::run orchestration: stage order
+                 (a)->(b)->(c), corrective loop MAX 2 fixer invocations,
+                 single volatile slot (latest failure replaces; never
+                 stacks), cancel polls between stages; commit is the
+                 CALLER's job after Outcome::Passed
+  stages.rs    (208) tool stages (b)/(c): adapter iteration, probe-present
+                 detection, bounded outcome->structured mapping (exit 0
+                 pass; exit n = extracted-or-one-bounded-line; TimedOut =
+                 typed "{tool} check timed out after {timeout:?}";
+                 Cancelled = clean abort)
+  astgate.rs   (172) stage (a): touched files parse with ZERO NEW error
+                 nodes — multiset difference of T14 diagnostics
+                 (kind,line,col,message) pre-image (user tree) vs
+                 post-image (shadow); no-grammar files -> deterministic
+                 balanced-delimiter heuristic (3 bracket pairs, disclosed
+                 as NoGrammarFallback notice; non-UTF-8 = NotText skip);
+                 >260-char paths via extended-length \\?\ reads
+  format.rs    (219) stage (b): FormatterAdapter trait + rustfmt
+                 (cargo fmt --check — stable cargo surface; the rustfmt
+                 LIB API is unstable + would add a dep) / prettier
+                 --check / gofmt -l / black --check; probe-based
+                 availability (spawn fail = ToolAbsent typed skip,
+                 never failure); MAX_FORMAT_FILES=64 arg cap w/ FileCap
+                 notice; per-tool structured extraction (Diff in/path
+                 lines -> file[:line])
+  check.rs     (155) stage (c): StaticChecker trait + CargoCheck (cargo
+                 check --workspace --message-format=json, shadow-private
+                 CARGO_TARGET_DIR) + TscCheck (tsc --noEmit); ecosystem
+                 marker gating (Cargo.toml / package.json|tsconfig.json =
+                 NoMarker skip); tsc line parse is END-anchored so paths
+                 containing parens survive
+  jsonscan.rs   (98) brace-balanced, string/escape-aware JSON object
+                 scanner over the T19-bounded screen text — PTY
+                 soft-wrap inserts newlines mid-object; the scanner is
+                 wrap-tolerant by construction; cargo extraction filters
+                 reason=compiler-message + level=error ONLY (warnings
+                 never surface), PRIMARY span first -> file:line:col +
+                 structured message (rendered block never read: MSVC
+                 multi-line renderings irrelevant); unparseable objects
+                 skipped; all-corrupt output degrades to one bounded line
+  structured.rs(68) StructuredError + build_failure (primary-first,
+                 MAX_SURFACED_ERRORS=8 cap, total count) + bounded_message
+                 (first line, 200 chars)
+  error.rs      (72) Stage/AttemptOutcome/StageAttempt/SkipReason
+                 {ToolAbsent,NoGrammarFallback,NotText,NoMarker,FileCap}/
+                 SkipNotice/PreFlightFailure/Outcome/PreFlightReport +
+                 PreFlightError {Cancelled,ReadTouched,Analyze,Fixer,
+                 Revise}
+  fixer.rs      (24) FixerSeam trait (injected policy; returns shadow
+                 revisions anchored on CURRENT shadow bytes) + default
+                 SurfaceAfterTwo (never fixes; empty fix set is a
+                 provable no-op so identical reruns are skipped — the
+                 <=2 cap holds trivially). NO LLM anywhere.
+  setup.rs      (65) + setup_parse.rs (128) + setup_job.rs (201): the
+                 repo-owned setup-steps.yml prep-recipe (Copilot shape):
+                 typed SetupSteps/SetupJob/SetupStep + strict line parser
+                 (single job, single default-branch trigger, non-empty
+                 run steps, quote stripping, CRLF, block+flow branch
+                 lists) + typed SetupStepsError w/ line numbers (tabs,
+                 unknown keys, multiple jobs/branches, missing fields);
+                 daemon executes later — validation + parsing now.
+                 Sample file committed at harness-exec/tests/fixtures/
+                 setup-steps.yml.
+
+New in harness-vfs: revise.rs (98) ShadowHandle::revise — the corrective
+cycle's write path: re-edits paths ALREADY in the transaction anchored on
+CURRENT shadow content (apply() rejects re-edits by design; revise keeps
+the ORIGINAL user-tree expectation so commit-time drift verification is
+unchanged) + introduces new transaction members with apply semantics.
+The user tree remains untouched (only commit() writes it).
+
+Tests: 8 binaries, 61 tests, all deterministic except ONE live PTY probe:
+  preflight_pipeline.rs  acceptance (syntax error caught at (a), zero
+                         subprocesses, user tree untouched), happy
+                         2-iteration fix loop -> all gates pass ->
+                         commit-ready (commit materializes), failure
+                         persists-after-2 -> typed PreFlightFailure
+                         (primary-first, <200 chars, produced_at_iter 2),
+                         single-slot REPLACE (iteration-0 brace error
+                         absent from surfaced slot), misleading_success
+                         (stage ORDER + structured CONTENT at Check)
+  preflight_astgate.rs   new-error-node semantics (pre-broken baseline
+                         passes unchanged; only NEW diagnostics surface;
+                         created-file empty baseline), fallback heuristic
+                         (new-unbalanced fails, pre-unbalanced passes,
+                         balanced passes, disclosure notices), non-UTF-8
+                         typed skip
+  preflight_format.rs    claim routing exact, per-tool extraction
+                         (rustfmt Diff-in/prettier [warn]/gofmt list/
+                         black would-reformat), cwd+relative args+timeout
+                         in specs, 64-file cap, absent-formatter typed
+                         skip + stage passes, unformatted->structured
+                         path/line, no-parse output -> one bounded line
+  preflight_check.rs     cargo JSON (primary span, warnings filtered,
+                         MSVC multi-line structured-only, non-UTF8/wrap
+                         tolerant, truncated -> bounded fallback), marker
+                         gates, tsc parse (file/line/col/code, parens-in-
+                         path, non-error lines ignored), checker timeout
+                         typed surfacing
+  preflight_setup.rs     committed sample parses; minimal/block-form/CRLF/
+                         comments/quotes variants; 11 typed rejections
+  preflight_cancel.rs    pre-cancelled token runs nothing; cancelled
+                         check aborts whole pipeline (Err(Cancelled))
+  preflight_inputs.rs    unicode path+content, CRLF pass + CRLF errors
+                         caught
+  preflight_fs.rs        >260-char deep path full pipeline, stale_state
+                         (user-tree edit mid-flight -> T21 BaseDrift at
+                         commit, NOT masked), dirty_worktree distinguished
+                         (unrelated dirt never blocks commit),
+                         determinism x3 loop, LIVE Windows probe: real
+                         PtyRunner + 31s ping "checker" killed by the 2s
+                         config timeout -> typed Check failure (14s wall)
+Kit: tests/common/preflightkit.rs — ScriptedRunner (records specs,
+replays outcomes, exhausted queue = spawn-absent), ScriptedFixer (edit
+plans + seen primaries), Rig (deps assembly), fixture builders.
+
+TDD RECORD
+-------------------------------------------------------------------------------
+RED: cargo test -p harness-exec --test preflight_{pipeline,astgate,format,
+check,setup,fs} -> error[E0433] cannot find `preflight` in `harness_exec`
+(xN per binary; all 6 test binaries failed to compile) — right reason:
+module absent. (Emitted after the MSVC env workaround unblocked the
+tree-sitter cc builds.)
+GREEN: after implementation all six suites ok. Honest fix cycles during
+green: kit deps E0515 (Rig owns analyzer/cancel), Cargo.toml clobber
+incident (re-applied deps), tsc marker-slicing bug (END-anchored parse),
+cargo truncated-JSON fallback semantics, CRLF fixture anchor (shadow 1
+discarded -> anchor on original user bytes), clippy (needless_borrow,
+manual_ok_err, clone_on_copy, useless_concat w/ justified allows),
+LOC splits (mod.rs 362->mod 167+stages 208; setup.rs 386->setup 65+
+setup_parse 128+setup_job 201; test files <=250).
+
+VERIFICATION (commands + results)
+-------------------------------------------------------------------------------
+cargo test -p harness-exec                                  104 passed, 0 failed
+  (18 binaries: all pre-existing PTY/pathologies/chaos suites still green
+   + 61 new preflight tests; live suites 211s/110s/31s absorbed)
+cargo test -p harness-vfs                                    34 passed, 0 failed
+  (0+0i, 0+0i/3 ignored-bench, 5, 11, 7, 6, 5, 0)
+cargo clippy -p harness-exec -p harness-vfs --all-targets -- -D warnings
+                                                             clean (exit 0)
+cargo fmt -p harness-exec -p harness-vfs -- --check          clean (exit 0)
+x3 determinism: preflight_{pipeline,astgate,format,check,setup,inputs,
+cancel} three consecutive runs -> 56 passed / 0 failed EACH (identical).
+Pure LOC: max file 244 (tests/preflight_pipeline.rs); src max 219
+(format.rs) — all <=250 ceiling.
+Committed-tree worktree isolation (post-commit): commit c0ab287 checked
+out into a fresh git worktree with a PRIVATE target dir (no shared-cache
+contamination from the parallel workers, full cold rebuild incl. the
+tree-sitter C compiles under the MSVC workaround):
+  git worktree add <tmp>\wt22 c0ab287
+  cargo test -p harness-exec -p harness-vfs   -> exit 0
+  harness-exec: 18 binaries ALL green (61 new preflight tests + every
+  pre-existing PTY/pathologies/chaos suite, e.g. 6 passed/163.59s live
+  gate, 10 passed/83.13s)
+  harness-vfs:  9 binaries ALL green (34 passed)
+  -> the commit is self-contained; worktree removed after the run.
+
+CLOSING NOTE (Cargo.lock discipline): the parallel T29 mcp worker has
+uncommitted manifest changes (rmcp/axum tree) that leak into any working-
+tree lock refresh; this commit's Cargo.lock delta was staged surgically
+as exactly +4 lines ("harness-ast", "harness-vfs", "serde", "serde_json"
+in harness-exec's package block) via git hash-object/update-index so it
+carries ONLY this task's delta. Root Cargo.toml untouched by this task
+(the dirty state visible during the run belongs to T29).
+
+QA CHANNEL PASTES
+-------------------------------------------------------------------------------
+HAPPY - 2-iteration fix loop then success (stage sequence asserted:
+ast fails x2, then ast->format->check all pass; only claiming tools ran:
+cargo fmt probe, cargo fmt --check, cargo --version, cargo check; commit
+materializes the fixed file into the user tree):
+  $ cargo test -p harness-exec --test preflight_pipeline corrective_cycle
+  running 1 test
+  test corrective_cycle_fixes_on_second_iteration_then_all_gates_pass ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out
+  [asserts inside: trace == [(0,Ast,Failed),(1,Ast,Failed),
+   (2,Ast,Passed),(2,Format,Passed),(2,Check,Passed)]; fix_iterations==2;
+   programs == [cargo,cargo,cargo,cargo]; commit().written==1;
+   user tree == fixed bytes]
+
+FAILURE - persists after 2 -> typed PreFlightFailure (compact,
+primary-first, never a dump; user tree untouched):
+  $ cargo test -p harness-exec --test preflight_pipeline failure_persisting
+  running 1 test
+  test failure_persisting_after_two_iterations_surfaces_typed_pre_flight_failure ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out
+  [asserts inside: fix_iterations==MAX_FIX_ITERATIONS(2); failure.stage==
+   AstGate; produced_at_iteration==2 (LAST replaces); primary.message
+   len < 200; trace == [(0,Ast,Failed),(1,Ast,Failed),(2,Ast,Failed)];
+   user tree byte-identical to pre-edit]
+
+ACCEPTANCE (plan): fixture repo, injected syntax error caught at (a) AST
+gate, never reaches formatter/compiler —
+  $ cargo test -p harness-exec --test preflight_pipeline syntax_error_is_caught
+  test syntax_error_is_caught_at_ast_gate_and_never_reaches_formatter_or_compiler ... ok
+  [asserts inside: trace == [(0,Ast,Failed)] EXACTLY ONE stage; runner
+   .recorded().is_empty() ZERO subprocesses; primary.tool=="ast-gate",
+   position-exact line; user tree untouched]
+
+DESIGN DECISIONS (justifications required by the task brief)
+-------------------------------------------------------------------------------
+- Placement harness-exec/src/preflight/ (not a new crate): the plan's own
+  commit prefix for todo 22 is `feat(exec)`; pre-flight is the consumer
+  of T14+T19/20+T21 and the natural home is the command-runner crate;
+  ZERO root Cargo.toml changes (harness-ast/harness-vfs/serde/serde_json
+  are path/workspace deps already in the tree); dependency graph stays
+  acyclic (exec -> ast, vfs). Blocks T23 cleanly.
+- rustfmt via `cargo fmt --check` invocation, NOT the rustfmt lib crate:
+  the library API is unstable across releases and would add a dependency;
+  the cargo surface is the stable one, is workspace/rustfmt.toml-aware,
+  and rides the same probe/timeout/kill-tree discipline as every other
+  adapter through the CommandRunner seam.
+- Corrective-cycle interpretation of "default = surface-after-2": the
+  cap (<=2 fixer invocations) is structural; the default SurfaceAfterTwo
+  policy returns no edits, and an empty fix set is a PROVABLE no-op
+  (pipeline deterministic) so identical reruns are skipped — surface
+  happens after the initial run without wasting cold cargo checks.
+- Single-slot semantics: only ONE failure object exists at surface time
+  (each failed iteration replaces it); the composite carries primary
+  first + <=8 structured errors + total count.
+- PTY screen text as extraction source: T19's ExecOutcome is bounded by
+  design (window law) — the binding brief names this the T19 bounded-
+  output discipline. The brace-balanced scanner makes JSON extraction
+  wrap-tolerant; very large error floods degrade to the bounded window +
+  total count, which IS the compact-rejection contract.
+
+RESIDUAL RISKS
+-------------------------------------------------------------------------------
+- cargo check inside a fresh shadow is a COLD build (shadow-private
+  CARGO_TARGET_DIR keeps the user cache untouched); warm incremental
+  needs daemon-side target sharing (wiring decision deferred).
+- The delimiter fallback can false-FAIL on prose files with unbalanced
+  brackets in strings/comments (conservative direction: never a false
+  pass; disclosed via NoGrammarFallback notices).
+- ast-gate new-error matching is position-exact; edits that SHIFT
+  pre-existing diagnostics count them as new (again conservative-fail).
+- PowerShell regex round-trips on test sources required UTF-8-aware
+  rewrites (one mid-run corruption was caught by FFFD checks + fixed);
+  the write/edit tools were used for all later source edits.
