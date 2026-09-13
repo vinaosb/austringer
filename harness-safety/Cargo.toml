@@ -8,3 +8,31 @@ repository.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Todo-26 container backend: Docker/Podman arg generation + optional
+# daemon smoke test. Off by default; `--features container` opts in.
+container = []
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+base64ct.workspace = true
+getrandom.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+win32job.workspace = true
+windows-sys.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "harness-safety-probe"
+path = "src/bin/probe.rs"

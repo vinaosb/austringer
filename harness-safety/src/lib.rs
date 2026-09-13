@@ -1,9 +1,22 @@
-//! OS-native sandbox backends and the permission engine.
+//! OS-native sandbox backends, egress control, and credential hygiene
+//! (plan todo 26).
 //!
-//! Scaffold only (plan todo 1): no business logic yet.
+//! One typed [`SandboxPolicy`](policy::decl::SandboxPolicy), many
+//! backends (Copilot MXC pattern): Windows AppContainer + ACLs + Job
+//! Objects (runtime-tested), Linux Landlock + seccomp (CI-owned),
+//! macOS Seatbelt (profile generation tested cross-platform), and an
+//! optional hardened container backend. Egress is a typed allowlist
+//! that starts EMPTY (zero vendor-escape domains), backed by a userland
+//! filter-proxy fallback where the kernel lacks host-level network
+//! isolation. Every sandboxed run reports requested-vs-enforced with
+//! named gaps — isolation is never claimed where it was not
+//! established, and unenforceable isolation REFUSES to start.
+#![deny(missing_docs)]
 
-#[test]
-fn workspace_scaffold_smoke() {
-    let scaffold_in_place = true;
-    assert!(scaffold_in_place);
-}
+pub mod backends;
+pub mod creds;
+pub mod egress;
+pub mod oidc;
+pub mod policy;
+pub mod report;
+pub mod scrub;

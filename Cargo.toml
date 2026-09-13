@@ -138,6 +138,17 @@ argon2 = "0.6"
 # Todo-24 sessions store: OS entropy for per-session data keys, AEAD
 # nonces, and argon2 salts (tiny; already transitively in the tree).
 getrandom = "0.3"
+# Todo-26 Windows sandbox: restricted-token/AppContainer + ACL enforcement
+# (CreateAppContainerProfile, SetEntriesInAclW, CreateProcessW attribute
+# list). windows-sys 0.61 is already in the lockfile transitively (via
+# sysinfo/win32job trees), so this pins no new vendor code; features select
+# only the modules the sandbox touches.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Isolation", "Win32_System_Threading", "Win32_Storage_FileSystem"] }
+# Todo-26 OIDC workload-identity signer: HMAC-SHA256 (RFC 4231) for
+# short-lived JWTs. RustCrypto, pure Rust; digest already in the tree via
+# sha2. ed25519 would add two new crates — HMAC is the minimal honest
+# signer for a seam whose transport is not wired yet.
+hmac = "0.12"
 
 [workspace.lints.rust]
 warnings = "deny"

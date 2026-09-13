@@ -1,0 +1,221 @@
+TASK 26 — OS-native sandbox backends + egress control (harness-safety)
+=======================================================================
+Worker: todo-26 implementation worker (Sisyphus-jior). Date: 2026-09-13.
+HEAD at start: 62b32bf (confirmed). Machine: Windows 11, Rust 1.98, MSVC.
+
+WHAT SHIPPED (all in harness-safety, policy consumed by exec/permission layers)
+--------------------------------------------------------------------------------
+- policy/ (decl, glob, merge): ONE typed SandboxPolicy (tier, writable/
+  readable roots, protected paths .git/.harness/.agents + settings file,
+  deny-globs, egress, env scrub) + deny-wins layered merge + SESSION-PINNED
+  profiles (serde round-trip, mid-session change = typed ProfilePinned
+  rejection) + ViolationEvent seam (allow-once/always/deny, default Deny)
+  + once-per-thread EscapeGate (Zed).
+- Deny-globs FAIL CLOSED: hand-written matcher (*, ?, [class], **), zero
+  on-disk matches under a root = GlobError::Unresolvable -> backend
+  refuses to start (RefusedToStart), never allow-by-failure.
+- backends/: SandboxBackend trait + EnforcedSandbox + RefusedToStart
+  taxonomy (fail-closed posture, no degraded mode).
+  * windows_sandbox (+ win_ffi, win_spawn, win_util): REAL, runtime-tested
+    here (see mechanism notes). AppContainer (LowBox token via
+    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES — standard user, no
+    privileges) + DACL grant/deny ACEs for the package SID + Job Object
+    (KILL_ON_JOB_CLOSE, assigned immediately post-spawn; thin reimpl of
+    the T19 pattern — harness-exec's TreeGuard takes a PTY child, and the
+    dependency direction is exec -> safety).
+  * linux_sandbox (+ linux_seccomp): Landlock rulesets (writable roots =
+    path-beneath write grants) + seccomp cBPF blocking socket(AF_INET/
+    AF_INET6) when egress allowlist is empty. DECLARED: Landlock over
+    bubblewrap (kernel-native, no setuid helper binary/distro packaging
+    dependency); runtime capability DETECTED via create_ruleset probe,
+    absence = RefusedToStart (fail-closed), NOT a silent fallback.
+  * macos_sandbox: Seatbelt PROFILE STRING generation cross-platform +
+    sandbox-exec enforcement cfg(macos).
+  * container (feature-gated): docker/podman args — --cap-drop=ALL,
+    no-new-privileges, --pids-limit, --read-only rootfs, rw mounts for
+    writable roots, --network=none (hermes hardening defaults).
+- egress.rs: typed HostPattern (exact / label-boundary wildcard / port),
+  EgressVerdict + DenyReason, allowlist starts EMPTY (Droid AVOID: zero
+  vendor-escape domains), matching is pure text — no regex/eval of
+  untrusted host strings.
+- scrub.rs: inherit-core env policy; *KEY*/*SECRET*/*TOKEN* dropped
+  case-insensitively by default; typed exception list.
+- report.rs: requested-vs-enforced diff (Isolation::{None,Changes,
+  Process} + NetworkIsolation::{Kernel,UserlandProxy,None}); every gap is
+  NAMED (fs_write/fs_read/network/env_scrub); claims_process_isolation
+  only when everything is Process+Kernel. Never claims what the backend
+  did not establish.
+- oidc.rs + creds.rs: SubjectTemplateClaims (principal/email/teams/
+  environment/agent_name/run_id — Warp federation template) consumed by
+  WorkloadIdentityService minting short-lived HS256 JWTs (RFC 4231
+  vector-pinned), OidcSigner trait (HmacSigner + MockSigner), typed
+  TokenRequest/Response wire seam (daemon wires the sandbox-reachable
+  socket later); CredentialHelper trait + InMemoryCredentialHelper
+  (per-command short-lived tokens, Debug-redacted, nothing persisted).
+
+WINDOWS MECHANISM (probe-tested, honest record — 6 probe iterations)
+--------------------------------------------------------------------
+Chosen: AppContainer. Rejected routes, all empirically:
+- CreateProcessAsUser + restricted token (CreateRestrictedToken
+  DISABLE_MAX_PRIVILEGE, no IL change): ERROR_PRIVILEGE_NOT_HELD (1314)
+  for standard users on this build.
+- Same + low IL, same + Users/BUILTIN restricting SID: 1314 regardless.
+  (Also learned: capability SIDs like S-1-15-2-1 are rejected as
+  restricting SIDs — CreateRestrictedToken err 87.)
+- SetTokenInformation(TokenAppContainerSid): ERROR_INVALID_PARAMETER
+  (87) in both orderings (IL-before/after) — dead end; the kernel builds
+  the LowBox token from the spawn attribute instead.
+- AppContainer attribute + CREATE_SUSPENDED: child NEVER completes init
+  (hang -> 10s timeout). Backend spawns UNSUSPENDED; job assigned
+  immediately after (T19's documented microsecond window).
+- AppContainer attribute + custom lpEnvironment: ERROR_ENVVAR_NOT_FOUND
+  (203), even for a 1-var UTF-16 block. Isolated by probe matrix:
+  AC+NULL-env works, plain+env works, AC+env fails. Consequence: this
+  backend CANNOT scrub/override env at spawn; it reports env_scrubbed
+  false + a named env_scrub gap (scrub stays a real, tested policy
+  enforced at the exec-layer command seam, todos 19/27).
+Kernel semantics learned (all probe-verified):
+- AppContainer access checks are dual-principal: an object needs a
+  package-SID GRANT; deny ACEs for the package SID do NOT subtract.
+  Protected paths are therefore enforced by marking their DACL
+  PROTECTED (0x80000000 — not 0x800, which silently does nothing) which
+  strips/blocks inherited grants; the deny ACE stays as belt+suspenders.
+- The kernel never strips inherited-flagged ACEs from a caller-provided
+  DACL; the icacls /inheritance:r client-side filter is reimplemented
+  (strip_trustee_aces walks the ACL and drops package-SID ACEs).
+- Profile SIDs from CreateAppContainerProfile free with FreeSid
+  (LocalFree = heap corruption — found via STATUS_HEAP_CORRUPTION crash
+  and fixed); GetNamedSecurityInfoW DACL points INTO the security
+  descriptor — free the descriptor, never the interior pointer.
+- Probe workspace: C:\Users\vsbb1\AppData\Local\Temp\opencode\
+  sandbox-probe (scratch, outside the repo, kept for audit).
+
+COMMANDS + RESULTS (Windows 11 host, debug profile)
+---------------------------------------------------
+- cargo test -p harness-safety            12 suites, 58 passed / 0 failed
+  (egress 10, escape_windows 9, glob 7, oidc_creds 9, policy 12,
+  report 6, scrub 5, seatbelt 6) — run 3x consecutively, identical
+  results (flaky x3 satisfied)
+- cargo test -p harness-safety --features container --test container_args
+  => 3 passed + docker_daemon_smoke_run (ignored) executed explicitly:
+  PASSED against the live Docker daemon 29.7.2 (alpine:3, hardened args,
+  rw mount received the container's write). DISCLOSED: daemon present on
+  this machine; the smoke test self-skips when unreachable.
+- cargo clippy -p harness-safety --all-targets --features container --
+  -D warnings                                                => clean
+- cargo clippy -p harness-safety --target x86_64-unknown-linux-gnu --
+  -D warnings                        => clean (Landlock+seccomp cfg
+  paths compile under deny lints; no shim crate needed — harness-safety
+  has no path deps, unlike T19's harness-core/sqlite situation)
+- cargo clippy -p harness-safety --target aarch64-apple-darwin --
+  -D warnings   => clean (std target installed this session; seatbelt
+  enforcement path typechecks; RUNTIME proof owned by todo-3 CI matrix)
+- cargo fmt -p harness-safety -- --check                     => clean
+- cargo deny check      => advisories ok, bans ok, licenses ok, sources
+  ok (pre-existing duplicate-version warnings only, unchanged class)
+- LOC audit: every src + tests file <= 250 pure LOC (win_ffi split into
+  win_ffi/win_spawn/win_util; linux_sandbox split off linux_seccomp)
+- grep src for unwrap()/expect(/panic!/todo!/unimplemented!  => 0 hits
+- MSVC workaround (task-8 evidence L220-226): NOT needed — no C builds
+  (windows-sys is pure declarations; hmac/sha2/getrandom/base64ct pure
+  Rust); rusqlite not in this crate's dep graph.
+
+DEPENDENCIES (root Cargo.toml, each justified inline)
+-----------------------------------------------------
+- windows-sys 0.61 (target windows): already in the lockfile
+  transitively (sysinfo/win32job trees); features select only the six
+  modules the sandbox touches. No new vendor code.
+- hmac 0.12 (workspace): RustCrypto HMAC-SHA256 for the OIDC signer
+  (scope clause: HMAC via dep tree if present, else minimal crate;
+  sha2/digest already present; ed25519 would add two crates).
+- win32job, libc, serde, serde_json, thiserror, sha2, base64ct,
+  getrandom: existing workspace deps. harness-core dep intentionally
+  absent (safety is a leaf; exec consumes safety, never the reverse).
+
+QA CHANNELS (pasted from `cargo test -p harness-safety --test
+escape_windows -- --nocapture` — REAL kernel enforcement, standard user)
+------------------------------------------------------------------------
+test unresolvable_glob_refuses_to_start ... ok
+test env_scrub_gap_is_reported_honestly_on_this_backend ... ok
+test report_shows_enforced_equals_requested_for_successful_enforce ... ok
+test spawned_child_dies_with_job_domain ... ok
+test allowed_write_inside_root_is_transparent ... ok
+test write_to_settings_file_is_denied ... ok
+test write_outside_root_is_denied_by_kernel ... ok
+test deny_glob_target_is_denied_when_resolvable ... ok
+test write_to_protected_git_metadata_is_denied ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered
+out; finished in 1.01s
+
+Happy channel: allowed_write_inside_root_is_transparent — the sandboxed
+probe writes inside the worktree root, exit 42 (transparent success) +
+on-disk file present; report test asserts fs_write == Changes,
+network == Kernel, and NO fs/network gaps.
+Failure channel: writes outside the root, to .git metadata, to the
+settings file, and to a resolved deny-glob target all exit 5 (OS
+denial) with NO on-disk artifact; pre-existing protected content
+intact; unresolvable glob -> RefusedToStart; job kill reaps a 30s
+command in <15s. Assertions check exit codes + on-disk evidence +
+named report gaps — never booleans alone (misleading_success guard).
+Ground truth captured mid-development (icacls of a live fixture):
+  .git DACL: S-1-15-2-<pkg>:(OI)(CI)(DENY)(W,D,Rc,WDAC,WO)  [explicit]
+  root DACL: S-1-15-2-<pkg>:(OI)(CI)(M)                     [grant]
+  (plus PROTECTED bit — the load-bearing half for .git/settings).
+
+ADVERSARIAL COVERAGE
+--------------------
+- malformed: unparseable globs, malformed HostPatterns, corrupt pinned
+  profile payloads — all typed errors; policy w/ unresolvable glob
+  refuses at enforce time (tested).
+- stale_state: pinned profile restore round-trip + tampered payload.
+- bypass probes: the escape suite IS the bypass battery (outside-root,
+  protected paths, deny-glob, settings file; cmd.exe AND probe-exe
+  children; job-domain kill).
+- hung: covered by the suspended-LowBox discovery (documented; backend
+  avoids the flag) — N/A in tests by construction.
+- flaky x3: full suite x3, identical.
+- misleading_success: EPERM-class exit codes + on-disk absence + report
+  diff assertions (not booleans).
+- new input parsing: unicode hosts (exact text match), empty/scheme/
+  traversal host strings rejected, >260-path fixtures implicitly via
+  temp dirs + \\?\-style losses documented in FS-contention hardening
+  (todo 20's domain); glob backslash rejection.
+- dirty_worktree: parallel workers (todo 13 core / todo 30 skills)
+  own core/skills/.omo — untouched; shared-file discipline via anchor/
+  re-read before root Cargo.toml edit (no conflicting edits present).
+- untrusted text: egress host strings compared by equality/label
+  suffix only; shell-metacharacter hosts tested as denied input.
+- Others N/A as scoped.
+
+RESIDUAL RISKS / DISCLOSURES
+----------------------------
+1. env scrub at SPAWN is unenforceable on this Windows build (os error
+   203) — reported as a named gap; enforcement lives at the exec-layer
+   command seam. Linux backend DOES pass a scrubbed env (std Command).
+2. AppContainer profile dirs are deleted best-effort on teardown;
+   leaked profiles (crash paths) are inert OS cruft, reclaimable.
+3. Read policy on Windows: system files readable (ALL APPLICATION
+   PACKAGES ACEs), roots readable via grants, other user paths denied
+   (dual-principal default) — stricter than "read world", reported as
+   Changes-level fs_read.
+4. Network on Windows = kernel deny-by-default (no capabilities ->
+   WFP blocks outbound); allowlisted egress rides the userland filter
+   proxy (egress.rs verdicts; daemon wiring later).
+5. linux/macos backends are typecheck-proven ONLY on this machine;
+   runtime proof is owned by the todo-3 CI matrix (linux leg: Landlock
+   kernel >= 5.13 required, else RefusedToStart by design).
+6. Probe scratch workspace left under Temp\opencode for audit.
+
+WORKTREE ISOLATION VERIFICATION (committed-tree)
+------------------------------------------------
+git worktree add at a temp commit of exactly the 33 task files
+(6103192, later soft-reset and recommitted as the single task commit),
+fresh checkout in Temp\opencode\t26-verify, independent target dir:
+  cargo test -p harness-safety  => identical 12-suite result,
+  58 passed / 0 failed, including the 9-test REAL runtime escape suite
+  (kernel enforcement reproduces from a clean tree, no dependency on
+  uncommitted state). Worktree removed afterwards; temp commit soft-
+  reset so history carries exactly ONE task commit.
+Parallel-work note: todo-13 (cd98b53) and todo-30 (6f4310e) landed from
+other workers during this task; no shared-file conflicts occurred
+(anchor/re-read discipline on root Cargo.toml; core/skills untouched).
