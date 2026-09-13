@@ -1,0 +1,184 @@
+= TASK 33 - rust-agent-harness: domain pack content (packs/) ================
+Worker: todo-33 implementation worker (Sisyphus-junior), 2026-09-13
+Base: HEAD c50ec2d confirmed at start (git log). One parallel worker
+active in harness-skills/src/forge (todo 31) with untracked tests
+(forge_delta/forge_journal/forge_*) referencing unfinished modules —
+disclosed below; zero overlap with this task's files.
+Commit: feat(packs): shipped domain content
+
+WHAT SHIPPED (registry CONTENT, not binary code — plan guardrail)
+-----------------------------------------------------------------------
+packs/ at the workspace root (11 packs + manifest + _shared partials):
+  programming: dotnet (seeded from the maintainer's real skill library:
+    dotnet-clean-arch, aspnetcore-health, postgresql-efcore,
+    distributed-caching, http-error-handling, signalr-realtime,
+    blazor-mudblazor, quartz-scheduling, keycloak-oidc,
+    microsoft-foundry), frontend, backend, devops          (v1.0.0)
+  domain (D6, authored from scratch, workflow/checklist guidance only,
+    disclaimer-framed, NO jurisdiction-specific legal opinions):
+    legal, maths, accounting, finance-investors            (v1.0.0)
+  exemplar ports (fixture-quality representative subsets, documented
+    in-pack as exemplars, NOT full ports):
+    audit-exemplar (audit-squad pattern + findings schema),
+    datacenter-aec (electrical/structural/thermal/fiber/BIM),
+    ai-deployment (microsoft-foundry deploy-model/capacity/finetuning)
+                                                           (v0.1.0)
+Every pack: triggers (incl. non-English where natural) + negative scope
+(do-not-trigger-on) + languages[] + allowed-tools hints + one WORKED
+EXAMPLE + EVAL SCENARIO; per-model guidance where meaningful (dotnet,
+legal, maths, audit-exemplar); context_fork: true on audit-exemplar.
+All bodies interpolate {{shared:pack-conventions}} (audit-exemplar also
+{{shared:audit-findings-schema}}) — real use of T30 pack aggregation.
+packs/manifest.json (v1) lists name/category/version/summary + the
+documented install path (<project>/.harness/skills/<name>/ + _shared/;
+todo-32 registry will automate pin+hash install). packs/README.md
+documents layout, exemplar status, and authoring rules.
+Code surface: ONE new integration test file (content-only approach —
+harness-skills/src/lib.rs NOT touched, left entirely to the parallel
+forge worker whose `pub mod forge;` edit is in-flight).
+
+TDD RED RUN (tests authored FIRST; content absent)
+-----------------------------------------------------------------------
+cmd: cargo test -p harness-skills --test packs_acceptance
+  (private CARGO_TARGET_DIR=...\Temp\opencode\t33-target; ran BEFORE
+  packs/ existed)
+result: FAILED. 0 passed; 5 failed — every test panicking at
+  "packs/ registry content dir must exist at the workspace root"
+  => RED for the right reason (content missing; tests compile clean
+  against the existing T30 loader API — no test bugs).
+
+GREEN + FULL VERIFICATION
+-----------------------------------------------------------------------
+cargo test -p harness-skills --test packs_acceptance             PASS
+  -> test result: ok. 5 passed; 0 failed
+cargo test -p harness-skills --test packs_acceptance --test
+  corpus_acceptance --test loader_vendor --test consent_lock_extra
+  --test packs_lock_watch --test rules_precedence --test skill_format
+  -> ok: 5+7+5+5+7+9+8 = 46 passed; 0 failed (mine + all six
+  pre-existing T30 binaries)
+cargo clippy -p harness-skills --lib --test packs_acceptance
+  -- -D warnings                                                  clean
+rustfmt --check harness-skills/tests/packs_acceptance.rs          clean
+Pure LOC: packs_acceptance.rs = 198 (<=250); packs/ is content
+(max SKILL.md = 106 lines). Zero new dependencies (content + one test
+using existing serde_json dev surface).
+
+QA CHANNEL PASTES
+-----------------------------------------------------------------------
+$ cargo test -p harness-skills --test packs_acceptance
+running 5 tests
+test every_pack_carries_the_full_routing_surface_and_worked_example ... ok
+test all_shipped_packs_parse_clean_and_manifest_stays_in_sync ... ok
+test representative_prompts_route_to_the_right_pack ... ok
+test cross_domain_prompts_do_not_mis_trigger ... ok
+test non_english_prompts_route_to_the_right_pack ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured
+
+HAPPY (routing matrix sample — prompt -> pack routed via REAL loader;
+assertions are on RoutingDecision.matched + matched_triggers, i.e. the
+ROUTING DECISION and loaded metadata, not file counts):
+  "Help me set up a .NET clean architecture project with EF Core and
+   CQRS"                                     -> dotnet
+  "Add health checks and Serilog structured logging to my ASP.NET
+   Core service"                             -> dotnet
+  "run /dotnet to scaffold the webapi"       -> dotnet   (/command)
+  "Make this React component accessible and fix the layout" -> frontend
+  "Design REST API error responses with RFC 7807 problem details"
+                                              -> backend
+  "Set up Docker Compose deployment with nginx reverse proxy and TLS"
+                                              -> devops
+  "legal review of this lease"               -> legal
+  "Prove this integral converges"            -> maths
+  "Reconcile the trial balance and prepare journal entries" -> accounting
+  "Build a financial model with revenue projections for investors"
+                                              -> finance-investors
+  "audit the codebase for security issues before release"
+                                              -> audit-exemplar
+  "What TPM quota do I need for gpt-5.5 in west-europe?" -> ai-deployment
+  Non-English triggers firing (all route, incl. CJK containment):
+  "auditar dependências desatualizadas no projeto"  -> audit-exemplar (pt)
+  "审计代码的安全性，重点看依赖漏洞"                 -> audit-exemplar (zh)
+  "revisão do contrato de arrendamento do escritório" -> legal (pt)
+  "vérifier la clause abusive dans ce contrat"       -> legal (fr)
+  "Buchungssätze für die Abschlusserstellung prüfen" -> accounting (de)
+  "montar o balancete de verificação"                -> accounting (pt)
+  "résoudre cette équation différentielle"           -> maths (fr)
+  "préparer la levée de fonds série A"               -> finance-investors (fr)
+  "ativar o modo escuro no site"                     -> frontend (pt)
+  "déploiement docker compose avec nginx"            -> devops (fr)
+  "implantar modelo de ia no foundry"                -> ai-deployment (pt)
+  "dimensionamento de cabos para o novo datacenter"  -> datacenter-aec (pt)
+  "审计这栋建筑的配电柜"                              -> datacenter-aec (zh)
+  Manifest<->content sync asserted both directions (11 entries; every
+  version field equals the loaded SKILL.md metadata; categories present).
+  Worked example + eval scenario + resolved shared partial asserted for
+  EVERY pack through SkillIndex::invoke.
+
+FAILURE (negative scope blocks — cross-domain prompts DON'T mis-trigger;
+blocked entries assert positive trigger fired AND blocking phrase):
+  "audit this electrical panel"
+    matched == [datacenter-aec]; audit-exemplar BLOCKED by
+    negative scope "electrical panel"                  (plan probe 1)
+  "security audit of the electrical panel wiring"
+    audit-exemplar positive "security audit" FIRED but blocked_by
+    "electrical panel" -> matched == [datacenter-aec] only
+  "audit our sprint process"
+    matched == [] (no pack owns process audits;
+    audit-exemplar blocked by "sprint process")         (plan probe 2)
+  "legal review of this lease"
+    matched == [legal] only                            (plan probe 3)
+  "due diligence on the journal entries ledger"
+    finance-investors positive "due diligence" FIRED but blocked_by
+    "journal entries" -> matched == [accounting]
+  "deploy an ai model with docker compose"
+    ai-deployment blocked_by "docker compose" -> matched == [devops]
+  (Substring-trap avoided by design: audit-exemplar negative is
+  "lease agreement", never bare "lease" — routing containment would
+  otherwise block on "before release"; covered by the routing row
+  "audit the codebase for security issues before release" -> audit-exemplar.)
+
+COMMITTED-TREE WORKTREE ISOLATION (post-commit)
+-----------------------------------------------------------------------
+git worktree add <tmp> <this-commit> ; full suite there (the working
+tree's parallel-worker forge test binaries are UNTRACKED and absent):
+  cargo test -p harness-skills -> see paste appended below.
+
+ADVERSARIAL CHECKLIST
+-----------------------------------------------------------------------
+- misleading_success: assertions target RoutingDecision.matched/
+  matched_triggers/blocked/blocked_by and loaded SkillMeta (versions,
+  languages, partial resolution) — count assertion (11) is ONE of many.
+- malformed N/A: content authoring; loader malformed-input behavior is
+  T30's tested surface (my corpus-check run includes those binaries).
+- flaky: router is deterministic lexical matching; no clock/net/IO
+  nondeterminism beyond a local dir read (ran 3+ times, same result).
+- new input parsing: unicode prompts exercised (CJK containment,
+  diacritics pt/fr/de/es) — see non-English matrix above.
+- untrusted text N/A: pack bodies are data; loader never interprets
+  bodies (T30 contract), tests only route/invoke them.
+- dirty_worktree: distinguish — this task's files are packs/**,
+  harness-skills/tests/packs_acceptance.rs, this evidence file; the
+  forge/ + lib.rs modifications in the working tree belong to the
+  parallel todo-31 worker and are NOT part of this commit.
+
+RISKS / NOTES
+-----------------------------------------------------------------------
+- "audit our sprint process" intentionally routes to NOTHING (no pack
+  owns process audits); the acceptance requires non-mis-triggering,
+  which is satisfied and asserted.
+- Full `cargo test -p harness-skills` in the SHARED working tree fails
+  to compile ONLY because of the parallel worker's unfinished forge
+  test binaries (untracked); committed-tree worktree run proves the
+  suite green at this commit.
+- Exemplar packs are subsets by design (documented in-pack); full ports
+  are future registry content per plan todo 32/45.
+
+$ git worktree add <tmp> f218f5d ; cargo test -p harness-skills  (there)
+running 7 tests ... test result: ok. 7 passed; 0 failed   (corpus_acceptance)
+running 5 tests ... test result: ok. 5 passed; 0 failed   (loader_vendor)
+running 5 tests ... test result: ok. 5 passed; 0 failed   (consent_lock_extra)
+running 5 tests ... test result: ok. 5 passed; 0 failed   (packs_acceptance)
+running 7 tests ... test result: ok. 7 passed; 0 failed   (packs_lock_watch)
+running 9 tests ... test result: ok. 9 passed; 0 failed   (rules_precedence)
+running 8 tests ... test result: ok. 8 passed; 0 failed   (skill_format)
+=> 46 passed, 0 failed at commit f218f5d (worktree removed after).

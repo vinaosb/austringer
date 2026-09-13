@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "schema": "harness pack registry manifest",
+  "install": "Copy or symlink packs/<name>/ into <project>/.harness/skills/<name>/ and packs/_shared/ into <project>/.harness/skills/_shared/ (todo-32 registry automates this with pin+hash verification); the T30 loader discovers them from .harness/skills automatically.",
+  "packs": [
+    {
+      "name": "accounting",
+      "category": "domain",
+      "version": "1.0.0",
+      "summary": "Bookkeeping and close-process workflow guidance: trial balance, journal entries, reconciliations, GAAP/IFRS checklists."
+    },
+    {
+      "name": "ai-deployment",
+      "category": "exemplar",
+      "version": "0.1.0",
+      "summary": "Exemplar port (fixture-quality subset) of the microsoft-foundry AI deployment skills: model deployment capacity, SKUs, fine-tuning, evals."
+    },
+    {
+      "name": "audit-exemplar",
+      "category": "exemplar",
+      "version": "0.1.0",
+      "summary": "Exemplar port (fixture-quality subset) of the user's audit-squad pattern: code/dependency/coverage audits with findings-schema discipline."
+    },
+    {
+      "name": "backend",
+      "category": "programming",
+      "version": "1.0.0",
+      "summary": "Server-side API design guidance: REST/GraphQL/gRPC surface design, error contracts, idempotency, pagination, validation."
+    },
+    {
+      "name": "datacenter-aec",
+      "category": "exemplar",
+      "version": "0.1.0",
+      "summary": "Exemplar port (fixture-quality subset) of the datacenter/AEC engineering skills: electrical, structural, thermal, fiber, and BIM workflows."
+    },
+    {
+      "name": "devops",
+      "category": "programming",
+      "version": "1.0.0",
+      "summary": "Deployment and infrastructure guidance: Docker Compose, nginx TLS termination, CI/CD pipelines, IaC, self-hosted git, backup/restore."
+    },
+    {
+      "name": "dotnet",
+      "category": "programming",
+      "version": "1.0.0",
+      "summary": ".NET pack seeded from the maintainer's real skill library: Clean Architecture, EF Core/Npgsql, health checks, caching, ProblemDetails, SignalR, Quartz, Keycloak OIDC."
+    },
+    {
+      "name": "finance-investors",
+      "category": "domain",
+      "version": "1.0.0",
+      "summary": "Founder/investor financial workflow guidance: financial models, unit economics, cap tables, term sheets, due-diligence data rooms."
+    },
+    {
+      "name": "frontend",
+      "category": "programming",
+      "version": "1.0.0",
+      "summary": "Frontend UI guidance: React component patterns, theming/dark mode, responsive layout, WCAG accessibility, Core Web Vitals."
+    },
+    {
+      "name": "legal",
+      "category": "domain",
+      "version": "1.0.0",
+      "summary": "Contract and legal-document workflow checklists (process guidance only, not legal advice): review flows, clause inventories, escalation to counsel."
+    },
+    {
+      "name": "maths",
+      "category": "domain",
+      "version": "1.0.0",
+      "summary": "Mathematical working guidance: derivations with verification steps, linear algebra, probability/statistics, proofs, numerical sanity checks."
+    }
+  ]
+}
