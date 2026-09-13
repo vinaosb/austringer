@@ -149,6 +149,33 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 # sha2. ed25519 would add two new crates — HMAC is the minimal honest
 # signer for a seam whose transport is not wired yet.
 hmac = "0.12"
+# Todo-29 MCP integration: rmcp is the official Rust SDK (plan names 3.x).
+# Pinned 3.3.0 = current stable (2026-09-10), verified via crates.io. Features:
+# client + server + macros (both roles), transport-child-process (client-side
+# stdio spawn w/ captured stderr), transport-io (server-side stdio),
+# transport-streamable-http-client (transport-agnostic; harness-mcp supplies
+# its own backend over the workspace reqwest 0.12 so rmcp's optional reqwest
+# 0.13 + its TLS stack stay OUT of the tree), transport-streamable-http-server
+# (StreamableHttpService for the daemon's HTTP surface). Pure Rust tree; the
+# `reqwest`/native-tls rmcp features are deliberately NOT enabled.
+rmcp = { version = "3.3", features = ["client", "transport-child-process", "transport-streamable-http-client", "transport-io", "transport-streamable-http-server"] }
+# rmcp's StreamableHttpClient trait names http::{HeaderName,HeaderValue} in its
+# signature and sse_stream::{Sse,Error} in its stream type; both are already in
+# the lockfile transitively via rmcp — declared here because harness-mcp's own
+# backend implements the trait.
+http = "1"
+sse-stream = "0.2"
+# Todo-29 file-based multi-provider MCP manager: TOML is one of the scanned
+# config dialects (.harness format). toml_edit-backed, pure Rust. Note toml
+# 0.9 parses documents via toml::Table (Value's FromStr takes bare values).
+toml = "0.9"
+# Todo-29 org allowlist URL matching + HTTP entry validation: scheme/host/port
+# comparison must be real URL parsing, not string prefixing (secure matching).
+url = "2"
+# Todo-29 reference MCP server tool args: rmcp's #[tool] macro requires
+# JsonSchema derives whose generated code names the schemars crate
+# directly (the rmcp re-export is not enough); same 1.x line rmcp 3.3 uses.
+schemars = "1"
 
 [workspace.lints.rust]
 warnings = "deny"
