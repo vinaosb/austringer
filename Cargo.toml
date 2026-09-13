@@ -172,6 +172,10 @@ toml = "0.9"
 # Todo-29 org allowlist URL matching + HTTP entry validation: scheme/host/port
 # comparison must be real URL parsing, not string prefixing (secure matching).
 url = "2"
+# Todo-27 permission grammar: OPT-IN regex rules (regex off by default;
+# prefix matching is the default mode). Already in the lockfile via the
+# grep-regex tree, so this pins no new vendored code.
+regex = "1"
 # Todo-29 reference MCP server tool args: rmcp's #[tool] macro requires
 # JsonSchema derives whose generated code names the schemars crate
 # directly (the rmcp re-export is not enough); same 1.x line rmcp 3.3 uses.

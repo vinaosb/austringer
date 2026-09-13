@@ -77,6 +77,13 @@ impl HostPattern {
         }
     }
 
+    /// Whether this pattern matches `host` on any port (todo-27
+    /// permission-layer seam: profile ceilings + SSRF opt-outs).
+    #[must_use]
+    pub fn matches_host(&self, host: &str) -> bool {
+        self.host_matches(host)
+    }
+
     fn matches(&self, host: &str, port: u16) -> bool {
         match self {
             HostPattern::WithPort(inner, p) => inner.host_matches(host) && *p == port,

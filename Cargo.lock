@@ -1821,11 +1821,13 @@ dependencies = [
  "getrandom 0.3.4",
  "hmac",
  "libc",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
  "tempfile",
  "thiserror 2.0.20",
+ "url",
  "win32job",
  "windows-sys 0.61.2",
 ]

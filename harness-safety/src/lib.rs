@@ -17,6 +17,7 @@ pub mod backends;
 pub mod creds;
 pub mod egress;
 pub mod oidc;
+pub mod perm;
 pub mod policy;
 pub mod report;
 pub mod scrub;
