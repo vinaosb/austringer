@@ -1,0 +1,259 @@
+﻿TASK 23 - Snapshots + /rewind (rust-agent-harness)
+=============================================================
+Worker: task-23 implementation worker (Sisyphus-junior). Date: 2026-09-13.
+Base: HEAD d9cbb96 on main (feat(safety): OS-native sandboxes + egress control).
+Parallel workers disclosed: pre-flight (T22, harness-exec) + MCP (T29, rmcp
+root-manifest edits observed mid-run in Cargo.toml/harness-mcp). ZERO root
+Cargo.toml lines owned by this task (all needed deps were already workspace
+deps); the MCP worker's root edit + lock entries were EXCLUDED from this
+commit via stash/regenerate/restore. No exec/mcp/.omo files touched except
+this evidence file.
+
+ENVIRONMENT INCIDENT (disclosed, pre-existing): the T13 machine-wide VS
+servicing damage persists - BOTH MSVC toolsets (VS2022 14.44 + VS18 14.50)
+have NO include dir; cc-rs C builds (tree-sitter) fail C1083 stdbool.h.
+Worked around shell-scoped exactly per the T13 recipe: INCLUDE anchored at
+the surviving VS18 ScopeCppSDK vc15 VC\include (+ WinSDK ucrt/shared/um),
+LIB at VS2022 onecore + WinSDK, CC pinned to VS2022 cl.exe on PATH.
+harness-snapshots itself is pure Rust (no C); the workaround was needed for
+workspace-wide verification only. cargo check --workspace now compiles
+everything EXCEPT harness-mcp (the T29 worker's in-flight crate, bin
+mcp_reference_server tokio rt-multi-thread error) - not this task's code.
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+New crate content in harness-snapshots/ (17 src files, all <=250 pure LOC,
+max 248 restore.rs; zero unwrap/expect/panic in src):
+  lib.rs        (34)  docs + re-exports
+  ids.rs        (94)  SessionId/Turn/TxId validated at construction; ref
+                      namespace builders refs/harness/snapshots/{s}/{t},
+                      {t}.json (manifest blob ref), restore-transactions/
+                      {uuid}; EventCursor + TruncationCursor (the typed T4
+                      seam - sessions wire the concrete log handle later)
+  error.rs      (70)  typed refusals: UserCommitsAfterSnapshot (Cline
+                      4.1.17), NestedRepoRefused (Roo), MissingSnapshot,
+                      Torn/Corrupt {Checkpoint,Snapshot}, ScratchIndex,
+                      Busy, RestoreFailed{restored}, Entropy
+  util.rs       (61)  long-path-aware fs shims (T21 discipline), JSON +
+                      now_unix helpers
+  walk.rs      (230)  hygiene walk: user excludes honored READ-ONLY via
+                      the ignore crate (gitignore/.ignore/.git/info/
+                      exclude); harness built-ins (.harness) layered
+                      IN-MEMORY as overrides - the user's .gitignore and
+                      .git are never written (shadow info/exclude realized
+                      in memory, strictly stronger than Roo's on-disk
+                      append); .git dirs + symlinks skipped (T21 policy);
+                      .gitattributes filter= (LFS) awareness (bytes always
+                      raw, no filter ever runs); .gitmodules registration
+                      decides submodule (frozen gitlink + dirty record,
+                      computed blob ids never written to the nested ODB)
+                      vs stray nested repo (typed refusal, never touched)
+  gitstore.rs  (185)  gix IN-MEMORY snapshot creation: tree objects built
+                      bottom-up, commit w/ provenance message, refs only;
+                      stat-cache-backed blob writing
+  gitrefs.rs   (146)  ref READ accessors: turn enumeration, manifest load,
+                      snapshot-tree flattening, first-parent user-commit
+                      walk (agent commits recognized by trailer)
+  tree.rs      (151)  tree assembly/read + restore-transaction stash
+                      (commit under refs/harness/restore-transactions/
+                      <uuid>, parent = HEAD)
+  restore.rs   (248)  RewindPlan (file-restore set + skipped + event
+                      cursor + task), plan builder w/ Copilot skip rule
+                      (baseline = latest snapshot = harness's last
+                      observation), RestoreTx (in-memory backups,
+                      reverse-order rollback), RewindLog + RestoreProbe
+                      seams
+  execute.rs    (83)  transaction executor: stash FIRST, apply w/ probe,
+                      rollback on any failure (RestoreFailed{restored}),
+                      cursor emitted to the log seam ONLY on commit
+  store.rs     (221)  backend facade: git vs no-git via gix::discover;
+                      capability flags surfaced; rewind_plan (user-commit
+                      refusal + skip policy + through-seq from checkpoint)
+  nogit.rs     (234)  content-addressed fallback under .harness/snapshots/
+                      (reflink-copy CoW, manifest written LAST: a crash
+                      leaves unreferenced objects, never a lying manifest);
+                      dirty stash under .harness/restore-transactions/
+                      {uuid}; object sweep on GC
+  scratch.rs   (183)  persistent per-session git index v2 (DIRC) writer/
+                      parser - a REAL GIT INDEX stat-cache (mtime,size,
+                      blob-oid) so unchanged untracked files are never
+                      re-read/re-hashed; sha1 trailer; torn/corrupt typed;
+                      14-day reaper (RETENTION param, simulated-clock test)
+  provenance.rs (84)  Harness-Session-Id trailer + Harness-Turn +
+                      Co-authored-by harness-agent + Harness-Agent-Commit:
+                      true workflow-approval marker; session_trailer/
+                      is_agent_commit/requires_human_approval predicates
+                      (the CI gate); SigningService trait + keyed-blake3
+                      MockSigningService (keys stay outside agent
+                      processes); detached signature recorded in the
+                      manifest sidecar
+  manifest.rs   (66)  SnapshotMeta/SnapshotOptions/TaskState/capabilities/
+                      modes (serde-stable, slashed paths)
+  checkpoint.rs(158)  incremental writes: {session}/checkpoints/{turn}.json
+                      carries ONLY that turn's new entries (T24 directory
+                      contract); subagent ResumePoint from last checkpoint;
+                      torn vs corrupt via serde Category::Eof; host-side
+                      CheckpointRecorder + SessionThreadRecorder
+                      (native/external uniform, snake_case origin tag)
+  coordinator.rs(165) Warp 5-state machine Idle->Arming->Snapshotting->
+                      Armed->Restoring w/ quiet-boundary gate (no tool
+                      mid-flight); DirtyCheck stat fingerprint auto-update;
+                      end-of-run snapshots; rewind-during-rewind = Busy;
+                      opportunistic scratch reap
+  gc.rs         (90)  snapshot GC tiers: keep-last + per-session cap +
+                      age; pinned turns exempt; git deletes ref pair,
+                      nogit deletes manifest + sweeps dead CAS objects
+
+gix features: sha1 ONLY (unchanged from T21) - object writing (write_blob/
+write_object), refs, and first-parent walks are non-optional gix surface;
+no new features needed (verified against gix 0.87.1 feature table).
+
+Tests: tests/common/mod.rs (fixture kit: gix repos w/ USER commits on
+refs/heads/main, tree digests excluding .git/.harness, FailingProbe,
+RecordingLog) + git_roundtrip (14) + checkpoints (4) + coordinator (5) +
+scratch_gc (4) + nogit (4) + adversarial (3) = 34 tests.
+
+TDD RECORD
+-------------------------------------------------------------------------------
+RED: cargo test -p harness-snapshots -> E0432 unresolved imports (all six
+test binaries; module absent) + one genuine test-format-string bug fixed
+pre-implementation. GREEN after implementation; honest fix cycles during
+green: u64 mtime written as 8 bytes into the 4-byte git-index ctime/mtime
+fields (found via debug dump - entry shifted 8 bytes, parse torn-name),
+HEAD fixture unborn (gix::init leaves HEAD at master; kit now pins
+refs/heads/main), session dirs inside the walked tree flipped the dirty
+fingerprint + rewind deleted the recorder thread file (tests moved under
+.harness/session), agent-commit-on-top-of-user-commit correctly still
+refuses (test scenario split), serde enum origin tag casing, torn-vs-
+corrupt reclassified via serde Category::Eof, clippy pass (boxed Backend,
+PlanInputs struct for the 9-arg plan builder, collapsible ifs, literal-
+bool asserts), LOC splits gitstore->tree/gitrefs and store->execute.
+
+VERIFICATION (commands + results)
+-------------------------------------------------------------------------------
+cargo test -p harness-snapshots --no-fail-fast  -> 34 passed, 0 failed
+  (3 adversarial + 4 checkpoints + 5 coordinator + 14 git_roundtrip
+   + 4 nogit + 4 scratch_gc)
+cargo clippy -p harness-snapshots --all-targets -- -D warnings  -> clean
+cargo fmt -p harness-snapshots -- --check                     -> clean
+Pure LOC: max 248 (restore.rs) - all <=250 ceiling; src unwrap/expect/
+panic grep: zero hits.
+cargo check --workspace (after MSVC workaround) -> all crates green
+EXCEPT harness-mcp mcp_reference_server bin (T29 worker's in-flight
+tokio feature error; pre-existing at HEAD-tree time of check, not this
+task's code - disclosed).
+Committed-tree worktree isolation (post-commit):
+  git worktree add <tmp> <commit> && cargo test -p harness-snapshots
+  -> 34 passed, 0 failed (paste below); worktree removed.
+
+ACCEPTANCE + QA CHANNEL PASTES
+-------------------------------------------------------------------------------
+HAPPY - rewind round-trip (plan acceptance; hashes everywhere):
+  $ cargo test -p harness-snapshots --test git_roundtrip rewind_round
+  test rewind_round_trip_is_byte_identical_after_wander ... ok
+  [state@1 hashed (blake3 of every visible rel+bytes) before wander;
+   5 wander turns w/ modify+create+CRLF-churn+per-turn snapshots; delete
+   after last snapshot; rewind to turn 1 FilesAndTask: digest AFTER ==
+   digest BEFORE (byte-identical); task cursor 7 + plan@1 bytes in the
+   report; exactly ONE truncation cursor emitted to the log seam;
+   forward-rewind to turn 6 still works]
+
+HAPPY - incremental checkpoint write sizes (only-new-entries):
+  $ cargo test -p harness-snapshots --test checkpoints
+  test checkpoints_persist_only_new_entries ... ok
+  [turn1 (2 entries) > turn2 (1 entry) > turn3 (1 short entry) in file
+   sizes; 3 files total - the conversation is never rewritten]
+
+HAPPY - provenance trailer on a snapshot commit (byte-asserted):
+  $ cargo test -p harness-snapshots --test git_roundtrip provenance
+  test provenance_trailers_are_byte_exact ... ok
+  [real commit object read back via gix; message contains verbatim:
+   "Harness-Session-Id: sess-a\n",
+   "Co-authored-by: harness-agent <agent@harness.invalid>\n",
+   "Harness-Agent-Commit: true\n";
+   ref == refs/harness/snapshots/sess-a/0000000003;
+   requires_human_approval(msg) == true; user message == false]
+
+FAILURE - user commits refused (typed, named):
+  $ cargo test -p harness-snapshots --test git_roundtrip user_commits
+  test user_commits_after_snapshot_refuse_restore ... ok
+  [UserCommitsAfterSnapshot{commits:[<the user's hex>]}; the user commit
+   stays branch tip; agent commits do NOT block (separate test)]
+
+FAILURE - dirty-stash transaction (stash ref exists; rollback on abort):
+  $ cargo test -p harness-snapshots --test git_roundtrip dirty_stash
+  test dirty_stash_transaction_commits_or_rolls_back ... ok
+  [probe failure at first file op -> RestoreFailed{restored:true}, dirty
+   tree digest unchanged; successful restore -> stash ref
+   refs/harness/restore-transactions/<uuid> exists on disk]
+
+FAILURE - nested repo refused (never touched):
+  $ cargo test -p harness-snapshots --test git_roundtrip nested_repo
+  test nested_repo_is_refused_and_never_touched ... ok
+  [stray vendor/stray w/ its own .git -> NestedRepoRefused; nested tree
+   digest identical before/after]
+
+ADVERSARIAL
+-------------------------------------------------------------------------------
+cancel/resume   : FailingProbe aborts mid-restore (git + nogit) -> complete
+                  reverse-order rollback, dirty bytes intact; a later
+                  restore on the same store succeeds.
+malformed       : torn/corrupt checkpoint manifests + scratch index
+                  (serde Category::Eof classification / DIRC magic) + torn
+                  CAS manifest -> typed, never guessed.
+stale_state     : file deleted AFTER snapshot is restored; externally-
+                  modified files skipped AND reported (Copilot) while the
+                  cursor is still emitted.
+hung            : N/A - no timers, no waits; all I/O bounded to temp dirs.
+flaky x3        : seeded XorShift64 fixture repos (seeds 7/42/9281),
+                  deterministic content w/ CRLF bytes; every seed byte-
+                  identical after rewind; seeds differ cross-seed.
+misleading_succ : every round-trip compared by full-tree blake3 digests
+                  (not spot checks); trailers asserted by exact bytes;
+                  GC verified by the ref FILE tree, not the report.
+new input       : unicode paths, >260-char deep tree, CRLF bytes, symlinks
+                  skipped per T21 policy (git + nogit round-trips).
+dirty_worktree  : distinguished - dirty state stashed before restore;
+                  rollback returns the DIRTY bytes, not the snapshot ones.
+repeated_interruptions : rewind during rewind -> SnapshotError::Busy via
+                  the Restoring state; serialized by finish_restore.
+others          : N/A per task brief.
+
+DOCTRINE NOTES (binding-clause mapping)
+-------------------------------------------------------------------------------
+1 in-memory gix snapshots .... gitstore/tree: gix::objs trees + commits,
+  refs-only writes, namespace discipline asserted by test
+2 /rewind N .................. RewindPlan + execute; TruncationCursor seam
+3 restore transaction ........ stash-first + commit-or-rollback (Cline)
+4 user-commit refusal ........ first-parent walk, agent trailer recognized
+5 hygiene .................... in-memory exclude layer (Roo), LFS pointer
+  awareness, NestedRepoRefused
+6 two restore modes .......... FilesOnly vs FilesAndTask (task cursor+plan)
+7 provenance ................. trailers + CI predicate + detached
+  SigningService (mock now, daemon later)
+8 incremental checkpoints .... per-turn new-entries-only files + ResumePoint
+9 Copilot skip mode .......... baseline=latest observation; skips reported
+10 host-side checkpoints ..... CheckpointRecorder + SessionThreadRecorder
+  (native + external uniform); auto-update on dirty fingerprint
+11 Warp coordinator .......... 5-state machine, quiet gate, end-of-run
+12 stat-cache scratch ........ REAL git index v2 per session + 14-day reaper
+13 GC tiers .................. keep-last/cap/age, pinned exempt
+14 no-git fallback ........... CAS under .harness/snapshots/, capability
+  flags surface disabled git-only features
+15 submodules ................ frozen gitlinks, dirty pointer+patch record,
+  nested-repo rule respected
+
+RISKS / NOTES FOR LATER TODOS
+-------------------------------------------------------------------------------
+- The RewindLog seam is intentionally unwired: sessions/loop own the T4
+  EventLogWriter handle; through-seq comes from the checkpoint manifests.
+- Restore kills live terminals: host responsibility at wire-time (Zed);
+  the coordinator's quiet gate is the seam.
+- GC deletes refs/manifests; loose git objects remain for the ODB's own
+  compaction (refs are the ownership record).
+- Snapshot blobs are RAW worktree bytes (no smudge/clean): byte-identical
+  restores on CRLF/filter repos; the snapshot tree is deliberately NOT
+  the tree git-add would build (recorded via filter_managed awareness).
+- Stat-cache reuse trusts (mtime,size) equality - the same trust git's
+  index makes; a same-size same-mtime rewrite is missed (raceditor).
+- MSVC workaround shell-scoped per T13 recipe; CI/other shells unaffected.
