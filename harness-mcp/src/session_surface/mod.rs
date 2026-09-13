@@ -9,14 +9,16 @@
 //! implements this trait over T24's store; this crate ships the
 //! scripted in-test implementation for protocol tests.
 
+mod gather;
+
+pub use gather::{GatherBarrier, GatherOutcome, GatherRegistry};
+
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
 
 use async_trait::async_trait;
 use harness_core::budget::MicroUsd;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Notify;
 
 /// Opaque session identity.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -229,120 +231,9 @@ impl SessionControl for ScriptedSessionControl {
     }
 }
 
-fn lock_or_poisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock_or_poisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
-/// The GATHER fan-in barrier outcome.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GatherOutcome {
-    /// Every awaited session completed.
-    AllCompleted { completed: usize, timed_out: usize },
-    /// The deadline hit with some sessions still outstanding.
-    Partial { completed: usize, timed_out: usize },
-}
-
-/// Registry of session-completion signals; barriers await slices of it.
-pub struct GatherRegistry {
-    capacity: usize,
-    completed: Arc<Mutex<std::collections::BTreeSet<SessionId>>>,
-    notify: Arc<Notify>,
-}
-
-impl GatherRegistry {
-    /// A registry bounding every barrier to `capacity` sessions.
-    #[must_use]
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            capacity,
-            completed: Arc::new(Mutex::new(std::collections::BTreeSet::new())),
-            notify: Arc::new(Notify::new()),
-        }
-    }
-
-    /// Records one session completion (wakes waiting barriers).
-    pub fn complete(&self, id: SessionId) {
-        lock_or_poisoned(&self.completed).insert(id);
-        self.notify.notify_waiters();
-    }
-
-    /// Starts a barrier over `sessions`; typed rejection when the set
-    /// exceeds the capacity bound.
-    pub fn try_barrier(&self, sessions: Vec<SessionId>) -> Result<GatherBarrier, SurfaceError> {
-        if sessions.len() > self.capacity {
-            return Err(SurfaceError::GatherUnbounded {
-                requested: sessions.len(),
-                capacity: self.capacity,
-            });
-        }
-        Ok(GatherBarrier {
-            sessions,
-            completed: Arc::clone(&self.completed),
-            notify: Arc::clone(&self.notify),
-        })
-    }
-
-    /// Barrier that resolves as soon as every session completed.
-    #[must_use]
-    pub fn barrier(&self, sessions: Vec<SessionId>) -> GatherBarrier {
-        self.try_barrier(sessions).unwrap_or(GatherBarrier {
-            sessions: Vec::new(),
-            completed: Arc::clone(&self.completed),
-            notify: Arc::clone(&self.notify),
-        })
-    }
-}
-
-/// One bounded wait over N session completions.
-pub struct GatherBarrier {
-    sessions: Vec<SessionId>,
-    completed: Arc<Mutex<std::collections::BTreeSet<SessionId>>>,
-    notify: Arc<Notify>,
-}
-
-impl GatherBarrier {
-    /// Waits until every session completed or `deadline` elapses
-    /// (bounded; never an unbounded await).
-    pub async fn wait(&self, deadline: Duration) -> GatherOutcome {
-        let deadline_at = Instant::now() + deadline;
-        loop {
-            let done = self.count_completed();
-            if done == self.sessions.len() {
-                return GatherOutcome::AllCompleted {
-                    completed: done,
-                    timed_out: 0,
-                };
-            }
-            let remaining = deadline_at.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return GatherOutcome::Partial {
-                    completed: done,
-                    timed_out: self.sessions.len() - done,
-                };
-            }
-            let notified = self.notify.notified();
-            tokio::pin!(notified);
-            tokio::select! {
-                () = &mut notified => {}
-                () = tokio::time::sleep(remaining) => {
-                    let done = self.count_completed();
-                    return GatherOutcome::Partial {
-                        completed: done,
-                        timed_out: self.sessions.len() - done,
-                    };
-                }
-            }
-        }
-    }
-
-    fn count_completed(&self) -> usize {
-        let completed = lock_or_poisoned(&self.completed);
-        self.sessions
-            .iter()
-            .filter(|id| completed.contains(*id))
-            .count()
     }
 }
