@@ -1,0 +1,219 @@
+TASK 13 - Doctrine-compliant compaction (rust-agent-harness)
+==============================================================
+Worker: task-13 implementation worker (Sisyphus-jior). Date: 2026-09-12.
+Base: HEAD 62b32bf on main (feat(sessions): encrypted lazy store + memory subsystem).
+Parallel workers disclosed: harness-safety (T26) + harness-skills (T30) + an exec
+test-fix were active; shared file harness-core/src/lib.rs received exactly ONE
+owned line (`pub mod compaction;`, anchored on the `pub mod context;` line,
+applied cleanly on first retry-free edit after re-read). No safety/skills/exec
+files touched. Proof of isolation: post-commit worktree run of the full
+harness-core suite from the committed tree (below).
+
+ENVIRONMENT INCIDENT (disclosed): machine-wide VS servicing gutted BOTH MSVC
+include dirs and stdarg.h mid-run (libsqlite3-sys cc builds failed with C1083;
+a parallel worker's build had succeeded 50s earlier). Worked around for this
+session only by pointing INCLUDE/LIB at the surviving header set
+(VS18 ScopeCppSDK vc15 include + Windows SDK ucrt/shared/um + onecore lib);
+nothing repo-side changed. First run of the suite after the workaround produced
+the true RED.
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+New module harness-core/src/compaction/ (10 files, all <=250 pure LOC):
+  mod.rs      (113) module doctrine; CompactionConfig (user threshold Percent/
+                TokensUsed/Remaining + custom condense prompt + segment detail
+                + handoff flag), Threshold::fired, CompactedSession (+ typed
+                render_context: <compacted_context> summary + retained via the
+                T11 history renderer), CompactionError (CorruptStream typed),
+                validate_stream (contiguous-monotonic gate)
+  doctrine.rs (210) Anthropic doctrine SELECTION as a pure structural pass:
+                DECISION:/UNRESOLVED BUG: lines verbatim, last-5 unique tool
+                paths, subagent summaries capped 1-2k band via omission-marked
+                soft_trim (never a bare cut; 64-byte marker reserve), protected
+                head + last-10-user-anchored-turns window, huge-single-turn
+                trimming (char-boundary-safe), typed <doctrine> render listing
+                CONTENT not counts; compacted_from assembly
+  condense.rs  (99) SAME-MODEL seam (Roo): ModelId newtype, DEFAULT_CONDENSE_
+                PROMPT + effective_prompt (user override), DoctrineCondenser
+                trait, SessionCondenser carrying the session's model identity;
+                different-model request = typed ModelMismatch whose Display
+                documents the dialect-mismatch doctrine + the T42 note
+                (cheap-model roles run at their OWN sessions)
+  overflow.rs  (58) THE CLINE RULE: ContextOverflow typed input;
+                basic_compact is deterministic and takes NO condenser param at
+                all - structural selection + head/tail windows + T12
+                fold_history over retained tool results (best-effort: unknown
+                return code keeps the ORIGINAL event, codes never dropped)
+  engine.rs   (239) orchestration: validate -> PreCompact hook (System marker
+                w/ cause+basis) -> selection -> same-model condense | fallback
+                -> PostCompact hook (Condensation{summary,through_seq}) ->
+                segments+state persist -> telemetry; cancel polls at phase
+                boundaries (artifacts discarded, Canceled outcome, restartable);
+                Failed telemetry appended before segment-error surfaces; T11
+                EpochTransition::CompactionCompleted rides the result
+  seam.rs      (67) run boundary types: CompactionInput, CompactionCause
+                {Manual (the typed /condense entry), Auto, Overflow},
+                HookError, CompactionSink (+ impl for the T4 EventLogWriter),
+                CompactionDeps (sink/condenser/extractor/segments/cancel),
+                CompactionResult (+ canceled ctor)
+  segments.rs (241) EXTERNALIZED STORE (Grok): Summary/SealedSpan/RetainedSpan
+                segment files + index.json under {root}/compaction/ (root path
+                param only - no session-crate dependency); Minimal/Standard/
+                Full detail; sealed span + prefix hash derived from the FULL
+                stream so validation re-derives exactly what was pinned;
+                index rewritten last (crash leaves unreferenced files, never a
+                lying index); torn/corrupt typed
+  state.rs     (64) PERSISTED STATE (Cline): PersistedCompaction (summary,
+                sealed-extent through_seq, blake3 prefix_hash, before/after
+                tokens); SegmentStore::validate_prefix - mismatch = typed
+                StaleState forcing a re-compact; sealed_prefix_hash
+  folded.rs    (27) FoldedView reconstruction (loader-side render)
+  telemetry.rs(138) Zed outcomes Manual/Auto/Canceled/Failed + threshold basis
+                percent|tokens-used|remaining as a <compaction_telemetry .../>
+                system event; forge POSTCOMPACT ACCOUNTABILITY: before/after
+                counts + SealStatus per record; SealGuard observes the live
+                stream - post-compact writes into the sealed span produce a
+                FIRST-CLASS pageable <seal_breach compaction watermark
+                offending="S..E"/> event (typed SealBreach w/ seq range)
+  handoff.rs  (128) Amp HANDOFF complement: HandoffBundle (distilled summary +
+                salient pointers), from_compaction (deterministic at-compaction
+                transfer), ThreadExtractor injected seam + read_thread over
+                referenced sessions (mock in tests); Antigravity SUCCESSOR:
+                MilestoneMarker (<milestone label="..."/> round-trip +
+                latest_milestone), SuccessorBundle::at_milestone typed package
+                (handoff + focus-chain render + open todos; daemon wires later)
+
+Also: harness-core/src/lib.rs +1 owned line; harness-core/src/context/mod.rs
++1 scoped re-export line (pub(crate) use history::render_history - the
+compaction renders through the SAME deterministic renderer the T11 builder
+uses; no behavior change, full crate suite green).
+Tests: tests/compaction_{doctrine,engine,overflow,segments,handoff,replay}.rs
+(38 tests) + tests/common/compactionkit.rs (scripted facts session, rule-based
+ScriptedCondenser carrying DECISION/FACT lines, FailingCondenser,
+CountingCondenser (overflow-never-touches-LLM proof), Mock/Failing extractors,
+RecordingSink, MockInference seam, seeded unicode/huge-turn generator).
+
+TDD RECORD
+-------------------------------------------------------------------------------
+RED (after env workaround): cargo test -p harness-core --test compaction_doctrine
+--test compaction_engine --test compaction_overflow --test compaction_segments
+--test compaction_handoff --test compaction_replay
+  -> error[E0433]: cannot find `compaction` in `harness_core` (x7 per binary)
+  -> error: could not compile `harness-core` (all six test binaries)
+GREEN: same command after wiring `pub mod compaction;` -> all six suites ok.
+Fix cycles during green (honest list): fixture line-start markers, cap marker
+overrun, huge-turn trim in retained window, write_compaction full-stream
+contract, EventLogWriter-sink name shadow check, fmt, clippy (vec!->array,
+collapsible if), LOC split engine/seam + segments/state/folded.
+
+VERIFICATION (commands + results)
+-------------------------------------------------------------------------------
+cargo test -p harness-core                                     328 passed, 0 failed
+cargo clippy -p harness-core --all-targets -- -D warnings      clean
+cargo fmt -p harness-core -- --check                           clean
+Pure LOC: max file 241 (segments.rs) - all <=250 ceiling.
+Committed-tree worktree isolation (post-commit):
+  git worktree add <tmp> <commit> && cargo test -p harness-core
+  -> 328 passed, 0 failed (paste below); worktree removed.
+
+QA CHANNEL PASTES
+-------------------------------------------------------------------------------
+HAPPY - compaction transcript (hooks/epoch/telemetry order, doctrine fields,
+segments+index, seal intact):
+  $ cargo test -p harness-core --test compaction_engine doctrine_compaction_emits
+  running 1 test
+  test doctrine_compaction_emits_hooks_epoch_and_telemetry_in_order ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored
+  [asserts inside: hook order == [pre(System), post(Condensation),
+   telemetry(System)]; epoch transition == CompactionCompleted{through_seq:36};
+   telemetry outcome Auto, basis Percent(75), after<before; compacted context
+   carries "the API port is 8085"/"Postgres 15"/"checkout returns 500";
+   seal Intact @ watermark 36; segments non-empty; handoff present;
+   milestone detected]
+  $ cargo test -p harness-core --test compaction_segments loader_reconstructs
+  test loader_reconstructs_the_folded_view_from_segments ... ok
+  [segment reload reconstructs the folded view: summary + retained carried;
+   Full-detail sealed events round-trip byte-identically]
+
+HAPPY - replay-equivalence (plan acceptance; script answers FROM compacted ctx):
+  $ cargo test -p harness-core --test compaction_replay
+  test doctrine_compacted_session_answers_pre_compaction_facts ... ok
+  test fallback_compacted_session_still_answers_known_facts ... ok
+  test second_compaction_of_the_continued_session_still_carries_facts ... ok
+  test result: ok. 3 passed; 0 failed
+  [session w/ known facts established EARLY (outside the retained window) ->
+   compact -> mock inference seam asserts the compacted prompt CARRIES
+   "the API port is 8085", "Postgres 15", the unresolved bug, and the fresh
+   tail fact; holds on the doctrine path AND the zero-LLM fallback, and the
+   facts survive a SECOND fold via the carried summary]
+
+FAILURE - condenser Err -> deterministic fallback valid (Cline rule):
+  $ cargo test -p harness-core --test compaction_overflow condenser_error
+  test condenser_error_still_produces_a_valid_compacted_session ... ok
+  [FailingCondenser (provider 503) -> fallback_used=true, compacted session
+   valid, facts carried; overflow_cause_never_touches_the_condenser_seam
+   additionally proves 0 LLM seam calls on the Overflow path; overflow with a
+   corrupt (gap) stream is typed CorruptStream]
+
+FAILURE - seal breach on post-compact edit into the sealed span:
+  $ cargo test -p harness-core --test compaction_engine seal_guard_flags
+  test seal_guard_flags_sealed_region_edits_with_seq_range ... ok
+  [live append @40 above watermark 36: no breach, Intact; sealed rewrite @12:
+   SealBreach{watermark:36, offending:(12,12)}, status Breached, pageable
+   marker <seal_breach compaction watermark offending="12..12"/>]
+
+ADVERSARIAL
+-------------------------------------------------------------------------------
+cancel/resume   : cancel_mid_compaction_discards_state_and_records_canceled -
+                  pre-set cancel -> Canceled telemetry, compacted=None, NO
+                  compaction dir on disk; rerun on the same store succeeds.
+malformed       : corrupt event stream (seq gap) -> typed CorruptStream even
+                  for the overflow cause; torn segment file -> SegmentError::
+                  Torn; corrupt index.json -> SegmentError::Corrupt; empty
+                  store loads as empty (not an error).
+stale_state     : persisted_state_validates_against_the_prefix_hash - identical
+                  events validate; mutation INSIDE the sealed prefix -> typed
+                  StaleState (forces re-compact).
+hung            : N/A - all mock seams instant or Err; no timers, no I/O waits
+                  beyond fs in temp dirs.
+flaky x3        : seeded (XorShift64) unicode/huge-turn sessions at seeds
+                  7/42/9281 pass structurally (markers, caps, trims).
+misleading_succ : doctrine-field CONTENT asserted (verbatim decision/bug lines,
+                  not counts); segment reload reconstructs the folded view;
+                  before/after token accounting asserted honestly.
+new input       : CJK + emoji + control chars through markers/caps/trims
+                  (char-boundary-safe soft_trim); one 100KB+ single turn
+                  bounded by omission-marked trim (<8KB) in the retained window.
+dirty_worktree  : distinguished - commit stages ONLY the files above; other
+                  workers' dirty files (plans/ledgers/other evidence) untouched.
+
+DOCTRINE NOTES (binding-clause mapping)
+-------------------------------------------------------------------------------
+1 Anthropic doctrine ....... doctrine.rs selection (always runs, both paths)
+2 Hooks .................... PreCompact=System marker, PostCompact=Condensation
+3 Overflow-recovery ........ overflow.rs basic_compact (zero LLM by signature)
+4 Persisted state+hash ..... state.rs (StaleState typed -> re-compact)
+5 Same-model condensing .... condense.rs SessionCondenser + ModelMismatch
+6 Threshold/prompt/manual .. CompactionConfig + CompactionCause::Manual
+7 Externalized segments .... segments.rs ({root}/compaction/, detail levels)
+8 Handoff complement ....... handoff.rs (bundle + read_thread seam)
+9 Successor-handoff ........ SuccessorBundle::at_milestone (typed ctor)
+10 Telemetry ............... telemetry.rs (<compaction_telemetry/> event)
+11 Postcompact accountability SealGuard + SealBreach pageable event
+12 No naive truncation ..... no bare-cut API; every reduction is marker-bearing
+                              (soft_trim excerpts / T12 fold markers)
+
+RISKS / NOTES FOR LATER TODOS
+-------------------------------------------------------------------------------
+- The agent loop's Compactor stage (T5 seam) and /condense command wiring are
+  later todos (40+); the engine + typed Manual cause are the integration
+  surface. Epoch ledger wiring: feed result.epoch_transition to the T11 ledger
+  at the loop level.
+- Seal semantics (documented in telemetry.rs): breach = post-seal write at or
+  below the watermark (sealed-history rewrite detection); artifact tampering
+  is covered separately by the state prefix-hash.
+- Persisted state pins ONE latest compaction (state.json overwritten per
+  compaction); segment files accumulate per ordinal. A multi-generation state
+  history is a future need, not a plan requirement.
+- MSVC env workaround was shell-scoped only (INCLUDE/LIB); CI/other shells
+  unaffected.

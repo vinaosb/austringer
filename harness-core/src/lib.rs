@@ -22,6 +22,7 @@
 pub mod agent_loop;
 pub mod autonomy;
 pub mod budget;
+pub mod compaction;
 pub mod context;
 pub mod event;
 pub mod eviction;

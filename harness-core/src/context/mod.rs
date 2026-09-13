@@ -63,6 +63,10 @@ mod layout;
 mod tracker;
 mod violation;
 
+// Todo 13's compaction renders compacted contexts through the same
+// deterministic history renderer the prompt builder uses.
+pub(crate) use history::render_history;
+
 pub use builder::{ContextSpec, PromptBuilder, RenderedPrompt, SlotSegment};
 pub use cache_plan::{
     CacheBreakpoint, CachePlan, CachePlanError, CachePolicy, CacheTtl, MAX_CACHE_BREAKPOINTS,
