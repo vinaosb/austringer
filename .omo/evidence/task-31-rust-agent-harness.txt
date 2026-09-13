@@ -179,3 +179,17 @@ RISKS / NOTES:
     daemon store (todo 34/45 surface).
   - Quarantine ledger reuses JournalCorrupt for corrupt forge-lock.json (detail
     string disambiguates); a dedicated variant is cosmetic, deferred.
+
+WORKTREE ISOLATION PROOF (run after commit bc83de6):
+  git worktree add <tmp>\task-31-wt bc83de6   (detached HEAD at the commit)
+  cargo test -p harness-skills               (private target dir inside the wt)
+  -> all 16 test binaries green, 0 failed (79 tests incl. T30 corpus + packs
+     acceptance), from the committed tree alone; worktree removed after.
+  git log --oneline -1 -> bc83de6 feat(skills): Skill Forge w/ trust gates
+
+FMT DEFECT FIX (verifier ses_f642a4294ffeeu5cjWe0tg0iMn):
+  cargo fmt --all --check failed at exactly ONE file: harness-skills/src/forge/eval.rs:108
+  (a let-chain rustfmt wanted split). Fixed with `cargo fmt -p harness-skills`; only
+  eval.rs changed (4 +-). Re-ran `cargo fmt -p harness-skills -- --check` -> exit 0.
+  Tests re-run (private CARGO_TARGET_DIR under %TEMP%\opencode): 105 passed / 0 failed
+  (74 pre-registry + 31 registry).

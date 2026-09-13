@@ -108,7 +108,9 @@ pub fn replay_draft(document: &str, cases: &[ReplayCase]) -> EvalReport {
                 "skill routes on a prompt it must stay silent for".to_string()
             },
         });
-        if failure.is_none() && let Some(expected) = &case.expect_section {
+        if failure.is_none()
+            && let Some(expected) = &case.expect_section
+        {
             let missing = !sections
                 .iter()
                 .any(|s| &s.heading == expected && !s.body.is_empty());
