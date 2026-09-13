@@ -1,0 +1,272 @@
+TASK 24 — Sessions store: SQLite + encryption + lazy load + memory (rust-agent-harness)
+================================================================================
+Worker: task-24 implementation worker (Sisyphus-junior). Date: 2026-09-12.
+Base: started at HEAD baa6a6f (feat(exec)); landed on top of 5f452c3
+(feat(vfs): transactional shadows, committed by the PARALLEL todo-21 worker
+mid-task — see Shared-file discipline below).
+
+CONSOLIDATION DECISION (deferred to T24 by T8's ledger) — rusqlite-everywhere
+-------------------------------------------------------------------------------
+Chosen: (a) rusqlite-everywhere; sqlx dropped. Justification:
+1. T8's rusqlite 0.40 + bundled already compiles on this exact machine (task-8
+   evidence INCLUDE workaround; task-24 re-verified: FTS5 is compiled into the
+   bundled amalgamation — probe below). sqlx would add a second SQLite wrapper
+   API, async runtime weight, and its own bundled C build for zero capability
+   gain in this crate.
+2. The sessions store is synchronous by design (SQLite IS its concurrency
+   model: one connection, WAL, busy_timeout); the daemon wraps it in async at
+   the boundary (same pattern T8 set).
+3. Plan wording "sqlx SQLite ... (goose pattern)" is honored in substance:
+   schema versioning + atomic up-migrations exist (PRAGMA user_version,
+   single-transaction apply) and the registry adds what goose lacks here —
+   mandatory DOWN steps with both-direction round-trip tests per generation
+   (the dsh v3 lesson). Divergence from the literal "sqlx" is documented here.
+Probe (scratch project, this machine, INCLUDE workaround active):
+  rusqlite 0.40 bundled: CREATE VIRTUAL TABLE t USING fts5(body) OK,
+  bm25() rank = -0.000001 → FTS5 ships in bundled. Recorded in evidence.
+
+SQLITE-VEC PROBES (the honest attempt before falling back)
+-------------------------------------------------------------------------------
+* sqlite-vec = 0.1.10-alpha.4 (latest): build FAILS — the vendored
+  sqlite-vec.c at line 3772 does `#include "sqlite-vec-diskann.c"`, which is
+  NOT packaged in the crate (cc-rs: fatal error C1083). Packaging bug.
+* sqlite-vec = 0.1.6-alpha.2: compiles but exports a STUB
+  `sqlite3_vec_init()` taking zero args — not the extension entry point;
+  cannot register vec0 with a connection.
+Per the task's fallback clause: the vector dimension is implemented behind
+`VectorIndex` (vector.rs) with an FTS5-only default (all vector scores 0.0,
+blend arithmetic unchanged) + `InMemoryVectorIndex` (exact cosine) for tests
+and caller-supplied embeddings. A vec0-backed impl drops in later without
+touching callers. Disclosed for verifier adjudication.
+
+DELIVERABLE — harness-sessions (17 src modules, 12 test files, all <=250 pure LOC)
+-------------------------------------------------------------------------------
+  lib.rs        (65)  crate docs: consolidation, laziness, encryption/FTS
+                       trade-off, vec fallback, credentials stance, retention
+                       explicitness
+  store.rs     (233)  open/migrate glue (WAL+NORMAL+busy_timeout), handle
+                       factory (ReadOnly / ReadWrite(owner) / unlocked),
+                       list, search_events, set_pinned, state_get/bump
+  lifecycle.rs ( 70)  create + create_encrypted (argon2-wrapped key envelope)
+  meta.rs      (122)  SessionMeta row type, cross-session FTS5 search surface,
+                       extract_text (LLM-visible text for the index)
+  session.rs   (226)  lazy handle: O(1) open (meta row + O(log n) index check),
+                       transactional append/append_batch (event row + turn
+                       index + counters + FTS row in ONE tx), lease glue, Drop
+                       lease release
+  paging.rs    (138)  turns_range/turn/events_range via PK range scans,
+                       interior-index-corruption typed + count-asserted,
+                       repair_index
+  export.rs     (52)  T4-line-format JSONL export (session events.jsonl or
+                       explicit path)
+  index.rs     (129)  turn index: incremental update on append, O(log n)
+                       verify, full rebuild (refuses damaged event logs typed)
+  fork.rs      (196)  fork at Sequence: plaintext = SQL row-copy (justified in
+                       doc: one-shot copy beats page-level CoW indirection on
+                       every later read); encrypted = decrypt + re-seal under
+                       the fork's OWN key (per-session keys never shared)
+  import.rs    (112)  import_events (atomic bulk) + import_jsonl (torn tail
+                       skipped+reported, invalid lines counted, never fatal)
+  migrations.rs(178)  GENERATIONS (v1 base, v2 memory/FTS/leases/state/import
+                       cols) + index-matched DOWNS; apply = one transaction;
+                       future version = typed Schema error; round-trip test
+                       walks up→down→up comparing blake3 schema fingerprints
+  crypto.rs    (232)  XChaCha20-Poly1305 per-session keys, payload sealing
+                       bound to session-id AAD (cross-session blob swap fails),
+                       argon2id KEK (KdfParams::standard 64MiB/3/1; test_low
+                       32KiB/2/1 — the RustCrypto minimum), wrong passphrase =
+                       clean typed Decrypt
+  keystore.rs  (210)  WrappedKey envelope JSON + KeyStore trait (T10
+                       SecretStore SHAPE, save/load/delete) + InMemoryKeyStore;
+                       OS-keyring wiring is the caller's
+  lease.rs     (236)  fail-closed writer leases: boot-id anchor (sysinfo
+                       boot_time) + targeted PID liveness; live foreign lease =
+                       typed LockedByLiveWriter (session stays readable); stale
+                       (boot changed OR pid dead) = takeover WITH typed
+                       TakeoverReport; no force-unlock API exists
+  layout.rs    (108)  {root}/{id}/checkpoints/ + files/ + plan.md +
+                       events.jsonl contract (idempotent materialization);
+                       validate_id (unicode ok; path breakers, separators,
+                       reserved device names, store.db/archive rejected)
+  memory.rs    (128)  /memory add (/typed NoteInput w/ optional embedding),
+                       list, delete; FTS5 over title+body
+  retrieval.rs (196)  /recall: FTS5 (-bm25 normalized) + vector cosine union,
+                       0.7/0.3 blend (weights in RecallConfig), temporal decay
+                       exp(-0.05/day), MMR re-rank (lambda 0.7) over vector
+                       similarity, MIN-SCORE GATE 0.05, RecallTrigger
+                       {FirstTurn (limit 8), PostCompaction (limit 16)} — the
+                       typed post-compaction re-search hook; MemoryHit exposes
+                       lexical/vector/blended/decayed/final (blend auditable)
+  vector.rs    (106)  VectorIndex trait + FtsOnlyVectors default +
+                       InMemoryVectorIndex (exact cosine, RwLock) + vec0 stub
+                       documentation
+  dream.rs     (143)  gated /dream: min-hours-since-last + min-sessions gates
+                       (injected clock; never-run passes the time gate),
+                       NotYet carries EXACT remaining gates; merge step =
+                       exact-duplicate collapse (LLM summarization = daemon
+                       wiring behind the same gates, disclosed)
+  retention.rs (218)  RetentionPolicy {archive_after_secs, max_store_bytes,
+                       gc_archived_after_secs} + prune as the ONLY deletion
+                       path; age tier (inclusive boundary), size tier (oldest
+                       unpinned first), GC tier; pinned exempt; encrypted
+                       sessions skipped with typed report entry (ciphertext
+                       cannot round-trip the plaintext cold file — caller
+                       exports explicitly); archive = full verified cold JSONL
+                       BEFORE any row deletion commits; empty policy = noop
+  foreign/     ( 72+  Claude Code (~/.claude/projects) + Codex
+              186+128) (~/.codex/sessions rollouts) readers → T4 events;
+                       UnknownForeignEntry{line, kind, reason} with
+                       ForeignReason {UnmappedType, UnsupportedShape,
+                       WrongShape, MalformedJson}; torn tails reported;
+                       ForeignRead.origin() feeds ImportOrigin
+
+CREDENTIALS STANCE (structural): no type in the crate accepts an API key or
+OAuth token — nothing to persist; per-session keys exist only as wrapped
+envelopes; OAuth refresh tokens are T10 keyring-only, outside this crate.
+
+COMMANDS + RESULTS (Windows 11, PowerShell, Rust 1.98; task-8 INCLUDE
+workaround applied per-invocation, never persisted)
+-------------------------------------------------------------------------------
+TDD: every test file written RED first (integration.rs failed compile against
+the missing API; behavior assertions failed for real bugs found green-side:
+KEY_WRAP_AAD mismatch, NULL imported_unknown row parse, argon2 minimum at
+16KiB, parse_kdf JSON-pointer leading-slash bug, dream ?2-binding swallowed by
+`let _ =`, FTS implicit-AND test query, size-tier budget arithmetic) then
+greened.
+  cargo test -p harness-sessions                (debug)  → 56 passed, 0 failed
+      lib 14, integration 5, layout_ids 5, foreign 3, leases 3,
+      crypto_at_rest 3, adversarial 5, memory 5, dream 2, retention 3,
+      perf 3, +3 doc-test-free suites
+  cargo test --release -p harness-sessions -- --nocapture → 56 passed, 0 failed
+  cargo clippy -p harness-sessions --all-targets -- -D warnings → clean
+  cargo clippy --workspace --all-targets -- -D warnings → clean
+  cargo check --workspace --all-targets → exit 0
+  cargo fmt -p harness-sessions → applied, idempotent
+  cargo deny check → advisories ok, bans ok, licenses ok, sources ok
+  LOC audit: every src+test file <= 250 pure LOC (max: store.rs 233 after the
+  lifecycle split; measured excluding comments/blank lines)
+ISOLATION PROOF (committed-tree worktree): staged tree → git commit-tree
+(dangling 5f85bc6, parent baa6a6f; never referenced, no amend/reset) →
+`git worktree add` detached → cargo test -p harness-sessions → 56/56 green in
+the isolated committed tree (no working-tree dirt, no parallel-worker files).
+
+ACCEPTANCE + PERF (release, --nocapture pastes)
+-------------------------------------------------------------------------------
+  100MB session open (worst of 5):  49.3µs   [budget <50ms — ~1000x margin;
+                                       open reads ONE meta row + O(log n)
+                                       index check; payloads never touched]
+  page-in of 100 turns:               2.50ms  [budget <5ms/100 turns]
+  fork of 500-turn/25MB at midpoint:  1.23s   [one-shot SQL row-copy; test
+                                       budget 2s release / 20s debug guards
+                                       against per-row-rescan regressions]
+  fixture assert: payload_bytes >= 95MiB (2,000 turns x 50KB answers)
+  (debug runs assert the same budgets x10 — catches full-scan regressions
+   while staying CI-stable in unoptimized builds)
+
+QA — HAPPY (pastes)
+-------------------------------------------------------------------------------
+resume round-trip: append 5 events, NEW store handle, append → seq 6
+  ("resume must continue the sequence"); events_range(6,6) == the appended
+  assistant event. [integration.rs::resume_appends_with_continued_sequence...
+  ok]
+fork/resume round-trip: fork(base@2) → event_count 2, forked_from "base";
+  fork diverges (append → seq 3), base untouched (4 events); typed
+  ForkPointBeyondLog at 99. [fork_copies_prefix_and_diverges ok]
+memory hybrid query w/ blend visible (release, --nocapture):
+  blend: alpha note lex=1.0000 vec=0.9939 blended=0.9957 decayed=0.9957
+  blend: beta  note lex=1.0000 vec=0.1104 blended=0.3773 decayed=0.3773
+  (= 0.7*vec + 0.3*lex exactly; the 0.7 vector weight flips the tie)
+  [memory.rs::hybrid_blend_prefers_vector_match_and_shows_both_halves ok]
+cross-session BM25: search "bread" → s1 hit, s3 absent, snippet contains
+  "bread". [cross_session_fts_search_finds_events_in_other_sessions ok]
+temporal decay: 30-day-old single-candidate hit decayed == 0.3*exp(-0.05*30)
+  to 1e-9. [temporal_decay_downweights_stale_notes ok]
+post-compaction re-search deeper than first turn (16 > 8 caps).
+dream gates (injected clock): block(0 sessions) → allow(first run) →
+  re-arm(24h + 2 sessions) → allow again; duplicate merge 3→1 group, notes
+  4→2. [dream.rs tests ok]
+foreign import: Claude Code line-mapped user/assistant/tool_use→ToolCall/
+  tool_result→ToolResult/system; summary → UnknownForeignEntry
+  {UnmappedType}; Codex rollout mapped message/function_call/output +
+  agent_message; session_meta/reasoning unmapped; imported session resumes
+  (append → seq 2). [foreign.rs 3 tests ok]
+
+QA — FAILURE (pastes)
+-------------------------------------------------------------------------------
+wrong-key clean error:
+  open_session("sealed")           → SessionError::MissingPassphrase (typed)
+  open_session_unlocked("battery staple") → SessionError::Decrypt —
+  no panic, no partial data; cryptographic assert: the plaintext string
+  appears NOWHERE in store.db bytes; right key round-trips content.
+  [crypto_at_rest.rs::wrong_key_ciphertext_and_typed_errors_end_to_end ok]
+stale-lease takeover reports:
+  pid-dead writer: takeover() → {previous: ghost-writer, reason:
+    PidDead{pid:9999}}; writes proceed after takeover.
+  simulated reboot: reason BootIdChanged{recorded:"boot-a",current:"boot-b"}.
+  live foreign writer: LockedByLiveWriter{lease.owner_id:"writer-a",
+  pid:4242}; session still readable; NO force-unlock path exists.
+  [leases.rs 3 tests ok]
+foreign-format unknown entry: claude {"type":"summary"} → kind "summary",
+  reason UnmappedType; malformed line → MalformedJson; inline image block →
+  UnsupportedShape. [foreign.rs ok]
+
+ADVERSARIAL (all green)
+-------------------------------------------------------------------------------
+malformed: corrupt DB file → typed Corrupt; corrupt turn index (interior row
+  deleted via second connection) → typed CorruptIndex on range read,
+  repair_index() rebuilds (2 turns) and content verified; gapped event log →
+  typed EventLogDamaged refusal; torn JSONL import (invalid line counted,
+  torn tail flagged, committed lines imported).
+stale_state: lease across simulated reboot (above); retention age boundary
+  EXACTLY at threshold archives, one second before does not; GC boundary;
+  empty policy deletes nothing; pinned exempt; archived session append →
+  typed Archived.
+resumable: fork/resume append correctness (above) + encrypted fork re-keys
+  under its own passphrase (source passphrase CANNOT open the fork).
+flaky x3: injected clocks everywhere (dream gates, retention boundaries,
+  decay); seeded corpora (fixed texts); FTS5 deterministic ordering.
+misleading_success: page-in asserts CONTENT (turn 950's user text starts
+  "950:"), not counts; ciphertext byte-compared against plaintext; archive
+  cold file content-verified ("old content" present) pre-deletion.
+new input parsing: foreign JSONL quirks (CRLF, torn tails, non-JSON lines,
+  untyped lines), unicode session ids ("会话-42-λ" full round-trip), huge
+  single turns (2MB event pages in with content + byte-count assert).
+dirty_worktree: distinguished — see Shared-file discipline below; isolation
+  worktree proves the commit standalone.
+hung: N/A (no network, no timers; injected clocks only).
+
+SHARED-FILE DISCIPLINE (parallel worker on todo 21 / harness-vfs)
+-------------------------------------------------------------------------------
+Root Cargo.toml: re-read immediately before the single edit — the vfs
+worker's reflink-copy/gix lines had landed in the working tree BETWEEN my
+first read and my edit; anchored my 3 dep lines before [workspace.lints.rust]
+(distinct lines), no worker lines touched, no amend/reset. DISCLOSURE: the
+vfs worker's commit 5f452c3 (landed mid-task, 22:26) staged Cargo.toml while
+my three dep lines (chacha20poly1305/argon2/getrandom) were already in the
+working tree, so those lines entered history through THEIR commit. My staged
+copies are byte-identical to 5f452c3 for Cargo.toml/Cargo.lock (verified:
+git diff 5f452c3 --cached -- Cargo.toml Cargo.lock = empty) → my commit
+carries harness-sessions/** + this evidence only; no reversion, no conflict.
+Cargo.lock: resolver-owned; regenerated by cargo during builds, never
+hand-merged.
+
+RISKS / RESIDUAL
+-------------------------------------------------------------------------------
+1. sqlite-vec fallback (disclosed above): hybrid retrieval ships FTS5-only by
+   default; the InMemoryVectorIndex exercises the full blend/MMR path in
+   tests. Production embeddings need a vec0 impl (blocked on upstream
+   packaging) or an external vector service behind VectorIndex.
+2. Encrypted sessions are excluded from the FTS index by design (indexing
+   plaintext would defeat encryption-at-rest); disclosed in lib.rs + store
+   docs. Memory notes are plaintext curated knowledge by design.
+3. Encrypted-session retention archives are SKIPPED with a typed report
+   entry (no key available to write a plaintext cold file); callers archive
+   explicitly after keyed export. Documented in retention.rs.
+4. Debug perf asserts use x10 budgets (strict in release); evidence timings
+   above are from the release run.
+5. The workspace-scaffold smoke test in harness-sessions was replaced by the
+   real crate tests (56) — not deleted to pass, superseded by the crate.
+
+ENVIRONMENT NOTE: every cargo invocation used the documented task-8 INCLUDE
+workaround (per-command, never persisted). Local devs with intact MSVC
+workloads need nothing.
