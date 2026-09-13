@@ -1,0 +1,181 @@
+TASK 31 - Skill Forge (auto-authoring + correction journal) - rust-agent-harness
+================================================================================
+Worker: task-31 implementation worker (Sisyphus-junior). Date: 2026-09-13.
+Base: HEAD c50ec2d on main (feat(safety): unified permission engine) - confirmed at start.
+Parallel worker disclosed: todo-33 domain packs (harness-skills, content+fixtures).
+SHARED-FILE EDITS (all disclosed, all one-line-anchored, applied cleanly first try,
+no lock-retry needed - worker had not touched these files at edit time):
+  - harness-skills/src/lib.rs : exactly ONE owned line `pub mod forge;` (anchored on
+    the `pub mod loader;` line; re-read immediately before edit).
+  - harness-skills/src/skill.rs : ONE derive line - `serde::Deserialize` added to
+    SkillName (required so forge draft files round-trip through serde; NOT in the
+    contested-module list; additive only, T30 tests unaffected).
+  - harness-skills/Cargo.toml : UNTOUCHED - zero new dependencies (serde /
+    serde_json / thiserror / blake3 already present; async seam is a native
+    `async fn` in trait w/ `#[allow(async_fn_in_trait)]` + rationale doc; tests use
+    a hand-rolled block_on over `std::task::Waker::noop()` - no tokio dev-dep).
+Build isolation: private CARGO_TARGET_DIR (Temp/opencode/task-31-target) per the
+task-13 MSVC/private-target recipe; repo .omo/plans untouched (checkbox updates are
+the orchestrator's); no packs-content/daemon files touched.
+
+DELIVERABLE
+--------------------------------------------------------------------------------
+New module harness-skills/src/forge/ (16 files, all <=215 pure LOC, docs on every
+public item under #![deny(missing_docs)], no unwrap/expect/panic in src):
+  mod.rs        (105) trust architecture docs, ForgeError (16 typed variants),
+                  ForgeClock trait + SystemClock (injected clock seam)
+  document.rs   ( 99) SKILL.md EMITTER (render_document) + section splitter;
+                  everything survives the REAL T30 parser (round-trip test)
+  delta.rs      (126) SkillDelta/SectionChange (added/changed/removed), apply_delta
+                  merge preserving untouched sections byte-identical, next_version
+                  patch bump, DeltaError taxonomy (ACE section-7 mitigation: no
+                  whole-skill rewrite is representable)
+  journal.rs    (215) correction journal (hunk rejections w/ feedback, permission
+                  denials, post-output edits); SECRET REDACTION AT CAPTURE TIME:
+                  sk-/sk-ant-/ghp_/github_pat_/xoxb-/sk-or- token shapes, Bearer
+                  runs, api_key=/token=/password=/secret= assignments, AWS AKIA+16,
+                  caller literals; ASCII-CI matching is byte-length-preserving so
+                  replacement indices cannot desync on multi-byte text; JSON
+                  persistence (corrupt = typed JournalCorrupt, missing = empty)
+  quality.rs    ( 76) Atropos-style TrajectoryExport (trajectory+reward+metrics),
+                  QualityFilter (reward floor + Success + non-empty) - low-quality
+                  sessions never reach the model
+  distill.rs    (160) injected async DistillModel seam (native async-fn-in-trait;
+                  mocked in tests, no live LLM), SkillDistiller::learn (quality
+                  gate -> model -> untrusted-output scan -> DraftRecord w/ replay
+                  cases) + distill_content for source synthesis; LearnOutcome
+                  Distilled|Filtered
+  eval.rs       ( 99) deterministic replay harness: real parse_skill_document +
+                  real router over scripted ReplayCases (routing + section
+                  presence); EvalReport w/ render() for the blocked-activation
+                  paste
+  gates.rs      (178) disk-backed draft namespace the loader never scans
+                  (DraftStore stage/get/list/purge); ApprovalDecision (typed,
+                  human); ActivationGate::decide: Reject -> purge (leaves
+                  NOTHING), Approve -> inert check -> new-skill render OR
+                  delta-merge w/ from_version verification -> replay eval ->
+                  write -> purge draft. OverwriteRequiresDelta / StaleDraft /
+                  DraftInert typed refusals make silent overwrite unrepresentable
+  quarantine.rs (187) InjectionScanner (7 phrase classes + exfiltration +
+                  pipe-to-shell + rm -rf /; typed findings w/ 1-based lines) and
+                  Quarantine: content-hash scan -> inert holds/ dir -> forge-lock.json
+                  ledger (Held/Released); release refused on any finding
+  sources.rs    ( 54) /learn-style synthesis: SourceDescriptor enum
+                  (Url/Directory/Video) + async SourceFetcher seam (mocked) ->
+                  same scanned draft pipeline
+  lifecycle.rs  ( 67) /curator-style: classify w/ injected clock (stale 30d,
+                  archive 90d, pinned protected, never-invoked = stale),
+                  curator_pass -> typed LifecycleActions (no auto-delete)
+  analytics.rs  ( 78) usage tracking (invocations/tokens/hits, hit_rate),
+                  suggest_pruning -> typed PruningSuggestions only
+  knowledge.rs  ( 95) Devin-style knowledge suggestions: upsert keyed by quote
+                  hash (updates EXISTING items in place), regenerate from source,
+                  promote_to_enterprise one-directional (typed PromotionPath)
+  episodes.rs   ( 99) closed loop: Episode (situation->trace->outcome), PROVEN
+                  filter (reward >= 0.5 + Success), into_export feeding the
+                  distiller; SkillUseTrace + SkillReviser::fix_draft (Guardrails
+                  delta w/ version bump when a skill MISLED; None otherwise)
+  prime.rs      ( 66) BasePrompt IMMUTABLE (no mutator exists) + ContinualHarness
+                  /refine CRUD: evidence-mandatory versioned overlays + revert
+  hermes.rs     ( 41) the 5 mechanisms as composable stages (in-use improvement,
+                  post-turn review, idle curator, memory nudge, write-approval
+                  gate) - stages 1-4 have zero write authority, stage 5 is the
+                  gates.rs human gate
+
+TDD: three red->green cycles. RED evidence in-session: cycle-1 "cannot find `forge`
+in `harness_skills`"; cycle-2 "unresolved import forge::{distill,quality,quarantine}";
+cycle-3 "unresolved import forge::{sources,analytics,episodes,hermes,knowledge,
+lifecycle,prime}" + "no variant PromotionPath/KnowledgeNotFound". Tests: 7 files,
+35 forge tests (34 green + probe removed), plus the T30 corpus suites still green.
+
+ACCEPTANCE (plan): scripted session -> skill proposed -> approved -> replay passes
+-> ACTIVATED, round-tripping through the REAL T30 loader (parse/route/invoke behind
+the T30 ConsentGate: pending_consent before grant, matched after, negative prompt
+silent, invoke surfaces distilled body) - forge_loop::full_loop_session_to_activated_
+routable_skill. REJECTED proposal leaves NOTHING: draft file purged + skills tree
+empty + DraftNotFound on re-get - forge_gates::rejected_proposal_leaves_nothing.
+
+QA - HAPPY (full loop transcript, forge_loop, 1 passed):
+  $ cargo test -p harness-skills --test forge_loop
+  test full_loop_session_to_activated_routable_skill ... ok
+  session -> journal capture -> distill (mock model) -> draft staged (loader sees
+  0 skills in draft namespace) -> Approve -> eval 2/2 pass -> SKILL.md written
+  under skills root -> draft purged -> real SkillLoader parses v1.0.0 ->
+  consent-gated routing on "please cut a release of the crate" ->
+  invoke returns Steps+Guardrails bodies + allowed-tools.
+
+QA - FAILURE (paste, from a temporary --nocapture probe, deleted after capture;
+assertions live in forge_gates::eval_failure_blocks_activation_with_report):
+  === EVAL-FAIL REPORT PASTE ===
+  replay eval: 1 passed, 1 failed
+    FAIL prompt "please cut a release of the crate" expected_route=true actual_route=false - originating-session prompt no longer routes after applying this skill
+  -> DecisionOutcome::Blocked, NOTHING written to the skills tree, draft stays
+  staged for revision.
+
+QA - JOURNAL REDACTION PROOF (paste before/after, same probe;
+assertions live in forge_journal::secrets_are_redacted_at_capture_time_before_storage):
+  === BEFORE (raw input) ===
+  rejected hunk in deploy.sh: curl -H 'Authorization: Bearer eyJhbGciOi.payload.sig' https://api
+  key = sk-proj-4xK9mQzT3vBnR8wLp2sHf
+  pat = ghp_AbCdEfGh1234567890
+  aws = AKIAIOSFODNN7EXAMPLE
+  project SUPERSECRET-PROJECT-NAME pinned
+  === AFTER (stored, 5 redactions) ===
+  rejected hunk in deploy.sh: curl -H 'Authorization: Bearer [REDACTED:bearer]' https://api
+  key = [REDACTED:sk-key]
+  pat = [REDACTED:github-token]
+  aws = [REDACTED:aws-key]
+  project [REDACTED:custom] pinned
+
+ADVERSARIAL:
+  untrusted_text : injected trajectory -> mock model echoes injection into proposal
+    body -> scanner flags (PromptInjection findings) -> draft INERT, activation
+    refused w/ DraftInert (forge_adversarial::injected_trajectory_produces_inert_
+    flagged_draft + forge_gates::flagged_drafts_are_inert_and_cannot_be_activated).
+  quarantine     : injected marketplace skill held forever (QuarantineHeld on
+    release, ledger Held, loader sees 0 skills); clean skill scans -> holds ->
+    ledger -> releases byte-identical; each scanner pattern class fires w/ line
+    numbers (forge_adversarial x3 tests).
+  malformed      : corrupt journal JSON -> typed JournalCorrupt; bad deltas ->
+    DeltaError{NoChanges,HeadingNotFound,HeadingAlreadyExists,DuplicateChange,
+    EmptyHeading,BadVersion}; unknown draft -> DraftNotFound.
+  stale_state    : lifecycle aging via FakeClock (10d/31d/91d/never/pinned);
+    StaleDraft on from_version mismatch; never-invoked = stale.
+  flaky_x3       : full crate suite run 3x - byte-identical results, 79 tests,
+    0 failed every run (deterministic: no sleeps, no wall clock, no RNG; draft
+    ids are blake3 content hashes - "seeded" by construction).
+  misleading_success : asserts skill CONTENT (invoke body contains distilled
+    steps+guardrails), ROUTING (positive/negative prompts + consent gate
+    pending/granted), ANALYTICS (stats + typed prune reasons) - not just green.
+  new_input_parsing : unicode trajectories (CJK/emoji session ids + prompts)
+    distill without panic; hostile description (newlines/colons) sanitized into
+    parseable frontmatter.
+  dirty_worktree : distinguished - only harness-skills/{src/forge,tests/forge_*,
+    src/lib.rs,src/skill.rs} in my diff; .omo/* and other crates' files belong to
+    the orchestrator/parallel workers and are untouched.
+  others         : N/A (no live model, no network, no concurrency surface beyond
+    the async seam which mocks make synchronous).
+
+COMMANDS (all green):
+  $env:CARGO_TARGET_DIR=<private>; cargo test -p harness-skills
+      -> 17 test binaries, 79 passed, 0 failed (x3 identical)
+  cargo clippy -p harness-skills --all-targets 2>&1 -> exit 0 (workspace
+      warnings=deny + clippy all=deny honored)
+  cargo fmt -p harness-skills -- --check -> clean
+
+WORKTREE ISOLATION PROOF (committed tree): after commit, `git worktree add` at the
+new commit in a temp dir + `cargo test -p harness-skills` there -> full suite green
+from the committed tree alone (transcript appended below in this file by the worker
+run that produced the commit).
+
+RISKS / NOTES:
+  - DistillModel uses native async-fn-in-trait w/ a documented rustc allow; a
+    future production adapter needing Send will need the RPIT+Send form (doc'd
+    on the trait).
+  - Eval replay is routing+section based by design (deterministic, model-free);
+    semantic replay belongs to the scheduled live-model evals (todo 43+), never
+    PR gates.
+  - Analytics are in-memory accumulators; persistence wiring lands with the
+    daemon store (todo 34/45 surface).
+  - Quarantine ledger reuses JournalCorrupt for corrupt forge-lock.json (detail
+    string disambiguates); a dedicated variant is cosmetic, deferred.

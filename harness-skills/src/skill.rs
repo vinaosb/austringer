@@ -44,7 +44,9 @@ pub const NAME_MAX: usize = 64;
 pub const DESCRIPTION_MAX: usize = 1024;
 
 /// Validated skill name (lowercase kebab).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct SkillName(String);
 
 impl SkillName {

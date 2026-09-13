@@ -39,6 +39,7 @@ mod trust;
 
 pub mod consent;
 pub mod error;
+pub mod forge;
 pub mod loader;
 pub mod lock;
 pub mod migrate;
