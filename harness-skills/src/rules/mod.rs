@@ -12,7 +12,9 @@
 //! `TEAM:` marker is a team-floor rule regardless of which file it lives
 //! in. All other file content (headings, prose, fences) is ignored.
 
-use std::collections::BTreeSet;
+mod conflict;
+mod parse;
+
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,11 @@ use serde::{Deserialize, Serialize};
 use crate::error::SkillError;
 
 pub use crate::trust::TrustConfig;
+
+pub use conflict::RulesConflict;
+pub(crate) use parse::parse_rule_lines;
+
+use conflict::build_conflicts;
 
 /// Precedence layers: Team (floor) > Project > User.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,28 +92,6 @@ pub enum NoticeKind {
     /// The file exists but could not be read.
     #[error("unreadable: {0}")]
     Unreadable(String),
-}
-
-/// A merge conflict over one rule id.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RulesConflict {
-    /// The contested rule id.
-    pub id: String,
-    /// Layer that won.
-    pub winner_layer: RuleLayer,
-    /// Layer whose rule lost.
-    pub offending_layer: RuleLayer,
-    /// The losing rule's text.
-    pub offending_text: String,
-    /// True when a team rule beat a lower layer.
-    pub team_floor: bool,
-}
-
-impl RulesConflict {
-    /// True when this conflict is a team-floor enforcement.
-    pub fn is_team_floor_violation(&self) -> bool {
-        self.team_floor
-    }
 }
 
 /// The merged rules stack with conflicts and notices.
@@ -247,80 +232,4 @@ fn collect_file(
         });
     }
     Ok(())
-}
-
-/// Parses the bullet rule grammar (see module docs) from raw text.
-/// Exposed for the legacy-rule converter so converted skills preserve the
-/// exact same grammar.
-pub(crate) fn parse_rule_lines(
-    path: &Path,
-    text: &str,
-    layer: RuleLayer,
-    depth: u32,
-) -> Vec<RuleEntry> {
-    let mut out = Vec::new();
-    let mut auto = 0u32;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        let Some(bullet) = trimmed
-            .strip_prefix("- ")
-            .or_else(|| trimmed.strip_prefix("* "))
-        else {
-            continue;
-        };
-        let (id, text) = match bullet.strip_prefix("[[") {
-            Some(rest) => match rest.split_once("]]") {
-                Some((id, text)) => (id.trim().to_string(), text.trim().to_string()),
-                None => {
-                    auto += 1;
-                    (format!("{auto}"), bullet.trim().to_string())
-                }
-            },
-            None => {
-                auto += 1;
-                (format!("{auto}"), bullet.trim().to_string())
-            }
-        };
-        let (layer, text) = match text.strip_prefix("TEAM:") {
-            Some(rest) => (RuleLayer::Team, rest.trim().to_string()),
-            None => (layer, text),
-        };
-        out.push(RuleEntry {
-            id,
-            text,
-            layer,
-            source: path.to_path_buf(),
-            depth,
-            order: 0,
-        });
-    }
-    out
-}
-
-fn build_conflicts(stack: &RulesStack) -> Vec<RulesConflict> {
-    let mut ids: BTreeSet<&str> = BTreeSet::new();
-    for e in &stack.entries {
-        ids.insert(&e.id);
-    }
-    let mut conflicts = Vec::new();
-    for id in ids {
-        let winner = match stack.winner(id) {
-            Some(w) => w,
-            None => continue,
-        };
-        for loser in stack
-            .entries
-            .iter()
-            .filter(|e| e.id == id && e.order != winner.order)
-        {
-            conflicts.push(RulesConflict {
-                id: id.to_string(),
-                winner_layer: winner.layer,
-                offending_layer: loser.layer,
-                offending_text: loser.text.clone(),
-                team_floor: winner.layer == RuleLayer::Team && loser.layer != RuleLayer::Team,
-            });
-        }
-    }
-    conflicts
 }

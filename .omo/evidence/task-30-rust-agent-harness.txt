@@ -222,3 +222,10 @@ RESIDUAL RISKS / DISCLOSURES
 - LockMode::Record auto-pins first-seen skills at {root}/.harness/
   skills-lock.json; mismatched pins require an explicit human re-record
   (never auto-rewritten).
+
+=== T30 LOC TRIM ADDENDUM (2026-09-13) ===
+Pure refactor: split oversized parse.rs (255 pure LOC) and rules.rs (253 pure LOC) into submodules.
+parse.rs -> parse/{mod,frontmatter,limits}.rs (101/151/13); rules.rs -> rules/{mod,conflict,parse}.rs (172/41/46).
+ZERO behavior change; public API unchanged (tests unchanged prove it).
+Verify: cargo test -p harness-skills -> 41 passed / 0 failed; clippy --all-targets clean; fmt --check clean.
+Commit: refactor(skills): split oversized parse and rules modules
