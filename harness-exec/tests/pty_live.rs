@@ -1,6 +1,10 @@
 //! Live PTY pipeline tests (plan todo 19): happy paths, exit codes,
 //! bounded output, spill, stale-state immunity, malformed input.
 
+// The fixtures drive cmd/powershell through a real ConPTY; unix live-PTY
+// coverage lives in pty_chaos's explicit sh/sleep variants.
+#![cfg(windows)]
+
 mod common;
 
 use std::time::Duration;

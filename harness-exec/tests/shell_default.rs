@@ -3,6 +3,9 @@
 //! The resolution ORDER is part of the product contract and is documented
 //! on [`harness_exec::shell::ShellKind`].
 
+// The shell module itself is windows-only (pwsh/powershell/cmd probing).
+#![cfg(windows)]
+
 use std::path::PathBuf;
 
 use harness_exec::shell::{self, ExeFinder, ShellError, ShellKind};
