@@ -368,3 +368,26 @@ VERIFICATION
     frame 1000 ms, hang 5000 ms) — budgets.json (the contract) is
     untouched and breach detection stays pinned by the self-test.
     Local: perf_gate_cli 7/7 PASS.
+================================================================================
+TASK-3 FOLLOW-UP: ACCEPTANCE COMPLETE (2026-09-14)
+================================================================================
+CI GREEN — run 34907125723 (main @ 85ab44d), all six jobs:
+  fmt + clippy + deny ................. success
+  nextest archive (ubuntu-latest) ..... success
+  nextest archive (macos-latest) ...... success  (first-ever green macos leg)
+  nextest archive (windows-latest) .... success
+  cargo-llvm-cov ...................... success  (full instrumented workspace)
+  perf-gate ........................... success  (committed baselines hold on CI;
+                                                   no re-record needed)
+12. windows final straggler (item 11) fixed in 85ab44d; the 85ab44d run
+    went 6/6 green with zero retries — every leg passed first try on
+    that commit.
+RELEASE: v0.1.0 re-tagged 85ab44d (old tag fba416c deleted; no GH
+release existed on it) -> Release run 34908794673 with the fixed dist
+config ([profile.dist], harness-bench/safety/mcp dist=false; distable
+set = harness-cli + harness-daemon).
+COMMIT TRAIL (this CI-greening series): 20e037c e66f4f0 5d91b90 8936a6f
+  9550487 8ba2381 497d70e fdcaa31 07def98 fbdb54b 5e46f6d 40cd3b7
+  90e232a f105a77 7ca4646 6713b77 432b4e9 f6779e3 28cd0e7 b1a7a7a
+  771a05b c1bf11a 85ab44d (+ evidence chores folded in 9550487/497d70e/
+  b1a7a7a/771a05b/85ab44d).
