@@ -213,3 +213,57 @@ exit=0 | deny check exit=0 | nextest 49/49 exit=0. Single commit for task-3:
 1e66c45 'ci: nextest archive matrix, coverage, dist, perf-gate stub'
 (9 files, 623 insertions). Worktree after commit: only .omo state + evidence
 files (intentionally uncommitted).
+
+
+================================================================================
+TASK-3 FOLLOW-UP: FIRST REAL CI RUN — DRIVE TO GREEN (2026-09-14)
+================================================================================
+Trigger: run 34894997180 (first-ever parse of ci.yml after 13c8433) + release
+run 34894356357 (v0.1.0 tag, cargo-dist). Diagnosed from --log-failed; every
+fix is one conventional commit; discipline: cfg-gate (never delete) tests,
+no threshold weakened.
+
+FAILURE -> FIX LEDGER
+--------------------------------------------------------------------------------
+1. lint "fmt + clippy + deny": 'cargo-fmt' not installed for pinned 1.98 —
+   GitHub runner images default rustup to the MINIMAL profile, so a newly
+   installed toolchain carries no rustfmt/clippy.
+   FIX 5d91b90 fix(ci): rustup component add rustfmt clippy in lint job.
+2. coverage "cargo-llvm-cov": 'no such command: nextest' — llvm-cov's
+   nextest backend invokes cargo-nextest, which the job never installed.
+   FIX 5d91b90 (same commit): tool: cargo-nextest@0.9.144,cargo-llvm-cov@0.9.1.
+3. macos matrix: harness-exec lib E0425 x2 (libc::prctl, PR_SET_PDEATHSIG —
+   Linux-only symbols) + E0308 (BSD ioctl takes c_ulong, Linux c_int).
+   FIX 20e037c fix(exec): cfg(target_os="linux") on the prctl call in
+   pdeathsig_setup, TIOCSCTTY cast `as _`; docs updated to disclose that on
+   macOS the daemon-death guarantee rests on supervisor killpg (honest-gap
+   disclosure, no emulation claimed).
+4. ubuntu matrix: -D warnings killed harness-exec test compile —
+   pathologies.rs (unused thread/CancelToken/System/parse_ms/spec_with_timeout/
+   wait_until/count_processes imports + dead DA1_BOUND; all used only by
+   cfg(windows) bodies) and fs_contention.rs (unused `target`).
+   Both suites are ConPTY/Windows-FS fixtures (cmd/powershell shells,
+   ERROR_SHARING_VIOLATION, \\?\ long paths, OneDrive roots); the one
+   un-gated headless fixture also shells out to cmd.
+   FIX e66f4f0 fix(exec): file-level #![cfg(windows)] on both suites —
+   every test still runs on windows CI; nothing deleted or skipped.
+5. release build-local-artifacts (all 4 targets): 'profile `dist` is not
+   defined' + 'failed to find bin heap-profile' — dist-workspace.toml was
+   hand-authored without the profile dist normally adds, and cargo-dist
+   auto-includes every package with a binary (harness-bench's heap-profile
+   is behind the dhat feature -> unconditional bin build fails).
+   FIX 8936a6f fix(release): [profile.dist] inherits release in root
+   Cargo.toml; [package.metadata.dist] dist=false on harness-bench,
+   harness-safety (probe), harness-mcp (reference server). Distable set is
+   exactly harness-cli + harness-daemon (their pre-existing metadata).
+
+VERIFICATION
+--------------------------------------------------------------------------------
+- cargo fmt --all -- --check exit=0; actionlint ci.yml exit=0; cargo
+  metadata parses the touched manifests. Local cargo check blocked by the
+  known machine MSVC/cc issue (task-13; tree-sitter grammar build), and
+  cfg(unix) paths cannot type-check on this Windows host — CI is the
+  verifier for those legs.
+- Old-run signal reused where fixes are orthogonal: windows matrix +
+  perf-gate legs were left running to completion on 13c8433 before push so
+  their outcome (identical code for those legs) could be folded in.
