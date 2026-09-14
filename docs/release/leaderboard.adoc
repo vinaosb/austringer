@@ -1,0 +1,71 @@
+= Bench leaderboard
+:toc: left
+:doctype: article
+:idprefix:
+:idseparator: -
+
+[[leaderboard]]
+== Release transparency — benchmarks
+
+Every release publishes its benchmark numbers against the budget contract
+(this page is the pre-release baseline; each tagged release adds its own
+page under `docs/release/`). Publication rules:
+
+* **Budgets are the contract.** The budget column is normative and
+CI-enforced (`harness-bench/budgets.json`); measured values are
+machine-specific (recorded on the dev machine for this baseline,
+re-measured by CI on every push) and presented as such.
+* **Deterministic counters are regression-gated.** Wall-clock numbers ride
+absolute budgets with min-of-N sampling; only machine-independent counters
+are compared against committed baselines with a 10% tolerance
+(`harness-bench/baselines/gate_baseline.json`).
+* **Reproducibility.** `cargo run --release -p harness-bench --bin
+perf-gate` re-measures every number below from source.
+
+[[leaderboard-baseline]]
+== Pre-release baseline (HEAD c8926a4)
+
+[cols="2,1,1"]
+|===
+|Metric |Budget (contract) |Measured
+
+|CLI cold start |< 50 ms |17.23 ms
+|Daemon RSS at ready |< 80 MB |6.69 MB
+|TUI p99 frame render |< 16 ms |0.054 ms
+|Frame-budget breaches / hangs |0 / 0 |0 / 0
+|TUI idle renders |<= 1 |0
+|Binary size, stripped — CLI |< 40 MB |6.21 MB
+|Binary size, stripped — daemon |< 40 MB |3.09 MB
+|===
+
+Deterministic counters at this baseline (exact — these are the committed
+regression-gate values):
+
+[cols="2,1"]
+|===
+|Counter |Value
+
+|repomap.tokens |965
+|eviction.projected_events |523
+|prompt.stable_prefix_bytes |570834
+|pty.observation_bytes |10592
+|sessions.page_bytes |103500
+|===
+
+Twelve dhat allocation metrics accompany these in
+`harness-bench/baselines/heap_profile.json` (the >10% allocation-regression
+gate). Provenance: recorded task evidence, task-43.
+
+[[leaderboard-procedure]]
+== Per-release procedure
+
+. Build release binaries and run the perf gate against the committed
+budgets and baselines (the CI job does exactly this on windows-latest to
+match the baseline platform).
+. Record the gate's JSON report (`--report`) as the release artifact.
+. Add a page under `docs/release/` for the tag with the tables above
+filled from the report; link it from the README release-transparency
+section.
+. If a deliberate change moved a deterministic counter, re-record the
+baseline first (procedure in `harness-bench/baselines/README.md`) and say
+so in the release notes — silent baseline moves are not publishable.

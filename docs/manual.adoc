@@ -1,0 +1,38 @@
+= The harness manual
+:toc: left
+:doctype: article
+:idprefix:
+:idseparator: -
+
+[[manual]]
+== Introduction
+
+This is the composed manual: the chapters live in `docs/partials/` and are
+assembled here with `include::` (the hybrid-docs decision — see
+xref:index.adoc[the documentation index]). Read it start to finish, or jump:
+
+* <<getting-started,Getting started>>
+* <<context-and-sessions,Context and sessions>>
+* <<safety-and-trust,Safety and trust>>
+* <<skills-and-packs,Skills and packs>>
+* <<multi-model,Multi-model operation>>
+* <<performance,Performance>>
+* <<evals,Evals>>
+
+The manual describes behavior as shipped at the current commit; where a
+capability is still pending (notably live provider wiring in the daemon
+session factory), it says so.
+
+include::partials/getting-started.adoc[leveloffset=+1]
+
+include::partials/context-and-sessions.adoc[leveloffset=+1]
+
+include::partials/safety-and-trust.adoc[leveloffset=+1]
+
+include::partials/skills-and-packs.adoc[leveloffset=+1]
+
+include::partials/multi-model.adoc[leveloffset=+1]
+
+include::partials/performance.adoc[leveloffset=+1]
+
+include::partials/evals.adoc[leveloffset=+1]

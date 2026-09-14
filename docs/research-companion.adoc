@@ -1,0 +1,138 @@
+= Research companion
+:toc: left
+:doctype: article
+:idprefix:
+:idseparator: -
+
+[[research-companion]]
+== What this page indexes
+
+The project was designed from a working research artifact: the file
+`.omo/research/harness-research.md` — a 33-section study of 25+ agent
+harnesses, built from pinned source snapshots, git archaeology, and
+post-mortems. It stays Markdown because it is alive; this page is its
+index. The repository README links the file directly; read it there.
+
+The receipts rule: an adopted or avoided decision in this codebase is
+traceable to a research-file section. The table below maps the sections to
+what this project took from each.
+
+[[companion-map]]
+== Section map
+
+[cols="1,3,2"]
+|===
+|Section |Subject |What this project took from it
+
+|§1
+|Master functionality matrix (harness x capability, 28 columns)
+|The capability grid the design was plotted on; the "Ours" column of
+adopting marks.
+|§2
+|Git-history reversal lessons
+|Naming churn burns trust; memory discipline and model-identity
+transparency are contract-grade — both are tested here.
+|§3
+|ADOPT / AVOID / WATCH decisions ledger
+|The decision ledger that the plan's todos encode mechanically.
+|§6
+|DeepSeek Harness (dsh) post-mortem
+|SECURITY.md from day one; migration discipline with round-trip tests;
+explicit protocol dialects (the thinkingFormat failure); release-skew
+lessons.
+|§9
+|Cline findings
+|Overflow recovery must never depend on another successful LLM call;
+persisted compaction state validated against a prefix hash.
+|§10
+|Roo Code death autopsy
+|Command-prefix rules with substitution guards; the auto-approve CVE-farm
+lesson behind the permission engine's resolution step.
+|§11
+|Kilo Code
+|Spill-not-truncate for oversized tool output; kilocode_change discipline
+for vendored upstream code (dormant here — nothing is vendored).
+|§13
+|Plandex death autopsy
+|The nine-role routing model and per-task profile stickiness.
+|§15
+|Grok Build
+|The /goal adversarial completion gate; pruning ladders; externalized
+compaction segments; the 412 GB worktree sprawl behind shadow GC.
+|§16
+|Factory Droid
+|Ask-never-substitute routing (their silent failover is the AVOID);
+/verify verdict vocabulary; the doctor health-check pattern; resolved
+program blocklists.
+|§17
+|Amp
+|Tool-call gate actions (allow/reject/modify/synthesize); spawn pacing;
+commit provenance with session-id trailers.
+|§18
+|Qwen Code
+|Eval-transparency README discipline (harness-matched rows, exhaustive
+disclosure); fail-closed writer leases; MCP transport pooling.
+|§19
+|Cursor
+|Full-entry-hash MCP trust binding (MCPoison TOCTOU); admin floors that
+project config cannot weaken.
+|§20
+|GitHub Copilot
+|Safe-outputs pattern; agent-task setup steps; org-managed allowlists;
+workflow-approval provenance for agent commits.
+|§21
+|Antigravity
+|Artifact-gated approval; successor handoff at milestones; the
+action-target permission grammar.
+|§22
+|Devin
+|Clean-context review from the diff alone; security-profile intersection
+semantics; the MCP gather barrier.
+|§23
+|Zed
+|Frame-budget discipline (10 ms budget, hang classification); ACP
+agent-side server mode; the WIT version ladder for extension stability.
+|§24
+|JetBrains
+|IDE-as-toolbox: bridge the host's real semantic index and tooling over a
+local endpoint instead of reimplementing approximations.
+|§25
+|Warp
+|OSC 777/9 terminal notification emission; declarative automations with
+budgets; checkpoint coordination.
+|§26
+|Rust micro-harnesses (forge, harness-rs)
+|pass^k floors; honest isolation reporting; the closed skill-learning
+loop; worktree discipline.
+|§27
+|The self-improving wave (hermes)
+|The five-mechanism skill loop behind write approval; third-party skill
+quarantine; the lock.json ledger; cache-control engineering.
+|§31
+|Gemini CLI
+|The anti-elision omission-placeholder guard; nightly-build SHA embedding;
+the compaction-stage vocabulary.
+|§32
+|jcode
+|The cache-violation tracker; zero-downtime daemon reload on the same
+socket; stale-socket reaping; MCP schema disk cache.
+|§33
+|LLM-behavior elicitation (final)
+|The SET/PROMPT/THROTTLE constitution; per-model 400-trap feature
+detection; edit-format routing per model family; joint model-by-profile
+evaluation.
+|===
+
+Sections not listed (§4-§5, §7-§8, §12, §14, §28-§30) are the study's
+process records — iteration queues, source records, straggler sweeps, and
+the Terminal-Bench/Harbor measurement-harness survey — retained in the file
+for provenance.
+
+[[companion-rule]]
+== The rule, restated
+
+A pull request that introduces a mechanism without a receipt will be asked
+for one (see the evidence-culture section of the repository CONTRIBUTING).
+A pull request that removes a guard will be asked which measured pathology
+it intends to re-admit. The research file is the shared vocabulary for
+both conversations.

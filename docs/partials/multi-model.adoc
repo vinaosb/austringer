@@ -1,0 +1,60 @@
+[[multi-model,Multi-model operation]]
+= Multi-model operation
+
+[[mm-adapters]]
+== Provider adapters
+
+Five adapters implement one dyn-safe Provider trait: Anthropic, OpenAI,
+Google, xAI, and the OpenAI-compatible family (Ollama, vLLM, OpenRouter,
+Groq). Streaming is resilient: mid-stream disconnects resume preserving
+turn state with idle timeouts and exactly-once tool side effects — chaos
+tests drop the stream at arbitrary bytes. Subscription OAuth device-flow
+login lands where providers offer it, with refresh tokens in the OS
+keyring, and the cost HUD distinguishes subscription from API billing.
+Models outside the cost table report tokens only and an explicit unpriced
+state — costs are never invented.
+
+[[mm-profiles]]
+== Model profiles and dialects
+
+Profiles are computed from transcript taxonomies: syntax and tool-misuse
+rates, context-overflow and retry-storm behavior, edit rejections,
+cost per turn — feeding behavioral axes (verbosity, thinking depth,
+delegation preference, drift). Protocol dialects are explicit per profile —
+thinking-content formats, usage semantics, tool-call identity rules — and
+a per-model 400-trap feature-detection table records which request
+parameters each model accepts (feature-detected per model, never per
+provider). The failure this exists to prevent is documented: one wrong
+dialect choice produced 72k characters of reasoning bloat where 6k was
+intended (the dsh thinkingFormat bug, research §6; the elicitation
+constitution, research §33).
+
+[[mm-routing]]
+== Routing that asks
+
+Roles map to models — architect, editor, reviewer, hydrator, summarizer,
+plus cheap-model utility roles (commit messages, session titles,
+dedup-folding). Tasks pin their launch profile across resume; subtasks
+inherit the parent profile, so models do not drift mid-task. Fallback is a
+first-class primitive with an explicit verbatim chain and wait-out windows
+for rate limits — and every hop is surfaced to the user. The daemon never
+substitutes a model silently: an outage asks (our guard against the silent
+failovers recorded in research §16 and §2). Model switches execute only at
+compaction boundaries, where the cache miss happens anyway.
+
+[[mm-subagents]]
+== Subagents and the spec launcher
+
+The spec launcher decomposes a written specification into objectives and a
+task graph, launches heterogeneous models in parallel, and synthesizes with
+a cross-consistency check — bounded by effort-scaling rules and hard budget
+guards (no fifty-subagent spawns; burst quotas pace child spawns).
+Best-of-N runs the same prompt on up to four models; plan-branch compares
+the same spec across models on snapshot branches. Children are ephemeral,
+hidden from the main session list, and return capped summaries; they are
+resumable by task id, and permissions bubble through the parent. A clean-
+context reviewer reasons backward from the diff alone at milestones — zero
+shared context, the attention-math pattern from research §22. Optionally,
+tasks delegate to real Claude Code or Codex child processes through their
+official protocols as additional launcher backends (opt-in, off by
+default).

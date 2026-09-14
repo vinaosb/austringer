@@ -1,0 +1,69 @@
+[[safety-and-trust,Safety and trust]]
+= Safety and trust
+
+[[st-modes]]
+== Autonomy modes
+
+Four modes — Auto, Approve, Chat, and SmartApprove — are exposed as an
+autonomy matrix: levels crossed with per-capability toggles (auto-read,
+auto-edit, auto-exec, auto-compact, auto-context), not a single dial.
+Plan-mode pairs with a read-only tool set. Headless default is Ask. The
+permission store persists yes/always/no decisions with scoped patterns and
+durations.
+
+[[st-permissions]]
+== The permission engine
+
+Permissions are one engine from config to enforcement: allow/ask/deny
+patterns (including globs and opt-in regex), longest-prefix command rules
+with a dangerous-substitution guard (an allowed `npm i` never
+auto-approves `npm i && curl evil`), a resolved-program blocklist that
+wrapper shells and path tricks cannot bypass, and typed reasons surfaced in
+the UI so the user sees why an action ran, not just that it did. Deny
+always wins when policy layers merge. Secret-file reads (.env, keys,
+credentials patterns) default to Ask with redaction in the transcript.
+Child processes get a scrubbed environment: `*KEY*`, `*SECRET*`, `*TOKEN*`
+variables are dropped by default.
+
+[[st-sandbox]]
+== OS-native sandboxes
+
+One policy, many backends: Seatbelt on macOS, Landlock plus seccomp (or
+bubblewrap, detected) on Linux, and Windows restricted tokens with ACLs
+and Job Objects. A userland allowlist proxy covers network egress where
+the kernel lacks isolation — with zero built-in vendor-escape domains.
+Every sandboxed run reports requested-versus-enforced isolation honestly:
+if the kernel refused part of the policy, the report says so (the
+harness-rs honesty rule, research §26). Escape-attempt suites per OS
+(write outside root, network call without an allow) fail closed by test.
+
+[[st-mcp]]
+== MCP trust
+
+MCP servers are never auto-trusted: trust binds to the full entry hash of
+each server configuration, not the entry name — the TOCTOU pattern behind
+the MCPoison CVE-2025-54136 cannot replay a benign approval against a
+swapped command (research §19). Transports are pooled per server and
+config fingerprint with refcounted release, idle drain, and budget
+hysteresis. The daemon additionally speaks ACP agent-side so editor hosts
+can drive this harness as a native panel agent.
+
+[[st-quarantine]]
+== Skill quarantine and the lock.json ledger
+
+Third-party skills and packs pass a content-hash scan into quarantine
+before activation; installed provenance is recorded as a content-hash
+ledger (`lock.json`) so tampering is detectable and upgrades are diffable
+(the ClawHub ClawHavoc lesson and the hermes ledger, research §27).
+Marketplace items are declarative config patches — they write configuration
+files, never executable code. Registry installs verify pin plus hash; a
+tampered pack is refused by test.
+
+[[st-wasm]]
+== Plugin runtime
+
+The WASM plugin runtime is late-wave, feature-gated, and off by default:
+wasmtime with WASI 0.2, a 32 MB resource limit, fuel metering (an
+infinite-loop plugin is killed by test), preopened directories only, and a
+declared-capability enum. Extensions register as tools through the same
+ToolProvider trait the built-ins use.

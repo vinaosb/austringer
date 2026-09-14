@@ -1,0 +1,45 @@
+[[skills-and-packs,Skills and packs]]
+= Skills and packs
+
+[[sk-format]]
+== SKILL.md
+
+Skills use the agentskills.io-compatible SKILL.md format with extensions:
+trigger lists (including non-English), negative scoping, language tags,
+versions, allowed-tools, and per-model guidance sections. The loader scans
+the harness, opencode, claude, and agents skills paths with
+cross-vendor deduplication by name, and injects metadata only — progressive
+disclosure — until a skill is invoked. Project rules (AGENTS.md standard,
+plus the compatibility pickups) stack per directory, gated on folder trust;
+precedence runs Team over Project over User.
+
+[[sk-forge]]
+== The Skill Forge
+
+After a task, `/learn` distills the session (with a cheap model) into
+proposed SKILL.md diffs — growing, refinement-style deltas only, never
+whole-skill rewrites. A correction journal captures hunks rejected with
+feedback, denials, and post-output edits, with secrets redacted at capture
+time. Proposals land in a draft tier and pass an eval gate (replaying the
+originating session type) before activation; a rejected proposal leaves
+nothing behind. The loop is five mechanisms — in-use improvement,
+post-turn background review, an idle curator, memory nudges — all behind
+an explicit write-approval gate (the hermes loop, research §27). Usage
+analytics feed pruning suggestions; stale skills age out on the
+30/90/pin ladder.
+
+[[sk-registry]]
+== The registry
+
+Pack distribution is verified end to end: search, install with pin plus
+hash verification, trust review, signatures where available. The reference
+server is self-hostable and static-index capable; the CLI and the web
+manager are its clients. The registry never phones home by default.
+
+[[sk-packs]]
+== Domain packs
+
+Shipped packs cover programming (.NET, frontend, backend, devops), legal,
+maths, accounting, and finance — each with triggers, negative scope, a
+worked example, and an eval scenario. Packs are registry content, not
+compiled into the binary.

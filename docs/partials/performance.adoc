@@ -1,0 +1,56 @@
+[[performance,Performance]]
+= Performance
+
+[[perf-budgets]]
+== Budgets are the contract
+
+The budgets of record live in `harness-bench/budgets.json` and are enforced
+by the `perf-gate` CI binary on every push (the CI job builds release
+binaries and runs the gate against them). A breach fails the build; a
+greater-than-10% regression against the committed deterministic baselines
+fails the build. The budgets:
+
+[cols="2,1,1"]
+|===
+|Metric |Budget |Measured at the pre-release baseline
+
+|CLI cold start |< 50 ms |17.23 ms
+|Daemon RSS at ready |< 80 MB |6.69 MB
+|TUI p99 frame render |< 16 ms |0.054 ms
+|Frame budget / hang threshold |10 ms / 100 ms classified |0 breaches, 0 hangs
+|TUI idle renders |<= 1 |0
+|Binary size, stripped (CLI / daemon) |< 40 MB |6.21 MB / 3.09 MB
+|===
+
+The measured column is machine-specific — recorded on the dev machine and
+re-measured by CI on every push; the budgets are the normative numbers.
+Reproduce locally:
+
+```sh
+cargo run --release -p harness-bench --bin perf-gate -- \
+    --budgets harness-bench/budgets.json \
+    --baseline harness-bench/baselines/gate_baseline.json
+```
+
+[[perf-baselines]]
+== Deterministic baselines
+
+Wall-clock numbers are load-bound, so the regression gate keys on
+machine-independent deterministic counters committed in
+`harness-bench/baselines/gate_baseline.json`: repomap token output (965),
+eviction projection size (523 events), prompt stable-prefix bytes (570834),
+PTY observation bytes (10592), and session page-in bytes (103500). Twelve
+dhat allocation metrics are committed alongside in `heap_profile.json` and
+gated the same way. Re-recording after a deliberate change that moves a
+number is a documented procedure (`harness-bench/baselines/README.md`) and
+must be noted in the commit message.
+
+[[perf-frame]]
+== Frame-budget discipline
+
+The TUI render path is measured, not assumed: frames are classified against
+a 10 ms budget and a 100 ms hang threshold, with per-frame worst-phase
+attribution surfaced through a debug overlay. The idle path renders zero
+frames for zero state changes — enforced by test, in the spirit of the Zed
+GPUI discipline (research §23). The published numbers live in the release
+leaderboard page, `docs/release/leaderboard.adoc`.

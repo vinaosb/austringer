@@ -1,0 +1,73 @@
+# Docs — link check + AsciiDoc site build (plan todo 46).
+#
+# Two gates, matching the todo's acceptance criteria:
+#  * linkcheck: every relative link in the Markdown storefront and every
+#    include/xref/link reference in docs/*.adoc resolves (script is shared
+#    with local dev: .github/scripts/linkcheck.ps1; pwsh is preinstalled on
+#    GitHub-hosted runners).
+#  * site: asciidoctor converts the top-level docs pages to a static site
+#    artifact. --failure-level WARN turns any converter warning (including
+#    an invalid intra-document xref) into a job failure, so the build is
+#    warning-clean by construction; cross-file reference integrity is the
+#    linkcheck job's contract.
+#
+# The manual is composed: manual.adoc includes its chapters from
+# docs/partials/ (hybrid-docs decision). Partials are deliberately NOT in
+# the build list — they are fragments; every top-level page basename is
+# unique so the flat -D output cannot collide. When adding a page, append
+# it to PAGEFILES below.
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PAGEFILES: >-
+    docs/index.adoc
+    docs/architecture.adoc
+    docs/manual.adoc
+    docs/research-companion.adoc
+    docs/release/leaderboard.adoc
+    docs/release/evals.adoc
+
+jobs:
+  linkcheck:
+    name: link check (storefront + docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check relative links, includes, and xrefs
+        shell: pwsh
+        run: .github/scripts/linkcheck.ps1
+
+  site:
+    name: asciidoctor site build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install asciidoctor
+        run: sudo gem install asciidoctor --no-document
+      - name: Build docs site (zero-warning gate)
+        run: |
+          mkdir -p _site
+          for f in $PAGEFILES; do
+            asciidoctor --failure-level WARN -a toc=left -a linkcss -D _site "$f"
+          done
+          ls -R _site
+      - name: Upload site artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-site
+          path: _site

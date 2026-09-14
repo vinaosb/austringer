@@ -1,0 +1,71 @@
+= harness documentation
+:toc: left
+:doctype: article
+:idprefix:
+:idseparator: -
+
+[[docs-index]]
+== What this site is
+
+The documentation layer of the
+https://github.com/placeholder-org/harness[harness] project — a
+general-purpose AI agent harness written in Rust: one daemon hosts the agent
+loop, and four thin clients (CLI, TUI, browser dashboard, VS Code extension)
+attach to it over a loopback protocol.
+
+The documentation is deliberately hybrid:
+
+* `README.md` and `CONTRIBUTING.md` stay Markdown at the repository root —
+  the zero-friction storefront (read them there; they are not part of this
+  built site).
+* This `docs/` tree is the depth layer: the manual, the architecture guide,
+  and the research companion, written in AsciiDoc with explicit stable-ID
+  cross-references (`[[id]]` anchors and `xref:` links) and chapters
+  composed with `include::`. CI builds it to a static site and fails on any
+  broken cross-reference.
+* The research artifact itself — the post-mortem study this project is
+  designed from — stays Markdown at `.omo/research/harness-research.md`
+  because it is a working document; xref:research-companion.adoc[the
+  research companion] indexes it section by section.
+
+NOTE: GitHub renders each AsciiDoc page standalone, but the manual is
+composed: `manual.adoc` pulls its chapters in from `docs/partials/`. Read
+the composed manual from the CI-built site artifact, or read the partials
+directly when browsing source.
+
+[[site-map]]
+== Site map
+
+* xref:manual.adoc[Manual] — getting started, context and sessions, safety
+  and trust, skills and packs, multi-model operation, performance, evals.
+* xref:architecture.adoc[Architecture] — the one-daemon design, the
+  24-crate workspace map, the protocol, and the data flow of a turn.
+* xref:research-companion.adoc[Research companion] — index of the
+  post-mortem research file and what this project adopted or avoided from
+  each section.
+* xref:release/leaderboard.adoc[Release leaderboard] — per-release benchmark
+  numbers against the budget contract.
+* xref:release/evals.adoc[Release eval tables] — published eval results and
+  the publication rules that govern them.
+
+[[evidence-culture]]
+== The evidence rule
+
+Every claim in this documentation carries a receipt: a citation to the
+research file (written "research §N"), a commit in the repository history,
+a committed baseline under `harness-bench/baselines/`, or a recorded task
+evidence file (cited as "task-N"). Where a number is machine-specific it is
+presented as such — the budgets are the contract, and the budgets are what
+CI enforces. Benchmark tables publish harness-matched rows only; unmatched
+rows are marked DO NOT PUBLISH (research §18).
+
+This documentation embeds no counters, tracking pixels, or telemetry of any
+kind.
+
+[[naming]]
+== Naming
+
+The public name is `harness` and the crates are `harness-*`. An explicit
+naming decision is deliberately deferred to the pre-v1.0 marketing
+checklist: a crate rename is cheap before the first release and
+brand-breaking after it.

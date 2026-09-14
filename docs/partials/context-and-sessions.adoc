@@ -1,0 +1,69 @@
+[[context-and-sessions,Context and sessions]]
+= Context and sessions
+
+[[cs-eventlog]]
+== The append-only event log
+
+Sessions are event streams first: typed events (user, assistant, tool call,
+tool result, system, condensation, snapshot markers) append to a JSONL log
+with sorted-key, stable-path serialization — the same byte-stability the
+provider cache expects applies to the logs (research §27). Written events
+are never mutated; a torn final line after a crash is ignored with a
+warning, leaving a valid prefix. Multimodal content blocks live out-of-line
+under the session media directory with hash references — never inline
+base64 in the JSONL.
+
+[[cs-cache-epoch]]
+== The context epoch and the stable prefix
+
+The prompt layout is fixed: system plus the six invariant tools first, then
+rules and skills schemas, then the repository map and history; volatile
+data rides only in the last user message. The stable span is treated as a
+_context epoch_ — an immutable provider-cache baseline that ends only at a
+completed compaction or session movement. A rolling stable-prefix hash
+chain detects provider-side cache invalidation the moment it happens, so a
+cache miss becomes an observable event instead of a silent cost spike
+(research §27, §32).
+
+[[cs-eviction]]
+== The eviction ladder
+
+Eviction triggers at 75% of the context window and walks named stages:
+masking, folding of stale tool results to head/tail excerpts, then
+placeholders with retrieval pointers. Protected head and tail windows are
+eviction-immune; the active plan never drops; tool return codes are never
+folded away (the folding engine refuses rather than lose them).
+
+[[cs-compaction]]
+== Compaction
+
+Compaction follows the doctrine selection: architectural decisions and
+unresolved bugs verbatim, recent tool paths, protected head plus the last
+ten user-anchored turns. Condensing runs with the session's own model
+(same-model condensing — dialect mismatch is a real failure mode);
+overflow recovery is a deterministic basic-compaction path that never
+depends on another successful LLM call (the Cline lesson, research §9).
+Compaction output is auditable: recoverable segment files plus an index per
+session, and before/after token counts with seal-integrity status are
+recorded per compaction.
+
+[[cs-sessions]]
+== The sessions store
+
+SQLite is the source of truth, with atomic schema-versioned updates and
+round-trip migration tests in both directions for every schema generation
+(the dsh migration-storm lesson, research §6). Encryption at rest is
+XChaCha20-Poly1305 with per-session keys derived via argon2; opening a
+session pages in turns lazily — a 100 MB session opens in under 50 ms by
+acceptance test. API keys are never persisted in the session store; OAuth
+refresh tokens live only in the OS keyring. Cross-session search is
+lexical (BM25), and curated memory notes inject at tier 1 with a
+compaction-boundary re-search.
+
+[[cs-rewind]]
+== Snapshots and rewind
+
+Checkpoints land under `refs/harness/snapshots/{session}/{turn}`;
+`/rewind N` restores files and truncates event history in sync. Restore is
+transactional: dirty user work is stashed to a private ref first, and a
+restore never knocks later user commits off the branch.

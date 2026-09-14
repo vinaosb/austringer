@@ -1,0 +1,205 @@
+= Architecture
+:toc: left
+:doctype: article
+:idprefix:
+:idseparator: -
+
+[[architecture]]
+== One daemon, four thin clients
+
+The system has exactly one owner of state: the `harness-daemon` process. It
+hosts the agent loop, the event log, the session store, the permission
+engine, the scheduler, and the sandbox policy. Everything a user touches is
+a thin client:
+
+[cols="1,3,1"]
+|===
+|Client |Role |Code
+
+|CLI
+|Headless one-shot `run`/`capture`, interactive REPL, `attach` event tail,
+`doctor` health checks, and `--output-json` NDJSON output that doubles as
+the eval-adapter contract.
+|harness-cli
+
+|TUI
+|Event-driven ratatui interface (no polling, no timers on the render
+thread): context gauge, cache-hit and cost HUD, omnibar, hunk review gates.
+|harness-tui
+
+|Web
+|A dashboard SPA served by the daemon itself — no node server, no cloud
+dependency. Live session view, hunk review, cost/cache/context dashboards.
+|harness-web (static assets)
+
+|VS Code
+|TypeScript thin client over the same protocol: native diff decorations,
+per-hunk code lenses, opt-in editor telemetry.
+|harness-vscode (not a Cargo crate)
+|===
+
+Both carriers are loopback-only and authenticated: HTTP/WS/SSE on
+`127.0.0.1` with a generated token (the daemon refuses non-loopback binds),
+plus a local-socket IPC carrier for terminal clients. Multiple clients may
+attach to one session at the same time, and a permission answered by any
+client applies to all of them.
+
+The design rule from the research file: one engine, four surfaces, no logic
+duplicated into a frontend (research §1 frontends row; crush's multi-client
+shared permission queue, research §1).
+
+[[crate-map]]
+== The workspace map
+
+Twenty-four Cargo crates plus the TypeScript VS Code project. Grouped by
+layer:
+
+[cols="1,3,2"]
+|===
+|Crate |What it owns |Layer
+
+|harness-core
+|Typed append-only event log, the operation-pipeline agent loop, the
+invariant tool set with deferred schema hydration, the tool inspector
+chain, autonomy modes, tiered eviction, doctrine-compliant compaction,
+budget ceilings, lifecycle hooks.
+|engine
+
+|harness-providers
+|The `Provider` trait: resilient streaming with mid-stream recovery, five
+adapters (Anthropic, OpenAI, Google, xAI, OpenAI-compatible) with OAuth
+device-flow subscription auth and per-response cost accounting.
+|models
+
+|harness-intel
+|Model-weakness profiles from transcript taxonomies, per-model protocol
+dialects and the 400-trap feature-detection table, per-role model routing
+with confirmed fallback.
+|models
+
+|harness-orchestration
+|Fork-join subagents, the spec-driven launcher (decompose, heterogeneous
+launch, synthesis), best-of-N and plan-branch comparison, optional
+harness-as-subagent backends.
+|models
+
+|harness-ast
+|Tree-sitter tag tables with validation gates, feature-gated per language.
+|context
+
+|harness-repomap
+|The repository map: file graph from tag tables, Personalized PageRank on a
+CSR, signature-only rendering inside a token budget.
+|context
+
+|harness-search
+|Tantivy BM25 lexical index plus grep — no embeddings, by scope decision.
+|context
+
+|harness-lsp
+|Headless LSP client with RSS-sampled bounded server supervision.
+|context
+
+|harness-exec
+|PTY pipeline with screen-delta scraping, Windows ConPTY hardening and the
+WSL2 bridge, kill trees, the deterministic pre-flight pipeline.
+|exec + safety
+
+|harness-vfs
+|Transactional shadows: reflink/CoW copies with a git worktree fallback,
+apply-and-rollback before anything touches the user tree.
+|exec + safety
+
+|harness-snapshots
+|Namespace checkpoints under `refs/harness/snapshots/`, `/rewind` restoring
+files and history in sync, restore transactions.
+|exec + safety
+
+|harness-safety
+|OS-native sandboxes (Seatbelt, Landlock/seccomp, Windows restricted tokens
++ ACLs + Job Objects), egress control, the unified permission engine.
+|exec + safety
+
+|harness-wasm
+|The late-wave WASM plugin runtime (wasmtime, WASI 0.2): resource limits,
+fuel metering, declared capabilities. Off by default.
+|exec + safety
+
+|harness-sessions
+|SQLite source-of-truth with XChaCha20-Poly1305 encryption at rest, lazy
+turn paging, fork/resume, cross-session memory.
+|persistence
+
+|harness-mcp
+|MCP client and server modes over rmcp: per-server timeouts, transport
+pooling, full-entry-hash trust binding, org allowlists.
+|extension
+
+|harness-skills
+|The SKILL.md loader with cross-vendor discovery, the Skill Forge
+(distillation, correction journal, quarantine and trust gates), pack
+resolution.
+|extension
+
+|harness-daemon
+|The state owner: HTTP/WS/SSE + IPC protocol, multi-client attach with
+mediated permissions, scheduler, notifications, web SPA serving, hardened
+auth (token + Host-header checks).
+|surfaces
+
+|harness-cli, harness-tui, harness-web, harness-vscode
+|The four thin clients above.
+|surfaces
+
+|harness-test-support
+|The hermetic test kit: rule-based fake provider, SSE event-builder DSL,
+mid-stream drop injection, cassettes with strict replay, race gates.
+|meta
+
+|harness-bench
+|The perf suite: budgets of record, deterministic committed baselines, the
+`perf-gate` CI binary, dhat heap profiles.
+|meta
+
+|harness-evals
+|The eval harness: scripted subjects, deterministic graders, integrity
+guards, pass^k metrics, expected-failure pinning, harness cards.
+|meta
+|===
+
+[[turn-dataflow]]
+== The data flow of a turn
+
+. A client submits a prompt over the carrier; the daemon creates or resumes
+a session (lazy turn paging from the sessions store) and appends the user
+event to the append-only log.
+. The agent loop runs its named-operation pipeline (entry hooks, slash
+commands, steering, compaction check, tool approval, execution, retry,
+stop hooks, inference) — every operation is cancellable mid-flight.
+. Tool calls pass the inspector chain (permissions, repetition detection),
+run inside the sandbox policy, and land their results through the
+byte-capped observation path (spill files for oversized output).
+. The prompt builder renders a byte-stable prefix (the context epoch);
+streaming inference events fan out to every attached client through the
+typed event schema with monotonic ids and bounded replay.
+. Snapshots record the pre-turn state so `/rewind` restores files and
+history together.
+
+[[design-rules]]
+== Design rules with receipts
+
+* No silent model substitution — fallback hops ask the user; model identity
+is a contract (research §13, §16, §2).
+* No embeddings or vector search for code — lexical index plus AST map by
+scope decision (research §1 repo-map rows).
+* No whole-file rewrites — windowed views, AST-validated hunks, hash
+anchors (research §1 windowed-file-view rows).
+* No unstable serialization — sorted keys, stable paths, byte-identical
+prefixes; cache-control engineering with a violation tracker (research
+§27, §32).
+* No orphaned processes — kill trees via Job Objects and PDEATHSIG; the
+daemon's crash never leaves tool processes behind (research §1).
+* No unverified third-party code running automatically — quarantine,
+lock.json ledger, trust gates (research §27).
+* Windows is first-class, not an afterthought (research §1 OS-sandbox
+rows).

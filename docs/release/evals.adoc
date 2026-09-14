@@ -1,0 +1,63 @@
+= Eval tables and publication rules
+:toc: left
+:doctype: article
+:idprefix:
+:idseparator: -
+
+[[evals-release]]
+== Release transparency — evals
+
+Every release publishes an eval table under the todo-44 discipline. The
+rules come from the Qwen README lesson (research §18): self-reported
+benchmark numbers inflate 10-25 points when harness settings are not
+exhaustively matched, so the disclosure is part of the number.
+
+[[evals-rules]]
+== Publication rules
+
+* **Harness-matched rows only.** Every published row names its harness
+settings and its matched baseline; a row without a matched baseline
+renders DO NOT PUBLISH.
+* **The unit is the model-by-profile pair.** Regression tables run one
+locked profile; experiment tables are at least a 2x2 model-by-profile grid
+(research §33 — harness variance up to 7.8x model variance makes
+single-model results unattributable).
+* **pass^k floors beside Mean@k**, with failure-fingerprint vectors and
+tokens-per-solved (research §26 — the two metrics differ by up to 24
+points on flaky subjects; only the floor is a quality claim).
+* **Guard-zeroed rows are marked, not dropped.** Canary leakage,
+upstream-PR/diff opens, and failed-turn output inflation zero a row
+automatically; the raw score stays visible for ablation.
+* **Retraction in place.** A claim that fails audit is marked retracted in
+its row, never deleted.
+* **Live-model sweeps are scheduled-only.** They never gate pull requests;
+the sweep report artifact is the publication source.
+
+[[evals-status]]
+== Current status
+
+No live-model rows are published at this baseline. That is the discipline
+working, not a gap in it: no live-model sweep has run under matched
+conditions yet (the daemon's live provider wiring is the pending
+prerequisite — see the status section of the repository README), and
+unmatched rows are not publishable.
+
+The hermetic eval machinery itself is landed and tested (58 tests in
+harness-evals, provenance task-44): typed datasets, deterministic graders,
+the scripted subject, integrity guards, pass^k metrics, expected-failure
+pinning, the first-two-tool-calls drift gate, replay-from-traces, and
+commit-history mining. When the first scheduled sweep runs, its report
+artifact populates the table below.
+
+[cols="3,1,1,1,1,2"]
+|===
+|Run (model x profile) |pass^k |Mean@k |Tokens/solved |Harness card |Status
+
+|_(none published — awaiting the first matched scheduled sweep)_ | | | | |DO NOT PUBLISH
+|===
+
+[[evals-leaderboard-link]]
+== Related
+
+The benchmark side of release transparency is the
+xref:leaderboard.adoc[bench leaderboard].

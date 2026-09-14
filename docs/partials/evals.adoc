@@ -1,0 +1,52 @@
+[[evals,Evals]]
+= Evals
+
+[[ev-discipline]]
+== The discipline
+
+Eval results follow the todo-44 publication rules, which exist because
+harness choices inflate benchmark numbers by 10 to 25 points when left
+undisclosed (research §18):
+
+* **Harness-matched rows only.** Published tables compare rows measured
+under the same harness settings; a row without a matched baseline renders
+DO NOT PUBLISH.
+* **Live-model sweeps are scheduled, never PR gates.** No pull request is
+ever blocked on a live-model result; regression mode runs one locked
+profile, and experiments require at least a 2x2 model-by-profile grid —
+the unit of evaluation is the harness-model pair (research §33; harness
+variance measured up to 7.8x model variance).
+* **pass^k floors beside Mean@k.** All-k-reps-must-pass floors are reported
+next to the mean, because the two differ by up to 24 points on flaky
+subjects (research §26). Failure-fingerprint vectors and tokens-per-solved
+accompany the ranking.
+* **Integrity guards zero tainted rows.** Dataset canary leakage, upstream
+PR/diff opens (fair-internet-use), and partial-output inflation on failed
+turns are detected and zeroed automatically, with raw scores kept for
+ablation.
+* **Retraction in place.** When a published claim fails audit, its row is
+marked retracted where it stands — never quietly deleted.
+* **Doc-constant sync.** Normative doc constants are pinned to live code by
+test; the benchmark feeder field names are pinned to the routing crate's
+spec.
+
+[[ev-tooling]]
+== The harness-evals crate
+
+The eval harness is fully hermetic: typed datasets with content hashes,
+deterministic binary graders, a scripted subject that replays per-case
+per-rep fake inference, expected-failure pinning (failing-plus-pinned
+renders annotated; failing-plus-unpinned surfaces as a regression;
+passing-plus-pinned flags stale), and the first-two-tool-calls
+golden-prefix drift gate for harness changes. The CLI adapter contract is
+the `--output-json` NDJSON shape from the getting-started chapter;
+replay-from-traces re-scores stored NDJSON across scorer variations, and
+commit-history mining turns real fix commits into eval cases.
+
+[[ev-published]]
+== Published results
+
+No live-model results are published yet: none have been recorded under the
+discipline above, and rows without matched baselines are not publishable.
+The scheduled sweep produces the report artifact that populates the release
+eval tables (`docs/release/evals.adoc`) once live-model wiring lands.

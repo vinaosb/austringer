@@ -1,0 +1,187 @@
+TASK 46 - Community surface: positioning README + contributing ramp + AsciiDoc docs site (rust-agent-harness)
+==============================================================
+Worker: task-46 implementation worker (Sisyphus-junior). Date: 2026-09-14.
+Base: HEAD c8926a4 on main (perf: benchmark suite + regression gates),
+confirmed at task start (git rev-parse --short HEAD + git log --oneline -3).
+Sibling verifier (code-side probes) disclosed as tolerated: never touched any
+file in my surface; one stray harness-daemon.exe process from MY workspace
+test run (spawned by a test, raced nextest teardown) was identified by
+executable path and killed at session end (the repo's no-orphan discipline).
+
+OWNERSHIP DISCIPLINE: only community-surface files touched — README.md,
+CONTRIBUTING.md, CODE_OF_CONDUCT.md, docs/** (13 AsciiDoc files),
+.github/{ISSUE_TEMPLATE,PULL_REQUEST_TEMPLATE.md,scripts/linkcheck.ps1,
+workflows/docs.yml}, this evidence file. ZERO crate source files modified
+(all verified/locked); the dirty worktree's other changes (.omo evidence
+edits, plan checkbox edits, run-continuation JSONs, target-task-36/,
+msvc-probe.obj) belong to the orchestrator/siblings and are left unstaged.
+
+DELIVERABLE (plan todo 46, all four required surfaces)
+------------------------------------------------------
+1. Positioning README.md (Markdown storefront, hybrid decision per session
+   m0351): hero one-liner + 3 badges (CI, docs, license — no tracking
+   pixels); 5-line quickstart (verified executable, below); four-frontends
+   showcase table; performance-budget table (budgets = normative contract
+   vs measured-dev-machine, CI-enforcement note); ASCII architecture
+   diagram (one daemon, 24-crate workspace, four thin clients); RECEIPTS
+   TABLE x2 — design receipts (feature -> proven by [research §N] ->
+   failure avoided [research §N], 12 rows) + shipped-at-HEAD receipts
+   (mechanism -> commit -> evidence task-N cited as text provenance, not
+   links); "built on post-mortems" section linking the tracked research
+   file .omo/research/harness-research.md; honest sourced comparison table
+   vs Claude Code/Codex/goose/opencode (7 factual rows, each citing
+   research §§); release-transparency section linking the leaderboard +
+   eval pages; roadmap (waves W0-W9); naming-gate note (name stays
+   'harness'; decision deferred to pre-v1.0 marketing checklist); status
+   section stating plainly that live provider wiring into the daemon
+   session factory is pending (typed no-provider error, verified below);
+   dual-license note (MIT OR Apache-2.0); explicit no-counters/no-pixels
+   statement.
+2. CONTRIBUTING.md: one-command setup (cargo nextest run --workspace,
+   hermetic — zero API keys, zero network, verified below); MSVC
+   build-on-Windows note (VS servicing can gut include dirs -> C1083 in
+   cc builds; shell-scoped workaround described by SHAPE only, CC unset,
+   VC include first + Windows SDK ucrt/shared/um; ask maintainers; do NOT
+   hardcode machine-specific SDK paths — matches the standing evidence
+   recipe without internal paths); TDD discipline (strict red-green, RED-
+   evidence requirement); adversarial-verification culture (failure modes,
+   re-run-x3, malformed/stale/hung channels named from existing suites);
+   load-flake guidance for live-PTY tests; house style (250-LOC ceiling,
+   no unwrap/expect/panic in src); EVIDENCE CULTURE (PRs cite research §N
+   or add evidence; numbers must match budgets.json/baselines); commit
+   conventions observed in history (type(scope): summary, examples from
+   git log, one commit per unit); wave map + parallelization guidance
+   (bottom-up order, shared-file discipline, good-first-issue = todos'
+   acceptance criteria); docs-contrib section (stable-ID xref rules,
+   linkcheck gate, PAGEFILES registration); CoC + SECURITY links.
+3. CODE_OF_CONDUCT.md: Contributor Covenant 2.1, full text, enforcement
+   ladder, contact = placeholder mailbox disclosed as placeholder (same
+   pattern as SECURITY.md) + SECURITY.md private channel for urgent.
+4. AsciiDoc docs site (docs/): index.adoc (landing + hybrid-format note +
+   site map + evidence rule + naming); architecture.adoc (crate map of
+   all 24 crates in 6 layers, turn dataflow, design rules w/ receipts);
+   manual.adoc composed via include:: of 7 partials (getting-started,
+   context-and-sessions, safety-and-trust, skills-and-packs, multi-model,
+   performance, evals) — include:: modularity + explicit stable-ID
+   anchors ([[id,reftext]]) + xref:/<<>> cross-references only to
+   explicit anchors; research-companion.adoc (section map of the research
+   file: 23 sections -> what this project adopted); release/leaderboard.
+   adoc (per-release bench leaderboard: pre-release baseline tables,
+   publication rules, per-release procedure); release/evals.adoc (todo-44
+   publication rules verbatim — harness-matched only, unmatched = DO NOT
+   PUBLISH, pass^k floors beside Mean@k, guard-zeroed rows marked,
+   retraction-in-place, scheduled-only; current table honestly empty:
+   "none published — awaiting the first matched scheduled sweep").
+5. .github: docs.yml (two CI gates: linkcheck job via pwsh + asciidoctor
+   site build w/ --failure-level WARN, page list in PAGEFILES, artifact
+   upload); ISSUE_TEMPLATE/{bug,feature,research-suggestion}.md (external
+   study input keeps flowing per plan); PULL_REQUEST_TEMPLATE.md w/
+   evidence + guardrail-impact + perf-gate + docs fields;
+   scripts/linkcheck.ps1 (PS 5.1 + pwsh 7 compatible checker: Markdown
+   relative links, AsciiDoc include::/xref:/<<>>/link: targets, explicit-
+   anchor registry across the docs set).
+   Partials carry NO file-qualified xrefs (include-flattening path
+   ambiguity) — cross-page xrefs live only in top-level pages; that rule
+   is what keeps linkcheck and the asciidoctor build simultaneously green.
+
+NUMBER CROSS-CHECK (every shipped number vs source artifacts)
+-------------------------------------------------------------
+budgets.json: cold 50ms / RSS 80MB / p99 16ms / binary 40MB / idle <=1 /
+frame 10ms / hang 100ms / regression 10%  -> README + performance partial
++ leaderboard page all match.
+task-43 QA record: cold_start_ms=17.23, rss_mb=6.69, tui.p99_frame_ms=
+0.054, frame_breaches=0, hangs=0, idle.renders=0, harness 6.21MB, daemon
+3.09MB -> all three surfaces match verbatim.
+gate_baseline.json: repomap.tokens 965, eviction.projected_events 523,
+prompt.stable_prefix_bytes 570834, pty.observation_bytes 10592,
+sessions.page_bytes 103500 -> README, performance partial, leaderboard
+page match (comma-formatted variants cross-checked).
+Receipts-cite audit: "research §N" literal citations in README = 67;
+table rows carrying cites = 19 (12 receipts + 7 comparison); bare "(§N)"
+remaining = 0 (grep-verifiable per acceptance criterion).
+Commit SHAs in the shipped-at-HEAD table verified against git log (bc83de6
+skills forge, 3565b43 registry, 04a0bba profiles, 26e72c3 scheduler+gate,
+26edbf8 routing, c8926a4 perf, 3fb0b07 evals).
+
+VERIFICATION (commands + results; builds under the standing task-13 MSVC
+recipe — CC unset, INCLUDE prepended with the surviving VS18 ScopeCppSDK
+vc15 VC\include, existing VS2022+WinSDK26100 INCLUDE retained — applied
+shell-scoped only; private CARGO_TARGET_DIR %TEMP%\opencode\t46-target)
+-------------------------------------------------------------------------------
+1. Linkcheck (the acceptance gate):
+   powershell -NoProfile -ExecutionPolicy Bypass -File .github\scripts\linkcheck.ps1
+   -> "linkcheck: OK (4 Markdown + 13 AsciiDoc files, zero broken relative
+      links / includes / xrefs)" exit 0
+   ADVERSARIAL (gate must fail when broken): injected docs/nope.md link +
+   xref:no-such-page.adoc + <<no-such-id>> into README/index
+   -> exit 1 with 3 named findings (markdown broken link; broken xref
+      missing file; broken xref no explicit anchor); probes reverted.
+2. Docs site build (CI job's exact per-file command, Asciidoctor.js 3.0.4
+   locally = Asciidoctor 2.0.20 core):
+   asciidoctor --failure-level WARN -a toc=left -a linkcss -D <site> <page>
+   for all 6 PAGEFILES -> 6x ok, zero warnings, exit 0 each; site artifact
+   contains index/architecture/manual/research-companion/leaderboard/evals
+   .html (+ shared css). NOTE disclosed: Asciidoctor.js 3.0.4 does not
+   warn on unresolved intra-doc xrefs (probed: bad <<no-such-anchor>>
+   exits 0); CI's job installs RUBY asciidoctor (sudo gem install
+   asciidoctor), which does warn; independently, the linkcheck job
+   validates every xref target — the zero-broken-xrefs guarantee holds
+   through both paths.
+3. Quickstart executed literally (scratch cwd %TEMP%\opencode\t46-run so
+   the repo tree stays clean; release binaries from step-4 build):
+   cargo build --release -p harness-daemon -p harness-cli -p harness-tui
+     -> Finished `release` in 1m 58s (first attempt without the recipe
+        failed in ring's C build — the documented VS-servicing pathology,
+        reproducing the CONTRIBUTING note; recipe applied, green)
+   harness --version        -> "harness 0.1.0" exit 0
+   harness-daemon           -> ready line "harness-daemon listening on
+                              http://127.0.0.1:<port> (token: <64-hex>)";
+                              .harness-daemon/daemon-token written; loopback
+                              bind (random free port each start)
+   harness doctor           -> daemon/network/provider/env/sandbox/mcp/
+                              sessions/skills ALL PASS, exit 0 (daemon up);
+                              FAIL-path also verified: daemon down ->
+                              doctor exit 1 naming the failed probes
+   harness run "say hello"  -> typed InferenceExhausted { cause: "no
+                              provider configured (daemon hosts the loop;
+                              provider wiring lands with todo 40)" } exit 1
+                              — exactly what README/Status and the manual's
+                              getting-started chapter claim
+   web dashboard            -> GET http://127.0.0.1:<port>/ returns 200,
+                              99,381 bytes (daemon serves the SPA)
+4. CONTRIBUTING one-command (the plan's happy-path QA scenario):
+   cargo nextest run --workspace  (task-13 recipe + private target dir)
+   -> first run failed fast at 906/1837: harness-exec::pty_chaos
+      repeated_interruptions_kill_respawn_kill_cleanly
+   -> cargo nextest run --workspace --no-fail-fast
+      -> 1837 tests run: 1836 passed, 1 failed, 24 skipped (same single
+         test)
+   FLAKE CHARACTERIZATION (pre-existing, load-sensitive, NOT caused by
+   this docs-only change): isolated rerun PASS (1.641s); -p harness-exec
+   --test pty_chaos x3 back-to-back: 4/4 passed every run; fails only
+   under full-workspace parallel process load (live PTY spawn/kill timing
+   — the known harness-exec live-test sensitivity class; repo carries
+   cc44136 "test(exec): load-tolerant pathology bounds" for exactly this
+   category; task-43 evidence flags harness-exec live tests as
+   known-flaky-under-load, not-my-surface). Crate source is locked for
+   this task — the test was NOT touched; guidance for contributors added
+   to CONTRIBUTING instead (re-run in isolation before investigating).
+5. Worktree hygiene at commit time: only owned files staged (git status
+   audit); sibling/orchestrator files left untouched and unstaged.
+
+RISKS / NOTES FOR LATER TODOS
+-------------------------------------------------------------------------------
+- Badge + clone URLs use the placeholder org (naming gate: deliberate,
+  disclosed in README Naming section; swap together with the crate rename
+  at the pre-v1.0 marketing checkpoint).
+- docs.yml asciidoctor step assumes ruby+gem on ubuntu-latest runners
+  (preinstalled; sudo gem install asciidoctor) — if GH images ever drop
+  ruby, pin via ruby/setup-ruby or container.
+- The CODE_OF_CONDUCT contact mailbox is a disclosed placeholder, same
+  convention as SECURITY.md — both must be replaced before any public
+  release (track on the pre-v1.0 checklist).
+- Per-release leaderboard pages: procedure documented in
+  docs/release/leaderboard.adoc; first real release must add its page and
+  link it from README's release-transparency section.
+- linkcheck scope is the Markdown storefront + docs/ tree (the community
+  surface); it intentionally does not crawl harness-* crate READMEs.
