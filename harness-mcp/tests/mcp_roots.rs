@@ -20,7 +20,20 @@ fn win(p: &str) -> String {
 }
 #[cfg(not(windows))]
 fn win(p: &str) -> String {
-    p.replace("C:\\repo", "/repo").replace('\\', "/")
+    // Map windows drive paths to rooted posix equivalents so the
+    // absolute-vs-relative classification holds on unix too: the repo
+    // drive keeps a stable /repo prefix, other drives land under /win.
+    if let Some(rest) = p.strip_prefix(r"C:\repo") {
+        if rest.is_empty() || rest.starts_with('\\') {
+            return format!("/repo{}", rest.replace('\\', "/"));
+        }
+    }
+    let bytes = p.as_bytes();
+    if bytes.len() > 2 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/') {
+        let drive = p[..1].to_ascii_lowercase();
+        return format!("/win/{drive}{}", p[2..].replace('\\', "/"));
+    }
+    p.replace('\\', "/")
 }
 
 #[test]

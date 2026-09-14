@@ -147,6 +147,9 @@ fn org_url_matching_requires_full_host_not_prefix() {
     assert_eq!(allowlist.check(&good), OrgVerdict::Allowed);
 }
 
+// Path-ignoring, case-insensitive command matching is the windows
+// matcher's rule; on unix the C:\...\curl.exe fixture is just a filename.
+#[cfg(windows)]
 #[test]
 fn org_stdio_command_match_ignores_path_and_case_on_windows() {
     let allowlist = OrgAllowlist::new().deny_stdio_command("curl");
