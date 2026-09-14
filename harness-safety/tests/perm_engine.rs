@@ -45,9 +45,11 @@ fn fixture(rules: Vec<Rule>) -> Fixture {
 fn fixture_with(rules: Vec<Rule>, commands: CommandRules, admin: AdminFloor) -> Fixture {
     let dir = tempfile::tempdir().expect("tmp");
     // Deterministic PATH world: every program the matrix executes
-    // exists; anything else fails closed as NotFound.
+    // exists in both the windows extension form and the bare unix form;
+    // anything else fails closed as NotFound.
     for program in ["npm", "curl", "cargo"] {
         fs::write(dir.path().join(format!("{program}.exe")), "").expect("fixture");
+        fs::write(dir.path().join(program), "").expect("fixture");
     }
     let sandbox = SandboxPolicy::for_worktree(dir.path(), &dir.path().join("settings.toml"));
     let config = EngineConfig {

@@ -3,6 +3,12 @@
 //! peeled one layer, absolute paths, and quoting tricks cannot bypass;
 //! resolution failures fail closed.
 
+// The fixtures exercise windows-resolution mechanics (C:\... stems, the
+// .exe/.cmd extension ladder, System32 lookups); std path parsing makes
+// drive paths relative on unix. Unix resolution is exercised by the
+// engine suites' dual-form fixtures.
+#![cfg(windows)]
+
 use std::fs;
 use std::path::PathBuf;
 

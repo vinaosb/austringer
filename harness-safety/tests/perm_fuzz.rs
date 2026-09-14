@@ -149,13 +149,17 @@ fn fixture_root() -> tempfile::TempDir {
     for program in [
         "npm", "cargo", "git", "curl", "echo", "sh", "base64", "format",
     ] {
+        // windows extension form + bare unix form
         fs::write(dir.path().join(format!("{program}.exe")), "").expect("fixture");
+        fs::write(dir.path().join(program), "").expect("fixture");
     }
     fs::write(
         dir.path().join("shim.cmd"),
         "@echo off\r\n\"C:\\Windows\\System32\\format.com\" %*\r\n",
     )
     .expect("fixture");
+    // unix twin of the .cmd wrapper: shebang peel to `format`
+    fs::write(dir.path().join("shim"), "#!/bin/sh\nexec format \"$@\"\n").expect("fixture");
     dir
 }
 

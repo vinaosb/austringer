@@ -167,6 +167,8 @@ fn program_resolution_blocklist_catches_wrapper() {
         "@echo off\r\n\"C:\\Windows\\System32\\format.com\" %*\r\n",
     )
     .expect("fixture");
+    // unix twin of the .cmd wrapper: shebang peel to `format`
+    fs::write(dir.path().join("shim"), "#!/bin/sh\nexec format \"$@\"\n").expect("fixture");
     let sandbox = SandboxPolicy::for_worktree(dir.path(), &dir.path().join("s.toml"));
     let config = EngineConfig {
         rules: vec![allow(Action::Execute, "shim")],

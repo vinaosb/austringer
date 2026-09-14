@@ -34,7 +34,9 @@ impl Rig {
 fn build(rules: Vec<Rule>, bypass: BypassMode, breaker: BreakerConfig) -> Rig {
     let dir = TempDir::new().expect("tmp");
     for program in ["npm", "curl"] {
+        // windows extension form + bare unix form
         std::fs::write(dir.path().join(format!("{program}.exe")), "").expect("fixture");
+        std::fs::write(dir.path().join(program), "").expect("fixture");
     }
     let sandbox = SandboxPolicy::for_worktree(dir.path(), &dir.path().join("s.toml"));
     let config = EngineConfig {
