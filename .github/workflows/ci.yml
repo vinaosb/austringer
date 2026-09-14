@@ -59,7 +59,7 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: clippy (harness-bench feature matrix: dhat, mimalloc)
+      - name: "clippy (harness-bench feature matrix: dhat, mimalloc)"
         # Feature-gated gate code (global allocators) must stay lint-clean
         # too; the two features are mutually exclusive by compile_error!.
         run: |
