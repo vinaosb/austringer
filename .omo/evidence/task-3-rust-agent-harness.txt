@@ -267,3 +267,21 @@ VERIFICATION
 - Old-run signal reused where fixes are orthogonal: windows matrix +
   perf-gate legs were left running to completion on 13c8433 before push so
   their outcome (identical code for those legs) could be folded in.
+6. windows matrix: 2/813 failures in harness-exec::pty_chaos
+   (cancel_mid_command..., normal_completion... "baseline 2") — nextest
+   runs each test in its own process, so concurrently running sibling
+   fixtures (pty_chaos/pathologies spawn PING.EXE trees and count them
+   for the enumeration oracle) contaminate each other's baselines. The
+   in-binary LiveGate (todo 20) is per-process and structurally blind
+   across test boundaries.
+   FIX 8ba2381 fix(exec): .config/nextest.toml test-group "pty-live"
+   (max-threads 1) + profile.default.overrides filter
+   'package(harness-exec) and binary(/^(pty_chaos|pty_qa|pty_live|
+   pathologies)$/)'. Validated locally (warm t46-target, task-13 env
+   corrected: ScopeCppSDK vc15\VC\include — the vc15 include sits under
+   VC/, not directly under vc15/): cargo nextest show-config test-groups
+   prints the group with all 20 tests; cargo nextest run -E group(pty-live)
+   20/20 PASS. nextest reads .config/nextest.toml from the repo also for
+   run-from-archive, so the CI matrix job picks it up.
+7. perf-gate leg PASSED on windows-latest (commit 13c8433): budgets and
+   committed baselines hold on CI — no re-record needed.
