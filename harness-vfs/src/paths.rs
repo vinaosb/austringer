@@ -34,6 +34,11 @@ pub(crate) fn validate_relative(path: &Path) -> Result<(), PathRejection> {
 /// harness-exec long-path convention). Verbatim paths reject `/`, so any
 /// forward slashes are normalized to `\` in the prefixed form.
 pub(crate) fn extended(path: &Path) -> PathBuf {
+    // The \\?\ verbatim form is a Windows-only long-path mechanism; on
+    // unix it is not a valid path and corrupts POSIX prefixes.
+    if !cfg!(windows) {
+        return path.to_path_buf();
+    }
     let text = path.to_string_lossy();
     if !path.is_absolute()
         || text.starts_with(r"\\?\")

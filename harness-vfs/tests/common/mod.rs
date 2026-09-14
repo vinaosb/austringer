@@ -112,8 +112,12 @@ pub fn fixture_replace_edits(count: usize) -> Vec<ShadowEdit> {
 
 /// Extended-length (`\\?\`) form of an absolute path so tests can read
 /// deep trees regardless of the OS long-path setting. Forward slashes
-/// are normalized: verbatim paths reject them.
+/// are normalized: verbatim paths reject them. Windows-only mechanism —
+/// on unix the verbatim form is not a valid path.
 pub fn extended(path: &Path) -> PathBuf {
+    if !cfg!(windows) {
+        return path.to_path_buf();
+    }
     let text = path.to_string_lossy();
     if text.starts_with(r"\\?\") || !path.is_absolute() {
         return path.to_path_buf();

@@ -76,6 +76,11 @@ pub fn retry_sharing_violation<T>(
 /// through unchanged.
 #[must_use]
 pub fn long_path(path: &Path) -> PathBuf {
+    // The \\?\ verbatim form is a Windows-only long-path mechanism; on
+    // unix it is not a valid path and corrupts POSIX prefixes.
+    if !cfg!(windows) {
+        return path.to_path_buf();
+    }
     let text = path.as_os_str().to_string_lossy();
     if !path.is_absolute() || text.starts_with(r"\\?\") || text.starts_with(r"\\.\") {
         return path.to_path_buf();
