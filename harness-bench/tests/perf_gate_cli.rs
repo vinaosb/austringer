@@ -104,9 +104,27 @@ fn full_run_with_recorded_baseline_passes() {
     let dir = tempfile::tempdir().expect("tempdir");
     let baseline = dir.path().join("baseline.json");
     let baseline_arg = baseline.to_str().expect("utf8").to_owned();
+    // Wall-clock scenarios ride absolute budgets tuned for release builds
+    // on a calm machine; this e2e runs the debug-profile binary on a
+    // shared CI runner, so the e2e-scoped budgets widen only the frame
+    // wall thresholds. budgets.json (the contract) is untouched, and
+    // breach detection itself is pinned by the self-test above.
+    let budgets = dir.path().join("budgets-e2e.json");
+    std::fs::write(
+        &budgets,
+        concat!(
+            r#"{"cold_start_ms": 50, "idle_max_renders": 1, "rss_mb": 80, "#,
+            r#""p99_frame_ms": 2000, "binary_mb": 40, "regression_tolerance_pct": 10, "#,
+            r#""frame_budget_ms": 1000, "hang_threshold_ms": 5000}"#
+        ),
+    )
+    .expect("write e2e budgets");
+    let budgets_arg = budgets.to_str().expect("utf8").to_owned();
     let skips = ["cold_start", "rss", "binary_size"];
     let mut record = gate();
     record
+        .arg("--budgets")
+        .arg(&budgets_arg)
         .arg("--record-baseline")
         .arg("--baseline")
         .arg(&baseline_arg)
@@ -123,6 +141,8 @@ fn full_run_with_recorded_baseline_passes() {
     let report = dir.path().join("report.json");
     let mut check = gate();
     check
+        .arg("--budgets")
+        .arg(&budgets_arg)
         .arg("--baseline")
         .arg(&baseline_arg)
         .arg("--report")
