@@ -25,9 +25,10 @@
 //! Every spawned command lives inside a kernel-enforced tree kill domain:
 //! a Windows Job Object with `KILL_ON_JOB_CLOSE` (closing the job handle —
 //! deliberately, on timeout, or because our process died — terminates the
-//! whole tree), or on Unix a dedicated process group plus
+//! whole tree), or on Unix a dedicated process group plus, on Linux,
 //! `PR_SET_PDEATHSIG(SIGKILL)` set between `fork` and `exec` so the kernel
-//! reaps children even if this process crashes. See [`kill`] and the
+//! reaps children even if this process crashes (macOS has no PDEATHSIG;
+//! there the supervisor's session kill covers it). See [`kill`] and the
 //! teardown-order contract in [`runner`].
 //!
 //! # Windows pathologies (todo 20)

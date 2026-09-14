@@ -20,11 +20,14 @@
 //!   point for that class, not the job.
 //!
 //! * **Unix** — the spawn wrapper (see [`crate::runner`]) installs a
-//!   `fork`/`exec` hook that calls `prctl(PR_SET_PDEATHSIG, SIGKILL)` and
-//!   `setsid()`: the kernel kills the child the moment our process (more
-//!   precisely, the spawning thread) disappears, and session leadership
-//!   gives timeout kills a process group to `killpg(SIGKILL)` — the whole
-//!   tree, synchronously.
+//!   `fork`/`exec` hook that calls `prctl(PR_SET_PDEATHSIG, SIGKILL)`
+//!   (Linux — macOS/BSD have no PDEATHSIG; there the daemon-death
+//!   guarantee rests on the supervisor's session `killpg`, disclosed
+//!   honestly rather than emulated) and `setsid()`: on Linux the kernel
+//!   kills the child the moment our process (more precisely, the
+//!   spawning thread) disappears, and session leadership gives timeout
+//!   kills a process group to `killpg(SIGKILL)` — the whole tree,
+//!   synchronously.
 
 use std::io;
 
@@ -114,20 +117,25 @@ impl Drop for TreeGuard {
 }
 
 /// The `fork`/`exec` hook giving Unix children the daemon-death guarantee:
-/// `PR_SET_PDEATHSIG(SIGKILL)` (kernel reaps the child if we die) and a
-/// fresh session (the child becomes a process-group leader, so a timeout
-/// kill reaches the whole tree).
+/// `PR_SET_PDEATHSIG(SIGKILL)` on Linux (kernel reaps the child if we die;
+/// macOS/BSD have no PDEATHSIG — there the guarantee rests on the
+/// supervisor's `killpg` of the child's session) and a fresh session (the
+/// child becomes a process-group leader, so a timeout kill reaches the
+/// whole tree).
 ///
 /// Runs between `fork` and `exec` — async-signal-safe raw syscalls only.
 #[cfg(unix)]
 pub(crate) fn pdeathsig_setup() -> impl FnMut() -> io::Result<()> + Send + Sync + 'static {
     move || {
-        // SAFETY: prctl(2)/setsid(2)/ioctl(2) on the freshly duplicated
-        // controlling tty; failure of any of them must not block exec.
+        // SAFETY: prctl(2) (Linux only), setsid(2), and ioctl(2) on the
+        // freshly duplicated controlling tty; failure of any of them must
+        // not block exec.
         unsafe {
+            #[cfg(target_os = "linux")]
             libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
             libc::setsid();
-            libc::ioctl(0, libc::TIOCSCTTY, 0);
+            // BSD ioctl takes c_ulong; Linux's is c_int.
+            libc::ioctl(0, libc::TIOCSCTTY as _, 0);
         }
         Ok(())
     }
