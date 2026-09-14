@@ -42,3 +42,7 @@ tempfile.workspace = true
 [[bin]]
 name = "harness-safety-probe"
 path = "src/bin/probe.rs"
+
+# Test-support probe binary, not a release artifact — cargo-dist must skip it.
+[package.metadata.dist]
+dist = false

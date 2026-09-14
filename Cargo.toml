@@ -267,3 +267,8 @@ lto = "fat"
 codegen-units = 1
 opt-level = 3
 strip = true
+
+# cargo-dist's release profile (dist-workspace.toml); its generated workflow
+# builds with --profile dist, which cargo refuses when undefined here.
+[profile.dist]
+inherits = "release"

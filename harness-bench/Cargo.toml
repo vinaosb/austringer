@@ -82,3 +82,8 @@ harness = false
 [[bin]]
 name = "heap-profile"
 required-features = ["dhat"]
+
+# Dev perf tooling, not a release artifact — cargo-dist must skip it
+# (heap-profile is feature-gated, so dist's unconditional bin build fails).
+[package.metadata.dist]
+dist = false

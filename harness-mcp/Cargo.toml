@@ -33,3 +33,8 @@ axum = "0.8"
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["net", "process", "io-std", "rt-multi-thread"] }
 tracing-subscriber = "0.3"
+
+# Reference server for MCP integration tests, not a release artifact —
+# cargo-dist must skip it.
+[package.metadata.dist]
+dist = false
