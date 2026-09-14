@@ -53,11 +53,7 @@ impl Inference for TwoStepInference {
 }
 
 pub(crate) fn factory() -> Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> {
-    Arc::new(|| {
-        Box::new(TwoStepInference {
-            used: false.into(),
-        })
-    })
+    Arc::new(|| Box::new(TwoStepInference { used: false.into() }))
 }
 
 /// Mock worker: answers `echo` calls with a diff-carrying output so
@@ -66,7 +62,9 @@ pub(crate) async fn spawn_worker(state: &Arc<DaemonState>) {
     let (tx, mut rx) = tokio::sync::mpsc::channel(8);
     state.worker_router.register(
         "web-e2e-worker",
-        vec![ToolGrant { tool: "echo".into() }],
+        vec![ToolGrant {
+            tool: "echo".into(),
+        }],
         tx,
     );
     let router = Arc::clone(&state.worker_router);

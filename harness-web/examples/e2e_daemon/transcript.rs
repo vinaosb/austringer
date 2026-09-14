@@ -42,7 +42,10 @@ async fn probe(base: &str, path: &str, token: Option<&str>, host: Option<&str>) 
             let body = response.text().await.unwrap_or_default();
             (
                 status,
-                format!("{content_type} | cache-control={cache} | {} bytes", body.len()),
+                format!(
+                    "{content_type} | cache-control={cache} | {} bytes",
+                    body.len()
+                ),
             )
         }
         Err(e) => (0, format!("transport failure: {e}")),

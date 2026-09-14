@@ -230,3 +230,11 @@ RISKS / RESIDUAL
   payloads are redacted snapshots).
 - playwright-core/chromium are machine-local dev tools (documented
   paths); CI would need `npx playwright install chromium`.
+
+FMT DEFECT FIX (post-commit, verifier ses_f62422741ffeeYH2DaeQkMBOkT)
+================================================================
+Verifier found cargo fmt -p harness-web -- --check failing at 3 cosmetic diffs in
+harness-web/examples/e2e_daemon/daemon.rs (2) and transcript.rs (1). Fixed via
+cargo fmt -p harness-web; check now exits 0. Tests re-run:
+cargo test -p harness-web -> 4 lib + 9 served_assets = 13 passed, 0 failed.
+Commit: style(web): apply rustfmt to e2e example.
