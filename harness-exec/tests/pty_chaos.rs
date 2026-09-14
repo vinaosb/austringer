@@ -3,10 +3,12 @@
 
 mod common;
 
+#[cfg(windows)]
 use std::thread;
 use std::time::Duration;
 
 use common::{count_processes, runner_with_temp_spill, spec, spec_with_timeout, wait_until};
+#[cfg(windows)]
 use harness_exec::runner::CancelToken;
 use harness_exec::spec::ExecStatus;
 use sysinfo::System;
@@ -103,7 +105,6 @@ fn repeated_interruptions_kill_respawn_kill_cleanly() {
 #[cfg(not(windows))]
 #[test]
 fn unix_timeout_kills_process_group_no_orphans() {
-    use common::spec_with_timeout;
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
     // sh spawns a background sleeper (same process group) then sleeps

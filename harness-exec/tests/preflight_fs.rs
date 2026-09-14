@@ -5,10 +5,12 @@
 mod common;
 
 use common::preflightkit as kit;
-use harness_exec::preflight::{
-    AttemptOutcome, Outcome, PreFlight, PreFlightConfig, PreFlightDeps, Stage, SurfaceAfterTwo,
-    ToolContext,
-};
+// PreFlightConfig/PreFlightDeps/ToolContext/ScreenSize feed only the
+// windows live-probe section below (SleepyCheck + its test).
+use harness_exec::preflight::{AttemptOutcome, Outcome, PreFlight, Stage, SurfaceAfterTwo};
+#[cfg(windows)]
+use harness_exec::preflight::{PreFlightConfig, PreFlightDeps, ToolContext};
+#[cfg(windows)]
 use harness_exec::spec::ScreenSize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -182,8 +184,10 @@ fn acceptance_fixture_is_deterministic_across_three_runs() {
 
 /// A checker whose "check" is a 30-second sleep: only the live PTY
 /// runner's timeout ceiling can end it.
+#[cfg(windows)]
 struct SleepyCheck;
 
+#[cfg(windows)]
 impl harness_exec::preflight::StaticChecker for SleepyCheck {
     fn tool(&self) -> &'static str {
         "sleepy-check"

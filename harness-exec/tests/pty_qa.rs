@@ -6,9 +6,13 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{big_text_file, count_processes, runner_with_temp_spill, spec, spec_with_timeout};
+use common::{big_text_file, runner_with_temp_spill, spec, spec_with_timeout};
 use harness_core::tools::SpillStore;
 use harness_exec::spec::ExecStatus;
+// PING.EXE enumeration feeds only the windows QA fixtures.
+#[cfg(windows)]
+use common::count_processes;
+#[cfg(windows)]
 use sysinfo::System;
 
 #[test]
