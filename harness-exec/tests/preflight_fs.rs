@@ -12,7 +12,10 @@ use harness_exec::preflight::{AttemptOutcome, Outcome, PreFlight, Stage, Surface
 use harness_exec::preflight::{PreFlightConfig, PreFlightDeps, ToolContext};
 #[cfg(windows)]
 use harness_exec::spec::ScreenSize;
-use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::path::Path;
+use std::path::PathBuf;
+#[cfg(windows)]
 use std::time::Duration;
 use tempfile::TempDir;
 

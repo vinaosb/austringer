@@ -306,3 +306,42 @@ VERIFICATION
    Local gates on final tree: fmt exit=0; clippy -p harness-exec
    -p harness-lsp -p harness-snapshots --all-targets exit=0; nextest
    -p harness-exec -p harness-lsp 200/200 PASS (11 ignored QA/golden).
+9. run 34899748313 (40cd3b7) surfaced the RUNTIME class (compile now
+   green on unix after fixes 1-8; batch aborts had hidden it until now):
+   reproduced and fixed against a LOCAL linux oracle — docker run
+   rust:1.98 + repo mount + named target volume; cargo check/clippy/
+   test --workspace --no-fail-fast iterate in minutes instead of
+   25-minute CI rounds.
+   ROOT CAUSE of ~90/100 failures: paths::extended (harness-vfs),
+   util::extended (harness-snapshots), fsutil::long_path (harness-exec)
+   and the vfs test-common twin ALL prepend the \\?\ verbatim prefix to
+   every absolute path — corrupting POSIX paths on unix (NotFound /
+   ENAMETOOLONG). FIX 90e232a: cfg-short-circuit on non-windows in all
+   four copies.
+   Remaining triage:
+   - mcp_client connect_timeout: dead endpoint ECONNREFUSED < budget on
+     linux -> Protocol instead of typed ConnectTimeout. FIX f105a77:
+     HTTP-arm establishment retries until the budget is spent.
+   - daemon reload adopt(0): fd 0 is live stdin on unix. FIX 7ca4646:
+     test asserts u64::MAX out-of-range on both, 0 windows-only.
+   - snapshots ref-path asserts replaced '/' with '\' (flat invalid
+     filename on unix). FIX 6713b77: plain join.
+   - safety perm suites: fixtures wrote only .exe PATH stubs ->
+     ResolutionFailed denials on unix. FIX 432b4e9: dual-form fixtures
+     (+ shebang twin of the .cmd wrapper); perm_resolve gated windows.
+   - mcp_roots win() helper only remapped C:\repo (other drives became
+     relative on unix -> escapes allowed); trust case-matching is the
+     windows matcher rule. FIX f6779e3: any-drive mapping + test gate.
+   - exec wsl_bridge: drive paths are relative on unix by std parsing;
+     the bridge is a windows-only surface. FIX 28cd0e7: file gate.
+   - vfs shadow_failure mid_commit_failure: read-only poisoning is
+     bypassed by ROOT (docker); PROVEN non-root semantics
+     (Permission denied as uid 1000) -> passes on GH runners unmodified.
+   VERIFICATION (both sides):
+   - linux container: cargo check --workspace --tests green; clippy
+     --workspace --all-targets green; cargo test --workspace
+     --no-fail-fast green EXCEPT mid_commit_failure (root artifact,
+     proven above).
+   - windows local (task-13 env, warm t46-target): fmt exit=0; clippy
+     touched crates exit=0; nextest -p vfs,snapshots,mcp,safety,daemon
+     440/440 PASS; earlier exec+lsp 200/200.
