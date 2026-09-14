@@ -1,0 +1,254 @@
+﻿RED (failing-test-first, 2026-09-14)
+cargo test -p harness-orchestration (private target %TEMP%\opencode\target-task-40)
+Full test suite (6 targets) authored BEFORE implementation:
+error[E0432]/[E0433] unresolved import harness_orchestration::{launch,role,write_set,backend,events,journal,phases,synthesis,authorize,budget,fork,knobs,spec}
+error: could not compile harness-orchestration (test spec_launcher) due to 24 previous errors
++ guards 19, adversarial 13, phases 12, variants 11, backend_smoke 8 errors
+EXIT: 101
+
+========================================================================
+TASK 40 - Subagents + spec-driven launcher (rust-agent-harness)
+========================================================================
+Date: 2026-09-14 | HEAD at start: 17354e0 (confirmed) | Worker: T40
+implementation worker (Sisyphus-junior). Toolchain: Rust 1.98 / edition
+2024 / lints warnings=deny + clippy all=deny (workspace).
+
+Env: task-13/29 MSVC shell recipe (INCLUDE/LIB ScopeCppSDK vc15 first,
+CC unset; script at %TEMP%\opencode\task-40-msvc-env.ps1), private
+target dir %TEMP%\opencode\target-task-40. All cargo runs used
+`-p harness-orchestration` (the main tree's other crates were never
+built by this worker; two parallel workers - fmt-fix in harness-web
+examples + T42 per-role routing - were active; shared-file discipline:
+root Cargo.toml received exactly ONE anchored line
+("harness-orchestration", inserted after "harness-mcp", re-read
+immediately before the edit); no harness-cli/web/tui/vscode/intel src
+files touched; harness-daemon protocol v1 UNTOUCHED (no daemon files
+modified at all - see the frozen-protocol seam note below).
+
+TDD: full test suite (6 targets / 42 tests) authored FIRST; RED =
+compile failure of the suite against the empty crate (E0432/E0433 on
+every module; spec_launcher 24 errors, guards 19, adversarial 13,
+phases 12, variants 11, backend_smoke 8; EXIT 101) - captured at the
+top of this file. Implementation followed module-by-module until green.
+Three real defects the tests caught mid-green (fixed, root-caused):
+(1) literal-head glob overlap missed "src/**" vs "src/launcher.rs"
+(trailing-separator empty component) -> write_set::literal_head now
+trims trailing '/';
+(2) fresh-class children (writers / non-explorer tiers) correctly
+refused without grants -> tests mint grants explicitly via
+Launcher::mint_grant (the loud-authorization flow working as designed);
+(3) mock backend child's response frame glued to libtest's
+no-newline "test ... " prefix -> the child starts its JSONL frame on a
+fresh line AND the process reader skips non-decodable lines under a
+deadline (robustness kept).
+
+------------------------------------------------------------------------
+DELIVERABLE (plan todo 40, clause by clause) - new crate harness-orchestration
+------------------------------------------------------------------------
+spec/ (mod 245 + fields 189 pure LOC): bounded line grammar
+  (objectives / budget / role decls / task graph w/ per-task role,
+  model bracket, writes, needs, class); hard caps (512 lines, 256 KiB,
+  512-byte fields, 32 tasks, 16 roles); strict unknown-key rejection;
+  typed errors (TooLarge/TooManyTasks/UnknownKey/Duplicate/EmptyField/
+  MissingObjective/NoTasks/BadValue/BadBool).
+role.rs (133): Devin SS22 subagent definitions - builtin SPLIT (Droid):
+  explorer = read-only light tier, worker = read-write medium, deep =
+  heavy; RoleDef { tier, model bracket, tools, summary budget, policy };
+  registry + spec-declared custom roles (with_declarations).
+knobs.rs (197): MODEL BRACKET PARAMS (Cursor SS19) - the portable
+  `model[effort=high,context=300k,thinking=medium]` grammar - resolved
+  THROUGH T34: build_dial (catalog fail-closed, EXPLICIT effort) +
+  elicit (SET effort scaling per TaskClass, THROTTLE budgets) ->
+  ChildKnobs { identity, effort, context_cap, thinking, throttle,
+  family }. Unknown model/effort = typed CatalogError; family switch
+  detection data.
+budget.rs (136): hard budget guards + ABSOLUTE ceilings (32 children /
+  20M tokens / parallel 4 - "no 50-subagent spawns" is structural) +
+  SPAWN-PACING (Amp orb: 20-burst, 1-per-5min refill with fractional
+  carry in integer milli-tokens).
+authorize.rs (155): SPAWN-AUTHORIZATION CLASSES (SS33): standing
+  (read-only explorer) vs fresh (writers/non-explorer); refusals are
+  LOUD structured SpawnRefusal errors - never silent parent-DIY;
+  commandExecutionPolicy ladder off<auto<eager+sandbox; PERMISSION
+  BUBBLING (EscalationSink; ParentEscalations records + fail-closed
+  refuses, approving() is the explicit opt-in; no child self-approval
+  path); DENY-ONLY inheritance (Rule filter); ChildCapabilities
+  (task/todowrite gated OFF by default); AuthorizationLedger
+  (Launcher::mint_grant).
+write_set.rs (103): DISJOINT-WRITE-SET contract (conservative
+  fail-closed literal-head overlap); FILE-TOUCH COLLISION ALERTS
+  (jcode SS32): FileTouch{path,op,intent,child} -> TouchRegistry ->
+  Collision naming BOTH sides; retirement ends the alert window.
+fork.rs (88): CACHE-PRESERVING FORKS (Qwen SS18): verbatim parent
+  prompt + verbatim tool DECLARATIONS, execution narrowed via the
+  fork_tools allowlist; PARALLELISM NORMALIZATION (SS33): BatchedResults
+  render as ONE message, serial_tools flag mutating tools; DepthGuard
+  (flat depth-1 default, opt-in nesting).
+journal.rs (128): spawned-effects JSONL journal; step vocabulary
+  ALIGNED with the daemon's durable JournalStep tags (child_started /
+  child_completed, + `resumed` superset flag); torn-tail-tolerant load;
+  blake3 spec fingerprints; is_child_session namespaming ({launch}-
+  child-{task} = hidden-from-main-list marker + task_id resumability).
+events.rs (150): TeamEvent stream (Spawned/Completed/Failed/FileTouched/
+  Collision/Escalation/BudgetStopped/WaveStarted/FamilySwitch/
+  BestOfNSelected/PhaseTransition/SpecStale/LaunchFinished) + MEMORY
+  SINK + notification() mapping onto the daemon's FROZEN protocol v1
+  SessionEvent::Notification{kind,message} string channel (additive by
+  construction - zero protocol change needed) + render_grid (tmux-grid
+  team visualization).
+telemetry.rs (74): per-agent tokens/cost/duration/failure-class +
+  1-2k summary band clamping (omission-marked, char-boundary safe) +
+  rollup.
+resolve.rs (248): spec -> ResolvedPlan: Kahn topo waves; role merge;
+  fail-closed knob resolution; wave-local disjoint-write-set check;
+  FAMILY-SWITCH DETECTION across waves (anthropic->openai etc.) with
+  per-child context_warning (the Kilo silent-context-loss bug class,
+  surfaced); effective budget = min(spec, config, absolutes) with LOUD
+  clamp notices (never silent).
+launch.rs (246) + job.rs (100) + run.rs (~215) + resume.rs (~55):
+  the LAUNCHER - ChildJob (knobs/fork/writes/policy/caps/deny-rules/
+  authz/escalation/summary budget), SubagentExecutor async seam,
+  LaunchConfig (pacer, clock, parent prompt+surface, escalation sink),
+  gates per child (budget -> pacing -> authz) BEFORE any journal row;
+  ChildStarted journaled pre-run (spawned effects survive hangs);
+  concurrent wave execution under a semaphore; results absorbed in
+  child-id order (deterministic journal); token spend recorded even
+  when breaching; LaunchReport { outcome, children, failures,
+  stopped_early, family_switches, synthesis, per-agent rollup,
+  phase_trace }.
+phases.rs (97): /boost 3-PHASE DECOUPLE (strategy -> execution ->
+  verification as separate agent phases); MISSION VALIDATOR MILESTONES
+  (Droid SS16: scrutiny + user-testing children at wave boundaries,
+  config-skippable); CLEAN-CONTEXT REVIEWER (Devin SS22): REVIEW_DOCTRINE
+  system prompt, diff-manifest-only objective, from_artifacts() takes
+  the parent context and DISCARDS it by construction
+  (parent_context_present() is structurally false).
+synthesis.rs (90): merge with artifact dedup + CROSS-CONSISTENCY check
+  (same path, different hash -> Inconsistency naming both children) +
+  per-agent telemetry lines (per-child dedup).
+variants.rs (245): BEST-OF-N (<=4 parallel same-prompt versions,
+  per-version models, pluggable scorer; WINNER'S DIFF APPLIED from its
+  worktree with hash verification - Qwen Arena) + PLAN-BRANCH
+  (plan_branch.rs 79: same spec on different models, per-branch
+  launcher runs, grants minted under the disclosed "plan-branch"
+  operator scope).
+backend/ (mod 59, protocol 42, process 145, install 45, plugins 51):
+  HARNESS-AS-SUBAGENT backends - ClaudeCode ("claude app-server
+  --stdio") / Codex ("codex app-server"); SUPPLY-CHAIN CARVE-OUT:
+  BackendConfig defaults DISABLED, opt_in() enables; bounded JSONL
+  framing (64 KiB lines); ProcessBackend spawns a REAL child process
+  over piped stdio (env-cleared + redacted), skips non-protocol lines
+  under a deadline, kills on timeout, typed BackendError::Disabled /
+  Spawn / Timeout / Protocol / ResponseMismatch; AUTO-INSTALL GATE:
+  SHA-256 release-asset verification (case-insensitive, malformed
+  digests fail closed) + env redaction (DEFAULT_REDACT_PATTERNS);
+  PER-HARNESS PLUGIN MANAGERS (Warp SS25): version-checked
+  (numeric-aware version_gt) per-backend plugin records w/ pinned
+  hashes.
+
+FROZEN-PROTOCOL SEAM (disclosed): this crate does not touch
+harness-daemon. Daemon-side wiring (spawning real hidden child sessions
+via DaemonState::session + publishing TeamEvents as
+SessionEvent::Notification{kind} + adopting the journal into
+TurnWorkflow::spawn_child/child_done) is the T45 integration wave; the
+additive surface is exactly the kind-string channel + the
+vocabulary-aligned journal (both test-pinned here). No protocol changes
+were needed or made.
+
+------------------------------------------------------------------------
+VERIFICATION (exact commands + results)
+------------------------------------------------------------------------
+Shell: . $env:TEMP\opencode\task-40-msvc-env.ps1; CARGO_TARGET_DIR=
+%TEMP%\opencode\target-task-40 (private).
+
+1. cargo test -p harness-orchestration
+   -> 42 passed, 0 failed across 6 targets
+      (spec_launcher 8, guards 15, adversarial 5, phases 4, variants 3,
+       backend_smoke 7) + doctests 0. EXIT 0.
+2. Flaky x3 (same command, consecutive):
+   RUN 1: passed=42 failed=0 exit=0
+   RUN 2: passed=42 failed=0 exit=0
+   RUN 3: passed=42 failed=0 exit=0
+3. cargo clippy -p harness-orchestration --all-targets
+   -> zero errors/warnings (workspace lints warnings=deny +
+      clippy all=deny). "Finished" clean.
+4. cargo fmt -p harness-orchestration -- --check -> EXIT 0.
+5. Discipline audit: every src file <= 250 pure LOC (max: spec/mod 245,
+   launch 246, resolve 248, variants 245); grep
+   unwrap(|expect(|panic!(|unreachable!( over src/ -> ZERO hits.
+6. Committed-tree worktree isolation (post-commit):
+   git worktree add %TEMP%\opencode\task-40-proof <commit>
+   cargo test -p harness-orchestration (fresh private target
+   target-task-40-proof) -> 42 passed, 0 failed, EXIT 0; worktree
+   removed. (Paste below.)
+
+------------------------------------------------------------------------
+QA CHANNELS (plan todo 40 + task brief)
+------------------------------------------------------------------------
+happy          : three-agent spec (explorer | worker+deep) completes in
+                 budget; waves=2; heterogeneous models asserted on the
+                 executor-recorded jobs (sonnet/gpt-5-5/opus-4-7);
+                 journal ON DISK carries 3x child_started (model+effort
+                 in spec payloads) + 3x child_completed +
+                 LaunchFinished{complete}; synthesis per-agent tokens
+                 3x1500; events Spawned/Completed x3 (headless proof:
+                 spec file -> resolve -> spawned children w/ profile-
+                 applied knobs, asserted from effects, not returns).
+failure        : unknown role typed (names known list); unknown model ->
+                 typed Model{task,model}; dependency cycle + dangling
+                 needs typed; children-budget breach stops spawning
+                 after child 1, BudgetStopped journaled, partials
+                 reported, executor saw exactly 1 job; token breach
+                 (1200 budget vs 1500 spend) stops before wave 2 w/
+                 TokensExhausted; fresh-authz missing -> LOUD
+                 SpawnRefusal, zero jobs executed (never parent-DIY).
+adversarial    : malformed-spec bounded parse (901-line -> TooLarge;
+                 512KiB field -> TooLarge; unknown key; duplicate ids;
+                 missing objective; 33 tasks -> TooManyTasks; 15 hostile
+                 inputs incl. NUL/BOM/CRLF/control chars -> typed errors
+                 or bounded Ok, zero panics); new-input parsing (bracket
+                 grammar: plain/full/k-suffix/unknown-key/unknown-effort/
+                 bad-context/unclosed/empty/nested all typed); flaky x3
+                 green; misleading_success (journal truthfulness: failed
+                 child gets ChildFailed and NO ChildCompleted row;
+                 happy assertions read load_records from disk; budget
+                 snapshot == telemetry spend); stale_state (spec file
+                 mutated during wave 0 by the child itself -> wave 1
+                 aborted, SpecStale journaled, t2/t3 never spawned);
+                 dirty_worktree (commit stages ONLY the files below;
+                 every other dirty/untracked path left out - git show
+                 --stat proof below).
+
+------------------------------------------------------------------------
+COMMIT SET (dirty_worktree distinguish)
+------------------------------------------------------------------------
+Cargo.toml (+1 anchored member line), Cargo.lock (+ the single
+harness-orchestration package block, no sibling entries),
+harness-orchestration/** (Cargo.toml, 25 src files, 6+1 test files),
+.omo/evidence/task-40-rust-agent-harness.txt. Everything else dirty in
+the working tree (parallel workers' files, .omo run-continuation
+snapshots, msvc-probe.obj, target-task-36/) deliberately NOT staged.
+
+RISKS / residual:
+- Daemon-side session spawning + Notification bridging is T45
+  integration (additive seam test-pinned here; protocol v1 untouched).
+- ProcessBackend speaks the one-round JSONL prompt/response slice of
+  the app-server surface (smoke-tested against a real mock child
+  process); full session-lifecycle protocol coverage lands with real
+  backend integrations.
+- version_gt is numeric-segment only (no pre-release semver).
+6. Committed-tree worktree isolation (post-commit) - PASTE:
+   git worktree add %TEMP%\opencode\task-40-proof c298c08
+     -> HEAD is now at c298c08 feat(orchestration): spec launcher + team
+        mode + harness backends
+   (fresh private target target-task-40-proof) cargo test
+   -p harness-orchestration:
+   test result: ok. 5 passed   (adversarial)
+   test result: ok. 7 passed   (backend_smoke)
+   test result: ok. 15 passed  (guards)
+   test result: ok. 4 passed   (phases)
+   test result: ok. 8 passed   (spec_launcher)
+   test result: ok. 3 passed   (variants)
+   PROOF EXIT: 0  -> git worktree removed.
+   Commit: c298c08 (38 files, 7195 insertions; evidence append + amend
+   keeps the single-commit contract; nothing had stacked on the hash).

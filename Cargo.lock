@@ -2377,6 +2377,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "harness-orchestration"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "harness-intel",
+ "harness-providers",
+ "harness-safety",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "harness-providers"
 version = "0.1.0"
 dependencies = [
