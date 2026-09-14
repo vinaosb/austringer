@@ -1,5 +1,9 @@
 //! WSL2 bridge tests (plan todo 20): typed path mapping both directions,
 //! defensive wsl.exe output parsing, typed detection (fake-probe matrix),
+
+// The bridge maps Windows drive paths <-> /mnt drives; std path parsing
+// makes drive paths relative on unix, so the whole suite is windows-only.
+#![cfg(windows)]
 //! routing resolution, and a live bridge run gated on real availability.
 
 use std::path::{Path, PathBuf};
