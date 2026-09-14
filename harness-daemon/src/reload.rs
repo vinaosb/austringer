@@ -173,11 +173,11 @@ mod tests {
 
     #[test]
     fn adopt_rejects_invalid_raw_ids() {
-        let result = adopt(0);
+        // On unix fd 0 is a live descriptor (stdin), so 0 is only an
+        // invalid id on windows; the out-of-range raw is invalid on both.
+        assert!(adopt(u64::MAX).is_err());
         #[cfg(windows)]
-        assert!(result.is_err());
-        #[cfg(unix)]
-        assert!(result.is_err());
+        assert!(adopt(0).is_err());
     }
 
     #[cfg(windows)]
