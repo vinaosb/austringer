@@ -345,3 +345,16 @@ VERIFICATION
    - windows local (task-13 env, warm t46-target): fmt exit=0; clippy
      touched crates exit=0; nextest -p vfs,snapshots,mcp,safety,daemon
      440/440 PASS; earlier exec+lsp 200/200.
+10. run 34904154614 (b1a7a7a): MACOS GREEN (first ever). Remaining:
+    (a) lint clippy collapsible_if in the new mcp_roots win() helper
+        (cfg(not(windows)) code, never compiled on the windows dev box)
+        -> let-chain collapse;
+    (b) ubuntu test + coverage jobs died of DISK EXHAUSTION
+        ("No space left on device", ld signal 7 Bus error mid-link):
+        cold-cache full-workspace debug builds + preinstalled SDKs
+        exceed the ~14 GB runner disk. Mitigation: CARGO_PROFILE_DEV_DEBUG
+        =0 / CARGO_PROFILE_TEST_DEBUG=0 (DWARF is dead weight for test
+        runs; llvm-cov embeds its own coverage mapping) + ubuntu-only
+        reclaim of the largest unused preinstalls (android ~9 GB, dotnet,
+        graalvm, ghc). Verified harness-mcp clippy+tests green in the
+        linux container after the collapse fix.

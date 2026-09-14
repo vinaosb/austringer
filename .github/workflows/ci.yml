@@ -43,6 +43,14 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Test builds do not need DWARF debuginfo; dropping it roughly halves
+  # target-dir size, which cold-cache ubuntu runs need to stay inside the
+  # runner disk (the full debug workspace blew it: "No space left on
+  # device" mid-link). Coverage instrumentation embeds its own mapping
+  # sections and does not read DWARF. Release builds (perf-gate) are
+  # unaffected by the dev/test profile knobs.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
   lint:
@@ -82,6 +90,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Reclaim runner disk (ubuntu only)
+        # Cold-cache full-workspace builds plus the preinstalled SDKs
+        # exceed the ~14 GB free; removing the largest unused preinstalls
+        # (android ~9 GB, dotnet, graalvm, ghc) keeps the build inside it.
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/graalvm /opt/ghc
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -108,6 +122,10 @@ jobs:
     name: cargo-llvm-cov
     runs-on: ubuntu-latest
     steps:
+      - name: Reclaim runner disk
+        # The instrumented coverage tree is a second full debug build;
+        # see the test matrix's reclaim step.
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/graalvm /opt/ghc
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
