@@ -226,6 +226,12 @@ impl Catalog {
         })
     }
 
+    /// Iterates every entry in model-id order (the todo-42 catalog
+    /// search tool's bounded hydration source).
+    pub fn entries(&self) -> impl Iterator<Item = &CatalogEntry> {
+        self.entries.values()
+    }
+
     /// Fail-closed validation of a knob set against the model's trap table
     /// and effort grid. `Ok(())` means every set knob is legal.
     pub fn validate(&self, model: &str, knobs: &WireKnobs) -> Result<(), CatalogError> {

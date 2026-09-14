@@ -26,6 +26,7 @@ pub mod dial;
 pub mod dialect;
 pub mod elicitation;
 pub mod model_profile;
+pub mod routing;
 pub mod seed;
 pub mod store;
 pub mod taxonomy;

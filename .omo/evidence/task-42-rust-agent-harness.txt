@@ -1,0 +1,276 @@
+TASK 42 - Per-role model routing (rust-agent-harness)
+======================================================
+
+Worker: task-42 implementation worker (Sisyphus-junior, GLM 5.2).
+Date: 2026-09-14. Base: HEAD 17354e0 on main (feat(cli): repl, headless
+json, doctor). Commit: feat(intel): role routing w/ confirmed fallback
+(single commit, per plan todo 42).
+
+PARALLEL WORKERS (disclosed, per task brief)
+-------------------------------------------------------------------------------
+Two sibling workers active during this run: fmt-fix (harness-web /
+examples surface) and T40 launcher (its own launcher/subagent surface).
+Routing config/module ownership was MINE per the brief. Shared-file
+touches kept surgical and re-read before every edit:
+  - harness-intel/src/lib.rs: exactly ONE owned anchored line
+    (`pub mod routing;`, between model_profile and seed) - applied
+    cleanly, no sibling content in that file.
+  - Root Cargo.toml + Cargo.lock were dirty with a SIBLING's uncommitted
+    harness-orchestration member lines at staging time; my commit stages
+    NEITHER file (routing needs no new dependency - everything rides the
+    existing T34/T9 surfaces). Verified by post-commit diff of the
+    committed tree.
+  - harness-daemon protocol v1: UNTOUCHED (routing is intel-layer only;
+  the dispatcher is a pure resolution surface the daemon/T40 can compose
+  later; no protocol change was needed - additive only).
+
+RED EVIDENCE (TDD: tests first, module absent)
+-------------------------------------------------------------------------------
+Tests written first (3 files, 30 tests at the time). First run:
+  cargo test -p harness-intel --test routing_table --test routing_dispatch
+       --test routing_surface
+failed exactly because the API did not exist (the right red reason):
+  error[E0433]: cannot find `routing` in `harness_intel`
+  (9 previous errors in routing_surface, 6 in routing_table, 8 in
+  routing_dispatch - all unresolved-import on the absent module).
+Functional RED after the module skeleton compiled (mid-cycle, real
+behavioral catches):
+  1) rate-limit escalation on a CHAINLESS model returned typed
+     Fail(NoFallbackConfigured{deepseek-reasoner}) where the test had
+     (wrongly) assumed an ask - fixture moved to a chained model; the
+     typed failure is the correct contract (verified in
+     verbatim_chain test).
+  2) every_hop audit test on a chainless fixture: outage produced
+     Fail(NoFallbackConfigured), not AskFallback - fixture gained its
+     chain; behavior kept.
+  3) wait-out budget boundary: third consecutive rate limit escalates
+     (wait_outs > retry_attempts) - test re-sequenced to match the
+     documented budget semantics; clamp coverage kept via a fresh task.
+No test was deleted or weakened to reach green.
+
+ENVIRONMENT (task-13 recipe, disclosed)
+-------------------------------------------------------------------------------
+Windows 11 / PowerShell 5.1; Rust 1.98 (edition 2024, workspace lints
+warnings=deny + clippy all=deny). CC UNSET (blake3 asm exact-match).
+INCLUDE prepended with VS18 ScopeCppSDK vc15 FIRST:
+  C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include
+(existing VS2022/Windows-SDK INCLUDE retained after it; LIB unchanged).
+Private target dir %TEMP%\opencode\t42-target (CARGO_TARGET_DIR
+overridden per-invocation; repo target/ untouched). One incident: a
+PowerShell bulk path-rewrite pass CP1252-mangled the em-dashes in five
+routing files; repaired byte-level (U+00E2 U+20AC U+201D -> U+2014),
+verified zero non-ASCII beyond em-dashes afterwards.
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+New module harness-intel/src/routing/ (9 files, all <=250 pure LOC,
+docs on every public item, zero unwrap/expect/panic/unreachable in src):
+  mod.rs      (134) Role taxonomy: Plandex core (architect/editor/
+              reviewer/hydrator/summarizer) + Plandex utility (commit-
+              message/session-title/auto-continue/dedup-folding) + Zed
+              (default/subagent/inline/summary/compaction) merged into
+              one 14-role enum w/ kebab keys, RoleClass Lead|Utility
+              (utility => cheap-pool-only, enforced at build), Tier
+              light|medium|heavy, RouteRequest {Role, Tier, Benchmarked}
+              w/ auto_routed() (Tier/Benchmarked = router's choice ->
+              priced w/ the discount)
+  config.rs   (124) RoutingSpec (serde): provider, cheap_pool, roles as
+              LIST-of-keyed-entries (duplicate keys are detectable, not
+              silent map overwrites), tiers w/ score_floor, rank-verbatim
+              fallback chains, wait_out_secs (default 45), retry_attempts
+              (default 2), benchmark table, sidekick pair. WAIT_OUT_CAP_
+              SECS=75 + RoutingConfigError (13 typed variants) live here
+  table.rs    (200) RoutingTable::build/from_json = the fail-closed gate:
+              unknown role/tier typed; duplicate role/tier/origin/bench
+              typed; utility-off-cheap typed; self-referential + dup-hop
+              chains typed; wait-out >75s typed; every routed model +
+              effort validated against the catalog trap table at BUILD
+              (reuse of T34 WireKnobs validation); sidekick must be
+              cheap-pool; malformed JSON -> bounded typed Malformed
+              (detail capped 300 chars, raw doc never rides the error);
+              accessors fallback_chain/wait_out/retry_attempts/sidekick
+  resolve.rs  (242) RouteResolution {identity, explicit effort, knobs,
+              source, auto_routed}; role/tier/benchmark resolution (all
+              knobs catalog-validated fail-closed); cheapest_proven =
+              cheapest benchmark score>=floor, price ASC (f64 total_cmp),
+              model-id ASC tie-break, NoBenchmarkCandidate typed when
+              nothing is proven (never a silent unproven downgrade);
+              TaskId + PinnedProfile + Stickiness: pin/launch/resolve/
+              spawn_subtask(inherits)/unpin, PinConflict typed (kills
+              silent model drift; deliberate change requires unpin);
+              suggest_replacement = profile-aware suggestion (observed
+              edit_rejection_rate > 0.25 -> surface first verbatim hop
+              w/ evidence; a suggestion never switches anything)
+  outcome.rs  (129) the vocabulary: StopReason EndTurn|RefusalTruncation|
+              MaxTokens (+ from_finish mapping of the T9 FinishReason),
+              DispatchFailure RateLimit{retry_after}|Outage, TurnOutcome,
+              FallbackDecision Proceed|Retry|WaitOut|AskFallback|Fail,
+              RoutingFailure ChainExhausted|NoFallbackConfigured|
+              Declined, RoutingEvent audit w/ kind()/from()/to()
+              accessors, FallbackRejected (mismatched ack)
+  fallback.rs (220) Failover engine: refusal/truncation retries w/
+              attempt counter (budget = retry_attempts) then ASK;
+              rate-limit WAIT-OUT windows = min(retry_after-or-configured,
+              configured, 75s) then retry, escalation to ASK only after
+              the wait-out budget; outage ASKS immediately; rank-verbatim
+              walk = the ORIGIN model's chain walked positionally (hop 1
+              is always chain[0]; never provider round-robin, never a
+              re-ranking); acknowledge() validates the ack matches the
+              EXACT pending proposal (typed FallbackRejected otherwise),
+              resets retry counters; decline() typed; every hop surfaces
+              in the audit trail (HopProposed/HopAcknowledged/HopDeclined/
+              ChainExhausted/WaitOut) - nothing switches silently
+  dispatch.rs(155) Dispatcher: dispatch_turn resolves-or-pins (launch
+              profile frozen; resume + divergent requests keep the pin),
+              applies ONLY acknowledged fallback overrides (effort
+              revalidated for the hop: pinned rung if on-grid else the
+              hop model's DOCUMENTED catalog default - never a provider
+              implicit default, never an off-grid knob); TurnDispatch
+              carries identity + knobs + effort + source + auto_routed +
+              the AcknowledgedFallback audit trail (T9 contract:
+              FallbackRequest::acknowledge is the only switch path);
+              price_usage/AUTO_ROUTE_DISCOUNT=0.10 (auto-routed ~10%
+              below manual - routing-incentive alignment; feeds the TUI
+              HUD routing-savings readout)
+  search.rs   ( 67) model_catalog_search TOOL for the model itself
+              (kilo pattern): bounded substring match over model id +
+              family name, MATCH_LIMIT=5, EMPTY/whitespace query => EMPTY
+              (the full catalog is NEVER injected into context);
+              render_observation = one bounded line per match
+  sidekick.rs ( 28) SidekickRoute pair + gate_model_switch: lead switches
+              execute ONLY at compaction boundaries (the cache miss
+              happens anyway -> the switch is free there), typed
+              SwitchRejected mid-run (never a silent cache-busting
+              switch)
+
+Additive (no behavior change): harness-intel/src/catalog.rs gains
+Catalog::entries() iterator (bounded hydration source for the search
+tool, model-id order); harness-intel/src/lib.rs gains the one module
+line. No manifest/lock changes (commit stages neither).
+
+TESTS (30 new, hermetic - in-memory tables only, no clock/network/env)
+-------------------------------------------------------------------------------
+tests/routing_table.rs   (14) roles hit configured models w/ OBSERVED
+                         explicit efforts incl. catalog defaults (never
+                         provider-implicit); utility classification +
+                         unknown/unicode keys never guess; utility-off-
+                         cheap typed; unknown role/model typed; duplicate
+                         role AND tier typed; wait-out>75s + self-ref +
+                         dup-hop chains typed; malformed JSON bounded
+                         typed x3 shapes; tiers resolve per tier; bench
+                         picks cheapest proven (light->gpt-5-5@1.2 not
+                         sonnet@3.0; heavy floor 0.92->opus); no
+                         benchmark candidate typed; missing role/tier
+                         resolution typed; chain/wait-out accessors;
+                         rebuilt table reflects a reloaded config
+                         (stale_state); suggestions profile-aware
+                         (weak-editor surfaces first hop w/ reason,
+                         healthy surfaces nothing)
+tests/routing_dispatch.rs( 9) every turn (x3) dispatches under the routed
+                         profile - asserted on the OBSERVED TurnDispatch
+                         (identity + knobs), never a config echo
+                         (misleading_success); launch profile sticks
+                         across resume w/ a divergent request, subtask
+                         inherits, explicit unpin re-routes; PinConflict
+                         typed at the stickiness layer + unknown parent
+                         typed; outage ASKS never substitutes (dispatch
+                         unchanged until acknowledge; wrong-hop ack typed
+                         rejected; honest ack switches the wire + audit
+                         trail on the request); verbatim chain walks in
+                         order opus-4-7->opus-5->sonnet then ChainExhausted
+                         typed + chainless model NoFallbackConfigured
+                         typed; decline typed + original kept; refusal/
+                         truncation Retry{1},Retry{2} then AskFallback,
+                         MaxTokens same discipline, EndTurn NEVER
+                         proposes; rate-limits wait out bounded windows
+                         (None->45s, hint 10s honored, 600s hint clamped
+                         to configured 45s <= cap 75s) then escalate to
+                         ASK after budget; fallback effort off-grid falls
+                         to the hop's DOCUMENTED default (commit-message
+                         none on gpt-5-5 -> Medium on sonnet)
+tests/routing_surface.rs ( 6) catalog search bounded (opus->3 sorted,
+                         family queries), empty/whitespace/miss/unicode
+                         hydrate NOTHING, render bounded w/ "no models
+                         matched"; sidekick pair resolves + non-cheap
+                         sidekick typed; lead switch allowed only at
+                         compaction boundaries (typed rejection mid-run);
+                         pricing 100.0 -> 90.0/10.0 auto vs 100.0/0.0
+                         manual (AUTO_ROUTE_DISCOUNT ~= 0.10); every hop
+                         surfaced in the audit (proposed->acknowledged->
+                         declined ordering asserted w/ kind/from/to)
+
+VERIFICATION (exact commands; private target dir; MSVC env above)
+-------------------------------------------------------------------------------
+  cargo test  -p harness-intel .................... 73 passed; 0 failed
+       (lib 0, ab_dial 6, dialect 6, elicitation 9, profile 8,
+        routing_dispatch 9, routing_surface 6, routing_table 14,
+        taxonomy 5, traps 10, doc-tests 0)
+  cargo test  -p harness-intel (x3 reruns) ........ identical 73/0 all
+       three runs (flaky x3 adversarial channel)
+  cargo clippy -p harness-intel --all-targets ..... clean (workspace
+       lints: warnings=deny + clippy all=deny)
+  cargo fmt   -p harness-intel -- --check ........ clean
+  grep unwrap/expect/panic/unreachable/todo in src/routing ... no matches
+  pure-LOC ceiling ............................... max resolve.rs 242
+       <= 250 (post-split; fallback.rs was 343 and table.rs 266 as first
+       written - both split per the ceiling: outcome.rs extracted,
+       RoutingConfigError moved beside its spec in config.rs)
+
+  Committed-tree isolation proof: fresh worktree at this commit
+  (git worktree add <tmp> <sha> --detach; private target dir), then
+  cargo test -p harness-intel -> 73 passed; 0 failed. The committed
+  tree contains ONLY task-42 content (sibling working-tree state -
+  including the uncommitted harness-orchestration manifest lines -
+  does not participate).
+
+QA CHANNELS
+-------------------------------------------------------------------------------
+happy       roles hit configured models every turn with the routed knobs
+            asserted on the observed dispatch (identity + WireKnobs.effort);
+            utility roles on cheap models; tiers + benchmark composes
+            (cheapest proven at the tier's effort); sidekick pair exposed.
+failure     outage -> ask, never substitute (confirmation-gated, T9
+            AcknowledgedFallback only); wrong-hop acknowledgement typed
+            rejected; refusal/max-tokens retry w/ attempt counter then ask;
+            rate-limit wait-out bounded <=75s then ask; chain exhausted /
+            chainless / declined all typed; unknown role, unknown model,
+            missing role/tier, utility-off-cheap, duplicate routes,
+            self-referential chain, over-cap wait-out all typed at build.
+adversarial malformed config bounded typed (3 shapes, detail < 512);
+            unicode role keys + unicode catalog queries safe (typed miss /
+            empty hydration, no panic); flaky x3 identical; misleading_
+            success: assertions on OBSERVED dispatch fields (identity,
+            knobs.effort, audit trail on the request) - never a config
+            echo; stale_state: rebuilt table reflects a reloaded config
+            (architect opus-4-7 -> opus-5 on reload); dirty_worktree:
+            surgical staging below + post-commit committed-tree proof.
+
+COMMIT DISCIPLINE (parallel workers)
+-------------------------------------------------------------------------------
+Index staged surgically so ONLY task-42 content enters the commit:
+  - harness-intel/src/routing/** (new, git add)
+  - harness-intel/tests/routing_{table,dispatch,surface}.rs (new, git add)
+  - harness-intel/src/lib.rs (index = HEAD + the one anchored module line)
+  - harness-intel/src/catalog.rs (index = HEAD + the additive entries()
+    iterator only)
+  - .omo/evidence/task-42-rust-agent-harness.txt (this file)
+NOT staged: root Cargo.toml + Cargo.lock (sibling harness-orchestration
+lines belong to the T40 worker; routing needs no manifest change), all
+other dirty .omo files. Single commit, message per plan todo 42.
+
+RISKS / NOTES
+-------------------------------------------------------------------------------
+- The dispatcher is a pure resolution surface; daemon engine wiring
+  (per-turn dispatch + observe + mediated confirmation UX) is the T40/T45
+  composition step. The confirmation seam is the T9 identity contract,
+  so wiring cannot bypass consent even if it wanted to.
+- Benchmark rows are supplied by config today; the evals adapter (todo
+  44) is the intended feeder of the ranking table. No live model is ever
+  called from this crate (intel stays network-free, per todo 34).
+- Chain walks are per-ORIGIN-model and positional by design (rank-verbatim
+  forge semantics); cross-model chain hopping after landing on a hop is
+  deliberately NOT implemented (deterministic, documented, reviewable).
+- Wait-out windows clamp to min(server hint, configured, 75s); a server
+  hint LONGER than the configured window waits the configured window,
+  then retries - escalation to a confirmed ask happens only after the
+  retry budget, never silently.
