@@ -279,12 +279,10 @@ fn set_executable(path: &Path, executable: bool) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if executable {
-            if let Ok(meta) = std::fs::metadata(util::extended(path)) {
-                let mut perms = meta.permissions();
-                perms.set_mode(0o755);
-                let _ = std::fs::set_permissions(util::extended(path), perms);
-            }
+        if executable && let Ok(meta) = std::fs::metadata(util::extended(path)) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(util::extended(path), perms);
         }
     }
     #[cfg(not(unix))]
