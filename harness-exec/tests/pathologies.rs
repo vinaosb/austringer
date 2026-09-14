@@ -29,6 +29,11 @@
 //!     attributes and blocks for the reply must get it in milliseconds,
 //!     not the ~60 s conhost timeout.
 
+// ConPTY pathologies are Windows-only (the fixtures shell out to cmd and
+// powershell); compiling the file elsewhere trips -D warnings on the
+// cfg-gated tests' shared imports.
+#![cfg(windows)]
+
 mod common;
 
 use std::thread;

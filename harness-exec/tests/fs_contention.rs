@@ -1,6 +1,11 @@
 //! FS-contention hardening tests (plan todo 20): ERROR_SHARING_VIOLATION
 //! retry-with-backoff, long-path (\\?\) awareness, OneDrive detection.
 
+// All three mechanisms under test are Windows-only FS semantics; the
+// fixtures assert \\?\ prefixing and OneDrive root shapes that do not
+// exist on other platforms.
+#![cfg(windows)]
+
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
