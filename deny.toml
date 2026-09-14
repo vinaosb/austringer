@@ -30,6 +30,11 @@ allow = [
     "Zlib",
     "0BSD",
     "CC0-1.0",
+    # Deliberate, reviewed addition (todo 43): dhat-rs (heap profiling for
+    # the perf gate) is MPL-2.0 — file-level copyleft, used as an OPTIONAL
+    # dev/bin-only dependency of harness-bench behind its `dhat` feature;
+    # no dhat code ships in any default build or distributed binary.
+    "MPL-2.0",
 ]
 
 [bans]

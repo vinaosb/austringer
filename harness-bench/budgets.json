@@ -1,0 +1,10 @@
+{
+  "cold_start_ms": 50,
+  "idle_max_renders": 1,
+  "rss_mb": 80,
+  "p99_frame_ms": 16,
+  "binary_mb": 40,
+  "regression_tolerance_pct": 10,
+  "frame_budget_ms": 10,
+  "hang_threshold_ms": 100
+}

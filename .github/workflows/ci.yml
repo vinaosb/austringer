@@ -59,6 +59,12 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
+      - name: clippy (harness-bench feature matrix: dhat, mimalloc)
+        # Feature-gated gate code (global allocators) must stay lint-clean
+        # too; the two features are mutually exclusive by compile_error!.
+        run: |
+          cargo clippy -p harness-bench --all-targets --features dhat -- -D warnings
+          cargo clippy -p harness-bench --all-targets --features mimalloc -- -D warnings
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
@@ -120,12 +126,45 @@ jobs:
           path: lcov.info
 
   perf-gate:
-    # PLACEHOLDER — stays skipped until todo 43 (performance suite + CI
-    # gates) lands the real job: criterion + dhat, fail on >10% regression
-    # vs stored baseline, budgets per plan §Verification (CLI cold start
-    # <50 ms, daemon RSS <40 MB, repomap <10 ms, p99 render <16 ms,
-    # binary <40 MB stripped). `if: false` keeps it visible-but-skipped.
-    if: ${{ false }}
-    runs-on: ubuntu-latest
+    # Todo 43: real perf gate — todo-43 budgets (cold start <50 ms, idle
+    # renders, RSS <80 MB, p99 frame <16 ms, 10 ms frame budget w/ hang
+    # detection, binary <40 MB stripped) + >10% regressions vs committed
+    # machine-independent baselines (deterministic counters only; wall
+    # clock rides absolute budgets w/ min-of-N — noise-margin discipline,
+    # harness-bench/src/lib.rs). windows-latest matches the platform the
+    # committed baselines were recorded on (allocation counts are
+    # allocator/OS-sensitive; re-record procedure in
+    # harness-bench/baselines/README.md).
+    runs-on: windows-latest
     steps:
-      - run: echo 'perf-gate placeholder (todo 43) - criterion/dhat budget gates not yet implemented'
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binaries (harness, harness-daemon, gate)
+        run: cargo build --release -p harness-cli -p harness-daemon -p harness-bench
+      - name: Perf gate (budgets + regression vs committed baseline)
+        run: >-
+          cargo run --release -q -p harness-bench --bin perf-gate --
+          --budgets harness-bench/budgets.json
+          --baseline harness-bench/baselines/gate_baseline.json
+          --cli-bin target/release/harness.exe
+          --daemon-bin target/release/harness-daemon.exe
+          --binary harness=target/release/harness.exe
+          --binary harness-daemon=target/release/harness-daemon.exe
+          --report perf-report.json
+      - name: Heap-profile allocation regression gate (dhat)
+        run: >-
+          cargo run --release -q -p harness-bench --bin heap-profile --features dhat --
+          --check harness-bench/baselines/heap_profile.json
+          --report heap-profile-report.json
+      - name: Upload perf reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-reports
+          path: |
+            perf-report.json
+            heap-profile-report.json

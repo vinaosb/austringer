@@ -234,6 +234,19 @@ assert_cmd = "2"
 # assert_cmd's assertion helpers (str contains/predicate combinatorics).
 # Dev-only. Pure Rust, MIT/Apache-2.0.
 predicates = "3"
+# Todo-43 perf suite: criterion benches. Default features off — rayon and
+# plotters stay out of the tree; cargo_bench_support is the only needed
+# feature. Pure Rust, MIT/Apache-2.0.
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+# Todo-43 archived heap profiles: dhat-rs (MPL-2.0, deliberate reviewed
+# addition to the deny.toml allow-list). Optional dep of harness-bench
+# behind its `dhat` feature; installs a global allocator, so it never
+# touches default builds. Pure Rust.
+dhat = "0.3"
+# Todo-43 allocation-discipline option for the gate binaries (mimalloc,
+# MIT, C build via cc). Optional behind harness-bench's `mimalloc`
+# feature, default off.
+mimalloc = "0.1"
 
 [workspace.lints.rust]
 warnings = "deny"

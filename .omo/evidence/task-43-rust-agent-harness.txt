@@ -1,0 +1,241 @@
+TASK 43 - Performance suite + CI gates (rust-agent-harness)
+==============================================================
+Worker: task-43 implementation worker (Sisyphus-junior). Date: 2026-09-14.
+Base: HEAD 238ad5e at start; landed on top of 3fb0b07 (T44 evals committed
+mid-run — the disclosed sibling; zero file overlap: their commit touches only
+harness-evals/*; my staged Cargo.lock verified a strict superset of theirs,
+730 vs 707 packages, no reversion).
+Parallel-worker discipline: ONE root Cargo.toml edit session (3 anchored
+one-line dep adds after re-read; no index.lock contention hit). harness-evals
+never touched. daemon protocol untouched (read-only ServerMsg::Pong
+consumption). Engine crates consumed as dependencies only — no engine file
+modified.
+
+ENVIRONMENT INCIDENT (disclosed, task-13 recipe reapplied): machine-wide VS
+servicing still has the MSVC include dirs gutted (ring/libsqlite3-sys/
+tree-sitter cc builds fail C1083 out of the box). Worked around shell-scoped
+for every build command: INCLUDE/LIB pointed at VS18 Insiders ScopeCppSDK
+vc15 (VC\include FIRST) + Windows SDK 26100 ucrt/um/shared + onecore lib, CC
+unset. Nothing repo-side changed. All builds below ran under that recipe with
+a private target dir (C:\Users\vsbb1\AppData\Local\Temp\opencode\t43\target)
+— no contention with the parallel worker's shared target dir.
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+harness-bench (was empty scaffold) now carries the todo-43 perf suite:
+
+src/ (21 files, all <=250 pure LOC, zero unwrap/expect/panic):
+  lib.rs             crate map + dhat/mimalloc mutual-exclusion compile_error
+  budgets.rs (82)    BudgetConfig: todo-43 budgets of record; strict JSON
+                     parse (deny_unknown_fields; missing field = typed
+                     Malformed, bad value = typed OutOfRange)
+  stats.rs (55)      min_of + nearest-rank percentile (pure, unit-pinned)
+  frame.rs (92)      FRAME-BUDGET DISCIPLINE (Zed §23): classify() over
+                     recorded frames — 10ms budget breach vs 100ms hang
+                     classification, per-frame worst-phase foreground
+                     attribution, debug overlay_lines() rendering MEASURED
+                     p50/p99/breach counts
+  baseline.rs (84)   committed baselines: schema check, exact freshness,
+                     scoped freshness (allowed-skip aware), typed Stale
+  gate.rs (89)       budget (>ceiling) + regression (>10% vs baseline;
+                     zero-baseline => any positive breaches) evaluation,
+                     scenario roll-up, exit codes 0/2/3
+  report.rs (97)     GateReport JSON artifact w/ MEASURED values; GitMeta
+                     clean/dirty porcelain parser (capture degrades typed,
+                     never fabricates provenance)
+  runner.rs (173)    run_named (skips + engine failures = loud records),
+                     evaluate (scoped regression), record_baseline (refuses
+                     partial), write_report, load_budgets
+  scenarios/         11 registry entries: repomap (2k synthetic repo full
+                     pipeline), eviction (todo-12 engine pass over seeded
+                     tool-dominant history, 80k window), prompt (T11 render,
+                     stable-prefix bytes), pty (seeded VT stream ->
+                     ScreenModel -> 25/50 window law, no real PTY),
+                     sessions (temp store, 300 turns, page-in 100 turns),
+                     tui (3x200 frames TestBackend, p99 min-of-runs, 10ms/
+                     100ms verdicts from best run, overlay rendered through
+                     the same path), idle (100k no-op events -> 0 renders),
+                     cold_start (spawn `harness --version`, min-of-N),
+                     rss (spawn harness-daemon, stdout ready-line, targeted
+                     sysinfo pid sample, Drop-guard kill — no orphans),
+                     binary_size (per --binary NAME=PATH), self_test
+                     (MEASURED busy-well at 3x budget -> guaranteed breach)
+  scenarios/heap.rs  dhat-gated allocation metrics (u64 totals deltas);
+                     inert module without the feature
+  bin/perf-gate.rs (176)      the CI gate binary (clap): budgets file,
+                     baseline, --record-baseline, --allow-skip, --self-test,
+                     --report; exit 0/2/3
+  bin/heap-profile.rs (102)   dhat global-allocator build (required-features
+                     dhat): --record / --check + full dhat-heap.json profile
+benches/            criterion (0.5, default-features off — rayon+plotters
+                     excluded): repomap (2k+10k), eviction, prompt, pty,
+                     sessions page-in, tui frame — thin wrappers over the
+                     SAME scenario fixtures the gates use
+tests/              9 files, 63 tests (61 default + 2 dhat-only)
+budgets.json        budgets of record (todo-43 figures)
+baselines/          gate_baseline.json (deterministic counters), heap_profile
+                     .json (12 allocation metrics), dhat-heap.json (full
+                     viewable profile, 146KB), README.md (re-record procedure
+                     + cross-platform drift note)
+
+Allocation discipline: mimalloc FEATURE (default off — default gate measures
+the system allocator like production; compile_error vs dhat), buffer reuse
+in the frame loop (one Terminal reused across 200 draws — ratatui front-
+buffer diffing), allocation regressions GATED via dhat baselines.
+compact_str/arena adoption in engine crates deliberately NOT done here (out
+of my surface while siblings own those crates; the new allocation baselines
+are the forcing function — see risks).
+
+Root/CI/deny:
+  Cargo.toml  +criterion/+dhat/+mimalloc (3 anchored one-line adds w/ rationale)
+  deny.toml   +MPL-2.0 reviewed addition (dhat; optional, dev/bin-only)
+  .gitignore  +dhat-heap.json (run artifact)
+  ci.yml      perf-gate placeholder REPLACED by the real job (windows-latest
+              to match baseline platform: build release harness/harness-
+              daemon/gate, run perf-gate w/ real binaries + committed
+              baseline, run heap-profile --check, upload reports) + lint job
+              gained harness-bench feature-matrix clippy (dhat, mimalloc)
+
+NOISE-MARGIN DISCIPLINE (why the gate is deterministic under load):
+  - wall-clock budgets are ABSOLUTE (never baseline-compared): min-of-N
+    (cold start, N=7) / min-of-runs p99 (3x200 frames); budgets sit 3-5x
+    above measured values (see numbers below)
+  - ONLY machine-independent deterministic counters are baseline-regression
+    gated: repomap.tokens, eviction.projected_events, prompt.stable_prefix_
+    bytes, pty.observation_bytes, sessions.page_bytes (+ 12 dhat alloc
+    metrics in the heap baseline)
+  - measured drift across runs: 4/6 heap scenarios byte-identical; eviction
+    +0.0014%, tui +0.007% (overlay strings embed the measured p99) — four
+    orders of magnitude under the 10% tolerance
+
+TDD RECORD
+-------------------------------------------------------------------------------
+Wave A (stats/budgets/frame/report): tests written first -> RED = compile
+  errors naming the missing modules (repo-accepted pattern) -> 26 green.
+Wave B (baseline/gate): same -> 42 green. Wave C (scenarios): tests first;
+  honest RED then 3 real defects found+fixed by the tests themselves:
+  (1) eviction folding REFUSED without tool return codes (todo-12 doctrine —
+  codes never dropped) -> fixtures::tool_returns added;
+  (2) eviction BudgetUnmet at window 20k/50k (free-text mass is the T13
+  compactor's job; the walk folds tool results only) -> kit-shape
+  bloated_tool_history + window 80k with real headroom;
+  (3) assert_cmd closures need predicates; tempdir lifetime bug in the
+  self-test e2e. -> 53 green. Wave D (bins/heap): dhat HeapStats is u64;
+  HeapStats::get() panics without a live Profiler -> guarded profilers in
+  both bins + per-test guards (nextest = process-per-test); out-of-registry
+  regression metrics stay visible but are owned by the heap gate (no
+  zero-baseline false breach). -> 63 green (default 61 + dhat-only 2).
+
+VERIFICATION (commands + results; all under the MSVC recipe + private target)
+-------------------------------------------------------------------------------
+cargo nextest run -p harness-bench                       61 passed, 0 failed
+cargo nextest run -p harness-bench --features dhat       63 passed, 0 failed
+cargo clippy -p harness-bench --all-targets                        clean
+cargo clippy -p harness-bench --all-targets --features dhat        clean
+cargo clippy -p harness-bench --all-targets --features mimalloc    clean
+cargo fmt -p harness-bench -- --check                              clean
+cargo bench -p harness-bench --bench tui -- --warm-up-time 0.1
+  --measurement-time 0.3 --sample-size 10
+  -> tui/frame_render_120x40 time: [40.744 µs 41.505 µs 42.214 µs]
+cargo deny check                     licenses ok (incl. new MPL-2.0 entry);
+  advisories/bans FAILED are PRE-EXISTING at HEAD 238ad5e (wasmtime v38
+  RUSTSEC advisory pinned by harness-wasm; thiserror 1.x/2.x dup wildcard
+  via harness-web) — both outside task-43 scope, both disclosed here.
+Pure LOC: max file 176 (perf-gate.rs) — all <=250. No unwrap/expect/panic
+in src (grep-proven).
+Committed-tree isolation: staged tree committed via git commit-tree (HEAD
+untouched) -> worktree add -> clean private target dir ->
+  cargo nextest run -p harness-bench  -> 61 passed, 0 failed
+  -> worktree removed.
+
+QA CHANNEL PASTES
+-------------------------------------------------------------------------------
+HAPPY - full gate at budgets (release, real binaries, under parallel load):
+  $ cargo run --release -q -p harness-bench --bin perf-gate -- \
+      --budgets harness-bench/budgets.json \
+      --baseline harness-bench/baselines/gate_baseline.json \
+      --cli-bin <t>/release/harness.exe \
+      --daemon-bin <t>/release/harness-daemon.exe \
+      --binary harness=<t>/release/harness.exe \
+      --binary harness-daemon=<t>/release/harness-daemon.exe \
+      --report perf-report-1.json
+  perf-gate: 10 scenarios, 0 breaches, 0 skipped, verdict PASS   exit=0
+  [report per-scenario numbers: cold_start_ms=17.23 (budget 50);
+   rss_mb=6.69 (80); tui.p99_frame_ms=0.054 (16); tui.frame_breaches=0;
+   tui.hangs=0; idle.renders=0 (<=1); binary.harness_mb=6.21 (40);
+   binary.harness-daemon_mb=3.09 (40); deterministic metrics AT baseline]
+  $ cargo run --release -q -p harness-bench --bin heap-profile \
+      --features dhat -- --check harness-bench/baselines/heap_profile.json
+  heap-profile: 6 scenarios, 0 breaches, 0 skipped, verdict PASS exit=0
+
+HAPPY - baseline artifacts committed (acceptance criterion):
+  baselines/gate_baseline.json {eviction.projected_events 523,
+   prompt.stable_prefix_bytes 570834, pty.observation_bytes 10592,
+   repomap.tokens 965, sessions.page_bytes 103500}
+  baselines/heap_profile.json (12 alloc metrics, e.g. repomap.alloc_count
+   204172, sessions.alloc_count 3321) + full dhat-heap.json profile
+  + budgets.json (todo-43 figures) + baselines/README.md re-record procedure
+
+FAILURE - injected +50% slowdown fails the gate (plan QA):
+  unit: gate_eval::injected_fifty_percent_slowdown_fails_with_measured_number
+   (50ms budget, 75.0 measured -> Breach, record carries value=75.0 MEASURED)
+  e2e:  $ perf-gate --self-test --report r.json
+   -> exit code 2; stderr names BREACH self_test.cold_start_ms;
+      report value >= 150.0 (MEASURED busy-well, status "breach")
+  heap: shrunken_baseline_breaches_the_regression_gate (baseline/10 ->
+   ~+900% >> 10% -> exit 2)
+  typed config errors: missing/malformed budgets file, bad NAME=PATH,
+   regression-metrics-without-baseline, stale baseline -> all exit 3 with
+   distinct messages (perf_gate_cli suite)
+
+ADVERSARIAL
+-------------------------------------------------------------------------------
+deterministic      : gate x3 while a full-workspace cargo check burned CPU
+  under load         (separate target dir; ~71% CPU during runs):
+                     run 1: exit=0 (2.1s); run 2: exit=0 (1.9s);
+                     run 3: exit=0 (2.0s) — identical PASS verdicts; noise
+                     margins above (3-5x headroom, deterministic-only
+                     baselines).
+flaky x3          : scenario determinism suite run 3x green across the
+                     session (in-process double-run equality assertions +
+                     cross-run baseline equality for 4/6 heap metrics).
+malformed         : budgets.json malformed/unknown-field/zero-value ->
+  config              typed Malformed/OutOfRange (bounded, no panic);
+                     NAME=PATH parse errors typed; heap-profile without
+                     --record/--check -> typed usage error exit 3.
+stale_state       : baseline schema mismatch typed (names both versions);
+                     scenario-set drift (missing produced metric / alien
+                     key) -> typed StaleBaseline forcing re-record; scoped
+                     check tolerates ONLY registry-known entries for
+                     allowed skips.
+misleading_success: every gated number is MEASURED — self-test proves the
+                     real measurement path breaches; determinism guards
+                     INSIDE scenarios fail the run if outputs wobble;
+                     report asserts carry measured values (75.0 not 50.0);
+                     overlay renders measured p99 (99.000ms from injected
+                     samples); zero-frame classify is a typed error; engine
+                     scenario failures are loud Breach records, never skips.
+dirty_worktree    : GitMeta distinguishes (porcelain parser unit-pinned;
+  distinguish        report carries head+dirty — e.g. this run recorded
+                     head 3fb0b07 dirty=true w/ sibling files present).
+hung              : daemon ready-line wait has a 20s deadline; cold-start
+                     spawns 15s deadline w/ kill; hang classification (>100ms)
+                     unit-pinned; no gate step can hang unbounded.
+known-flaky       : harness-exec preflight_fs live_compiler_hang NOT touched
+  (isolated)        (not my surface, never "fixed").
+
+RISKS / NOTES FOR LATER TODOS
+-------------------------------------------------------------------------------
+- CI perf-gate runs on windows-latest to match the recorded-baseline
+  platform; if a rustc/OS update shifts std allocation counts, re-record
+  per baselines/README.md and say so in the commit.
+- compact_str/arenas in engine hot paths: now measurable against committed
+  allocation baselines — adoption is engine-todo work, not bench-crate work.
+- RSS gate measures the daemon at ready (startup state); long-run RSS
+  growth detection is future work (todo-18-style sampling already exists
+  for LSP).
+- perf-gate wall_runs default 7 gives min-of-7; CI runners slower than this
+  machine still have ~3x headroom on every wall budget measured today.
+- The daemon prints its ready line via println (line-flushed) — the RSS
+  scenario relies on that contract; if the daemon ever buffers stdout, the
+  ready-wait deadline (20s) fails typed instead of hanging.
