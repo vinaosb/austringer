@@ -1,0 +1,163 @@
+TASK 44 - Evals + conformance (rust-agent-harness)
+==============================================================
+Worker: task-44 implementation worker (Sisyphus-junior). Date: 2026-09-14.
+Base: HEAD 238ad5e on main (feat(orchestration): spec launcher + team mode +
+harness backends), confirmed at task start.
+
+PARALLEL WORKER DISCLOSURE (T43 perf suite, bench surface): T43 was active
+mid-run and twice left the workspace manifest set inconsistent for external
+crates (harness-bench/Cargo.toml referencing a root `dhat` workspace dep
+before the root add landed; then six declared benches before their files
+existed). Both windows were waited out by polling (30-60s interval, per the
+coordination protocol); NO harness-bench file was touched by this worker.
+Cargo.lock stewardship: the working lock carried BOTH workers' deltas; this
+commit stages ONLY the harness-evals package hunk (+7 lines: blake3, serde,
+serde_json, tempfile, thiserror 2.0.20 — the qualifier is pre-existing in
+HEAD, both thiserror 1.0.69 and 2.0.20 were already committed). T43's
+criterion/dhat lock entries are deliberately left unstaged for THEIR commit.
+Verified: `cargo check --locked --offline -p harness-evals --tests` in a
+clean HEAD+this-diff worktree passes against the staged lock (7-line delta,
+self-consistent, no --locked drift). NO root Cargo.toml edit was needed
+(all deps workspace-inherited; no crate-local pins).
+
+ENV: task-13/29/42 MSVC shell recipe (CC UNSET; INCLUDE prepended with
+VS18 `SDK\ScopeCppSDK\vc15\VC\include` FIRST, existing VS2022/WinSDK
+INCLUDE retained; LIB unchanged). Private target dirs
+%TEMP%\opencode\t44-target (main runs), t44-iso-target / t44-iso2-target
+(isolation runs). Repo target/ untouched.
+
+TDD (strict red-green)
+-------------------------------------------------------------------------------
+RED: all 45 lib tests written FIRST against stub behavior (typed errors /
+empty returns); first run = "test result: FAILED. 14 passed; 31 failed"
+(integration suites blocked behind lib failure). The 14 passing were the
+already-real trait bodies (grader substring scoring, guard firing pins,
+trigger policy); the 31 failing covered every stubbed surface.
+GREEN: full implementation -> 58 tests green (40 lib + 18 integration
+across 5 files), clippy (workspace warnings=deny + clippy all=deny) clean,
+rustfmt applied, x3 identical reruns.
+
+TESTS (exact command + result):
+  cargo test  -p harness-evals              (x3 reruns) ........ identical
+      lib 40/0, evals_harness 5/0, evals_adversarial 5/0, evals_metrics 4/0,
+      evals_runner 2/0, evals_sweep 2/0 (58 total, 0 failed, all runs)
+  cargo clippy -p harness-evals --all-targets ............... 0 errors/warnings
+  cargo check --locked --offline -p harness-evals --tests (isolation
+      worktree, HEAD+diff+staged-lock) ...................... exit 0
+  Isolation proof: detached worktree at HEAD 238ad5e + this task's
+      harness-evals diff applied + staged lock; full crate suite green
+      there (58/58) — sibling T43 changes absent, proving self-containment.
+
+DELIVERABLE (harness-evals, 16 src modules + 5 test files, all <=250 pure
+LOC/file; no unwrap/expect/panic/todo in src — tests use repo-standard
+unwrap_or_else(|e| panic!) like harness-cli/src/render.rs):
+  wire.rs       (170) CLI --output-json NDJSON contract (todo 39 shapes,
+                frozen daemon v1): event envelopes + turn_result parse,
+                assistant text blocks, tool calls w/ raw args JSON,
+                first_two_tool_calls (TSS prefix), typed BadLine/
+                MissingTurnResult, unicode round-trip (CJK + ZWJ emoji)
+  grader.rs     (118) deterministic binary graders AllOf/AnyOf/NotContains,
+                clamp_score [0,1], compile-time validation, typed GraderError
+  dataset.rs    (194) typed JSON datasets (Malformed bounded / Empty /
+                DuplicateCase / threshold range / grader validation),
+                prompt_view NEVER leaks expected/canary, blake3 content
+                hash, DatasetCache: Fresh vs Reloaded (stale_state —
+                changed file NEVER serves the stale parse)
+  guard.rs      (202) integrity guards, each TEST-PINNED + naming the
+                pathology prevented: CanaryGuard (dataset leakage),
+                FairInternetUseGuard (upstream PR/diff opens zeroed:
+                /pull/, /compare/, patch-diff.githubusercontent.com —
+                FrontierCode rule), TurnOutcomeGuard (partial-output
+                inflation on failed turns); GuardSet::apply zeroes on any
+                hit, keeps raw_score for ablation
+  metrics.rs    (217) Pass^k FLOORS (all-k-reps-pass; the 24pt Mean@k/
+                Pass^k gap reported side-by-side), failure-fingerprint
+                vectors (8 categories), tokens/solved, leave-one-out guard
+                ABLATION (recomputes from raw_score), trigger-coverage
+                (zero-fire guard = UnmeasuredNoise flag)
+  runner.rs     (188) Subject trait + ScriptedSubject (per-case per-rep
+                scripted fake inference; rep cycling models flakiness),
+                run_pair (grader errors typed NON-FATAL per-case, sweep
+                continues), deterministic rank (pass^k desc, mean desc,
+                pair asc via total_cmp) + shared sort_ranked
+  adapter.rs    ( 69) evals-adapter argv contract: `<bin> --output-json run
+                --session eval-<case> --timeout N <prompt>` (never spawns;
+                live runs are the scheduled runner's job), exit-code ->
+                CliOutcome mapping
+  sweep.rs      (196) Trigger {Scheduled, Manual} — NO PR variant exists
+                (pinned exhaustive-match test: "Must NOT gate PRs on
+                live-model results"); Regression mode = ONE locked profile
+                (drift = typed error); Experiment mode requires >=2x2
+                model x profile grid (JOINT evaluation unit, research 33);
+                execute() w/ typed MissingSubject
+  report.rs     (201) HarnessCard transparency (settings disclosed, source
+                fingerprint w/ dirty-worktree distinguishability,
+                harness-matched baseline; unmatched rows render
+                "DO NOT PUBLISH" — Qwen README discipline), SweepReport
+                JSON artifact + human ranking table (pass^k/mean@k/tokens)
+                + write_artifact
+  pinning.rs    (246) expected-failures YAML pinning via a STRICT OWNED
+                YAML subset parser (zero new deps; normative doc-comment
+                format; comments/quotes round-trip), audit_pins: failing+
+                pinned=annotated, failing+unpinned=SURFACED regression,
+                passing+pinned=stale
+  benchmark.rs  (118) T42 feeder rows {model, score, price_per_mtok} —
+                DOC-CONSTANT SYNC TEST pins the serialized field names to
+                harness-intel/src/routing/config.rs BenchmarkEntrySpec
+                (score = Pass^k floor); unknown prices rejected (never
+                invented); retract() marks rows IN PLACE (retraction-
+                in-place, never deleted)
+  conformance.rs( 80) TSS golden-prefix drift gate: pin/check of the first
+                two tool calls, typed Drift verdict
+  retrace.rs    (220) replay-from-traces: stored NDJSON traces re-scored
+                across scorer VARIATIONS (same guards), typed UnknownCase/
+                InvalidTrace, benchmark_cells feeds routing rows
+  mining.rs     ( 90) cursor-blame eval mining: CommitRecord {sha, subject,
+                files} -> cases (prompt=intent, grader=files), resolution_
+                rate metric
+  skill_ab.rs   (152) skill A/B mini-benchmarks emitting rows in EXACTLY
+                todo-34 ab::VariantOutcome shape {variant, model, score,
+                samples} (doc-constant sync test); pick_winner mirrors
+                intel's total order (score desc, variant asc)
+
+Cargo.toml: serde/serde_json/thiserror/blake3 workspace deps + tempfile
+dev-dep. No other crate, no root manifest, no plan file touched.
+
+QA CHANNELS (per delegation)
+-------------------------------------------------------------------------------
+happy ......... dataset -> ScriptedSubject (fake inference) -> deterministic
+                graders -> ranking table -> report artifact on disk w/
+                pinned-failure annotation + unpinned regression surfaced
+                (evals_harness.rs full_sweep_*); sweep::execute grid run
+                (evals_sweep.rs)
+failure ....... malformed dataset typed (bounded detail); Empty typed;
+                duplicate ids typed; grader error typed NON-FATAL per-case
+                (sweep continues, rep fingerprinted grader_error);
+                MissingSubject typed
+adversarial ... grader gaming: canary-leak / PR-open / failed-turn outputs
+                all ZEROED with named flags (raw scores kept proving the
+                guard layer fired); unicode (CJK + ZWJ emoji) full pipeline;
+                flaky x3 (alternating subject): mean@k 2/3 vs pass^k=0 —
+                the consistency gap; misleading_success: assertions are on
+                SCORED report metrics (pass_k, fingerprint counts), never
+                runner ok-ness; stale_state: rewritten dataset forces
+                CachedDataset::Reloaded (stale parse never served);
+                dirty_worktree: clean vs dirty SourceFingerprint cards
+                assert_ne + distinct disclosures
+
+RESIDUAL RISKS / NOTES
+-------------------------------------------------------------------------------
+- The CLI adapter is argv+parser only by design: live-model sweeps are
+  SCHEDULED ONLY (daemon todo 41 owns spawning); this crate is fully
+  hermetic (no network, no process spawning, no clock/rand — reports are
+  deterministic).
+- Token accounting fields are Option and None today: the CLI turn_result
+  line (todo 39 contract) carries no usage block; when the adapter contract
+  grows tokens, RepResult.tokens feeds tokens/solved without API change.
+- T43's uncommitted criterion/dhat lock entries remain in the working
+  Cargo.lock for their own commit; this commit's lock delta is verified
+  self-consistent via --locked --offline check.
+
+Cleanup: temp worktrees (t44-iso, t44-iso2) removed; patch/lock temp files
+under %TEMP%\opencode; private target dirs removed except t44-target
+(retained until orchestrator sign-off for any re-verification).
