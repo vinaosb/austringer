@@ -1,0 +1,206 @@
+=== T6 RED RUN (tests written first; module absent) ===
+cargo nextest run -p harness-core --no-fail-fast (excerpt):
+error[E0432]: unresolved import `harness_core::tools`
+  --> harness-core\tests\tool_registry_spill.rs:13:19
+error[E0432]: unresolved import `harness_core::tools`  (x N across 4 new test binaries)
+error[E0433]: cannot find `tools` in `harness_core`   (ProviderError refs in stubs)
+=> 30 planned tests RED for the right reason (missing API, not test bugs).
+
+
+=== TASK 6: TOOL REGISTRY + 6 INVARIANT TOOLS + DEFERRED LOADING — IMPLEMENTATION ===
+Date: 2026-09-12 | HEAD before: caf6430 | Commit: feat(core): invariant tool set + schema hydration
+
+SCOPE DELIVERED (plan todo 6, binding)
+--------------------------------------
+Module harness-core/src/tools/ (7 files, all <=250 pure LOC, zero unwrap/expect/panic,
+all public items documented; lib.rs gained exactly one line `pub mod tools;`):
+  schema.rs    ToolSchema{name,description,parameters}; CORE_TOOLS const in CANONICAL ORDER
+               (view_window, edit_lines, execute_command, lsp_query, tool_search, task_completed);
+               TOOL_SEARCH/TASK_COMPLETED name consts; core_schema(name) day-one contracts v1
+               (real executors arrive todos 16/18/19 — schemas fixed NOW so the base schema is
+               stable from day one)
+  version.rs   ToolVersion(u32) + Lifecycle{Active,Deprecated,RemovalCandidate} +
+               VersionedBehavior{version,schema,lifecycle,replaced_by} + DeprecationNotice +
+               PinnedToolSet (BTreeMap<String,ToolVersion>; built ONLY by registry.pin_current())
+  provider.rs  ToolProvider async-trait (schema() + execute()->raw bytes) + ProviderError +
+               RegistryError + ToolDispatchError (7 typed variants) + ToolResult{observation,
+               spill,deprecation} + ToolSearchError{query,reason,suggestions,aux_table}
+  registry.rs  ToolRegistry::open(session_dir,io_cap) seeds 6 core contracts v1 Active;
+               register(aux tool: contract v1 + executor) / bind_executor(core tool) /
+               publish_version(appends max+1) / set_lifecycle(+replaced_by) / pin_current();
+               resolve() per pinned set; dispatch(): ReservedTool guard for task_completed
+               (loop-enforced), executor lookup, byte-cap + spill, deprecation metadata
+  render.rs    render_core_schemas() (6 schemas, canonical order, pinned versions, compact JSON)
+               + render_base_schema() = {core_tools:[...], aux_tools_table:"| tool | description |..."}
+               + aux_table() markdown (name + one-line description, name-sorted)
+  hydrate.rs   search()/run_tool_search() impl-split + select_matches (exact-name tier, then
+               name/description substring tier, name-sorted => deterministic) +
+               closest_names (3-nearest by char Levenshtein, gated at half the longer length)
+               + hydrate_schemas() (FULL schemas INTO the observation) + render_suggestion()
+  spill.rs     IoCap{max_inline_bytes=4096 default}.apply(): <=cap inline lossy; >cap ->
+               SpillStore.store (content-addressed <session>/spill/<blake3-hex>, temp+fsync+
+               rename atomic write, dedup by content) + SpillPointer{hash,total_bytes,prefix=
+               first-N}; observation = "[tool output spilled: N bytes ... recoverable by spill
+               pointer blake3:...]\n<lossy first-N>\n[… M more bytes]"; SpillStore::read() lossless
+
+KEY DESIGN DECISIONS
+--------------------
+1. INVARIANT BY CONSTRUCTION: render_base_schema takes ONLY (registry, pinned) — there is no
+   mode/skills parameter to vary. The core set is the CORE_TOOLS const; aux tools can never
+   enter it. Aux table + pinned versions are part of the pin snapshot, so even a mid-session
+   tool mount cannot churn an existing session's serialized schema.
+2. PIN = CATALOG SNAPSHOT: PinnedToolSet pins tool NAMES + VERSIONS at session start. A tool
+   registered later is UnknownTool to the pinned session (stale-state defense); a version
+   published later is invisible to it; a fresh pin_current() sees both.
+3. HYDRATION IS A TOOL RESULT: tool_search executes internally in dispatch; matched schemas
+   serialize into the call's OWN observation bytes, which then flow through the SAME byte cap
+   as any tool result. The system prefix (render_base_schema) is byte-identical before/after.
+4. DEPRECATION = METADATA, NOT SHAPE: notices ride ToolResult.deprecation + deprecations(pinned);
+   the serialized schema and the observation stay untouched (observation asserted == "ok" in
+   the deprecation test).
+5. SERIALIZATION STABILITY: struct fields in declaration order; parameters are serde_json Values
+   (BTreeMap => sorted keys; workspace bans preserve_order); renders are pure functions —
+   no timestamps, no paths, no ambient data (property-tested across twin registries).
+6. task_completed is ReservedTool at the registry: the agent loop intercepts it at the
+   ToolExecution operation (T5 complete_task); the registry only serializes its schema.
+7. ZERO new dependencies (serde/serde_json/thiserror/blake3/async-trait/tokio already in
+   workspace). cargo deny check: advisories/bans/licenses/sources all ok.
+
+TESTS (28, integration-style, harness-core/tests/tool_registry*.rs; Given/When/Then bodies)
+------------------------------------------------------------------------------------------
+tool_registry_schema.rs (4):
+  - base_schema_lists_exactly_six_core_tools_in_canonical_order
+  - base_schema_byte_identical_across_turns_with_different_active_tools
+    [turn1 core-only render; turn2 extra tool hydrated via tool_search AND dispatched; turn3
+    core-only; RAW BYTES asserted equal all three + parse-equality cross-check]
+  - core_schemas_invariant_across_modes_and_skills [core-only vs 5-aux-tool catalogs:
+    render_core_schemas byte-identical; full base differs only in aux table]
+  - schema_rendering_is_deterministic_under_scrambled_key_insertion [25 iterations,
+    XorShift64-scrambled parameter key insertion; render twice + twin registry in a different
+    temp dir => byte-identical: catches HashMap iteration, timestamps, path leakage]
+tool_registry_hydrate.rs (8):
+  - tool_search_hydrates_full_schema_into_observation [observation's JSON payload == full
+    edit_lines schema structurally; base schema byte-identical before/after => never touches
+    system prefix; nothing spills]
+  - hydrate_then_call_roundtrip_through_dispatch [search 'edit_lines' -> schema in observation;
+    subsequent edit_lines dispatch through the registry succeeds w/ stub executor == QA happy]
+  - unknown_tool_search_yields_typed_suggestion_never_panic [typo 'edit_liness': typed
+    ToolSearchError w/ suggestions containing edit_lines + aux-table entry; dispatch renders
+    graceful observation == QA failure channel]
+  - empty_query_is_graceful; garbage_and_unicode_queries_are_graceful ['&&&???', unicode-weird
+    '🦀漢字\u{1}', NUL runs, 80-char garbage: typed error + graceful observation, bounded
+    suggestions, no panic]; non_object_arguments_to_tool_search_are_typed_errors
+    [null/string/int/{} -> InvalidArguments]
+  - search_matches_by_name_and_by_description [substring on name + on description; exact-name
+    ranks first deterministically]; tool_search_error_is_debug_and_displayable
+tool_registry_version.rs (4):
+  - session_pins_versions_when_registry_upgrades [publish v2 mid-session: pinned session
+    renders byte-identical + pins v1; NEW pin sees v2 schema == stale-state adversarial class]
+  - deprecation_surfaces_metadata_without_serialized_churn [schema bytes unchanged; typed
+    notice carries replaced-by; deprecated tool still executes w/ metadata attached]
+  - removal_candidate_lifecycle_surfaced [notice + serialized schema unchanged]
+  - late_registered_tool_invisible_to_pinned_session [post-pin mount: UnknownTool + invisible
+    to search + pinned schema byte-identical to pristine; fresh pin sees it]
+tool_registry_errors.rs (6):
+  - dispatch_unknown_tool_returns_typed_suggestions [UnknownTool{name,suggestions contains
+    view_window, aux_table}]
+  - reserved_task_completed_rejected_by_registry_dispatch; dispatch_without_executor_is_typed_error
+  - register_rejects_duplicate_tool_name [aux dup + core-name reservation]
+  - mutating_unknown_tool_is_typed_error [publish/set_lifecycle/bind on unknown]
+  - set_lifecycle_unknown_version_is_typed_error
+tool_registry_spill.rs (6):
+  - oversized_result_spills_with_pointer_and_first_bytes [10KiB vs 4KiB cap: SpillPointer
+    {total 10240, prefix 4096 == output[..4096]}; observation contains 'spilled' + blake3 ref,
+    bounded < 2*cap; spill_store().read(hash) == exact original bytes]
+  - under_cap_result_stays_inline [valid-UTF8 100B passes through untouched, spill None]
+  - cap_boundary_is_exclusive [==cap inline; +1 byte spills]
+  - cap_is_configurable [IoCap{8} honored; default asserted 4096]
+  - binary_invalid_utf8_spills_without_corruption [8KiB w/ dense 0xFF: lossy preview + pointer,
+    no panic; read-back == exact original == malformed-input adversarial class]
+  - spill_files_are_content_addressed_and_deduped [same content twice -> one file, same hash]
+Plus 1 unit test in hydrate.rs (levenshtein known distances). Total: 29 test fns, 28 integration.
+
+ADVERSARIAL CLASSES (binding QA list)
+-------------------------------------
+new input parsing: empty/garbage/unicode/NUL queries + non-object tool_search args -> typed
+  errors/graceful observations (tool_registry_hydrate.rs). PASS.
+stale state: version pinning across mid-session upgrades + late tool mounts invisible to
+  pinned sessions (tool_registry_version.rs). PASS.
+malformed input: binary/invalid-UTF-8 oversized results — pointer + first-N + lossless
+  read-back, no corruption (tool_registry_spill.rs). PASS.
+misleading_success_output: byte-identity asserted on RAW BYTES (as_bytes) for all invariance
+  claims, not equality-of-parse; parse-equality only as a secondary cross-check. PASS.
+flaky_tests: no wall clock, no sleeps; property test on fixed XorShift64 seeds; twin-registry
+  determinism probe. PASS.
+hung_or_long_commands: recorded durations — my 28-test suite runs 0.242s-0.271s; slowest
+  single test 0.271s (schema determinism, 25 iterations); nothing approaches a timeout. PASS.
+dirty_worktree: git status at end (below) — my commit stages ONLY src/tools/, tests/
+  tool_registry_*.rs, and lib.rs staged via HEAD+my-line blob (the parallel worker's
+  uncommitted `pub mod inspectors;` line and src/inspectors/ are left untouched for their
+  commit). PASS.
+Others (constraint_violation, scope creep, integration abuse, data loss, privilege abuse,
+  partial_rollouts, unverified_claims, concurrency_race): N/A — pure library module, no
+  concurrency introduced (registry methods &self immutable dispatch), no persistence beyond
+  spill files (content-addressed, crash-safe rename), scope exactly todo 6.
+
+GATES (exact commands + outcomes)
+---------------------------------
+cargo nextest run -p harness-core --test tool_registry_schema --test tool_registry_hydrate
+  --test tool_registry_version --test tool_registry_errors --test tool_registry_spill
+  => "Summary: 28 tests run: 28 passed, 0 skipped" (0.242s)
+cargo build --release            => Finished `release` profile [optimized] exit 0
+cargo deny check                 => advisories ok, bans ok, licenses ok, sources ok (exit 0;
+                                   zero new deps added)
+cargo fmt --check                => my files clean; ONLY diff in repo =
+  harness-core/src/inspectors/glob.rs (parallel worker's in-flight file, NOT touched per
+  shared-file discipline)
+cargo clippy --all-targets -- -D warnings => my module: ZERO diagnostics (verified via
+  `cargo clippy -p harness-core --lib --message-format=short -- -W clippy::all | grep tools`
+  => empty, and lib clippy exit 0 with --cap-lints warn). Repo-wide --all-targets is RED
+  ONLY on the parallel worker's in-flight src/inspectors/store.rs (2x clippy::type_complexity)
+  and their freshly-added RED test binaries (E0432 — their TDD red phase, task 7). Waited out
+  a 5-minute retry loop (30s intervals) per instructions; their code was still mid-flight.
+  My commit's tree (HEAD + tools + tests + one lib.rs line) builds and passes my suite:
+  verified by staging lib.rs as HEAD-content + `pub mod tools;` only.
+Full cargo nextest run (all binaries): blocked at compile of the worker's new RED test files
+  (inspectors_security_safe_outputs, inspectors_chain_seam E0432) — same shared-crate
+  mid-wave situation, not a defect of this task's code; 114 prior tests unaffected (they
+  pass whenever the worker's in-flight files compile).
+
+SHARED-CRATE PARALLEL-WORKER LOG
+--------------------------------
+- Worker added `pub mod inspectors;` to lib.rs mid-task; both module lines coexist
+  (alphabetical); no edit collisions (re-read before every lib.rs edit; exactly one line
+  added by me).
+- Their compile state transiently failed the shared lib build (E0308s in glob.rs, then
+  type_complexity in store.rs) during my gate runs; re-verified my targets scoped, then
+  re-verified the shared lib once their lib compiled.
+- No index.lock contention hit during staging/commit (retry protocol ready).
+
+FILE SIZES (pure LOC, non-blank non-comment)
+--------------------------------------------
+schema.rs 120 | version.rs 57 | provider.rs 87 | registry.rs 239 | render.rs 48 |
+hydrate.rs 138 | spill.rs 118 | mod.rs 14  (all <= 250)
+tests: schema 180 | hydrate 245 | version 196 | errors 145 | spill 210
+
+GIT STATUS (end, dirty-worktree check)
+--------------------------------------
+M  harness-core/src/lib.rs        (committed: HEAD content + `pub mod tools;` only)
+A  harness-core/src/tools/* (7 files), harness-core/tests/tool_registry_{schema,hydrate,
+   version,errors,spill}.rs
+Worker's uncommitted (left alone): src/inspectors/*, tests/inspectors_*.rs, lib.rs line
+`pub mod inspectors;`, .omo/* churn + prior untracked evidence files.
+
+POST-COMMIT VERIFICATION (isolated worktree at commit a820ea9 + lint fix 7747324)
+----------------------------------------------------------------------------------
+Committed-tree isolation proof (temporary git worktree, no worker interference):
+  cargo clippy -p harness-core --all-targets -- -D warnings => exit 0 GREEN
+  cargo nextest run -p harness-core                             => 95/95 passed, 2 skipped (pre-existing), 0.768s
+  cargo fmt --check                                             => exit 0 GREEN
+Follow-up commit 7747324 'fix(core): drop redundant u64 cast flagged by clippy in spill test':
+  the worker's in-flight clippy aborts masked one clippy::unnecessary_cast in
+  tool_registry_spill.rs from my earlier --all-targets runs; isolated-worktree clippy
+  exposed it. DEVIATION from 'single commit' noted: amend/reset is categorically
+  forbidden by the shared-tree protocol, so the one-token fix is a second commit.
+  Task commit message exact: a820ea9 'feat(core): invariant tool set + schema hydration'.
+Final HEAD at task end: 7747324 (main). Worker's uncommitted inspectors work untouched.

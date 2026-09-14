@@ -246,3 +246,33 @@ SessionHost/mediator).
    private target dirs — nothing repo-side.
  - Protocol v1 frozen surface: zero protocol.rs changes (verified in
    the staged diff).
+
+------------------------------------------------------------------------
+7. COMMITTED-TREE WORKTREE ISOLATION (proof)
+------------------------------------------------------------------------
+ Commit: 26e72c3 "feat(daemon): scheduler + notifier" (single commit;
+ exactly 16 files, 3149 insertions / 7 deletions; parent 04a0bba - the
+ intel sibling landed first; unrelated to this task).
+ Fresh detached worktree at 26e72c3 (%TEMP%\opencode\task-41-proof),
+ private fresh target dir (target-task-41-proof, no shared caches):
+   cargo test -p harness-daemon
+     => 150 passed, 0 failed (lib 127 + bin 0 + auth_http 6 + engine 6
+        + ipc 2 + scheduler_e2e 5 + ws_e2e 4 + reload-handoff 1)
+ The committed tree builds and passes without the working copy.
+
+ COMMIT-RACE DISCLOSURE (shared working tree, six parallel workers):
+ the first commit attempt (0eb962d) accidentally absorbed 18 files a
+ frontend worker had staged in the seconds between our verified staging
+ (git diff --cached: exactly 16 files) and the commit (34 files). That
+ sibling repaired history themselves: this commit was recreated exactly
+ from our staged set (26e72c3) with theirs (ec0df7e feat(web)) landed
+ on top. A concurrent self-repair here briefly unstacked ec0df7e; it
+ was restored immediately (reset --soft + index resync) and the final
+ state verified: ec0df7e -> 26e72c3 -> 04a0bba -> 4f8fc31, no staged
+ deletions, protocol.rs zero-diff in this commit.
+
+ This section appended POST-COMMIT and left uncommitted: the sibling's
+ ec0df7e sits atop this commit, so amending to fold it in would orphan
+ their commit. Sections 1-6 above are committed inside 26e72c3; this
+ disclosure and the isolation proof live on disk here (the shared-tree
+ norm - several sibling evidence files are likewise uncommitted).

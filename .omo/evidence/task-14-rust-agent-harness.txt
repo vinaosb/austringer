@@ -1,0 +1,164 @@
+# Task 14 — harness-ast: tree-sitter tag tables + syntax gates
+
+Commit: feat(ast): tree-sitter tag tables + syntax gates
+Scope: harness-ast crate (7 src modules + 50 embedded query files + 7 test files) + root Cargo.toml
+dep lines (tree-sitter 0.27 facade + tree-sitter-language 0.1; the 48 grammar crates are OPTIONAL
+deps local to harness-ast, feature-gated per language — they are not workspace-shared deps).
+
+## Design decisions + justifications
+- Default feature set = rust, toml, json, bash (4 grammars): keeps every default build to four C
+  compilations and covers the file types a Rust agent harness touches most (its own sources,
+  Cargo/config, manifests/lockfiles/tool output, build scripts). Bash replaces the plan's suggested
+  markdown: the crates.io tree-sitter-markdown 0.7.1 still binds the tree-sitter facade directly as
+  a NORMAL dep (pin ^0.19), which trips cargo's one-copy `links = "tree-sitter"` rule against the
+  0.27 facade (verified: resolver error before any grammar compiled).
+- Feature surface = exactly 50 languages: 4 default + 46 behind `langs-extra` (also individually
+  via `lang-<name>`; `dep:` wiring keeps unselected grammars out of the build graph entirely).
+- Grammar-crate selection rule (documented in lib.rs + Cargo.toml): only crates whose `language()`
+  returns tree-sitter-language's `LanguageFn` (ABI-stable, version-independent). Rejected for
+  legacy direct-facade bindings (normal-dep facade pin): markdown, kotlin, dockerfile, sql, scss,
+  vim, vue, svelte, org, bibtex, wgsl, perl, clojure, vimdoc. tree-sitter-latex 0.1.0 additionally
+  references an external scanner (src/scanner.c) it does not ship — unresolvable externals at link
+  time; replaced by solidity (verilog was already in, latex dropped). tree-sitter-toml-ng replaces
+  the abandoned tree-sitter-toml. Everything verified live against the crates.io API (versions,
+  licenses, dependency kinds) before pinning.
+- Tags engine: hand-rolled over the facade's own Query/QueryCursor (capture convention
+  `@name.definition.<kind>` / `@name.reference.<kind>`, optional `@_span` container) instead of the
+  tree-sitter-tags crate — that crate pins its own facade version, drains names through a buffer we
+  would immediately re-extract into serde types for the cache anyway, and hardcodes the old
+  `@definition.X`+`@name` pairing. ~150 lines own the convention outright; TagTable is directly
+  serde-serializable into the cache. Query predicates (#eq?) are used where grammars need them
+  (elixir def/defmodule, scheme define).
+- is_error()/is_missing() are DISTINCT flags (discovered empirically: tree-sitter's has_error() is
+  true for MISSING-only trees; an unbalanced '(' yields MISSING ")" with NO error region, while an
+  unclosed '{' at EOF yields one ERROR region). Diagnostics: 1-based line, 1-based byte column,
+  capped at 200 with truncation flag; walk is iterative (stack-safe; verified with 20k-deep
+  nesting).
+- Cache: one JSON entry per file, keyed blake3(canonical path), validated by blake3(content)
+  + length; stored mtime is a fast-path hint refreshed on hash-preserving touches. Corruption =
+  silent miss + rewrite (torn/garbage/outdated-version all tested). Writes are temp+rename.
+  Store failures degrade to CacheStatus::StoreFailed, never errors (cache is an accelerator).
+- No-grammar degrade: unknown extension OR known-language-without-compiled-grammar both return the
+  typed AnalyzeOutcome::NoGrammar { path, language: Option<LanguageId> } — never Err, pipelines
+  fall back to text tools (both shapes tested).
+
+## TDD note
+Strict red→green captured for the language-surface, parse/diagnostics, and tags loops (compile-fail
+reds, then behavioral reds pinned to empirically-dumped tree shapes, then green). cache/analyze
+tests were authored before their implementations but landed in the same batch — no captured red run
+for those two modules (honest disclosure); their behavior is locked by 13 tests incl. all stale-
+state adversarial paths. The 46 langs-extra queries were verified empirically: per-language fixture
+run under `--features langs-extra`, wrong node names surfaced as typed query-compile errors or
+missing-symbol failures and were fixed against dumped parse trees (typescript/dart/swift/lua/
+julia/haskell/ocaml/elixir/erlang/graphql/powershell/nim/verilog/fsharp/fortran/matlab/hcl/r/
+scheme/commonlisp/elisp/objc all needed correction from first-draft upstream-style patterns).
+
+## Commands + results (Windows 11, PowerShell, Rust 1.98, debug profile unless noted)
+- `cargo test -p harness-ast` — 42 passed / 0 failed across 7 binaries, run 3x, identical green
+- `cargo test -p harness-ast --features langs-extra` — 43 passed / 0 failed (2 feature-dependent
+  degrade tests cfg-gated off under lang-python; langs_extra suite: 46-language fixtures green)
+- `cargo clippy -p harness-ast --all-targets` AND `--features langs-extra` — clean under workspace
+  deny(all) lints
+- `cargo fmt --all -- --check` — clean
+- `cargo deny check` — advisories ok, bans ok, licenses ok, sources ok (all-features graph resolves
+  all 48 grammars; only pre-existing-style duplicate-version warnings: hashbrown/syn/windows-sys)
+- `cargo test --workspace` — REDDENED on harness-lsp ONLY: the parallel todo-18 worker's in-flight
+  tests/routing.rs references their not-yet-written `harness_lsp::router` module. Isolation proof:
+  fresh `git worktree` at HEAD 6a86948 + ONLY this task's files (root Cargo.toml 5 dep lines +
+  harness-ast/) → `cargo test -p harness-ast` fully green in the isolated worktree (23s incl.
+  compile). This crate is clean; the workspace red is exclusively their in-flight code.
+
+## Acceptance (plan): incremental re-parse <10ms on mtime hit; validation catches unbalanced braces
+- Bench-style test (tests/incremental_bench.rs): 125,670-byte / 1,240-def Rust fixture; warm miss
+  then 5× mtime-hit analyses, all asserting CacheStatus::Hit + identical table size:
+  release profile: best-of-5 = 1.888 ms (plan budget 10 ms) — assert <100 ms CI-safe in-test
+  debug profile: best-of-5 = 17.947 ms (recorded; debug JSON deserialize dominates — the plan
+  budget is met where it is enforced, in optimized builds)
+- Validation catches unbalanced braces with exact line/col (pinned; see failure channel below);
+  `fn main() {` + unclosed `(` pins `missing ")"` at 2:19; unclosed `{` at EOF pins one
+  SyntaxError region at 1:1.
+
+## QA happy channel: 50-language smoke
+Feature-surface listing (printed by LanguageId::ALL):
+  default: bash, json, rust, toml
+  langs-extra: c, cmake, commonlisp, cpp, c-sharp, css, dart, elixir, elisp, elm, erlang, fortran,
+  fsharp, go, graphql, groovy, haskell, hcl, html, java, javascript, julia, lua, make, matlab, nim,
+  objc, ocaml, ocaml-interface, php, powershell, python, r, regex, rst, ruby, scala, scheme,
+  solidity, swift, typescript, tsx, verilog, yaml, zig  (46; regex reachable via explicit
+  LanguageId only — no extension mapping by design)
+All 46 extra languages verified by real fixtures (parse + query compile + expected symbol content)
+in tests/langs_extra.rs; the 4 default languages have content-exact tests in tests/tags.rs.
+
+Rust fixture symbol table sample (defs with kinds + spans; spans verified to slice to the name):
+  def inner    kind=module   name_bytes=4..9    def_span=(0, 158)
+  def Point    kind=struct   name_bytes=27..32  def_span=(16, 60)
+  def origin   kind=function name_bytes=94..100 def_span=(87, 150)
+  def main     kind=function name_bytes=163..167 def_span=(160, 224)
+  ref origin   kind=call     bytes=198..204
+  ref helper   kind=call     bytes=212..218
+
+## QA failure channel
+- Broken-syntax fixture `fn main() {\n    let x = (1 + 2;\n}\n` (unbalanced paren), analysis
+  diagnostic — exact file/line/col + typed kind + message:
+    broken.rs:2:19 MissingNode missing ")"
+  Unclosed brace at EOF (`fn main() {\n    let x = 1;\n`):
+    broken.rs:1:1 SyntaxError "syntax error"   (is_error()=true, is_missing()=false — distinct flags)
+- Unsupported extension `blob.xyzzy` → typed degrade, NOT an error:
+    AnalyzeOutcome::NoGrammar { path: "…\blob.xyzzy", language: None }
+  Known language without compiled grammar (default build, `script.py`):
+    AnalyzeOutcome::NoGrammar { path: "…\script.py", language: Some(Python) }
+
+## Adversarial classes
+- malformed_input: 4KiB XorShift64 garbage bytes → is_error, diagnostics bounded <=200, no panic;
+  invalid UTF-8 in comment parses clean; invalid UTF-8 inside an identifier → lossy name, no panic;
+  huge source (64MiB+1) → typed FileTooLarge { path, size, max }, never a parse.
+- stale_state (cache): edit → hash changes → Miss + new tables (asserted by name content); delete
+  cache dir → rebuild (Miss + 1 entry on disk again); corrupt entry file (torn garbage w/ NUL+0xFF)
+  → silent Miss + correct tables restored; outdated cache version (v:999) → Miss + re-stored as
+  current version; identical-content rewrite with new mtime → still Hit (hash authoritative) +
+  mtime refreshed in entry.
+- flaky_tests: deterministic fixtures only; full default suite run 3x, identical results; timing
+  asserts use wide CI-safe bounds with actuals recorded via eprintln (above).
+- hung_or_long_commands: durations recorded — full langs-extra cold `cargo check` on this
+  workstation ≈ 16s wall (48 grammar C compilations, INCLUDE workaround active); incremental
+  full-feature test runs 1–4s; default-suite runs 0.5–1.5s; isolated worktree cold suite 23s;
+  release bench build + run <60s. All bounded, none hung.
+- misleading_success: tag tests assert symbol names, kinds, byte-span slices back to the source
+  text (span == name bytes), container-span containment, and reference span content — never bare
+  counts; langs-extra fixtures assert expected def names per language.
+- new_input_parsing: weird-but-valid (deep 20k-block nesting completes, iterative walk, no stack
+  overflow; empty/whitespace sources yield empty tables; broken sources still extract parseable
+  symbols); query match-limit guarded (TAG_MATCH_LIMIT, truncation flag on TagTable).
+- dirty_worktree: git status distinguishes this task's files (harness-ast/**, root Cargo.toml +5
+  anchored dep lines, Cargo.lock) from the parallel todo-18 worker's harness-lsp/** files and .omo
+  state; commit stages only this task's files (lock committed whole as derived data, same policy
+  as task 17). Isolation worktree run (above) proves the workspace red is not ours.
+- resource_leak / subprocess / network / injection / authz / crypto / PII: N/A — pure local
+  library, no subprocesses, no network, no secrets (cache stores only file-derived symbol data).
+
+## Code shape
+- All src files <=250 pure LOC: lib 12, language 240, error 28, grammar 121, parse 126, tags 151,
+  cache 113, analyze 127.
+- tests: language_surface 150, parse_validate 148, tags 208, cache 190, cache_adversarial 169,
+  incremental_bench 77; langs_extra 410 is a pure fixture-data table (46 one-line-per-language
+  rows) + one driving test — documented data-table exception.
+- One lint suppression in the crate: #[allow(unreachable_patterns)] on grammar.rs's wildcard arm —
+  reachable whenever any lang feature is off, statically unreachable with ALL features on (feature
+  matrix artifact, commented in place).
+- Known carry: TableCache::store takes 5 distinct inputs (path, stamp, hash, language, analysis) —
+  pub(crate), single caller; grouping them would create a one-caller throwaway struct (its own
+  smell), documented here instead.
+- Zero unwrap/expect/panic in src (audit grep clean; unwrap_or_else/ok_or/unwrap_or_default only).
+
+## Environment disclosure (machine-specific, NOT persisted to repo config)
+This workstation's MSVC installs are header-less (task-8/task-17 finding). tree-sitter grammars
+compile C via cc-rs, so EVERY cargo invocation in this session was prefixed with the documented
+per-invocation workaround (never written into any repo file):
+  $env:INCLUDE = "C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include;
+    <Windows Kits 10.0.26100.0 ucrt/shared/um/winrt/cppwinrt includes>;$env:INCLUDE"
+Usage disclosed as required; local devs with intact VS C++ workloads need nothing.
+
+## Shared-file discipline (parallel worker on todo 18 / harness-lsp)
+Root Cargo.toml: re-read immediately before the single edit; anchored 5-line append after
+`tempfile = "3"`; no worker lines touched (their diff region remains empty as of commit time —
+verified via `git diff Cargo.toml` showing only this task's lines); no amend/reset; single commit.

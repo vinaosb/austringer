@@ -1,0 +1,170 @@
+TASK 4 EVIDENCE — Event model + append-only session log (harness-core)
+=====================================================================
+Date: 2026-09-12 | HEAD at start: 1e66c45 on main | Executor: Sisyphus-junior
+Plan: .omo/plans/rust-agent-harness.md todo 4 (binding scope from task brief).
+
+DESIGN DECISIONS (binding-scope interpretation)
+-----------------------------------------------
+- Event taxonomy: single `Event` enum, 7 kinds (user/assistant/tool_call/
+  tool_result/system/condensation/snapshot), serde internally-tagged `"type"`
+  snake_case. Envelope `RecordedEvent { seq, event }` is NESTED (no
+  serde(flatten) — flatten + internally-tagged enums have well-known
+  lossy-buffering footguns); line = one JSON object + \n.
+- LLM-visible vs INTERNAL as first-class property: `EventClass` enum +
+  `EventKind::class()` (const fn) + `Event::class()/is_llm_visible()` +
+  `llm_visible()` filter iterator — the sanctioned model-context path.
+  Condensation + Snapshot are Internal; tested that internal kinds never
+  appear in model-context serialization.
+- Multimodal from turn one: `ContentBlock { Text, Image(ImageBlock) }`;
+  ImageBlock = { mime: MimeType (validated image/* newtype), width, height,
+  media: MediaRef { hash: ContentHash (blake3, "blake3:<64hex>" string form),
+  bytes } }. Bytes live at <session>/media/<hash> (atomic temp+fsync+rename,
+  exists-check dedup). NEVER inline base64 — test asserts a 4KiB image
+  serializes to < 600 chars. Typed placeholder for text-only consumers:
+  `ImageBlock::text_marker()` (deterministic; mime + dims + short hash).
+  Vision routing deliberately absent (later todos).
+- Serde stability: struct fields in declaration order (deterministic); all
+  dynamic maps are serde_json Values backed by BTreeMap (sorted keys);
+  preserve_order must NEVER be enabled (comment at the [workspace.dependencies]
+  declaration; `object_keys_are_sorted_when_maps_serialize` test FAILS if it
+  ever is). No event embeds an OS path (hashes only → cross-platform stable,
+  satisfies forward-slash rule by construction). No timestamps injected.
+- Writer: `EventLogWriter::append` is the ONLY mutation (no update-in-place
+  API exists). Seqs 1-based monotonic via `Sequence(u64)` newtype.
+  fsync policy FsyncPolicy::{Always, OnSnapshot, NeverForTests} — flush
+  per event, durability barrier per policy (OnSnapshot syncs on Snapshot
+  kind). Line+\n written as ONE sink write call (minimal torn window).
+- Commit protocol: a line is committed iff newline-terminated. Reader:
+  torn final line (no \n) => ignored + TornFinalLine anomaly, never an
+  error; invalid mid-file line => InvalidLine anomaly + continue; sequence
+  jump => UnexpectedSequence anomaly. LoadReport.valid_len = byte length of
+  valid prefix; writer reopens at that boundary (set_len truncates any torn
+  tail) so appends after a crash never merge with a partial line.
+- Disk-full/IO-error contract: any append/sync failure =>
+  Degradation{cause, notice} in writer state + AppendError::DegradedToReadOnly
+  { cause, notice } where notice = LOUD Event::System text ("EVENT LOG
+  DEGRADED — session is now READ-ONLY...") delivered through the API (never
+  written to the broken file; System is LLM-visible so both user and model
+  see it). Best-effort discard_partial() rollback; a surviving torn tail is
+  reader-tolerated. Further appends => AppendError::ReadOnly fail-fast.
+  No unwrap/expect/panic in library paths (Sequence::next returns Option;
+  exhaustion is a typed error).
+- Session = directory parameter: <session>/events.jsonl + <session>/media/.
+  Full session store deliberately NOT built (todo 24).
+- Property-test generator: hand-rolled deterministic xorshift64* with fixed
+  seeds [1, 42, 0xDEADBEEF, 20260912] — ZERO new deps vs proptest (which
+  pulls rand/regex-syntax/etc.), kills the flaky_tests class (no random
+  seeds, no wall-clock in correctness assertions), full control over
+  alphabet (CJK/emoji/control chars/quotes/backslashes) and JSON shapes.
+- Deps: serde/serde_json/thiserror already in workspace graph via
+  harness-test-support (no new crates to the lock). NEW: blake3 1.8.7
+  (content-addressed media; CC0-1.0 OR Apache-2.0 crate; transitive
+  arrayvec/cc/cfg-if/constant_time_eq all permissive & allow-listed) —
+  cargo deny check green with ZERO deny.toml changes. Promoted shared
+  versions into [workspace.dependencies].
+
+TDD RED -> GREEN (per component)
+--------------------------------
+RED 1 (event model): all test files written first; run captured 19+ compile
+  errors (E0432/E0433: unresolved harness_core::event / ::log / serde_json).
+  => implementation, then nextest: 24/26 green; 2 legit failures found REAL
+  bugs (see below), fixed, 26/26.
+RED 2 (log): crash-safety + writer-contract + perf tests written before
+  src/log/* existed (same compile-failure run as evidence).
+Bugs caught by failing tests during green phase (test-first value):
+  a) object_keys test initially depended on rng producing a ToolCall
+     (seed-dependent) — rewritten deterministic.
+  b) REAL BUG: FileSink::open set committed=file length INCLUDING the torn
+     tail, so reopen-after-crash appended right after the partial line
+     (merged garbage line => 5 events instead of 6). Fix: LoadReport.valid_len
+     (commit boundary from reader scan) + FileSink::open(path, committed_len)
+     truncates/positions at boundary. reopen test now green.
+
+FILES (pure LOC — non-blank, non-comment; ceiling 250)
+------------------------------------------------------
+    3  harness-core/src/lib.rs                  127  harness-core/src/event/mod.rs
+  137  harness-core/src/event/content.rs        191  harness-core/src/event/media.rs
+  121  harness-core/src/log/mod.rs               76  harness-core/src/log/reader.rs
+   49  harness-core/src/log/sink.rs             167  harness-core/tests/common/mod.rs
+  137  harness-core/tests/event_roundtrip.rs    161  harness-core/tests/log_crash_safety.rs
+  195  harness-core/tests/log_writer_contract.rs 86  harness-core/tests/log_fsync_policy.rs
+  113  harness-core/tests/media_store.rs         42  harness-core/tests/log_replay_perf.rs
+Others touched: Cargo.toml ([workspace.dependencies] + comment),
+harness-core/Cargo.toml (deps), Cargo.lock (resolver output).
+
+ACCEPTANCE RUNS (exact commands + results)
+------------------------------------------
+A1 Property round-trip:
+  cargo nextest run -p harness-core -E 'test(roundtrip) or test(serialization_is_stable) or test(object_keys_are_sorted) or test(recorded_sequence_roundtrips)'
+  => 4 passed. 4 seeds x 300 events each: serialize==deserialize equality,
+  serialize-twice byte-identical, map keys sorted, 500-event file round-trip.
+A2 Crash safety:
+  cargo nextest run -p harness-core -E 'test(replay_ignores_torn) or test(reopen_after_torn) or test(invalid_midfile) or test(sequence_gap)'
+  => 4 passed. N=5 events + torn half-line: 5 recovered with EXACT content
+  (asserted per-event, not count-only), TornFinalLine{bytes} anomaly,
+  reopen truncates + seq continuity (recovered event = seq 6), invalid
+  mid-file line => anomaly list (InvalidLine line 2 + UnexpectedSequence
+  line 3), sequence gap => exact anomaly.
+A3 10k replay perf:
+  cargo nextest run -p harness-core -E 'test(replay_recovers_10k)' --success-output immediate
+  => 1 passed. "10k-event session: write=164.1504ms replay=109.1977ms
+  (budget 30s)". Exact count + per-event content + seq asserted for all
+  10,000; anomalies asserted empty. Duration measured on this machine
+  (Windows 11, dev profile test build) — well under budget.
+A4 Disk-full contract (trait-injected sink: test-local InjectingSink with
+  Failure::{BeforeWrite,HalfWrite,Sync} over a real file):
+  cargo nextest run -p harness-core -E 'test(append_degrades) or test(append_restores_valid_prefix)'
+  => 3 passed. Before-write: DegradedToReadOnly + notice is System event
+  containing "READ-ONLY" + is_read_only() + 4th append fails ReadOnly +
+  file bytes EXACTLY == 2 committed lines. Half-write: torn half-line rolled
+  back, file == prefix, replay 2 events 0 anomalies. Sync-fail: degraded,
+  file holds valid 1-event prefix.
+
+QA CHANNELS (pasted real output)
+--------------------------------
+HAPPY (10k synthetic session exact count+content):
+    10k-event session: write=164.1504ms replay=109.1977ms (budget 30s)
+    Summary [   0.892s] 1 test run: 1 passed, 25 skipped
+FAILURE (torn-final-line loads w/ warning; failing sink flips read-only):
+    Starting 3 tests across 6 binaries (23 tests skipped)
+        PASS [  0.039s] (1/3) harness-core::log_writer_contract append_degrades_to_read_only_when_sink_fails_before_write
+        PASS [  0.047s] (2/3) harness-core::log_crash_safety replay_ignores_torn_final_line_when_crash_left_partial_write
+        PASS [  0.066s] (3/3) harness-core::log_writer_contract append_restores_valid_prefix_when_sink_fails_mid_write
+    Summary [   0.067s] 3 tests run: 3 passed
+
+FULL GATES (all green, exit 0)
+------------------------------
+  cargo fmt --check                                              exit 0
+  cargo clippy --all-targets -- -D warnings                     exit 0
+  cargo deny check           advisories ok, bans ok, licenses ok, sources ok
+  cargo build --release                                         exit 0
+  cargo nextest run          Summary [1.519s] 74 tests run: 74 passed, 0 skipped
+  (74 = 49 baseline - 1 removed placeholder smoke test in harness-core
+   lib.rs + 26 new harness-core tests [20 integration + 6 in-module])
+
+ADVERSARIAL CLASSES
+-------------------
+flaky_tests: N/A — fixed xorshift seeds; no wall-clock in correctness
+  asserts (wall clock only in perf test's generous 30s budget + recorded).
+malformed input: covered — torn final line AND invalid mid-file JSON line
+  both probed; both => anomaly list, no panic.
+stale_state: covered — reopen paths (writer reopen truncates torn tail,
+  continues seq; reader reload from disk each time).
+misleading_success_output: covered — all replay asserts compare EXACT
+  per-event content (not counts); outputs above are pasted verbatim.
+hung_or_long_commands: covered — 10k replay duration recorded (109ms).
+dirty_worktree: git status captured post-commit below.
+resource_leak / sql_injection / xss / csrf / auth_bypass / others: N/A —
+  no network, no SQL, no web surface in this todo (one-line each per brief).
+
+RESIDUAL RISKS / NOTES
+----------------------
+- Writer open() scans the whole log to find the commit boundary (O(file));
+  lazy/index loading is explicitly todo 24's concern.
+- AppendError::Serialize is unreachable for in-construction events (no
+  non-string map keys possible via serde_json::Value) but typed anyway —
+  no panics in library paths.
+- Single-writer assumption (no cross-process lease) — leases are todo 24.
+- The loud degradation notice is a System (LLM-visible) event: the 7-kind
+  taxonomy is binding and System is its runtime-notice channel; disk-full
+  reaches both the user (UI) and the model (context) — "loud" by design.

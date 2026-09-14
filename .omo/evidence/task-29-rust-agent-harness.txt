@@ -1,0 +1,265 @@
+TASK 29 — harness-mcp: rmcp client + SERVER mode (plan todo 29)
+=================================================================
+Worker: todo-29 implementation worker (Sisyphus-junior). Date: 2026-09-13.
+HEAD at start: d9cbb96 (confirmed). Machine: Windows 11, Rust 1.98, MSVC.
+Parallel workers active: todo-22 pre-flight (committed 5406caa beneath me),
+todo-23 snapshots (uncommitted during my run). I own harness-mcp only.
+
+ENVIRONMENT DISCLOSURE (task-13 recipe, still live)
+---------------------------------------------------
+Both MSVC VC include trees remain gutted machine-wide (only surviving
+stdarg.h: VS18 ScopeCppSDK vc15\VC\include; VS2022 14.44 lib tree also
+gutted). Shell-scoped workaround used for EVERY cargo invocation:
+INCLUDE/LIB pointed at ScopeCppSDK vc15 VC include/lib + Windows Kits 10
+(10.0.26100.0 ucrt/shared/um). Script kept at
+%TEMP%\opencode\task-29-msvc-env.ps1; nothing repo-side changed.
+
+SHARED-FILE INCIDENT (disclosed, recovered)
+-------------------------------------------
+A parallel worker rewrote root Cargo.toml from a stale read mid-run,
+wiping my Todo-29 workspace-dependency block (rmcp/http/sse-stream/toml/
+url/schemars) — harness-mcp/Cargo.toml was also truncated to 10 lines in
+the same window. Detected via "unresolved crate" build errors; both files
+restored by re-anchored edit; root diff verified to contain ONLY my
+Todo-29 block before the commit (clean separation held at commit time).
+
+DEPENDENCY DECISIONS (fetched, not remembered)
+----------------------------------------------
+- rmcp 3.3.0 — CURRENT stable (crates.io API queried 2026-09-13; released
+  2026-09-10; plan says "3.x"). Features: client, transport-child-process
+  (stdio spawn w/ captured ChildStderr), transport-streamable-http-client
+  (TRANSPORT-AGNOSTIC — NOT the -reqwest variant), transport-io,
+  transport-streamable-http-server. rmcp's optional reqwest 0.13 + TLS
+  stack deliberately NOT enabled: harness-mcp implements rmcp's
+  StreamableHttpClient trait over the WORKSPACE reqwest 0.12
+  (rustls/ring, in-tree since T10) — one HTTP stack, no native-tls,
+  honors the workspace Cargo.toml TLS policy comment. This required a
+  hand-rolled bounded SSE decoder (rmcp's bounded_sse_stream is private)
+  producing sse_stream::Sse events (strict duplicate-field errors, 1 MiB
+  event cap, WHATWG line semantics).
+- toml 0.9.12 (spec-1.1.0): GOTCHA discovered by probe — toml::Value's
+  FromStr parses a bare VALUE, not a document; documents parse via
+  toml::from_str::<toml::Table>.
+- schemars 1.x direct dep: rmcp's #[tool] JsonSchema derive emits plain
+  `schemars::` paths (the rmcp re-export is not enough for local derives).
+- http 1 + sse-stream 0.2: named in rmcp's StreamableHttpClient trait
+  signature; already transitively in-tree via rmcp.
+- deny.toml: wildcards=deny → path dep carries version (workspace style).
+
+WHAT SHIPPED (all in harness-mcp; 22 src files, every file < 250 pure LOC;
+zero unwrap/expect/panic in src)
+--------------------------------------------------------------------------------
+- config: ServerEntry {name, transport{stdio|http}, env, roots,
+  connect_timeout_ms, trusted_autostart} + PROVIDER provenance.
+  Fingerprint = blake3 over an EXPLICIT length-prefixed canonical encoder
+  (name+command+args|url+sorted-env+roots) — infallible by construction,
+  no serde-failure-silent-empty-hash hazard.
+- trust: TrustStore seam + MemoryTrustStore. TrustDecision::Trusted |
+  NeedsApproval | ReApproval. Approval binds to the FULL fingerprint;
+  any identity change => ReApproval (MCPoison CVE-2025-54136 TOCTOU).
+- allowlist: OrgAllowlist (deny-wins, unoverridable). Secure matching:
+  exact names; URLs parsed (scheme+host[+port] — evil-suffix hosts never
+  match); stdio commands matched on program name (path-insensitive,
+  .exe-stripped + case-folded on Windows).
+- roots: client-side confinement — every call_tool's arguments are
+  recursively scanned for path-like strings; absolute paths outside ALL
+  roots (or .. traversals escaping all roots) => typed RootsEscape BEFORE
+  any bytes are sent. Lexical comparison, Windows case-folded. Roots are
+  also declared to servers via the (SEP-2577-deprecated, deliberately
+  answered) list_roots ClientHandler path.
+- stderr_bridge: bounded drain (8 KiB/line truncation, 10k-line budget
+  with counted-overflow summary) -> tracing target
+  harness_mcp::server_stderr. Testable core + spawn wrapper.
+- http_backend: ReqwestSseClient (StreamableHttpClient over workspace
+  reqwest 0.12; redirects off, no idle pooling — mirrors rmcp's own
+  hardening) + sse.rs (strict bounded decoder). Reserved-header
+  validation; JSON-RPC error bodies surfaced as protocol errors.
+- client: McpClient — connect (stdio spawn w/ stderr bridge / HTTP /
+  caller-supplied transport) ALL under per-entry connect timeout =>
+  typed ConnectTimeout; list_tools/call_tool/resources/prompts; per-call
+  deadline => typed Unresponsive + connection POISONING (next calls
+  refuse instantly — never a hung await); bounded in-flight (semaphore,
+  typed InFlightLimit); tool isError results => typed Protocol error
+  carrying the server's message.
+- pool: TransportPool keyed (name + fingerprint). Refcounted handles
+  (Weak back-ref); idle drain window; POISONED handles drain immediately
+  (backdated idle marker); budget guardrails with HYSTERESIS: ceiling
+  counts ACTIVE (refcounted) connections; once enforcing, holds until
+  active <= max_live - hysteresis_gap (flap-proof, proven by test at the
+  3->2->1 boundary); typed BudgetWarn events.
+- schema_cache: SchemaDiskCache (one JSON per fingerprint; tmp+rename
+  atomic writes; corrupt entries degrade to miss) + spawn_advertised:
+  disk set ADVERTISED AT SPAWN (zero first-snapshot cache miss), one
+  live tools/list reconciliation, typed SchemaDrift {added,removed},
+  cache updated, write failures degrade to cold (logged, not fatal).
+- manager: multi-provider scan — .harness/mcp.json + mcp.toml +
+  .harness/mcp-servers/*.json|toml + .mcp.json + .claude.json +
+  .cursor/mcp.json + codeium config.json (experimental.mcpServers).
+  Per-path diagnostics (one bad file NEVER kills the scan; invalid
+  entries, control-char names typed). TemplateRegistry: hash-keyed
+  TEMPLATABLE installations; instantiate() resolves {{secret:NAME}}
+  through the SecretStore seam (MapSecretStore for tests); missing
+  secret => typed failure naming the SECRET (never a value); secrets
+  never written to config files. AutostartDecision: DeferredOnFirstUse
+  unless trusted_autostart.
+- session_surface: SessionControl seam (create/search/interact/events)
+  + cost_limit (MicroUsd) typed enforcement + GatherRegistry/GatherBarrier
+  (await N completions, capacity-bounded, deadline-bounded =>
+  AllCompleted | Partial). SEAM JUSTIFICATION (no hard dep on
+  harness-sessions): T24 is a storage crate (SQLite/encryption); the MCP
+  surface must not couple to storage internals or drag them into every
+  embedding; the daemon implements the trait over the T24 store.
+- server: HarnessMcpServer (transport-agnostic ServerHandler; daemon
+  wires stdio/http via serve_over). Tools: harness_ask, harness_status,
+  session_create, session_search, session_interact (costLimitMicroUsd),
+  session_events, session_gather. Seams: AskSeam/StatusSeam/
+  SessionControl/GatherRegistry. Untrusted seam replies serialize as
+  DATA, bounded, never interpreted.
+- acp: ACP v1 agent-side core (spec verified against
+  agentclientprotocol/agent-client-protocol schema v1 @ ada6b10).
+  NAME-MAPPING DISCLOSURE — plan shorthand vs actual v1 wire:
+  "initialize" = initialize (protocolVersion INTEGER = 1; mismatch =>
+  typed error); "edit-request" = session/update tool_call carrying diff
+  content {path, oldText, newText} (v1 has NO document-change stream);
+  "read-mention" = resource_link prompt blocks resolved via agent->IDE
+  fs/read_text_file request (30s bounded); "session-status
+  notifications" = session/update family + prompt-response stopReason
+  (NO session/status method exists in v1). v2 (draft) not implemented —
+  disclosed. NDJSON JSON-RPC 2.0 over any line transport (AcpWire seam);
+  session/cancel is cooperative (spawned prompt runs poll the channel);
+  malformed lines / unknown methods => typed JSON-RPC errors.
+- reference_server + bin mcp-reference-server: the MINIMAL
+  reference-shaped filesystem MCP server (tools read_file/echo/hang,
+  one resource, one prompt) used as the interop counterparty.
+- mount: MCP tools mount through T6 as mcp__<server>__<tool>
+  ToolProviders (descriptions bounded to 200 chars — untrusted server
+  text). mount() refuses typed on org-deny and on NeedsApproval /
+  ReApproval (no auto-trust; the daemon records approvals through the
+  T7 ask flow against the SAME fingerprint). Dispatch flows through the
+  T6 registry (byte caps/spill apply); the T7 InspectorChain gates calls
+  (headless default: unapproved mounted tools Block with model feedback).
+
+INTEROP DISCLOSURE (acceptance)
+-------------------------------
+No external reference server binary was fetched (npx/uvx unavailable
+offline in this environment). Golden interop is client<->server BOTH
+ours via rmcp, over THREE real transports:
+  1) in-process duplex (real JSON-RPC framing),
+  2) REAL child process over real stdio pipes (the
+     mcp-reference-server bin; exercises TokioChildProcess spawn + the
+     stderr bridge),
+  3) REAL HTTP: our reqwest SSE backend <-> rmcp's StreamableHttpService
+     served by axum on 127.0.0.1 (SSE decoding, session header, full
+     tools/list + tools/call + resources round trip).
+An earlier attempt to reuse the test binary as the stdio child failed:
+libtest's banner ("running 1 test") pollutes the child's stdout JSON-RPC
+stream — replaced by the dedicated bin.
+
+TDD RECORD (strict red-green per module; RED evidence = E0432/E0433
+unresolved-module compile failures captured in session transcript)
+--------------------------------------------------------------------------------
+RED:  cargo test -p harness-mcp --test mcp_trust   (E0432 no harness_mcp::config/trust/allowlist)
+      ...same shape per binary (mcp_roots/mcp_client/mcp_http/mcp_manager/
+      mcp_pool/mcp_sessions/mcp_server/acp_agent/mcp_mount) before each module landed.
+GREEN (final, single command):
+  cargo test -p harness-mcp
+    => acp_agent 5, mcp_client 7, mcp_http 4, mcp_manager 8, mcp_mount 5,
+       mcp_pool 8, mcp_roots 9, mcp_server 6, mcp_sessions 7, mcp_trust 10
+    => 69 passed; 0 failed; 0 ignored (~88 s incl. build)
+  cargo clippy -p harness-mcp --all-targets => clean (one scoped
+    result_large_err allow matching rmcp's own examples; one scoped
+    dead_code allow for the macro-generated tool_router field).
+  cargo fmt -p harness-mcp => applied.
+  cargo deny check => 0 errors (duplicate-version warnings only —
+    configured warn level; the reqwest 0.12-only decision specifically
+    avoided a second reqwest major).
+  Flaky x3 (in-process + http + mount suites): 3/3 rounds all green,
+    timings stable (deterministic).
+  COMMITTED-TREE WORKTREE ISOLATION: worktree at the commit
+    (1c204ce, clean tree, no worker dirt) => cargo test -p harness-mcp
+    full suite green again (69/69, 114 s).
+
+QA CHANNELS (transcripts from --exact --nocapture runs)
+-------------------------------------------------------
+happy (mount filesystem server, list, call THROUGH T6 dispatch + T7 gate):
+  cargo test -p harness-mcp --test mcp_mount -- --nocapture
+    test untrusted_servers_never_mount ... ok
+    test org_denied_servers_never_mount_even_when_trusted ... ok
+    test trusted_mount_registers_and_dispatches_through_t6 ... ok
+    test t7_inspector_chain_gates_mounted_tool_dispatch ... ok
+    test mount_failure_maps_client_errors_typed ... ok
+    test result: ok. 5 passed; 0 failed
+  (protocol-level RESULT content asserted: dispatch observation ==
+   "mounted content" for read_file over the in-process wire.)
+failure 1 (root-escape attempt denied):
+  cargo test -p harness-mcp --test mcp_client root_escape_attempt_denied_over_wire -- --exact --nocapture
+    test root_escape_attempt_denied_over_wire ... ok (1 passed)
+  (typed McpClientError::RootsEscape on the absolute outside path; the
+   in-root relative call succeeds in the same test.)
+failure 2 (config-swap TOCTOU re-ask):
+  cargo test -p harness-mcp --test mcp_trust first_use_needs_approval_then_trusts_until_entry_changes -- --exact --nocapture
+    test first_use_needs_approval_then_trusts_until_entry_changes ... ok (1 passed)
+  (NeedsApproval on first use; Trusted after approval of THAT
+   fingerprint; command-swapped entry => ReApproval, never inheritance.)
+failure 3 (unresponsive server typed after timeout):
+  cargo test -p harness-mcp --test mcp_client unresponsive_server_is_typed_and_non_stalling -- --exact --nocapture
+    test unresponsive_server_is_typed_and_non_stalling ... ok (0.27 s)
+  (250 ms deadline on a never-replying server => typed Unresponsive,
+   elapsed < 5 s asserted; subsequent call refuses instantly: poisoned.)
+
+ADVERSARIAL COVERAGE
+--------------------
+hung_or_long: connect timeouts typed; per-call deadlines typed;
+  poisoned-connection immediate refusal; gather deadline-bounded;
+  fs/read_text_file 30 s bounded; SSE event 1 MiB cap — all tested.
+malformed: half-JSON/TOML + control-char names => per-path diagnostics,
+  scan survives (3 diagnostics + good entry parsed); ACP malformed lines
+  => JSON-RPC parse errors; corrupt schema cache => miss.
+untrusted text: server tool descriptions/results are DATA (bounded 200
+  chars in mounted schemas; hostile 4 KiB reply passes through verbatim
+  as JSON data, never evaluated — tested).
+stale_state: schema cache drift (added/removed) reconciled + persisted;
+  fingerprint mismatch => ReApproval; pool drains poisoned handles.
+cancel/resume: ACP session/cancel => stopReason cancelled (engine
+  polls the channel); MCP call cancellation = deadline teardown +
+  reconnect on next acquire (cold reconnect policy, documented).
+flaky x3: deterministic green x3 (in-process servers + localhost HTTP).
+new input parsing: unicode names/args/env; env values with '=' and
+  spaces; .exe/path/case command matching; evil-suffix URL hosts.
+misleading_success: protocol-level asserts on tool RESULT CONTENT (not
+  just status codes) across duplex/stdio/http paths.
+dirty_worktree: proven via committed-tree worktree run (above).
+
+RESIDUAL RISKS / LIMITS (honest)
+--------------------------------
+- OAuth/auth headers for HTTP servers: seams exist (auth_header param)
+  but no provider wired (out of todo-29 scope).
+- MCP elicitation/sampling server->client flows not surfaced (rmcp
+  handles the wire; no harness seam yet).
+- Pool budget counts ACTIVE connections; idle-but-undrained spawned
+  processes still consume OS resources until the daemon's tick drains
+  them (drain window is config; documented in pool docs).
+- ACP: v1 only; concurrent prompts to ONE session are not serialized
+  (engine contract: one prompt per session at a time — daemon enforces).
+- cargo-deny duplicate-version warnings grew slightly (base64/bitflags/
+  getrandom etc. across rmcp tree) — pre-existing configured warn level,
+  not gate-blocking.
+
+COMMIT: 1c204ce "feat(mcp): rmcp client + server mode" (single commit;
+contains ONLY harness-mcp/** + Cargo.toml + Cargo.lock; sibling worker's
+5406caa landed beneath it untouched).
+
+T29 LOC TRIM (addendum, 2026-09-13)
+------------------------------------
+Verifier flagged session_surface.rs = 253 pure LOC (3 over the <=250
+ceiling). Split into session_surface/{mod,gather}.rs: mod.rs = core seam
+(SessionControl trait, types, ScriptedSessionControl, SurfaceError,
+lock_or_poisoned) pure 163; gather.rs = GATHER fan-in barrier
+(GatherRegistry/GatherBarrier/GatherOutcome) pure 95. Zero behavior
+change; public API re-exported from mod (gather is a private submodule).
+cargo test -p harness-mcp => 69 passed / 0 failed x2 (unchanged);
+cargo clippy -p harness-mcp --all-targets => clean; cargo fmt --check =>
+clean. COMMIT: eaedd21 "refactor(mcp): split oversized session surface
+module" (single commit; git detected rename session_surface.rs ->
+session_surface/mod.rs + new gather.rs; verified via git ls-tree before
+commit).

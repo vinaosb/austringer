@@ -1,0 +1,263 @@
+TASK 45 - WASM plugin runtime (rust-agent-harness)
+=============================================================
+Worker: task-45 implementation worker (Sisyphus-junior). Date: 2026-09-13.
+Base: HEAD bc1fa58 at start ("feat(daemon): multi-client protocol + scheduler
++ hardened auth"); parallel workers landed bc1fa58..3565b43 mid-run (skills
+registry) - root Cargo.toml re-read/anchored before BOTH hunks, applied clean,
+final diff exactly +12 owned lines (member + wasmtime workspace-dep entry).
+Commit: 98a2238 "feat(wasm): sandboxed plugin runtime" (single commit, 36
+files, code only - evidence file untracked per house precedent).
+Parallel workers disclosed: harness-skills registry worker (todo 32) active on
+the shared root manifest; zero file overlap (git status verified pre-commit:
+staged set = Cargo.toml + harness-wasm/ only).
+
+ENVIRONMENT INCIDENT (disclosed; same as task-13): machine-wide VS servicing
+gutted stdarg.h from BOTH MSVC installs (VS2022 Ent 14.44 + VS18 Insiders
+14.50); only surviving copy is VS18 ScopeCppSDK vc15. Private target dirs
+(CARGO_TARGET_DIR=Temp\opencode\target-task45[-wt]) used for every command to
+avoid clobbering the parallel worker's shared target dir. Workaround
+(shell-scoped INCLUDE prepend of the vc15 dir, per .omo/evidence/task-13):
+required and sufficient - libsqlite3-sys AND wasmtime's cc-built C trampoline
+both compiled under it. Nothing repo-side changed.
+
+PLACEMENT + DESIGN DECISIONS (disclosed)
+-------------------------------------------------------------------------------
+- NEW CRATE harness-wasm (workspace member), depending on harness-core only.
+  Justification per task brief: plugin TOOLS register through T6's
+  ToolProvider trait which lives in core; a dedicated crate keeps the engine
+  out of the daemon (and every default build) while giving the runtime a
+  first-class home. Daemon consumption is a later todo.
+- SIMPLIFIED WIT (per plan binding text "not full WIT tooling"): wasmtime
+  v38 (WASI-0.2-era engine line) CORE modules - not components - with a
+  fixed versioned ABI table documented in harness-wasm/src/abi.rs (regions:
+  input @4096/4KiB, output @8192/4KiB, NUL-terminated JSON manifest @16384/
+  8KiB; exports memory + tool_call(tool_id,len); host imports under
+  "harness": log/read_file/write_file). Compile-time const asserts pin the
+  region layout disjointness.
+- FIXTURES IN WAT (the task's RECOMMENDED path): rustup has no wasm32 target
+  installed; rather than rustup-target-add or committing opaque prebuilt
+  binaries, all 14 fixtures are WebAssembly text - wasmtime's `wat` feature
+  parses them natively. Zero toolchain changes. Fixture set:
+  good/good2 (echo, hot-reload v2 marker), fuel_hog (infinite loop),
+  mem_hog (grow-to-cap), cap_hog (process-exec), old_iface(0)/new_iface(2),
+  bad_manifest, no_manifest, garbage, fs (rw read+write tools),
+  fs_ro_break (runtime RO write), traversal (../ escape), lie_result
+  (claims 9999-byte output).
+- HOST-MEDIATED PREOPENS (divergence from WASI fd preopens, documented):
+  file access goes through typed host fns that resolve VIRTUAL paths
+  ("<scope>/<relative>") with canonicalize+containment; the guest has NO
+  other syscall surface. "Nothing else visible" is enforced by construction.
+  Write path: mode denial BEFORE any fs probe; target need not exist (only
+  the parent is canonicalized; file name validated as one safe component;
+  backslash injection rejected).
+- CAPABILITY MODEL (Zed §23): manifest declares from
+  {process-exec, download, package-install} (none = empty). Declared-but-
+  ungranted = typed CapabilityNotGranted at load (no silent escalation).
+  Interface 1 binds no host fns to these capabilities - they are a
+  declaration contract future interfaces bind to real surfaces (documented
+  in manifest.rs + crate docs).
+- INTERFACE LADDER (Zed 10-WIT-versions lesson): abi::negotiate supports
+  range [INTERFACE_MIN..INTERFACE_MAX]=[1..1]; too-old -> InterfaceTooOld
+  ("rebuild the plugin"), too-new -> InterfaceTooNew ("upgrade the host");
+  adding v2 = new Interface arm + MAX bump, old dispatch arms never removed.
+- HOT RELOAD: PluginHandle snapshots the current Arc<LoadedPlugin> per call,
+  so swaps apply to NEW calls only; in-flight calls finish on their pinned
+  instance; a FAILED reload keeps the old instance serving (typed
+  ReloadOutcome::Failed). Watcher = len+mtime polling (poll_once for
+  deterministic tests + PluginWatcher::spawn thread with ReloadEvent
+  channel; guard stops+joins on Drop).
+- PER-CALL STORES: every tool call gets a fresh Store+instance - fuel
+  (default 10M, configurable) and the 32 MiB ResourceLimiter are per-call
+  by construction; leaks cannot leak across calls.
+
+DELIVERABLE (all pure code-LOC <= 250; LOC = non-blank non-comment)
+-------------------------------------------------------------------------------
+harness-wasm/src/ (15 files):
+  lib.rs       (21) crate docs: security model, WIT divergence, ladder,
+               hot-reload semantics; module wiring; #![deny(missing_docs)]
+  abi.rs       (96) version ladder + negotiate + full ABI table docs +
+               compile-time region-layout const asserts
+  error.rs    (108) WasmError: 20 typed variants, every failure named
+  limits.rs    (13) PluginLimits (32 MiB memory, 10M fuel defaults)
+  manifest.rs (183) Capability/PreopenMode/ToolDecl/PluginManifest +
+               ManifestError (12 variants) + strict parse/validate
+  hosttypes.rs(66)  LogLevel/LogLine/DenyReason/HostEvent/ResolvedScope/
+               PluginGrant (pure types, compile in every config)
+  hostfns.rs  (164) HostCtx: virtual-path resolve (canonicalize+containment),
+               read_file, write_file (mode-first ordering, parent-canonical
+               writes), bounded lossy log budget (64 lines/4KiB/1KiB each)
+  hostlink.rs  (93) wasmtime linker glue for the 3 host fns (borrow
+               discipline: no HostCtx borrow across caller re-borrows)
+  runtime.rs  (235) WasmEngine (fuel on), MemLimiter (ResourceLimiter,
+               denial flag for trap attribution), per-call fresh_store/
+               instantiate, invoke -> CallReport, typed trap mapping
+               (Trap::OutOfFuel -> FuelExhausted; limiter.denied ->
+               MemoryCapExceeded; else GuestTrap)
+  loader.rs   (114) load pipeline: read->compile->sandboxed manifest probe
+               ->parse->negotiate->capability check->preopen check->fingerprint
+  plugin.rs   (210) PluginHandle/PluginSnapshot (Arc swap semantics),
+               reload/poll_once, PluginWatcher + WatcherGuard
+  provider.rs  (64) WasmToolProvider impl of T6 ToolProvider +
+               mount_plugin (one provider per manifest tool; duplicates fail
+               RegistryError::DuplicateTool - no silent shadowing)
+  hostfns_tests.rs (115) resolve containment/escape/not-found, RO-before-
+               existence, new-file writes, escape-no-write, log budget
+harness-wasm/tests/: common/mod.rs (36), manifest.rs (77), plugin_load.rs
+(161), plugin_sandbox.rs (131), plugin_fs.rs (~135), plugin_registry.rs
+(104), hot_reload.rs (86) + 14 WAT fixtures under tests/fixtures/wasm-plugin/
+Root Cargo.toml: +12 lines (member "harness-wasm" + workspace dep wasmtime
+{v38, default-features=false, features=[cranelift,runtime,std,wat]} with the
+full feature-minimality rationale + cc/MSVC disclosure comment, house style).
+
+TDD RECORD
+-------------------------------------------------------------------------------
+RED: tests + Cargo.tomls + lib.rs module decls first, no module files:
+  cargo test -p harness-wasm --features wasm-plugins
+  -> error[E0583]: file not found for module `loader|plugin|provider|
+     runtime|hostfns|hosttypes` (x6) + could not compile `harness-wasm`
+     (lib) due to 9 previous errors   [wasmtime v38 tree fully built green
+     under the INCLUDE workaround during the same run]
+GREEN: full suite 48 passed after implementation (cycles listed honestly):
+  - lib: ReloadOutcome PartialEq derive dropped (WasmError not PartialEq);
+  - tests: ok_or is Option-only (Result needs match/map_err) - take_ok
+    helper; missing `..` in struct patterns; version_of lives on
+    PinnedToolSet not ToolRegistry; my byte miscount (event bytes:14 ->
+    13); hot_reload grants lacked the "data" scope good.wat requires;
+  - FIXTURE BUG (the interesting red): traversal.wat passed path length 20
+    for the 19-byte "data/../outside.txt" -> trailing NUL rode into the
+    path -> canonicalize NotFound(-4) instead of Escape(-2). Fixed in WAT.
+  - HOST BUG (security-relevant, caught by new unit tests): write_file
+    canonicalized the full TARGET, so new-file writes died NotFound and
+    RO-scope denial was checked after existence. Redesigned: mode check
+    FIRST, parent-canonicalized target, single-component file name,
+    backslash rejection (hostfns_tests.rs pins the ordering).
+  - E0382 root move -> root.clone() in write parent resolution;
+  - clippy(all=deny): assertions_on_constants x12 -> `return Err(...)`
+    arms in tests + region invariants promoted to `const _: () = assert!`
+    in abi.rs; too_many_arguments allow on run_tool_call;
+  - LOC discipline splits: hostfns -> hosttypes/hostfns/hostlink,
+    manifest unit tests -> tests/manifest.rs, read_manifest_region ->
+    loader.rs, plugin_sandbox fs tests -> plugin_fs.rs (all files <= 235).
+
+VERIFICATION (commands + results; private target dirs)
+-------------------------------------------------------------------------------
+cargo test -p harness-wasm --features wasm-plugins
+  -> 48 passed, 0 failed across 8 binaries:
+     10 lib unit (abi x3 + hostfns_tests x7), 7 manifest, 4 hot_reload,
+     5 plugin_fs, 7 plugin_sandbox, 11 plugin_load, 4 plugin_registry,
+     0 common. Identical totals before/after the plugin_fs test-file
+     split (12 sandbox tests -> 5 fs + 7 sandbox).
+cargo clippy -p harness-wasm --all-targets --features wasm-plugins -- -D warnings -> clean
+cargo clippy -p harness-wasm --all-targets -- -D warnings                  -> clean (default, no engine)
+cargo fmt -p harness-wasm -- --check                                       -> clean
+cargo tree -p harness-wasm  (default features)                             -> NO wasmtime anywhere
+cargo test -p harness-wasm  (default features)                             -> 10 passed (3 abi + 7 manifest
+  unit tests via tests/manifest.rs; all engine test binaries compile to
+  0 tests behind #![cfg(feature)]) - structural default-off proof
+Flaky x3: three identical full-suite runs, 48/48 green each time.
+Committed-tree worktree isolation (post-commit):
+  git worktree add %TEMP%\opencode\wt-task45 98a2238 &&
+  cargo test -p harness-wasm --features wasm-plugins   -> 48 passed, 0 failed
+  (paste below); worktree removed afterwards.
+cargo check --workspace in the worktree: TIMED OUT after 30 min (full
+22-crate cold build incl. tantivy/axum/rmcp is beyond this machine's
+window in a fresh target dir) - DISCLOSED. Workspace-manifest validity is
+still proven: every cargo command resolves the entire workspace graph (a
+malformed root manifest fails at resolve time), and the root diff is
+purely additive (one member + one optional dep referenced by nobody else).
+
+QA CHANNEL PASTES
+-------------------------------------------------------------------------------
+HAPPY - fixture plugin registers via manifest + tool call round-trips
+through the T6 registry path (IoCap inline, version registry applies):
+  $ cargo test -p harness-wasm --features wasm-plugins --test plugin_registry plugin_tool_mounts
+  running 1 test
+  test plugin_tool_mounts_and_round_trips_through_the_registry ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out
+  [asserts inside: dispatch observation CONTAINS the round-tripped JSON
+   {"hello":"plugin"} (tool RESULT asserted, not just Ok); spill None;
+   pinned.version_of("echo") == v1]
+  Companion: version_registry_governs_plugin_tools pins a v1-pinned session
+  surviving a v2 publish + v1 Deprecated WITH a DeprecationNotice attached
+  to the dispatch result.
+
+FAILURE 1/3 - fuel exhaustion kills the infinite loop (hung_or_long probe):
+  $ cargo test -p harness-wasm --features wasm-plugins --test plugin_sandbox infinite_loop
+  running 1 test
+  test infinite_loop_is_killed_by_fuel ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out
+  [FuelExhausted { budget: 10_000_000, consumed > 0 } asserted; a second
+   test pins configurable fuel (1_000 budget) applying per call]
+
+FAILURE 2/3 - memory hog terminated cleanly:
+  $ cargo test -p harness-wasm --features wasm-plugins --test plugin_sandbox memory_hog
+  running 1 test
+  test memory_hog_is_terminated_cleanly ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out
+  [MemoryCapExceeded { limit_bytes: 33_554_432 } asserted; clean = typed
+   error via ResourceLimiter denial flag + grow-denied trap, no panic]
+
+FAILURE 3/3 - undeclared-capability load failure:
+  $ cargo test -p harness-wasm --features wasm-plugins --test plugin_load ungranted
+  running 1 test
+  test declared_but_ungranted_capability_fails_load ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 10 filtered out
+  [CapabilityNotGranted { plugin: "cap-hog-fixture", capability:
+   "process-exec" } asserted; sibling test proves the granted path loads]
+
+ADVERSARIAL
+-------------------------------------------------------------------------------
+hung_or_long    : fuel exhaustion IS the probe - infinite_loop_is_killed_by_
+                  fuel + configurable_fuel_budget_applies_per_call (above).
+malformed       : garbage .wat -> CompileFailed; bad manifest JSON ->
+                  Manifest(InvalidJson); empty manifest region ->
+                  ManifestMissing; unknown capability/mode strings, non-
+                  object schema, duplicate tools, tool-less plugin - all
+                  typed (tests/manifest.rs x7 + plugin_load x3).
+stale_state     : hot reload - poll_swap_applies_to_new_calls (fingerprint
+                  gate), in_flight_snapshot_finishes_on_the_old_instance
+                  (old behavior after swap), failed_reload_keeps_serving_
+                  the_old_instance (botched swap never breaks serving),
+                  watcher_thread_emits_reload_events (10ms poll, event
+                  channel, guard joins on drop).
+new input       : weird tool args through the plugin boundary - null,
+                  nested objects/arrays, CJK "中文キリル编制", a 0x07 control
+                  byte, and 4097-byte oversized input (typed
+                  InputTooLarge) all exercised; guest claiming 9999-byte
+                  output -> OutputTooLarge (lying length never trusted).
+flaky x3        : three identical 53/53 green full-suite runs.
+misleading_succ : tool RESULTS asserted (round-tripped JSON content, file
+                  bytes on disk after fs.wat writes, log text captured);
+                  kill EVENTS asserted with budgets (fuel budget+consumed,
+                  memory limit_bytes) - not just is_err().
+untrusted text  : plugin outputs bounded at the ABI (4 KiB regions), logs
+                  lossy-decoded + budgeted (LogDropped event), results flow
+                  through the T6 registry IoCap path like any tool;
+                  traversal/escape probes assert the secret file is NEVER
+                  read and NO file appears outside the scope.
+dirty_worktree  : distinguished - commit staged ONLY Cargo.toml +
+                  harness-wasm/ (36 files); other workers' dirty files
+                  (plans/ledgers/other evidence/wt-verify worktree)
+                  untouched; base drift bc1fa58->3565b43 handled by
+                  re-read+anchor, final manifest diff = +12 owned lines.
+Others N/A      : cancel/resume - no long-running async ops to cancel
+                  (per-call sync execution bounded by fuel); permission
+                  prompts - host grants are config-time, not interactive.
+
+RISKS / NOTES FOR LATER TODOS
+-------------------------------------------------------------------------------
+- Per-call instantiation cost (fresh Store per call): the safe default for
+  a plugin surface of this scale; a pooling/instance-cache is a measurable
+  optimization for later if profiles demand it.
+- ABI v1 I/O bound is 4 KiB each way (== T6 IoCap::DEFAULT inline cap);
+  larger plugin results need interface 2 (documented in abi.rs ladder).
+- One WasmEngine per PluginHandle today (fine at handfuls of plugins);
+  sharing one engine across handles is trivial if ever needed.
+- Capabilities bind no host fns in interface 1 (declaration contract only,
+  documented); process-exec/download/package-install surfaces arrive with
+  the interfaces that actually offer them.
+- Watcher fingerprint = len+mtime; content-hash fingerprinting is the
+  hardening step if plugins ever swap at identical length within mtime
+  granularity (fixtures differ in length, so tests stay deterministic).
+- Full-workspace cold check not run (window); workspace resolution + the
+  affected crates' suites are green from the committed tree.

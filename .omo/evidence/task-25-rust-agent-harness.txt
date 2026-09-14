@@ -216,3 +216,14 @@ After committing, a SECOND detached worktree was created at MY commit
 (wt-verify) — containing neither worker's uncommitted files — and the full
 harness-core suite (unfiltered: lib + every committed integration test)
 was run there: result pasted below in the commit section.
+
+COMMIT + ISOLATION RESULT
+-------------------------
+Commit: 5cdd0a7 feat(core): budget ceilings (16 files, 2674 insertions:
+  10 x src/budget/*.rs, lib.rs +1 line, 4 test binaries, this evidence).
+Worktree lib.rs still carries the eviction worker's uncommitted
+  `pub mod eviction;` line (selective staging verified).
+Committed-tree worktree (wt-verify @ 5cdd0a7, neither worker's uncommitted
+  files present), FULL unfiltered suite:
+  cmd: cargo nextest run -p harness-core
+  => Summary: 261 tests run: 261 passed, 5 skipped (pre-existing skips)

@@ -1,0 +1,261 @@
+EVIDENCE — task-2-rust-agent-harness (plan todo 2: test-support crate — mock provider + SSE DSL + cassettes + race gates)
+Executor: Sisyphus-junior implementation worker
+Date: 2026-09-12 (all runs local, Windows 11, PowerShell 5.1)
+Working dir: C:\Users\vsbb1\source\repos\harness
+Base: commit fbc0859 on main (21-crate scaffold, 21 tests green pre-change)
+
+================================================================================
+0. WHAT WAS BUILT (harness-test-support)
+================================================================================
+Deliverables per plan todo 2 (a)-(f):
+  (a) provider/ — rule-based fake provider, goose DummyApi pattern:
+      FakeApi::on(matcher).reply_stream(script) / .fail_no_choices() /
+      .fail_output_limit() / .fail_context_limit() / .fail_server_error() /
+      .reply_then_server_error(script) / .up_to_n_times(n);
+      matchers: Any / Model / PromptContains / All (From<&str> = PromptContains);
+      first-match-wins rule engine with use-caps; unmatched requests return the
+      typed ProviderError::UnexpectedRequest (never panics).
+  (b) sse/ — codex responses.rs pattern: ev_message_start / ev_message_stop /
+      ev_text_delta / ev_tool_call_delta / ev_usage / ev_error / ev_done
+      constructors; SseScriptBuilder (ordered steps, .delay(), .up_to_n_times(n)
+      = repeat steps up to n times, .build()); SseParser (consumer side, exposes
+      pending_fragment()/is_mid_event() for torn-frame observability).
+  (c) sse/stream.rs — SseByteStream: chunked in-memory body; drop_after_bytes(n)
+      tears the final frame mid-event (partial event stream observable);
+      close_after_events(n) ends cleanly after n whole events (no torn frame,
+      later events incl. done never arrive); inter-chunk delays for idle-timeout
+      paths (virtual under start_paused).
+  (d) gate.rs — ResponseGate: Condvar-style async gate; race-free wait via
+      Notified::enable() BEFORE state check + notify_waiters; release() /
+      cancel() (sticky, release-already-seen wins) / wait_for(timeout) /
+      is_released().
+  (e) cassette/ — CassetteRecorder (redaction applied AT RECORD TIME so a
+      cassette never holds unmasked secrets; BTreeMap => sorted keys,
+      deterministic JSON); Cassette::save/load (Corrupt error carries path +
+      serde line/column); CassetteReplayer STRICT: order-based matching
+      (Mismatch on wrong turn), Exhausted when dry, finish() dies on unused
+      interactions with count; RedactionFilter (default: authorization/x-api-key/
+      api-key/cookie headers -> [REDACTED]; .mask_value(needle) scrubs substring
+      from prompt AND every event payload via recursive JSON walk).
+  (f) Hermetic by construction: zero networking stack in the dep tree (tokio
+      features sync+time only), all streams in-memory. DESIGN CHOICE (documented
+      per plan): NO loopback servers, NO HTTP-mock dependency — in-memory
+      streams/channels give full HTTP-shape fidelity (chunked frames, torn
+      frames, idle gaps) without sockets. Timer tests run under
+      #[tokio::test(start_paused = true)] — zero real sleeps anywhere.
+  util.rs — TestDir: per-test tmp dir keyed tag+pid+counter (nextest = process
+  per test), removed on drop. Isolation test proves same-tag dirs collide never.
+
+Files (all <=110 pure LOC, ceiling 250; doc comments on all public items;
+#![deny(missing_docs)] enforces it; edition 2024; no unsafe; no unwrap()/expect()
+in library code paths — Result everywhere; poison recovery via into_inner):
+  harness-test-support/src/lib.rs                          11 pure LOC
+  harness-test-support/src/gate.rs                         68
+  harness-test-support/src/util.rs                         24
+  harness-test-support/src/provider/mod.rs                105 (FakeApi+RuleBuilder+Rule)
+  harness-test-support/src/provider/matcher.rs             51
+  harness-test-support/src/provider/error.rs               20
+  harness-test-support/src/provider/reply.rs               15
+  harness-test-support/src/sse/mod.rs                      11
+  harness-test-support/src/sse/event.rs                    51
+  harness-test-support/src/sse/script.rs                   60
+  harness-test-support/src/sse/stream.rs                   95
+  harness-test-support/src/sse/parser.rs                   47
+  harness-test-support/src/cassette/mod.rs                 13
+  harness-test-support/src/cassette/record.rs              33
+  harness-test-support/src/cassette/recorder.rs            81
+  harness-test-support/src/cassette/replay.rs              58
+  harness-test-support/src/cassette/redact.rs              68
+  harness-test-support/src/cassette/store.rs               26
+  harness-test-support/src/cassette/error.rs               48
+Tests (behavior-named, one per acceptance item):
+  tests/sse_dsl.rs           5 tests
+  tests/sse_stream.rs        4 tests
+  tests/provider_injection.rs 9 tests
+  tests/gate.rs              3 tests
+  tests/cassette_replay.rs   7 tests
+  => 28 new tests + kept scaffold smoke test = 29 in crate; workspace 49 total.
+
+================================================================================
+1. DEPENDENCIES (justification — tree kept minimal, exactly the suggested set)
+================================================================================
+cargo tree -p harness-test-support --edges normal,dev:
+  serde 1.0.229 (derive)      — cassette/SseEvent serde (Recorded* types)
+  serde_json 1.0.151          — event payloads, cassette files (itoa/zmij/memchr)
+  thiserror 2.0.20            — ProviderError / CassetteError / gate errors
+  tokio 1.53.1                — lib: features ["sync","time"] (Notify, sleep,
+                                timeout). NO net/io features — no socket code can
+                                even link. dev adds rt+macros+test-util for
+                                #[tokio::test(start_paused = true)].
+Transitive: serde_core, serde_derive, proc-macro2, quote, syn, unicode-ident,
+itoa, memchr, zmij, pin-project-lite, tokio-macros, thiserror-impl — all
+MIT OR Apache-2.0 / Unicode-3.0 => deny.toml allow-list satisfied (section 4).
+NO HTTP-mock dep: no loopback servers used (see 0(f) design choice).
+
+================================================================================
+2. TDD RED->GREEN PER COMPONENT (strict order; red = failing build for the
+   right reason: the component's API did not exist yet)
+================================================================================
+Cycle A — SSE DSL (tests/sse_dsl.rs first):
+  RED: error[E0432]: unresolved import `harness_test_support::sse`
+  GREEN: 6 tests run: 6 passed (5 sse_dsl + scaffold smoke)
+Cycle B — stream injection (tests/sse_stream.rs first):
+  RED: error[E0432]: unresolved import `...::sse::SseByteStream`
+       + E0599 start_paused missing (tokio test-util feature absent -> added to
+       dev-dependencies)
+  GREEN: 10 tests run: 10 passed
+Cycle C — fake provider (tests/provider_injection.rs first):
+  RED: error[E0432]: unresolved import `harness_test_support::provider`
+  (one test-side fix during red: "hello".into() ambiguous under generic Into
+   bound -> RequestMatcher::from("hello"); one borrow fix Vec<&str>->Vec<String>)
+  GREEN: 19 tests run: 19 passed
+Cycle D — ResponseGate (tests/gate.rs first):
+  RED: error[E0432]: unresolved import `harness_test_support::gate`
+  GREEN: 22 tests run: 22 passed
+Cycle E — cassettes (tests/cassette_replay.rs first):
+  RED: error[E0432]: unresolved import `...::cassette` / `...::util`
+  (during green: E0308 serde_json::Error mapped into Io variant -> added typed
+   CassetteError::Serialize variant; no test weakening)
+  GREEN: 29 tests run: 29 passed
+Post-green refactor (no behavior change): removed an unreachable
+unwrap_or_else fallback in FakeApi::stream() (exhaustive match now), collapsed
+take_reply() via edition-2024 let-chain, deleted one-call helper
+ScriptedReply::as_error(). All gates re-run green afterwards.
+
+Acceptance coverage (each mode = one named test, all PASS):
+  NoChoices                  provider_injection::no_choices_failure_mode_fires
+  OutputLimit                provider_injection::output_limit_failure_mode_fires
+  ContextLimitError          provider_injection::context_limit_failure_mode_fires
+  ServerError                provider_injection::server_error_failure_mode_fires_as_http_500
+  ReplyThenServerError       provider_injection::reply_then_server_error_succeeds_once_then_fails
+  mid-stream drop (partial)  sse_stream::mid_stream_drop_leaves_partial_event_observable
+  idle-timeout               sse_stream::idle_gap_triggers_consumer_timeout_under_paused_clock
+  close-after-N              sse_stream::close_after_n_events_ends_cleanly_without_done
+  up_to_n_times exhaustion   provider_injection::up_to_n_times_exhaustion_returns_unexpected_request
+  (DSL up_to_n_times repeat  sse_dsl::builder_up_to_n_times_repeats_steps_exactly_n_times)
+  strict-replay unused death cassette_replay::strict_replay_dies_on_unused_interactions
+  corrupted cassette abort   cassette_replay::corrupted_cassette_aborts_with_clear_error
+  redaction applied          cassette_replay::redaction_masks_secret_headers_and_values
+  (+ mismatch / exhausted / tmp-dir isolation / gate trio / matcher routing /
+     From<&str> / conversation replay / roundtrip)
+Tests assert OBSERVABLE behavior (parsed events, joined text, error variants,
+virtual-clock elapsed), never mock-call mirrors.
+
+================================================================================
+3. QA CHANNELS
+================================================================================
+Happy — full scripted 3-turn conversation replays start-to-finish through the
+fake provider (live pass) AND record->save->load->strict-replay roundtrip:
+CMD: $env:HARNESS_TS_DEMO='1'; cargo nextest run -p harness-test-support -E 'test(record_then_replay)' --no-capture
+  [demo] replay "What is the capital of France?" -> "The capital of France is Paris."
+  [demo] replay "And 2+2?" -> "2+2 equals 4."
+  [demo] replay "Great, thank you!" -> "You're welcome!"
+  Summary [  0.145s] 2 tests run: 2 passed, 27 skipped
+(Demo prints are env-gated: silent in normal runs, zero flake surface.)
+
+Failure — corrupted cassette aborts with a CLEAR error (actual error text):
+CMD: $env:HARNESS_TS_DEMO='1'; cargo nextest run -p harness-test-support -E 'test(corrupted_cassette)' --no-capture
+  [demo] corrupted cassette error: corrupted cassette at
+  C:\Users\vsbb1\AppData\Local\Temp\harness-ts-corrupt-34584-0\corrupt.json:
+  key must be a string at line 1 column 3
+  PASS corrupted_cassette_aborts_with_clear_error
+(The test also asserts the message contains "corrupted cassette" + the file name
+and that the error is the typed Corrupt{path,source} variant.)
+
+================================================================================
+4. GATES (all green; durations recorded — adversarial: hung_or_long_commands)
+================================================================================
+cargo build --release           exit 0, DUR 14552ms (first with new deps;
+                                incremental re-verify after refactor: 6714ms)
+cargo clippy --all-targets -- -D warnings
+                                exit 0 (workspace lints warnings=deny +
+                                clippy::all=deny active). Defects clippy caught
+                                and were fixed (honest record): result_large_err
+                                on CassetteError (Mismatch payload boxed),
+                                map_or->is_none_or, filter+collect->retain,
+                                collapsible_if -> edition-2024 let-chain,
+                                thiserror nested-field format string -> named
+                                bindings.
+cargo fmt --check               exit 0
+cargo deny check                exit 0 — "advisories ok, bans ok, licenses ok,
+                                sources ok". (Pre-existing scaffold warnings:
+                                Unicode-DFS-2016/Zlib allowances now unmatched —
+                                informational license-not-encountered notes, not
+                                errors; left as task-1 config.)
+cargo nextest run (workspace)   49 tests run: 49 passed, 0 skipped — final full
+                                list includes all 21 prior scaffold smoke tests
+                                + 28 new; fastest run 0.657s.
+
+FLAKE AUDIT (adversarial: flaky_tests) — suite run 3x consecutively, twice
+(before and after the post-green refactor), identical counts each time:
+  run1 49/49  run2 49/49  run3 49/49   (0.731s / 0.770s / 0.708s)
+No real sleeps in any test: every timer-dependent test uses
+#[tokio::test(start_paused = true)] with auto-advance; concurrency tests
+orchestrate via ResponseGate + yield_now, not timing.
+
+================================================================================
+5. ADVERSARIAL CLASSES
+================================================================================
+flaky_tests           ADDRESSED: start_paused everywhere timers exist; virtual-clock
+                      elapsed asserted exactly (5s/20s); 3x identical pass counts
+                      (see section 4); zero real sleeps.
+hung_or_long_commands ADDRESSED: all gate commands recorded with durations
+                      (max = release build 14.5s); per-test durations in nextest
+                      output all <0.6s.
+misleading_success    ADDRESSED: transcripts in section 3 are real pasted output;
+                      tests assert parsed events/joined text/error variants,
+                      not call-mirror bookkeeping.
+stale_state           ADDRESSED: TestDir per test (tag+pid+counter; nextest is
+                      process-per-test); isolation test proves same-tag dirs are
+                      distinct; cassettes never read across tests.
+dirty_worktree        ADDRESSED: only harness-test-support/** + Cargo.lock added
+                      in my commit; .omo/ files modified by the orchestrator
+                      left untouched; final git status captured (section 7).
+Others                N/A (no live APIs — hermetic by design; no UI; no perf
+                      claims; no migrations).
+
+================================================================================
+6. RESIDUAL RISKS / NOTES FOR LATER TODOS
+================================================================================
+- ProviderRequest {model, prompt, headers} is the test-facing request shape;
+  todo 9's real Provider trait should map onto it (or extend it) rather than
+  fork a second shape.
+- Cassettes record content, not timing (delays dropped) — intentional; timing
+  injection stays in scripts/SseByteStream.
+- tokio dev-dep features include test-util (start_paused) — dev-only, never
+  linked into the library's public dependency surface.
+- serde_json::Map is BTreeMap-ordered (no preserve_order feature anywhere in
+  the tree) — sorted-key guarantee for cassettes holds; if a future crate pulls
+  preserve_order, re-verify cassette determinism.
+
+================================================================================
+7. COMMIT
+================================================================================
+Files staged: harness-test-support/** (19 src files, 5 test files, Cargo.toml),
+Cargo.lock (new deps). Nothing under .omo/ touched by me except this evidence
+file (left uncommitted for the orchestrator's ledger).
+Commit message (exact): feat(test-support): mock provider, SSE DSL, cassettes, race gates
+Final git status + git log -1 pasted below in section 8 (appended post-commit).
+
+================================================================================
+8. POST-COMMIT STATE (appended 2026-09-12 04:47:47)
+================================================================================
+git log -1: b8452e6 feat(test-support): mock provider, SSE DSL, cassettes, race gates
+Files in commit: 26 (harness-test-support/** = Cargo.toml + 19 src + 5 test files, Cargo.lock)
+git status (working tree after my commit � parallel worker's todo-3 artifacts + .omo/ left for their commit):
+ M .omo/plans/rust-agent-harness.md
+ M .omo/run-continuation/ses_f7099d0b3ffexpt0mQ6ynsSNAP.json
+ M .omo/start-work/ledger.jsonl
+ M Cargo.toml
+ M harness-cli/Cargo.toml
+ M harness-daemon/Cargo.toml
+?? .dockerignore
+?? .github/
+?? .omo/evidence/task-2-rust-agent-harness.txt
+?? .omo/run-continuation/ses_f6b85c749ffeJFYHWI8U2ZkMsE.json
+?? .omo/run-continuation/ses_f6b94cdf8fferM4lDk3O8IRCcw.json
+?? Dockerfile
+?? dist-workspace.toml
+
+Gates re-confirmed green at commit time: build --release 0 / clippy -D warnings 0 /
+fmt --check 0 / deny 0 / nextest 49:49 (3x identical).

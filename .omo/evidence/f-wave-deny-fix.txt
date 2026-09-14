@@ -1,0 +1,107 @@
+WAVE F - cargo-deny advisory + duplicate/ban fix (rust-agent-harness)
+=====================================================================
+Worker: f-wave-deny-fix implementation worker (Sisyphus-junior). Date: 2026-09-14.
+Base: HEAD f4dcc63 (confirmed via git log). Goal: tree ships clean for the
+pre-v0.1 push — `cargo deny check` (advisories/bans/licenses/sources) ALL OK
+at HEAD, harness-wasm + harness-web fully re-verified.
+
+OUTCOME: WORKING (one documented scope deviation: FIX 2's real error was a
+wildcard, not a thiserror duplicate — analysis below).
+
+FIX 1 — wasmtime advisories (via harness-wasm)
+------------------------------------------------------------------------------
+Before: wasmtime 38.0.4 (root Cargo.toml `version = "38"`, features
+[cranelift,runtime,std,wat] preserved EXACTLY). `cargo deny check advisories`
+at base reported 17 unpatched vulnerabilities on the v38 line:
+  RUSTSEC-2026-0006, -0020, -0021, -0085, -0086, -0087, -0088, -0089, -0091,
+  -0092, -0093, -0094, -0095, -0096, -0114, -0222, -0269
+(all GHSA-backed wasmtime advisories; the v38 train has NO patched release —
+its maintenance window ended before the 2026-09 advisory set).
+Plus 1 rustls advisory: RUSTSEC-2026-0285 (fix >= 0.23.45).
+
+Patched-train analysis (each advisory's Solution ranges intersected):
+  - 36.0.14+ <37   : satisfies all 17   <- chosen: 36.0.15 (latest patch)
+  - 46.0.3+  <47   : satisfies all 17   <- rejected, reason below
+  - 47.0.4+, 48.0.2: satisfy all 17     <- rejected, same reason
+  - 39/40/41/42/43/44/45: only partial subsets — insufficient.
+
+Why not the upgrade trains (46.0.3 / 47.0.4 / 48.0.2, all measured empirically
+in a scratch probe crate, identical results on all three):
+  - API-compatible with harness-wasm (compiles clean, zero source changes)…
+  - BUT wasmtime 46.0.0 changed fuel semantics: "consumes fuel in
+    bulk-data-transfer instructions proportional to the size of the transfer"
+    (PRs #13393/#13448) + data-segment initialization moved into wasm-executed
+    code (PRs #13394/#13444). Measured: instantiating a module with the
+    fixture's ~185-byte manifest data segment consumes exactly 4097 fuel
+    (v38/v36: 0 fuel). The plugin_sandbox test
+    `configurable_fuel_budget_applies_per_call` loads with fuel_per_call =
+    1_000 < 4097 -> manifest probe traps "all fuel consumed by WebAssembly"
+    at LOAD: 47 passed / 1 FAILED. Restoring green would require editing
+    harness-wasm sources (test budget floor or loader probe fuel envelope) —
+    outside this task's permitted surfaces.
+  - 36.0.15 keeps instantiation fuel-free (measured: 0 fuel), passes 48/0.
+Decision: v38 -> v36.0.15 — nearest patched train, minimal distance (2 majors
+down vs 8 up), zero source changes, behavioral baseline preserved. Comment
+block on the workspace entry updated with this rationale so a future bump
+does not walk into the 46+ fuel-semantics trap blind.
+
+rustls: 0.23.44 -> 0.23.45 (lock-only, satisfies RUSTSEC-2026-0285).
+
+FIX 2 — bans (task brief said "thiserror duplicate via harness-web")
+------------------------------------------------------------------------------
+Ground truth from `cargo deny check bans` at base:
+  - The ONLY error (what actually failed the check): error[wildcard]
+    "found 2 wildcard dependencies for crate 'harness-web'" — the path
+    dev-deps harness-daemon/harness-core carried no `version` key.
+    Fix: added `version = "0.1.0"` to both (house pattern, cf. harness-wasm's
+    `harness-core = { path = "../harness-core", version = "0.1.0" }`).
+  - thiserror 1.0.69 + 2.0.20 duplicate: WARNING only (deny.toml
+    [bans] multiple-versions = "warn"). harness-web has NO thiserror entry at
+    all — the 1.x copy is pulled by plan-named third-party crates
+    (portable-pty -> filedescriptor 0.8.3, win32job 2.0.3; verified via
+    `cargo tree -i thiserror@1.0.69 --all-features`). Unifying would require
+    changing plan-pinned crates; left as the configured-acceptable warning.
+    No harness-web thiserror line existed to "align" — the wildcard lines in
+    the same file were the real repair (disclosed deviation, minimal churn).
+
+VERIFICATION (all at final state; builds under the standing task-13 MSVC
+recipe — CC unset, INCLUDE prepended with the surviving VS18 ScopeCppSDK
+vc15 VC\include (WinSDK 26100 INCLUDE retained), LIB onecore+WinSDK;
+private CARGO_TARGET_DIR %TEMP%\opencode\t46-target, warm)
+------------------------------------------------------------------------------
+1. cargo deny check                     -> "advisories ok, bans ok, licenses
+   ok, sources ok" — exit 0 (duplicate-version warnings remain by design).
+2. cargo test -p harness-wasm --features wasm-plugins
+                                         -> 48 passed, 0 failed
+   (lib 10, hot_reload 4, manifest 7, plugin_fs 5, plugin_load 11,
+   plugin_registry 4, plugin_sandbox 7).
+3. cargo test -p harness-wasm           -> 10 passed, 0 failed (default).
+4. cargo tree -p harness-wasm           -> no wasmtime in default tree.
+5. cargo clippy -p harness-wasm --all-targets            -> exit 0.
+   cargo clippy -p harness-wasm --all-targets --features wasm-plugins
+                                                          -> exit 0.
+6. cargo test -p harness-web            -> 13 passed, 0 failed
+   (lib 4, served_assets 9).
+7. cargo clippy -p harness-web --all-targets             -> exit 0.
+   cargo fmt -p harness-web -- --check                  -> exit 0.
+8. cargo test -p harness-wasm -p harness-web            -> exit 0, green.
+   cargo clippy -p harness-wasm -p harness-web --all-targets -> exit 0.
+
+CHANGED FILES (surgical)
+------------------------------------------------------------------------------
+- Cargo.toml          : wasmtime entry 38 -> 36 (features untouched) + comment
+- harness-web/Cargo.toml : version keys on the two path dev-deps (wildcard fix)
+- Cargo.lock          : wasmtime tree 38.0.4 -> 36.0.15 (wasmtime-* internals,
+  cranelift 0.125.4 -> 0.123.15, wasmparser 0.239 -> 0.236.1, wmemcheck
+  0.13.5 -> 0.12.2), rustls 0.23.44 -> 0.23.45; nothing else.
+Single commit: "fix(deps): resolve cargo-deny advisories and duplicate ban".
+Pre-existing dirty .omo/ ledger+evidence files and stray msvc-probe.obj /
+target-task-36/ left untouched and unstaged (other workers' surfaces).
+
+RESIDUAL RISKS
+------------------------------------------------------------------------------
+- wasmtime 36.x is a maintained-but-older train than 46/47/48; future bump to
+  46+ MUST handle the instantiation-fuel change (see comment on the workspace
+  entry + this file's FIX 1 analysis).
+- Duplicate-version warnings (thiserror, syn, getrandom, ...) remain by
+  config ([bans] multiple-versions = "warn"); not failures.

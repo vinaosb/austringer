@@ -1,0 +1,184 @@
+=== T5 RED RUN (tests written first; module absent) ===
+cargo nextest run -p harness-core --no-fail-fast 2>&1 (excerpt):
+error[E0433]: cannot find gent_loop in harness_core`n --> harness-core\tests\common\stages_kit.rs:11:19
+error[E0432]: unresolved import harness_core::agent_loop (x N across 5 new test binaries)
+error: test compilation failed — 31 new tests RED for the right reason (missing API, not test bugs)
+
+
+=== TASK 5: AGENT LOOP STATE MACHINE (named operations) — IMPLEMENTATION ===
+Date: 2026-09-12 | HEAD before: 1479528 | Commit: feat(core): operation-pipeline agent loop
+
+SCOPE DELIVERED (plan todo 5, binding)
+--------------------------------------
+Module harness-core/src/agent_loop/ (named agent_loop, not loop: Rust keyword):
+  operation.rs  Operation enum, Operation::ALL binding order EntryHook->SlashCommand->
+               Steer->MaxTurns->Compaction->ToolPairCompaction->ToolApproval->ToolExecution->
+               Retry->StopHook->ExitOnError->Inference (12 ops, never an unstructured while-turn;
+               dispatch() iterates Operation::ALL and routes to typed handlers)
+  status.rs    SessionStatus {InProgress,Blocked,Cancelling,Cancelled,Success,Failed} state machine;
+               typed transition() rejecting illegal pairs; Cancelled->InProgress = sanctioned
+               resume escape; Success/Failed absorbing
+  focus.rs     FocusChain (BTreeMap<TodoId,FocusTodo>): stable render() byte-identical for
+               identical state (sorted ids, no timestamps/ambient data); completion_block()
+               = typed CompletionBlock::OpenTodos{open_count,rendered(open-only chain)};
+               PlanGate handle (hard_block/clear/is_hard_blocked, cloneable, daemon-wired)
+  cancel.rs    CancelToken (sticky, race-free cancelled()); cancelled_then(grace) = the grace
+               window primitive; CancelRecord{operation, high_water: Sequence, forced}
+  inference.rs Inference async-trait seam: InferenceRequest{events: &[RecordedEvent],
+               focus_block} -> AssistantTurn{blocks, tool_calls}; T9 ALIGNMENT RISK NOTE in
+               module docs (adapter must keep: llm_visible filtering, cancel-abandon-not-drain,
+               complete-or-error); TASK_COMPLETED_TOOL const (T6 wires the real tool)
+  flow.rs      stage outcome vocabulary (Flow/SlashFlow/TurnGate/Decision/ToolOutcome/
+               RetryFlow/StopDecision/ErrorFlow/StageError)
+  stages.rs    11 injectable stage traits w/ DEFAULT NO-OP impls (Compaction=T13,
+               ToolPairCompaction=T12, ToolApproval/T7 inspectors, StopHook/EntryHook=T28,
+               Retry/ExitOnError/MaxTurns/Steer/Slash defaults) + StageCtx (append through
+               the T4 writer + mirror) + StageSet collection
+  dispatch.rs  per-operation routing; stage_ctx! split-borrow macro; PENDING terminal
+               outcomes (handlers never mutate status inside raced futures)
+  tools.rs     approval (deny->synthetic feedback result), execution (cooperative cancel
+               between calls; NEVER records beyond high-water), reserved task_completed
+               intercept: open todos -> System re-prompt w/ open chain + typed block +
+               InProgress->Blocked->InProgress; plan gate -> PlanGate block; clear ->
+               ToolResult + Success; rebuild_pending(): trailing ToolCalls w/o ToolResult
+               rebuilt on open (resume)
+  decisions.rs retry (budget), stop hook (loop-enforced BLOCK CAP: after cap, System
+               "stop-hook block cap reached" + must let exit proceed), exit-on-error
+               (FailSession | FeedModel), inference (records Assistant+ToolCall events,
+               turn counter, turn_ended flag)
+  pipeline.rs  AgentLoop: open()=resume (T4 torn-tail handling + orphan rebuild), submit(),
+               cancel_handle(), run() iteration driver w/ has_work condition,
+               run_operation() = grace race (biased select: stage vs token.cancelled_then(
+               grace)); cancel_run() appends exactly ONE System mark after high_water
+               ("SESSION CANCELLED after sequence N during <op> (clean|forced)") +
+               Cancelling->Cancelled
+  config.rs    LoopConfig{max_turns=40, max_inference_retries=0, stop_hook_block_cap=1,
+               cancel_grace=5s}; FailureReason{MaxTurns,InferenceExhausted,Stage,Terminal};
+               RunOutcome{TaskCompleted,TurnComplete,Cancelled(CancelRecord),Failed}
+
+KEY DESIGN DECISION
+-------------------
+Handlers return PENDING outcomes (OpAction::Fail/Complete); run_operation applies them
+AFTER the cancel check. Root cause found via a red test: applying Failed inside the raced
+stage future let a mid-stage cancel find a terminal status (cancel record lost coherence).
+Pending-application makes the cancel always win cleanly with a transitionable state.
+
+T4 seam touch (minimal): EventSink gains `: Send` supertrait (FileSink already Send) so
+EventLogWriter/AgentLoop can cross await points. No behavior change.
+
+DEPS: +async-trait 0.1.92, +tokio 1.53 (sync,time,macros; dev: rt,macros,test-util) —
+deny-clean (advisories/bans/licenses/sources ok). Wildcard-ban fix: dev-dep
+harness-test-support pinned path+version.
+
+RED -> GREEN (TDD)
+------------------
+RED (captured at top of this file): all 5 new test binaries failed compile on the missing
+agent_loop module — tests written first, no implementation existed.
+Mid-cycle red tests that drove real fixes:
+  1. cancel_mid_exit_on_error: status=Failed instead of Cancelled -> pending-outcome design
+  2. completion_block test: block rendered full chain -> open-only rendering
+  3. cancel-while-streaming: adapter conflated cancel-None with stream-end-None -> explicit
+     match Some(Some)/Some(None)/None
+  4. cancelled_then unit test poll-boundary race -> timeout-bounded join
+
+FULL GATES (exit 0)
+-------------------
+  cargo fmt --check                                          exit 0
+  cargo clippy --all-targets -- -D warnings                 exit 0
+  cargo deny check                                           advisories ok, bans ok, licenses ok, sources ok
+  cargo build --release                                      exit 0
+  cargo nextest run                                          114 tests run: 114 passed, 0 skipped
+  cargo nextest run (x3, flake probe)                        114/114, 114/114, 114/114
+  (74 baseline -> 114: +40 [36 integration across 7 loop_* binaries + 4 in-module unit sets])
+  cargo nextest run --run-ignored=only -p harness-core      2 QA transcripts pass
+FILE SIZE: all lib+test files <=250 pure LOC (largest: pipeline.rs 213, stages.rs ~200,
+  loop_cancel_tools.rs ~140)
+
+ACCEPTANCE COVERAGE (test -> name)
+----------------------------------
+- State-transition table: loop_status_machine::transition_table_matches_the_legal_set_exactly
+  (all 36 pairs) + absorbing/terminal/resume tests
+- Cancel-during-EACH-operation (all 12 ops):
+  loop_cancel.rs: entry/slash/steer/maxturns/compaction/tool_pair_compaction
+  loop_cancel_tools.rs: approval/execution (orphan exactly-once on resume)
+  loop_cancel_policy.rs: retry/stop_hook/exit_on_error/inference(mid-stream abandon,
+  cancelled-at-seq, no Assistant beyond mark)
+  each: clean record, op named, high_water honored (mark = ONLY event beyond), disk==memory,
+  resumable, no panic
+- Focus-chain re-injection stability: loop_pipeline::three_turn_scripted_conversation... +
+  loop_focus::render_is_byte_identical... (byte-identical across insertion orders + turns)
+- Completion-blocked-while-open-todos: loop_pipeline::task_completion_is_blocked... (typed
+  block, System re-prompt w/ open chain, closes -> Success) + plan-gate variant
+- Stop-hook block cap: loop_pipeline_policy::stop_hook_blocks_at_most_cap_times... (always-
+  blocking hook, cap=2 -> exactly 2 block events + 1 cap notice + TurnComplete)
+- Grace window under start_paused: loop_grace::cancel_during_grace... (clean),
+  grace_window_expiry_forces... (forced + resumable), hung_inference... (forced during
+  Inference)
+- 3-turn scripted happy convo via FakeApi adapter: loop_pipeline::three_turn... (event
+  content asserted, focus blocks byte-identical, disk replay clean)
+- Pipeline order: loop_pipeline_policy::operation_pipeline_order_is_the_binding_sequence
+- Retry: retry_then_success + retries_once_then_fails_typed; MaxTurns: typed Failed
+
+QA CHANNEL TRANSCRIPTS (cargo nextest run --run-ignored=only, verbatim)
+-----------------------------------------------------------------------
+[HAPPY] 3-turn scripted conversation:
+  run(q1) -> TurnComplete  status=InProgress
+  run(q2) -> TurnComplete  status=InProgress
+  run(q3) -> TurnComplete  status=InProgress
+  focus blocks byte-identical across turns: true
+    seq  1  user: q1
+    seq  2  assistant: first answer
+    seq  3  user: q2
+    seq  4  assistant: second answer
+    seq  5  user: q3
+    seq  6  assistant: third answer
+  disk replay: 6 events, anomalies: 0
+
+[FAILURE] cancel mid-ToolExecution:
+  outcome: Cancelled(CancelRecord { operation: ToolExecution, high_water: Sequence(3), forced: false })
+  status: Cancelled
+  high_water=3 operation=ToolExecution forced=false
+    seq  1  user: run the tool
+    seq  2  assistant:
+    seq  3  tool-call c1 long_tool null
+    seq  4  system: SESSION CANCELLED after sequence 3 during ToolExecution (clean)
+  resume: status=InProgress (orphan tool call rebuilt from log)
+  resume run -> TurnComplete  status=InProgress
+  tool c1 executed exactly once on resume: true
+    seq  5  user: finish
+    seq  6  tool-result c1: (no tool backend registered; call c1 not executed)
+    seq  7  assistant: resumed and done
+
+ADVERSARIAL CLASSES
+-------------------
+cancel/resume: THE core class — every one of the 12 operations probed (see coverage).
+repeated_interruptions: loop_cancel_resume::repeated_interruptions_stay_consistent
+  (cancel->resume->cancel->resume->complete; monotonic seqs; user events intact).
+flaky_tests: all timing under tokio start_paused (auto-advance); 3x full-suite runs
+  identical; no wall-clock sleeps in correctness paths.
+malformed_input: N/A — no parsing in this todo (scope note); one-liner.
+misleading_success_output: all asserts compare exact event-log content (memory AND disk
+  replay); transcripts above are verbatim.
+hung_or_long_commands: grace-window expiry probed on a hung compactor AND a hung
+  inference (forced terminal, still resumable).
+stale_state: resume-after-cancel rebuilds from the on-disk high-water (orphan ToolCall
+  scan; events mirror reloaded from disk).
+dirty_worktree: git status captured post-commit below.
+Others (resource_leak, sql_injection, xss, csrf, auth_bypass): N/A — no network/SQL/web
+  surface in this todo (one line each per brief).
+
+RESIDUAL RISKS / NOTES
+----------------------
+- Focus-chain durability: chain state is in-memory loop state; resume does NOT rebuild it
+  (tests re-seed). Durable persistence is todo 24's session-store concern; T11 will
+  cache-align the rendered block.
+- Inference seam is minimal by design; T9 Provider adapter MUST honor the documented
+  contract (llm_visible filtering, abandon-on-cancel, complete-or-error) — risk noted in
+  inference.rs module docs.
+- Slash commands: default handler marks unknown commands; real command set lands with T8.
+- run() resets stop-block counter + failure counter per call (documented); cross-run
+  budget persistence is todo 25 (budget caps).
+- FsyncPolicy::Always on the loop-owned writer (durability-first); perf tuning deferred.
+
+COMMIT: caf6430 feat(core): operation-pipeline agent loop (single commit, 32 files, +3813/-7)
+POST-COMMIT git status: only pre-existing .omo orchestrator files (plans/ledger/run-continuation, modified before this task) + untracked .omo evidence/session files. Working tree clean of implementation files.

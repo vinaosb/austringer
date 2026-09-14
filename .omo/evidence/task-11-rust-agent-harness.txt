@@ -210,3 +210,15 @@ ENVIRONMENT NOTE (same as task 8)
 
 POST-COMMIT ISOLATION RUN (appended after commit + worktree add)
 -------------------------------------------------------------------------------
+
+  git worktree add C:\Users\vsbb1\source\repos\harness-t11-proof 89d1fa4
+    (detached, own CARGO_TARGET_DIR=C:\ct-t11-proof, none of the parallel
+    workers' uncommitted files present)
+  cargo test -p harness-core   ->  ok suites: 42 / FAILED suites: 0
+    incl. context_prefix_identity (15), context_epoch (7),
+    context_cache_tracker (6) + all pre-existing suites.
+  Worktree + proof target dir removed afterwards; single commit 89d1fa4
+  contains the implementation, tests, and this evidence file. This
+  POST-COMMIT section is intentionally a working-tree-only append:
+  amending is forbidden and a second commit would break the single-commit
+  contract.

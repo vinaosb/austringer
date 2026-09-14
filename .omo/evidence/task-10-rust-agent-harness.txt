@@ -1,0 +1,263 @@
+TASK 10 — rust-agent-harness: five adapters + cost accounting (harness-providers)
+=================================================================================
+Worker: todo-10 implementation worker (Sisyphus-junior), 2026-09-12
+Base: HEAD 7542f6a on main (T9 provider trait/streaming/recovery committed).
+
+DELIVERED (harness-providers crate ONLY + root dep lines)
+---------------------------------------------------------
+Transport seam (src/transport.rs):
+  Transport trait (dyn-safe, async send -> response w/ streaming ByteStream
+  body), TransportRequest/Response, TransportFailure {Connect,Timeout,Tls,Io,
+  Protocol} -> new ProviderStreamError::Transport variant (always retry-class)
+  + ProviderStreamError::Auth(Box<AuthError>) (retryable only when the auth
+  endpoint itself was unreachable). Production impl: src/transport_reqwest.rs
+  behind default feature "reqwest-transport" (rustls-tls-native-roots, stream;
+  default-features=false; POST-only; mid-body transport errors surface as
+  end-of-body + warn -> the turn layer turns that into a typed disconnect and
+  resume takes over). ZERO network in tests, ever: every test injects
+  ScriptedTransport (tests/common/wirekit.rs) over T2 SseByteStream chaos.
+
+Production SSE frame parser (src/sse.rs, private): CRLF normalization, comment
+  lines, data-only frames, [DONE]-as-string degradation, 1 MiB bounded frame
+  buffer (untrusted payloads -> TransportFailure::Protocol beyond it). 10 unit
+  tests incl. byte-by-byte chunking.
+
+Five adapters over ONE engine (src/adapters/): WireCodec (render_request +
+  fresh per-stream codec) + StreamCodec (feed + flush) + SseProvider (auth
+  attach -> transport -> HTTP error map -> SSE framing -> codec -> typed
+  events). Vendor files:
+  - anthropic.rs     POST /v1/messages; tool_use blocks (index->call_id map),
+                     message_start+message_delta usage merge (cache_read/
+                     cache_write), stop_reason map (end_turn/stop_sequence/
+                     max_tokens/tool_use/refusal), ping/message_stop skipped.
+  - chat.rs          chat-completions codec shared by openai/xai/compat:
+                     data-only frames (event name IGNORED by design - pinned
+                     by test), tool_calls index->id correlation, finish_reason
+                     map (stop/length/tool_calls/content_filter), usage chunk
+                     w/ prompt_tokens_details.cached_tokens. FINISH IS
+                     BUFFERED + flushed at end-of-stream: usage arrives AFTER
+                     finish_reason on this wire; the consumer always sees
+                     usage-then-finish.
+  - openai.rs        OpenAiAdapter::chat (/v1/chat/completions) and
+                     ::responses (/v1/responses) - both stable public
+                     surfaces, no feature gate needed.
+  - responses.rs     Responses API: output_text.delta, output_item.added
+                     (function_call items), function_call_arguments.delta
+                     (item_id correlation), response.completed (usage +
+                     finish; ToolCall when function items streamed),
+                     response.incomplete (max_output_tokens->Length,
+                     content_filter->Refusal), response.failed -> StreamError.
+  - google.rs        :streamGenerateContent?alt=sse; parts[].text, functionCall
+                     parts -> SYNTHESIZED stable ids gemini-call-{n} (API
+                     provides none; start/delta correlate through them),
+                     finishReason map (STOP->ToolCall iff function calls seen
+                     else EndTurn, MAX_TOKENS->Length, safety family->Refusal,
+                     unknown->warn+EndTurn), usageMetadata w/ cachedContent.
+  - xai.rs           chat wire at api.x.ai. compat.rs: configurable base URL
+                     ({base}/chat/completions), NoCredentials-friendly
+                     (Ollama), provider string "openai-compat" (= unpriced
+                     cost-table key by design).
+  HTTP error mapping: {"error":{type|status|code,string-or-numeric}} across
+  all five vendors -> ProviderStreamError::Http{status,code,message};
+  non-JSON bodies degrade to a 300-char snippet. 429/5xx retryable, 4xx fatal
+  (unchanged T9 is_recoverable). Error bodies bounded to 64 KiB.
+
+Auth (src/auth/): CredentialSource trait (credentials() + kind()),
+  AccessToken{value: SecretString (Debug-redacted), style, kind, expires_at},
+  AuthHeaderStyle {Bearer, XApiKey, XGoogApiKey, None} -> header rendering;
+  StaticApiKey (x_api_key/bearer/google_api_key), NoCredentials.
+  OAuthDeviceFlow (RFC 8628 + PKCE RFC 7636 S256, sha2+base64ct, form-encoded
+  over the injected Transport): begin_device_authorization (PKCE challenge
+  when configured) -> poll_for_token (authorization_pending/slow_down typed;
+  refresh_token persisted) -> refresh() (rotation-aware) -> credentials()
+  cache->refresh->LoginRequired; invalid_grant/expired_token -> ReauthRequired.
+  OAuth error bodies classified even on HTTP 200 (proxy-mangled statuses).
+  SecretStore trait: InMemorySecretStore (default, process-local) +
+  KeyringStore behind NON-default feature "keyring" (windows-native/
+  apple-native/sync-secret-service; refresh tokens in the OS store only when
+  the embedder opts in).
+  AuthKind {ApiKey, Subscription} = billing surface, exposed via each
+  adapter's auth_kind() BESIDE ModelIdentity (deliberate: identity equality
+  is load-bearing in T9's per-event substitution checks; embedding auth mode
+  IN the identity would fabricate mismatches on auth-mode switches. The cost
+  HUD (todo 42) reads adapter.auth_kind()). No provider client ids are baked
+  in - DeviceFlowConfig is configuration-owned.
+
+Cost (src/cost/): ModelPrices (micro-USD per MTok), integer-only accounting
+  (u128 intermediates; no floats in the money path), CostReport{usage, priced:
+  Priced{Priced(CostBreakdown), Unpriced}} - the Unpriced marker is the typed
+  tokens-only state; CostTable::builtin() (anthropic/openai/google/xai rows,
+  point-in-time snapshot, cache-write 1.25x input on Anthropic) +
+  with_override() runtime merge; lookup: exact alias OR longest
+  version-boundary prefix ("claude-sonnet-4-5-20250929" -> "claude-sonnet-4-5"
+  entry; "claude-sonnet-4-5x" does NOT match).
+
+Usage (src/event.rs): +cache_read_tokens/cache_write_tokens (serde default
+  for old snapshots) + Usage::new/with_cache/Default; wire.rs normalized
+  "usage" mapping extended; two T9 test literals updated to Usage::new.
+
+Guardrail (plan: "Must NOT parse beyond stable API surfaces w/o feature
+  flag"): every parsed field above is each provider's documented stable
+  surface; unknown fields are ignored (pinned by weird-but-valid tests). No
+  adapter-specific extension features exist today, so none are flagged on;
+  future extensions must come behind per-provider cargo features.
+
+TDD RED->GREEN LEDGER (all red runs in the committed-tree worktree, see
+  ISOLATION below; red = compile error naming the missing module/API or the
+  failing assertion, never a test bug):
+  A transport seam    red: E0432 unresolved import `harness_providers::transport`
+                      green: tests/transport_seam.rs 4 passed
+  B cost/usage        red: E0432 `cost` + E0560 Usage cache fields
+                      green: tests/cost_accounting.rs 7 passed (1 test fixed
+                      mid-stage: my own prefix-boundary expectation contrad
+                      the documented rule - "-typo" IS a boundary suffix)
+  C auth              red: E0432 unresolved import `harness_providers::auth`
+                      green: auth_flows.rs + auth_device_flow.rs 10 passed
+  D SSE parser        red: E0433 missing method bodies on skeleton
+                      green: 9 lib unit tests (1 expectation fixed: JSON
+                      tolerates leading whitespace, so " 42" parses as 42)
+  E adapters          red: E0433 cannot find AnthropicAdapter in adapters
+                      green: anthropic_adapter 6, chat_adapters 5,
+                      google_adapter 5, responses_adapter 3, adapter_matrix 4
+  F chaos + cassette  green: adapter_chaos_resume 2, cassette_conversation 1
+
+ADVERSARIAL CLASSES (all machine-asserted in committed tests)
+-------------------------------------------------------------
+  malformed input ....... adapter_matrix::malformed_sse_frames_*: two garbage
+                          frames (string + nonsense-object) injected mid-happy
+                          stream per adapter shape (6 rows) -> skipped+logged,
+                          full text + finish still delivered. garbage JSON
+                          error bodies -> truncated raw message (map_http_error).
+  new input parsing ..... weird-but-valid payloads per family: extra unknown
+                          fields, null optionals (cache_read null -> 0),
+                          unicode text (anthropic), Gemini modelVersion +
+                          unknown top-level fields + thoughtsTokenCount.
+  hung_or_long .......... adapter_matrix::transport_timeouts_*: Timeout x3 ->
+                          RetryExhausted{attempts:3, last:Transport(Timeout)}
+                          per adapter; SSE buffer > 1 MiB without boundary ->
+                          Protocol violation (sse unit test).
+  cancel/resume ......... adapter_chaos_resume: Anthropic + OpenAI-compat mid-
+                          drop after tool args complete, before finish -> T9
+                          ResumableTurn resume: re-issue byte-identical
+                          (bodies[0]==bodies[1]), tool side effect marked
+                          executed exactly once (dedup contains), envelope
+                          assembles ONE call with parsed args + replayed usage.
+  untrusted text ........ all parsing is serde_json over bounded buffers
+                          (1 MiB frames, 64 KiB auth/error bodies); no eval;
+                          non-UTF8 frames dropped by the parser.
+  stale_state ........... cassette_conversation: strict CassetteReplayer -
+                          rendered request MUST equal the recorded interaction
+                          (model + full prompt); exhausts exactly; replayer
+                          mismatch = hard transport failure.
+  flaky x3 .............. cargo test -p harness-providers x3 -> 0 failed each.
+  misleading_success .... sequences + numbers asserted, not booleans: event
+                          ORDER vectors, usage tuples, exact cost micros
+                          (16_212 total), request counts (2 after 429, 3 at
+                          exhaustion), byte-identical re-issue bodies.
+  dirty_worktree ........ distinguished: main-tree workspace run's ONLY
+                          failures are harness-exec pty_chaos/pty_live (8) -
+                          the parallel todo-19 worker's uncommitted files;
+                          my diff = harness-providers/** + root dep lines.
+
+QA CHANNELS
+-----------
+HAPPY (scripted multi-turn conversation through the Anthropic adapter from a
+  cassette; tests/cassette_conversation.rs; command:
+  cargo test -p harness-providers --test cassette_conversation -> 1 passed):
+  turn 1 events (in order): TextDelta("Let me check "), TextDelta("the
+  todos."), ToolCallStart{toolu_01, execute_command}, ToolCallDelta x2
+  ("{\"cmd\":" + "\"grep -r TODO src/\"}"), Usage{in 1234, out 42,
+  cache_read 5000, cache_write 1000}, Finish{ToolCall}
+  turn 2 events: TextDelta("All clear."), Usage{in 2000, out 12,
+  cache_read 1500, cache_write 0}, Finish{EndTurn}
+  usage accounting: per-turn Usage events above (cache-aware).
+  cost from table (claude-sonnet-4-5 = 3/15/0.30/3.75 USD/MTok):
+    turn1 = 1234*3µ + 42*15µ + 5000*0.3µ + 1000*3.75µ = 9_582 µUSD
+    turn2 = 2000*3µ + 12*15µ + 1500*0.3µ            = 6_630 µUSD
+    conversation total                                  16_212 µUSD (asserted)
+  cassette strictness: both interactions consumed, none left (is_exhausted).
+
+FAILURE (one full matrix row: anthropic; tests/adapter_matrix.rs; command:
+  cargo test -p harness-providers --test adapter_matrix -> 4 passed; each of
+  the 4 tests iterates ALL SIX adapter rows - anthropic, openai-chat,
+  openai-responses, xai, google, openai-compat):
+  malformed SSE ... "garbage-payload" string frame + nonsense-object frame
+                    injected mid-stream -> stream continues; text "Let me
+                    check the todos." + Finish{ToolCall} delivered.
+  429-then-success  HttpError(429) then happy script -> ResumableTurn
+                    completes; exactly 2 requests served; full text+finish.
+  500-exhaustion ... 3x HttpError(500) w/ retry budget 3 -> typed
+                    RetryExhausted{attempts: 3, last: Http{status: 500}};
+                    exactly 3 requests.
+  timeouts .......... 3x TransportFailure::Timeout -> RetryExhausted{attempts:
+                    3, last: Transport(Timeout)}; retry policy engaged.
+
+GATES (final, in the isolated committed-tree worktree; INCLUDE workaround
+  from task-8 evidence ~L220 active for ring/sqlite C compiles)
+----------------------------------------------------------------
+  cargo fmt -p harness-providers --check                        -> exit 0
+  cargo clippy -p harness-providers --all-targets               -> exit 0
+  cargo clippy -p harness-providers --all-targets --all-features -> exit 0
+  cargo build  -p harness-providers --no-default-features        -> exit 0
+  cargo deny check                                               ->
+    advisories ok, bans ok, licenses ok, sources ok
+  cargo test -p harness-providers                                ->
+    99 passed / 0 failed (44 pre-existing T9 + 55 new)
+  cargo test -p harness-providers  x3 (flaky probe)              -> 0 failed
+  cargo test --workspace --no-fail-fast (ISOLATED worktree)      ->
+    453 passed / 0 failed  (committed core/exec at 7542f6a + my files)
+  cargo test --workspace (MAIN tree, disclosure)                 ->
+    8 failed, ALL in harness-exec pty_chaos/pty_live = parallel todo-19
+    worker's in-flight uncommitted files; zero failures in any crate I
+    touched; harness-core (todo-11 worker) green at the time of the run.
+  Pure-LOC audit: src max 234 (adapters/anthropic.rs), tests max 241
+    (adapter_matrix.rs) - all <= 250. Three over-ceiling files found during
+    the audit were split before commit: auth/device_flow.rs (266 ->
+    device_flow.rs + auth/http.rs), tests/common/wirekit.rs (366 ->
+    wirekit.rs + common/frames.rs), tests/auth_flows.rs (291 ->
+    auth_flows.rs + auth_device_flow.rs).
+
+NEW DEPS (root Cargo.toml workspace.dependencies; deny-clean, justified in
+  manifest comments): reqwest 0.12 (default-features=false,
+  rustls-tls-native-roots + stream - see license note below), futures-util
+  0.3 (std only; StreamExt over reqwest chunks), sha2 0.10 (PKCE S256),
+  base64ct 1 (alloc; base64url challenge), bytes 1 (chunk type; reqwest 0.12
+  no longer re-exports it). Crate-local optional: keyring 3
+  (sync-secret-service/windows-native/apple-native) behind non-default
+  feature "keyring" - OS persistence for refresh tokens, opt-in.
+  NOTE: reqwest's default rustls-tls feature pulls webpki-roots, whose data
+  is CDLA-Permissive-2.0 - outside deny.toml's reviewed allow-list and
+  deny.toml is outside this task's file scope. Switched to
+  rustls-tls-native-roots (OS trust store - also the enterprise-proxy-correct
+  choice); zero deny.toml edits needed; licenses check green.
+
+SHARED-FILE DISCIPLINE LOG
+--------------------------
+  Root Cargo.toml [workspace.dependencies]: re-read before each edit; my
+  five entries appended as one contiguous block after sysinfo; the todo-19
+  worker's portable-pty/vt100 lines landed later in the same table without
+  conflict (distinct lines). Cargo.lock: the main-tree lock had absorbed the
+  parallel worker's pty tree; to keep my commit clean I reconstructed the
+  lock from HEAD + my manifests in the isolated worktree (foreign entries:
+  0; my entries: 5; full crate suite re-verified green on that lock) and
+  staged Cargo.toml surgically as HEAD + my block only (git hash-object +
+  update-index) so the commit carries exactly my work; the worker's manifest
+  lines remain uncommitted in the tree for their own commit.
+  cargo build lock contention with the parallel worker observed twice -
+  cargo's blocking wait resolved both; no git index lock encountered
+  (no git ops raced). .omo untouched except this evidence file.
+
+RISKS / NOTES
+-------------
+  - Cost tables are a point-in-time snapshot of published list prices;
+    runtime overrides are the correction path (by design, documented).
+  - transport_reqwest.rs is intentionally untested by the suite (zero-network
+    house rule); correctness rests on the seam contract shared with the
+    tested in-memory transports. A live smoke test belongs to the evals
+    adapter (todo 42/34), never the unit suite.
+  - Chat-completions test frames carry an inert `event: message` line the
+    real endpoints omit (T2 SseEvent DSL renders event+data). The codec
+    ignores event names by design for this family - parsing equivalence is
+    total over the data payload; noted here for honesty.
+  - Gemini tool-call ids are synthesized (gemini-call-{n}); stable within a
+    response, which is what start/delta correlation needs.

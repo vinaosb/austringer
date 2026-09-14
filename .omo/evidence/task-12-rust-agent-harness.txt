@@ -202,3 +202,19 @@ RESIDUAL RISKS / NOTES FOR TODO 13
   - Distillation stage budget defaults to 3,000 tokens/walk (model-spend
     rationing); sessions with rare walks and heavy conversation need a higher
     configured budget â€” the SIM config demonstrates the knob.
+
+POST-COMMIT ISOLATION RUN (appended after commit; amending is forbidden)
+-------------------------------------------------------------------------------
+  Commit: 01b077f feat(context): tiered eviction + folding + single error slot
+  (single commit; the parallel todo-25 worker's 5cdd0a7 eat(core): budget
+  ceilings landed beneath it — both lib.rs module lines coexist, verified.)
+  git worktree add C:\Users\vsbb1\AppData\Local\Temp\opencode\t12proof 01b077f
+    (detached, own CARGO_TARGET_DIR=C:\ct-t12proof, none of the parallel
+    workers' uncommitted files present)
+  cargo test -p harness-core
+    -> ok suites: 52 / FAILED suites: 0
+       (pre-existing + budget's 4 suites + eviction_budget 4, eviction_tiers 4,
+        eviction_ladder 6, eviction_fold 6, eviction_governor 5, eviction_sim 4)
+  Proof worktree + target dir removed afterwards. This appendix is a
+  working-tree-only append; the committed evidence file contains everything
+  above this section.
