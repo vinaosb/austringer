@@ -1783,6 +1783,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "harness-intel"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "harness-providers",
+ "harness-skills",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "harness-lsp"
 version = "0.1.0"
 dependencies = [

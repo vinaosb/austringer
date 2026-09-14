@@ -1,0 +1,245 @@
+TASK 34 - Model-profiles subsystem (rust-agent-harness)
+=======================================================
+
+Worker: task-34 RECOVERY implementation worker (Sisyphus-junior, GLM 5.2).
+Date: 2026-09-13. Base: HEAD 4f8fc31 on main (style(skills): rustfmt forge).
+Commit: feat(intel): model weakness profiles + skill A/B (single commit).
+
+RECOVERY CONTEXT (disclosed, per task brief)
+-------------------------------------------------------------------------------
+A prior task-34 worker was killed mid-run by a harness restart. Its uncommitted
+partial work was surveyed before any new edit:
+
+  KEPT (validated sound, forms the bulk of this commit):
+  - harness-intel/ crate skeleton (11 src files + 6 integration test files),
+    untracked in the main working tree. Architecture matches todo 34 exactly:
+    taxonomy.rs (failure rates), axes.rs (behavior axes), catalog.rs + seed.rs
+    (per-model 400-trap table + effort grids), dialect.rs (explicit protocol
+    dialects + DISJOINT usage normalization + gateway null-identity stamping),
+    elicitation.rs (SET/PROMPT/THROTTLE constitution), model_profile.rs
+    (neutral fallback + per-model tips + T31 ModelGuidance feed), store.rs
+    (local JSON profile store), ab.rs (deterministic per-model A/B selection
+    through Skill Forge DistillProposal), dial.rs (effort-bundle positions).
+  - Root Cargo.toml one-line anchored member add: "harness-intel" (between
+    harness-exec and harness-lsp; re-read before staging, no sibling lines
+    touched — the T36/T39 workers' ratatui/clap/etc. dep lines in the shared
+    working file were left uncommitted and unstaged).
+  - Cargo.lock working-tree entry for harness-intel (re-staged surgically,
+    see below).
+  - The dead worker's seed.rs (private import) and axes.rs (fn-pointer map)
+    fixes were already correct on disk.
+
+  FIXED (the dead worker was killed mid-compile-fix; 13 errors remained):
+  - catalog.rs: Feature lacked Serialize/Deserialize (CatalogEntry derives
+    both and carries Vec<Feature> traps) -> added serde derives with
+    snake_case tagging (it already carries thiserror::Error; both coexist).
+  - catalog.rs: remedy_for(feature) consumed `feature` after move into
+    TrapViolation -> now takes &Feature, evaluated before the move.
+  - catalog.rs: clippy::collapsible_if on the effort-grid check -> let-chain
+    (edition 2024).
+  - taxonomy.rs: u64::from(usize) / f32::from(u32) do not exist -> `as`
+    casts (counts, matches axes.rs style).
+  - model_profile.rs: rate closure captures `lines` mutably -> `let mut rate`.
+  - store.rs: `taxonomy` moved into StoredProfile then .turns read ->
+    observation_turns evaluated first in the struct literal.
+  - tests: unused imports (DialPosition, ModelProfile), .expect() on the
+    non-Optional StoredProfile.axes field, redundant & on entry() results
+    (needless_borrow), .clone() on Copy CounterweightId (clone_on_copy).
+  - cargo fmt applied crate-wide (rustfmt drift).
+
+  DISCARDED: nothing — no broken parts found beyond the compile errors above.
+  The dead worker's wt-task-34 worktree (detached at 98a2238, M Cargo.toml +
+  M Cargo.lock, no crate content) held nothing unique; removed at cleanup.
+
+RED EVIDENCE (recovery RED = the partial tree did not compile)
+-------------------------------------------------------------------------------
+cargo check -p harness-intel --all-targets (private target dir, MSVC recipe
+below) failed with 10 errors in the lib (x2 for lib+test targets):
+  E0277 Feature: Serialize/Deserialize unsatisfied (x4, catalog.rs:185/204)
+  E0277 u64: From<usize> (taxonomy.rs:93), f32: From<u32> (taxonomy.rs:103,112)
+  E0382 use of moved value: `feature` (catalog.rs:243), `taxonomy` (store.rs:96)
+  E0596 closure `rate` not declared mutable (model_profile.rs:92)
+plus 3 test-target errors (2 unused imports, expect() on non-Option). Full
+text preserved in this session's tool log. After fixes: green (below).
+
+ENVIRONMENT (task-13 recipe, disclosed)
+-------------------------------------------------------------------------------
+Windows 11 / PowerShell 5.1; Rust 1.98.0 (88d9e12ae). CC UNSET (blake3 asm
+exact-match). INCLUDE prepended with VS18 ScopeCppSDK vc15 FIRST:
+  C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include
+(existing VS2022/Windows-SDK INCLUDE retained after it; LIB unchanged).
+Private target dir %TEMP%\opencode\t34-target (CARGO_TARGET_DIR overridden
+per-invocation; the shared C:\ct and the repo target/ untouched).
+Six parallel workers active; harness-daemon / harness-skills registry+forge /
+harness-wasm untouched. Proof by -p harness-intel plus a committed-tree
+worktree run (below).
+
+DELIVERABLE
+-------------------------------------------------------------------------------
+New crate harness-intel (all files <=250 pure LOC, docs on every public item,
+zero unwrap/expect/panic/unreachable in src/):
+  taxonomy.rs (66)  FailureClass {SyntaxError,ToolMisuse,ContextOverflow,
+                RetryStorm,EditRejection}; TurnObservation (normalized
+                disjoint Usage per turn); FailureTaxonomy rates (syntax/
+                tool-misuse per call/overflow/retry-storm/edit-rejection per
+                edit/tokens-per-turn); MIN_OBSERVED_TURNS=10 gate -> None
+                (insufficient data is reported, never guessed)
+  axes.rs (62)   BehaviorAxes: verbosity, tool volume, delegation ratio,
+                tool precision, edit competence, drift delta (late-minus-
+                early any-failure rate), thinking depth (mean over reporting
+                turns, None when unreported); same data floor as taxonomy
+  catalog.rs(215)+seed.rs(126): per-MODEL CatalogEntry {dialect, effort
+                grid, documented default effort, thinking floor, per-message
+                effort beta, traps}; WireKnobs validated FAIL-CLOSED ->
+                typed TrapViolation{model, feature, remedy} /
+                UnknownModel / CatalogError; 10 seeded models carrying the
+                research SS33.1 trap table (budget_tokens on opus-4-7 only;
+                prefill on 4.6+; forced tool_choice on fable-5-1; budget+
+                level together on Gemini; none+sampling on gpt-6-astra;
+                penalties/stop on grok-4-6; effort grids fragmented inside
+                families: gpt-5-5 tops at xhigh, opus-5 reaches max);
+                Gemini Pro thinking floors (minimal/zero-budget rejected)
+  dialect.rs(152): ProtocolDialect EXPLICIT per catalog entry (never URL-
+                inferred); DialectSpec{reasoning format, usage semantics,
+                tool identity}; DISJOINT normalization: DeepSeek-style
+                cache-hit-INCLUSIVE prompt_tokens split into cache_read +
+                input (saturating), exclusive dialects pass through;
+                trailing-usage-chunk expectation table; stamped_identity
+                (null gateway identity keeps configured, different served
+                model wins); finish_reason per-dialect vocabulary, unknown
+                word -> None (never guessed)
+  elicitation.rs(194): SET/PROMPT/THROTTLE (research SS33.6): SET explicit
+                effort per TaskClass {FactFind clamps expensive defaults to
+                <=medium, Comparison, Complex keeps documented default};
+                thinking directive per family; hold_effort_constant on
+                cache-coupled Anthropic; effort_change_channel = PerMessageBeta
+                only where the model has the beta, else EpochBoundary; PROMPT
+                counterweights (CommitToApproach / BatchingAndProgress /
+                StoppingConditions+RetrievalBudget / Persistence /
+                ExactRanges) gated on OBSERVED axes/taxonomy thresholds —
+                neutral profile ships none; THROTTLE two-tier call budgets
+                per class (soft in-context, hard denying) + subagent caps
+                (concurrent/total, depth pinned 1), over-delegation tightens
+                caps structurally
+  model_profile.rs(93): ModelProfile{model, taxonomy?, axes?}; neutral();
+                build_profile (unknown model -> typed UnknownModel);
+                render_tips (identity + explicit dialect + effort guidance
+                + 400-trap list + observed-weakness section only with data);
+                to_model_guidance -> T30/T31 ModelGuidance typed feed
+  store.rs (85)  ProfileStore: one <provider>.<model>.json per model;
+                update() REPLACES the record with the window it is handed
+                (reload reflects the new window, never an eternal average);
+                below data floor writes NOTHING (Ok(None)); corrupt file ->
+                typed StoreError::Corrupt naming the file; local I/O only
+                (crate has zero network-capable deps — "must NOT share data
+                externally" enforced structurally)
+  ab.rs (88)     ab_select: deterministic per-model winner (score DESC via
+                f64::total_cmp, variant-id ASC tie-break, BTreeMap order);
+                zero-sample outcomes excluded (unscored != evidence);
+                runner-up evidence; winner_proposals -> Skill Forge
+                DistillProposal (DRAFT-tier, numeric rationale; intel has no
+                activation path — todo 31 trust gates own activation)
+  dial.rs (43)   build_dial: DialSpec -> concrete DialPosition (resolved
+                identity + EXPLICIT effort defaulted from the catalog never
+                the provider, prompt addenda, tools); unknown model or
+                off-grid effort fails closed exactly like a wire request
+  lib.rs (11)    module doctrine doc citing SS33 + SS6 lessons
+
+Root Cargo.toml: one anchored member line. Cargo.lock: exactly the harness-
+intel [[package]] entry (surgically staged; sibling workers' lockfile lines
+in the shared working tree left for their own commits).
+
+TESTS (44 total, hermetic — tempdirs only, no clock/network/env dependence)
+-------------------------------------------------------------------------------
+tests/taxonomy.rs    (5) exact hand-computed rates; cross-model exclusion;
+                        insufficient-data None; zero denominators finite;
+                        axes vocabulary incl. drift + thinking depth
+tests/profile.rs     (8) tips render dialect+traps+observed weakness (content
+                        asserted); typed ModelGuidance feed; neutral fallback;
+                        unknown model typed error; store round-trip + reload
+                        recomputes (stale_state); thin data writes nothing;
+                        corrupt file typed; axes recomputed not merged
+tests/dialect.rs     (6) DeepSeek disjoint split (input+cache_read==prompt);
+                        exclusive pass-through; missing cache detail;
+                        trailing-chunk table; gateway null-identity stamping;
+                        finish vocabularies + unknown->None (wrong-dialect
+                        fails closed)
+tests/traps.rs      (10) every seeded trap class fires typed + per-MODEL not
+                        per-family (4-6 vs 4-7; fable-only; gemini alone-
+                        knobs legal); effort-grid fragmentation; Pro floors;
+                        unknown model typed; dialect explicit per entry
+tests/elicitation.rs (9) SET explicit + cache discipline + beta channels;
+                        fact-find clamps grok's expensive default; neutral->
+                        no counterweights; each gated counterweight fires on
+                        its observed bias (and siblings do NOT); throttle
+                        budgets per class; over-delegator tightened caps
+tests/ab_dial.rs    (6) per-model winners (reversed orderings both win);
+                        deterministic tie-break; zero-sample never wins;
+                        forge-typed proposal stages through real DraftStore
+                        (inert, unactivated); dial positions concrete; dial
+                        rejects unknown models + off-grid efforts
+
+VERIFICATION (exact commands; private target dir; MSVC env above)
+-------------------------------------------------------------------------------
+  cargo test  -p harness-intel .................... 44 passed; 0 failed
+       (lib 0, ab_dial 6, dialect 6, elicitation 9, profile 8, taxonomy 5,
+        traps 10, doc-tests 0)
+  cargo test  -p harness-intel (x3 reruns) ........ identical results all
+       three runs (flaky x3 adversarial channel)
+  cargo clippy -p harness-intel --all-targets ..... clean (workspace lints:
+       warnings=deny + clippy all=deny)
+  cargo fmt   -p harness-intel -- --check ........ clean
+  grep unwrap/expect/panic/unreachable/todo in src/ ... no matches
+  pure-LOC ceiling ............................... max catalog.rs 215 <= 250
+
+  Committed-tree isolation proof: fresh worktree at this commit
+  (git worktree add <tmp> c4ad6ef --detach; private target dir), then
+  cargo test -p harness-intel -> 44 passed; 0 failed (lib 0, ab_dial 6,
+  dialect 6, elicitation 9, profile 8, taxonomy 5, traps 10, doc-tests 0).
+  The committed tree contains ONLY task-34 content — no sibling working-tree
+  state participates in that run.
+
+QA CHANNELS
+-------------------------------------------------------------------------------
+happy       profile applied end-to-end: select (build_profile from synthetic
+            transcript) -> throttle enforced (class budgets + tightened caps)
+            -> prompt adaptation visible (counterweight text asserted, not
+            just typed) -> trap fires typed (TrapViolation carries model +
+            feature + remedy). Acceptance "profile renders per-model tips +
+            correct dialect" = profile.rs test 1.
+failure     each trap class (traps.rs, 10 tests); unknown model -> typed
+            UnknownModel everywhere (catalog, profile, dial); insufficient
+            data -> neutral profile + nothing written; malformed profile
+            file -> typed StoreError::Corrupt; unknown dialect word -> None
+            (explicit refusal, never a guess).
+adversarial malformed config: hand-corrupted store JSON at the exact store
+            path -> typed Corrupt (profile.rs); new input parsing: finish-
+            reason "banana" unknown across all six dialects; cross-model
+            transcript contamination excluded; flaky x3 identical;
+            misleading_success: tips/guidance asserted by CONTENT strings
+            and exact hand-computed rates (never return-code-only);
+            stale_state: store reload recomputes the new window (5000->100
+            tokens/turn, no eternal average); dirty_worktree: surgical
+            index staging below + post-commit isolation proof.
+
+COMMIT DISCIPLINE (six parallel workers)
+-------------------------------------------------------------------------------
+Index staged surgically so ONLY task-34 content enters the commit:
+  - harness-intel/** (new, git add)
+  - Cargo.toml: index version = HEAD + the single "harness-intel" member
+    line (siblings' uncommitted dep lines excluded)
+  - Cargo.lock: index version = HEAD + exactly the harness-intel [[package]]
+    block (siblings' uncommitted wasm/ratatui/clap lock lines excluded)
+  - .omo/evidence/task-34-rust-agent-harness.txt (this file)
+No other file touched. Single commit, message per plan todo 34.
+
+RISKS / NOTES
+-------------------------------------------------------------------------------
+- HEAD's committed Cargo.lock lacks the harness-wasm entry although 98a2238
+  lists the member (pre-existing sibling inconsistency, not introduced
+  here; non-locked resolves self-heal).
+- Trap/threshold constants encode research SS33 as of 2026-09; catalog rows
+  are seed data — new models are added by editing seed.rs (per-model, never
+  per-provider).
+- A/B selection consumes evals-adapter-shaped VariantOutcome inputs; no
+  live model is ever called from this crate.

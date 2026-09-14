@@ -8,6 +8,7 @@ members = [
     "harness-daemon",
     "harness-evals",
     "harness-exec",
+    "harness-intel",
     "harness-lsp",
     "harness-mcp",
     "harness-providers",
