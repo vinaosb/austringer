@@ -196,7 +196,13 @@ axum = { version = "0.8", features = ["ws"] }
 # `tokio` is enabled (the async listener/stream impls). No platform
 # feature flags exist — the OS backend is selected at compile time.
 interprocess = { version = "2.4", features = ["tokio"] }
-# Todo-45 WASM plugin runtime: wasmtime, WASI-0.2-era engine line (v38).
+# Todo-45 WASM plugin runtime: wasmtime, WASI-0.2-era engine line (v36; moved
+# from v38 — the v38 line has no patched release for the 2026-09 wasmtime
+# advisory set (RUSTSEC-2026-0006/0020/0021/0085..0096/0114/0222/0269);
+# 36.0.14+ is the nearest patched train. The 46.0.3+ trains compile this crate
+# unchanged but charge fuel for data-segment initialization during
+# instantiation (4097 fuel for the manifest region), which breaks the
+# 1000-fuel PluginLimits floor test; v36 keeps instantiation fuel-free).
 # Deliberately NOT a default dependency of any crate - harness-wasm gates it
 # behind its `wasm-plugins` feature (default off; the plugin runtime must not
 # weight the default build). Minimal feature set, everything else off:
@@ -206,7 +212,7 @@ interprocess = { version = "2.4", features = ["tokio"] }
 # needed). Note: the `runtime` feature builds a small C trampoline via cc
 # (the known MSVC-toolchain caveat, see .omo/evidence/task-13). Fuel metering
 # and ResourceLimiter need no cargo features of their own.
-wasmtime = { version = "38", default-features = false, features = ["cranelift", "runtime", "std", "wat"] }
+wasmtime = { version = "36", default-features = false, features = ["cranelift", "runtime", "std", "wat"] }
 # Todo-36 TUI: ratatui is the plan-named interface crate ("ratatui
 # event-driven"). Default features keep exactly one backend (crossterm);
 # termwiz/termion stay out. Pure Rust.

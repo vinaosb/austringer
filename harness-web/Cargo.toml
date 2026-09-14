@@ -21,9 +21,10 @@ base64ct.workspace = true
 # Dev-cycle (cargo supports dev-dependency cycles): the daemon SERVES
 # these assets (harness-daemon -> harness-web regular dep); its web
 # module is exercised read-only here to prove SERVED CONTENT + headers.
-harness-daemon = { path = "../harness-daemon" }
+# version keys are required (cargo-deny bans wildcard requirements).
+harness-daemon = { path = "../harness-daemon", version = "0.1.0" }
 # E2E example: scripted inference + worker over the daemon router.
-harness-core = { path = "../harness-core" }
+harness-core = { path = "../harness-core", version = "0.1.0" }
 axum.workspace = true
 base64ct.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
