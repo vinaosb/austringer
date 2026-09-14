@@ -216,14 +216,15 @@ fn gc_tiers_respect_pinned_snapshots() {
     assert_eq!(outcome.pinned_kept, 1);
     assert_eq!(outcome.retained, 4, "turns 1 (pinned), 4, 5, 6 survive");
     // The ref tree proves it: kept turns still resolve, removed ones do not.
+    // Both platforms' file APIs accept '/' separators in joined paths.
     for t in [1u32, 4, 5, 6] {
         let name = format!("refs/harness/snapshots/s1/{t:010}");
-        let path = workdir.join(".git").join(name.replace('/', "\\"));
+        let path = workdir.join(".git").join(name);
         assert!(path.exists(), "turn {t} ref must survive: {path:?}");
     }
     for t in [2u32, 3] {
         let name = format!("refs/harness/snapshots/s1/{t:010}");
-        let path = workdir.join(".git").join(name.replace('/', "\\"));
+        let path = workdir.join(".git").join(name);
         assert!(!path.exists(), "turn {t} ref must be gone: {path:?}");
     }
 }

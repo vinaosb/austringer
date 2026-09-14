@@ -260,10 +260,8 @@ fn dirty_stash_transaction_commits_or_rolls_back() {
         stash.ref_name
     );
     assert!(
-        workdir
-            .join(".git")
-            .join(stash.ref_name.replace('/', "\\"))
-            .exists(),
+        // Both platforms' file APIs accept '/' separators in joined paths.
+        workdir.join(".git").join(&stash.ref_name).exists(),
         "stash ref exists on disk"
     );
     assert_eq!(tree_digest(&workdir), tree_digest(&workdir));
