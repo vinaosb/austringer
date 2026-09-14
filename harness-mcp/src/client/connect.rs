@@ -4,6 +4,7 @@
 //! connect timeout.
 
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::time::Duration;
 
 use rmcp::ClientHandler;
 use rmcp::model::{ClientCapabilities, Implementation, InitializeRequestParams};
@@ -88,11 +89,24 @@ impl McpClient {
                     serve_client(handler, spawn.0).await
                 }
                 TransportSpec::Http { url } => {
-                    let transport = StreamableHttpClientTransport::with_client(
-                        ReqwestSseClient::new(),
-                        StreamableHttpClientTransportConfig::with_uri(url.clone()),
-                    );
-                    serve_client(handler, transport).await
+                    // Dead endpoints can fail faster than the connect
+                    // budget on RST-fast platforms (ECONNREFUSED < 1 ms
+                    // on linux vs firewall-dropped SYNs on windows);
+                    // re-attempt until the budget is spent so an
+                    // unestablished endpoint surfaces as the typed
+                    // ConnectTimeout on every OS.
+                    loop {
+                        let transport = StreamableHttpClientTransport::with_client(
+                            ReqwestSseClient::new(),
+                            StreamableHttpClientTransportConfig::with_uri(url.clone()),
+                        );
+                        // serve_client consumes the handler; rebuild it
+                        // per attempt.
+                        match serve_client(Self::handler_for(&entry), transport).await {
+                            Ok(service) => break Ok(service),
+                            Err(_) => tokio::time::sleep(Duration::from_millis(20)).await,
+                        }
+                    }
                 }
             };
             service.map_err(|error| McpClientError::Protocol {
