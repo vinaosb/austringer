@@ -1,0 +1,296 @@
+TASK 36 — TUI (harness-tui)
+=========================================================================
+Date: 2026-09-13 | HEAD at start: 4f8fc31 (confirmed) | Worker: T36
+RECOVERY-RUN worker (fresh executor). A prior worker was killed
+mid-run by a harness restart; this task completed from its uncommitted
+partial state (recovery detail in §7).
+Toolchain: Rust 1.98 / edition 2024 / lints warnings=deny + clippy
+all=deny (workspace). MSVC env per task-13 recipe, shell-scoped only.
+
+------------------------------------------------------------------------------
+1. WHAT LANDED (scope clause by clause)
+------------------------------------------------------------------------------
+harness-tui: thin terminal CLIENT over the todo-35 daemon protocol
+(read-only consumer; the daemon was never modified — zero diffs
+outside harness-tui/**, root Cargo.toml dep lines, Cargo.lock).
+
+ 1. "ratatui event-driven (0.0% idle verified by test)" —
+    `app.rs` is a pure headless state machine: `step(event) ->
+    actions`, zero timers, zero sleeps on the UI path; the binary's
+    loop (`main.rs`) blocks on a std mpsc recv and draws ONLY when
+    `App::should_redraw()`. The ONLY async/timer surface is the
+    daemon client task (`client.rs`: 60 s ping keep-alive well under
+    the daemon's 300 s idle timeout). Idle proof pinned by test
+    (§2 idle.rs): 100 000 no-op key events + 100 000 Pong messages =>
+    renders stay at exactly 1 (the initial draw) and the batch
+    completes < 2 s; the loop's wait primitive (recv_timeout) is
+    proven to PARK by test. Must-not-poll-render holds by
+    construction AND by test.
+ 2. "collapsed accordions" — `Panels::collapsed()` default; ctrl+1/2/3
+    expand transcript/tools/team, ctrl+4 hides the HUD line
+    (`app_input.rs toggle`); collapsed headers render "v name (N)"
+    counts (`render.rs accordion`).
+ 3. HUD — `hud.rs`: context gauge (chars/4 estimate vs window,
+    saturating %, honest n/a until transcript text exists), cache-hit
+    % (last reported), per-model cost rows + routing-savings estimate
+    (Devin /session-stats pattern), money aggregated at CENT precision
+    (round on every apply; billing-exact ledger is todo 34's job).
+    Honest-unknown posture: fields the protocol does not feed yet
+    render as explicit n/a/unpriced — never invented numbers. The
+    `HudUpdate` struct is the typed seam where todo 34/40 usage events
+    will land.
+ 4. "omnibar @file/@symbol/@git + /mode /rewind /skill" — `omnibar.rs`:
+    mention grammar (@file: default, @symbol:, @git:), typed Parsed
+    variants incl. Malformed{usage} + UnknownCommand; bounded
+    completions from a pluggable CompletionSource; `complete.rs` wires
+    @file: over the `ignore` crate walker (gitignore-respecting,
+    require_git(false) so non-repo dirs still honor .gitignore,
+    2000-walk + 20-result caps, forward-slashed paths).
+    @symbol:/@git: stay honestly empty until the LSP bridge (38) and
+    git plumbing supply real candidates.
+ 5. "y/a/n gates" — modal permission gate on `ServerMsg::PermissionAsk`
+    (typing is swallowed while open); y/a/n map to protocol
+    AllowOnce/AllowSession/Deny answers, c maps to PermissionCancel;
+    `PermissionResolved` clears the gate and records a dim note for
+    EVERY resolution incl. other clients' answers and Timeout.
+ 6. "team grid visualization" — `transcript.rs` reduces
+    WorkerClaimed/WorkerHealed into WorkerCells; `render.rs` draws the
+    queue/worker/alive grid sorted deterministically inside the team
+    accordion.
+ 7. "streaming markdown" — `markdown.rs`: chunk-boundary-IDEMPOTENT
+    renderer (pure function of accumulated text; empty lines dropped
+    so a trailing-\n chunk never renders a phantom row). Headings
+    bold, fenced code shared code style, quotes italic, lists
+    bullet-rewritten with indent kept. `StreamDoc` is the streaming
+    feed point.
+ 8. "keybind config" — `keys.rs`: 16-action vocabulary with ONE
+    action->name table (ACTION_NAMES), chord grammar
+    ("ctrl+alt+delete", "f12", "X"), TOML `[keys]` overrides applied
+    ATOMICALLY (failed load leaves the previous layout intact), typed
+    errors (Malformed/UnknownKey/UnknownAction/Duplicate).
+ 9. CLIENT — `client.rs`: WS attach client for
+    /s/{sid}/attach?token=..&after=.. ; typed Hello handshake; replay
+    cursor (`after` = max frame id seen) reconnects; capped retry (3
+    failed connects -> park for manual ctrl+r); protocol violations
+    (3 malformed server frames) are FATAL — a reachable-but-hostile
+    server is not retried blindly; Bye => clean Dropped + reconnect;
+    typed failures Unreachable/Refused/Protocol.
+10. Mid-run steering (client side): submit while a turn is running
+    sends SessionCommand::Steer (signal-with-start semantics live in
+    the daemon), Submit otherwise — pinned by unit test; the daemon
+    side was already T35-verified.
+11. Binary `main.rs` — crossterm raw mode + blocking reader thread
+    (read error = EOF -> Shutdown), client bridge thread, multi-thread
+    tokio runtime (2 workers: the UI thread parks in recv for long
+    stretches, so the client task must keep its own worker), render
+    batching (drain all pending events, then one draw), terminal
+    restore on every exit path. Args: --url (http://127.0.0.1:port),
+    --session, --token-file (default .harness-daemon/daemon-token —
+    the daemon binary's documented handoff location).
+
+Not done / later waves (honest): scroll keys are bound but
+transcript scrolling is tail-follow only (pagination lands with the
+sessions UI pass); /mode //rewind //skill parse + complete but the
+daemon protocol v1 command vocabulary is Submit/Steer/Cancel — local
+notes say so explicitly instead of faking sends.
+
+------------------------------------------------------------------------------
+2. TESTS (RED -> GREEN) — 60 tests, all green
+------------------------------------------------------------------------------
+cargo test -p harness-tui (worktree-isolated, §7):
+  lib      47 | client_ws 4 | daemon_e2e 3 | idle 2 | screens 5 = 60
+RED DISCIPLINE (disclosed honestly): the dead worker left 5 modules
+with full failing-test suites over no-op stub bodies (hud, keys,
+markdown, omnibar, transcript — quoted stub state in git history of
+the working tree). A full-suite RED *run* is structurally impossible
+under warnings=deny (stub params are unused => compile error), so RED
+was captured per-module where compilable and by stub-by-construction
+for the rest; the first compilable run failed 6 behavior tests
+(hud cent-rounding, markdown Span styles, client cursor bug) + 2
+compile-blocked files before GREEN.
+
+BUGS CAUGHT BY TESTS (would have shipped otherwise):
+ - client.rs merge_option dropped the reconnect cursor on any
+   message carrying no event id (e.g. Pong) — the flaky-reconnect
+   path would have replayed from 0. Caught by RED unit test
+   merge_last_keeps_the_highest_hint; fixed (Some,None)=>Some.
+ - Protocol violations were retried as fresh connects, surfacing
+   Unreachable instead of Protocol after a hostile-server burst.
+   Caught by malformed_server_frames test; made fatal.
+ - render.rs body_lines if/else returned () on the truncate path
+   (compile-caught); Single-thread #[tokio::test] starved the client
+   task (runtime model fixed in tests AND mirrored by the binary's
+   multi-thread runtime choice); EventStream needs a non-default
+   crossterm feature (binary uses plain blocking read()).
+ - PowerShell PS5.1 Get/Set-Content round-trips double-encoded
+   UTF-8 (bullet/en-dash mojibake); repaired byte-precisely, verified
+   by snapshot diff.
+
+IDLE-CPU ASSERTION (plan acceptance): tests/idle.rs —
+ one_hundred_thousand_noop_events_render_zero_times (renders==1,
+   wall-clock bound => no per-event hidden work)
+ loop_primitive_parks_when_no_input_exists (the loop's recv parks)
+
+SNAPSHOTS (plan acceptance): tests/screens.rs — 5 insta snapshots of
+the main screens through a REAL ratatui TestBackend buffer
+(expanded transcript/tools/team; modal gate answered state; collapsed
+default with failure status; omnibar focused + completions popup;
+resolution notes + priced HUD). Content asserts run BEFORE each
+snapshot so a stub renderer cannot pass silently (misleading_success
+guard). Snapshot files committed under tests/snapshots/.
+
+E2E (tests/daemon_e2e.rs, REAL daemon consumed as client):
+ - full_session_driven_by_key_scripts: attach -> submit via key
+   script -> live PermissionAsk -> 'y' answer -> tool executed by a
+   mock worker -> TurnFinished observed; asserts RENDERED STATE
+   (entries User+Assistant, tool paired with result, gate closed,
+   resolution note) + on-screen text ("you: run the echo tool", HUD
+   "ctx:"), not just absence of errors.
+ - auth_failure_is_typed_refused (wrong token -> typed Failed).
+ - fresh_attach_rebuilds_via_resync_snapshot (stale_state: second
+   client gets marker+snapshot; byte-for-byte same entry count and
+   last_event_id as client A).
+CLIENT-ONLY (tests/client_ws.rs, scripted WS server): typed v1 hello
+handshake + send roundtrip; flaky link x3 (three dropped connections
+-> exactly four connections total -> state converges with no
+duplicate turns, after-cursor proven by id continuity); malformed
+server frames bounded (3 strikes -> typed Protocol failure, park);
+absent daemon (3 attempts -> typed Unreachable -> park until manual
+reconnect; shutdown closes the task).
+
+------------------------------------------------------------------------------
+3. QA SCENARIOS (per task card)
+------------------------------------------------------------------------------
+happy: full session driven by key scripts — daemon_e2e (above) PASS.
+failure: daemon absent -> typed Unreachable (client_ws); auth failure
+  -> typed Refused (daemon_e2e); resync path (daemon_e2e) PASS.
+resize/EOF: UiEvent::Resize marks dirty for redraw (unit test);
+  EOF -> Shutdown action + quit + terminal restore (unit + binary
+  reader thread contract). Binary usage path exercised headlessly
+  (unknown arg => typed usage, exit 2).
+
+------------------------------------------------------------------------------
+4. ADVERSARIAL SCENARIOS
+------------------------------------------------------------------------------
+malformed: server frames decoded through the daemon's bounded
+  decode_server; 3 malformed => typed Protocol failure + disconnect
+  (mirrors the daemon's own three-strikes bound).
+slow consumer: slow-consumer eviction + snapshot resync is daemon
+  (T35-verified); the client-side reducer path (marker + snapshot
+  rebuild) is E2E-verified above.
+flaky x3: three sequential socket drops survived with cursor
+  continuity (client_ws) PASS; the timing-sensitive suites ran 3x
+  identical.
+stale_state: reconnect-and-replay via after cursor (unit: URL build
+  + merge_last; E2E: fresh attach rebuild) PASS.
+misleading_success: every E2E asserts rendered App STATE and screen
+  text; snapshot tests assert content before pinning; idle proof
+  asserts render COUNT, not time.
+dirty_worktree: only task-36 files staged (harness-tui/**, root
+  Cargo.toml todo-36 dep lines via hunk-exact index patch, Cargo.lock
+  minimal-resolved, this evidence file). Sibling workers' churn
+  (harness-intel member line, todo-39 dep lines, harness-cli/web
+  edits, .omo noise) untouched.
+Others N/A per task card.
+
+------------------------------------------------------------------------------
+5. DEPENDENCIES (root-manifest discipline; each justified)
+------------------------------------------------------------------------------
+Workspace deps (root Cargo.toml) — all four were already declared by
+the dead worker with todo-36 justification comments; kept verbatim:
+  ratatui 0.30 (plan-named; default features = one backend, no
+    termwiz/termion), crossterm 0.29 (pinned to ratatui 0.30's
+    crossterm major — single copy in tree), tokio-tungstenite 0.29
+    (loopback WS CLIENT only; already locked via harness-daemon's dev
+    tree), insta 1 (plan-named snapshot acceptance; dev-only).
+Crate-local: harness-daemon (CLIENT of the committed protocol lib —
+  no daemon file touched), harness-core (protocol Event types),
+  ratatui/crossterm/tokio-tungstenite/tokio/serde/serde_json/
+  thiserror/futures-util/toml/ignore — all pre-existing workspace
+  deps; ignore is the gitignore-respecting walker (plan's @file
+  completion semantics).
+DEV-only additions (harness-tui/Cargo.toml): axum (host the REAL
+daemon router in E2E — the same surface harness-daemon's own e2e
+suite uses), async-trait (scripted Inference impls). No new external
+crates enter any production tree beyond the four above. All pure
+Rust; deny.toml allow-list untouched (no cargo-deny config change).
+
+------------------------------------------------------------------------------
+6. DISCLOSURES
+------------------------------------------------------------------------------
+ - RECOVERY RUN: this worker inherited the dead worker's uncommitted
+   tree: 5 modules with complete failing test suites over stub
+   bodies + workspace dep lines + crate manifest. Assessment: tests
+   were sound (verified against the REAL daemon protocol shapes
+   before trusting any of it — every SessionEvent/ServerMsg/Frame
+   field matched); stubs kept as the RED record; two API guesses were
+   wrong and fixed (crossterm 0.29 has no KeyCode::ModifiedKeyContent;
+   ratatui 0.30 Style has add_modifier field not contains()).
+   Everything else written by this worker.
+ - Evidence file did not exist from the dead worker (task card said
+   "may be partial"); created fresh by this run.
+ - Engine events publish at turn boundaries (T35 disclosure); the TUI
+   composes with this (Assistant markdown renders per event; gate is
+   live mid-turn). No client-side workaround needed.
+ - Binary reads the token from --token-file (default
+   .harness-daemon/daemon-token). The daemon currently prints its URL
+   but writes no port file; --url is required. A discoverable
+   endpoint file would be a small daemon-side addition — flagged for
+   todo 39 (client UX), NOT made here (daemon is locked read-only).
+ - LOC accounting: pure code lines (non-blank, non-comment, excluding
+   #[cfg(test)] blocks): keys 246, app 216, client 211, transcript
+   210, omnibar 191, render 186, main 173, app_input 154, hud 105,
+   markdown 77, complete 48, lib 10 — every file <= 250.
+   app.rs was 387 before the split (input dispatch extracted to
+   app_input.rs); keys.rs 257 (vocabulary deduplicated to one table).
+ - No unwrap/expect/panic!/unreachable!/todo! in any non-test src
+   line (grep-verified, §audit).
+ - Windows environment note: refused loopback connects can take ~2 s
+   each here; the absent-daemon test budget is 20 s (3 attempts +
+   backoff). Disclosed in the test.
+ - MSVC env workaround (task-13 recipe) shell-scoped per invocation;
+   private target dir target-task-36; nothing repo-side.
+
+------------------------------------------------------------------------------
+7. WORKTREE ISOLATION (committed-tree proof) + recovery inventory
+------------------------------------------------------------------------------
+Method: sibling workers' uncommitted churn (harness-web edit breaking
+the working-tree build, harness-intel member line, todo-39 deps,
+harness-cli edits) made the shared working tree un-buildable mid-run.
+All builds/tests ran in a DETACHED worktree at HEAD 4f8fc31 + ONLY
+this task's files (harness-tui mirrored in; the four todo-36 root
+dep lines applied to the worktree manifest; private target dir, no
+shared caches; fresh lock resolved from exactly that manifest set).
+The final Cargo.lock committed is that minimal resolution (consistent
+with the committed manifests; the shared working-tree lock with
+sibling entries stays uncommitted for their own commits).
+
+Post-commit: fresh worktree checkout of the commit + full suite run
+appended below.
+
+RECOVERY INVENTORY (what the dead worker left -> disposition):
+  harness-tui/Cargo.toml (dep set)         -> kept, dev-deps adjusted
+  src/lib.rs (doc + 3 mods declared)       -> kept, extended
+  src/hud.rs, keys.rs, markdown.rs,
+    omnibar.rs, transcript.rs (tests+stubs)-> kept (RED record),
+                                             implemented GREEN here
+  src/app.rs, client.rs, render.rs,
+    complete.rs, main.rs, app_input.rs,
+    tests/** (incl. snapshots)             -> written by this worker
+  .omo/evidence/task-36-*.txt              -> absent; created here
+
+Post-commit proof (033a485 "feat(tui): event-driven interface",
+single commit; parent 610f057 — a sibling vscode worker landed between
+4f8fc31 and this commit, unrelated to this task):
+ Fresh detached worktree at 033a485, private fresh target dir
+ (target-proof, no shared caches):
+   cargo test -p harness-tui
+     => 61 passed, 0 failed (lib 47 + client_ws 4 + daemon_e2e 3 +
+        idle 2 + screens 5)
+   cargo clippy -p harness-tui --all-targets
+     => 0 warnings/errors (workspace denies)
+ The committed tree builds and passes without the working copy
+ (committed manifests + minimal lock are self-consistent). Sibling
+ workers' uncommitted churn (intel member line, todo-39 deps,
+ harness-cli/web edits, .omo noise) is NOT part of the commit and was
+ not touched.

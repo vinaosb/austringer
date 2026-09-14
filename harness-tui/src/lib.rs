@@ -1,9 +1,19 @@
-//! Terminal user interface frontend for the agent.
+//! Terminal user interface frontend for the agent (plan todo 36).
 //!
-//! Scaffold only (plan todo 1): no business logic yet.
+//! Thin client over the todo-35 daemon protocol: a synchronous,
+//! event-driven UI loop (zero timers, renders only on state change)
+//! fed by a terminal-input thread and the daemon WebSocket client
+//! task. Everything renderable is a pure function of [`app::App`]
+//! state, which is what the headless test surface exercises — no TTY
+//! is required to drive or verify the interface.
 
-#[test]
-fn workspace_scaffold_smoke() {
-    let scaffold_in_place = true;
-    assert!(scaffold_in_place);
-}
+pub mod app;
+pub mod app_input;
+pub mod client;
+pub mod complete;
+pub mod hud;
+pub mod keys;
+pub mod markdown;
+pub mod omnibar;
+pub mod render;
+pub mod transcript;

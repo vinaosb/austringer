@@ -206,6 +206,23 @@ interprocess = { version = "2.4", features = ["tokio"] }
 # (the known MSVC-toolchain caveat, see .omo/evidence/task-13). Fuel metering
 # and ResourceLimiter need no cargo features of their own.
 wasmtime = { version = "38", default-features = false, features = ["cranelift", "runtime", "std", "wat"] }
+# Todo-36 TUI: ratatui is the plan-named interface crate ("ratatui
+# event-driven"). Default features keep exactly one backend (crossterm);
+# termwiz/termion stay out. Pure Rust.
+ratatui = "0.30"
+# Todo-36 terminal raw mode + input events. Version MUST stay on the
+# same major ratatui 0.30 resolves so only one crossterm exists in the
+# tree (verified via cargo tree when pinned). Pure Rust.
+crossterm = "0.29"
+# Todo-36 daemon WebSocket CLIENT (loopback ws://; the server side is
+# todo 35's axum surface). Default features (connect+handshake, no TLS)
+# are sufficient for the loopback-only auth model. Already in the
+# lockfile via harness-daemon's dev tree; declaring it here pins no new
+# vendor code. Pure Rust.
+tokio-tungstenite = "0.29"
+# Todo-36 acceptance: insta snapshot suites for main screens
+# (plan-named). Pure Rust, dev-only.
+insta = "1"
 
 [workspace.lints.rust]
 warnings = "deny"

@@ -8,3 +8,37 @@ repository.workspace = true
 
 [lints]
 workspace = true
+
+# Plan todo 36: thin terminal client over the todo-35 daemon protocol.
+# The UI loop is deliberately sync/blocking (one thread, event-driven,
+# zero timers); only the daemon WebSocket client task runs on tokio.
+[dependencies]
+harness-daemon = { path = "../harness-daemon", version = "0.1.0" }
+# Protocol v1 `recorded` frames carry harness-core events by value; the
+# transcript reducer must match on them (already in the tree via
+# harness-daemon).
+harness-core = { path = "../harness-core", version = "0.1.0" }
+ratatui.workspace = true
+crossterm.workspace = true
+tokio-tungstenite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+futures-util.workspace = true
+# UI thread blocks on std/mpsc + tokio outbox blocking_send; the client
+# task needs net+io-util for the WebSocket stream.
+tokio = { workspace = true, features = ["rt", "net", "io-util"] }
+# Keybind config follows the .harness TOML dialect (todo 29 precedent).
+toml.workspace = true
+# @file omnibar completions: gitignore-respecting bounded walker.
+ignore.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile.workspace = true
+# Real daemon router hosting in client integration tests (the same
+# surface harness-daemon's own e2e suite uses; test-only).
+axum.workspace = true
+# Scripted inference impls for the spawned daemon (dev-only).
+async-trait.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

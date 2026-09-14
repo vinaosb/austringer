@@ -1,0 +1,27 @@
+---
+source: harness-tui/tests/screens.rs
+assertion_line: 94
+expression: rendered
+---
+v transcript (2)
+you: ship the fix
+Plan
+• edit the parser
+• add a test
+```rust
+fn x() {}
+```
+v tools (0)
+v team (1)
+build        w1         alive
+
+
+
+
+
+
+
+
+
+ctx: ≈17/10000 (0%) | cache: 72.5% | cost: frontier-x $0.42 | saved $0.09 routin
+harness (i to type, q quits)────────────────────────────────────────────────────
