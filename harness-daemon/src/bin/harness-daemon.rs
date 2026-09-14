@@ -132,6 +132,63 @@ async fn run() -> Result<(), String> {
         state.token
     );
 
+    // Todo 41: scheduled runs + notifications. Declarative automations
+    // load from the data dir; a broken file leaves the scheduler idle
+    // (loudly) without taking the transports down. Fail-closed: only
+    // approved-tier packs ever schedule.
+    let data_dir = state.config.data_dir.clone();
+    let defs =
+        match harness_daemon::automations::FilePackGate::open(&data_dir.join("pack-tiers.json")) {
+            Ok(pack_gate) => {
+                match harness_daemon::automations::AutomationStore::load(&data_dir, &pack_gate) {
+                    Ok(store) => {
+                        println!(
+                            "harness-daemon: {} automation(s) scheduled",
+                            store.defs().len()
+                        );
+                        store.defs().to_vec()
+                    }
+                    Err(e) => {
+                        eprintln!("harness-daemon: automations invalid; scheduler idle: {e}");
+                        Vec::new()
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("harness-daemon: pack tiers unreadable; scheduler idle: {e}");
+                Vec::new()
+            }
+        };
+    let mut notifier = harness_daemon::notify::Notifier::new();
+    notifier.add(Arc::new(harness_daemon::notify::TracingSink));
+    notifier.add(Arc::new(harness_daemon::osc::stdout_sink("harness")));
+    let run_sink = match harness_daemon::bridge::RunSink::open(
+        &data_dir,
+        Arc::new(harness_daemon::gate::CriteriaGate),
+        Arc::new(notifier),
+    ) {
+        Ok(sink) => Arc::new(sink),
+        Err(e) => return Err(format!("run history open: {e}")),
+    };
+    let wall_clock: harness_daemon::scheduler::SchedulerClock = Arc::new(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs())
+    });
+    match harness_daemon::runner::CronRunner::open(
+        &data_dir,
+        defs,
+        Arc::new(harness_daemon::kickoff::DaemonKicker::new(Arc::clone(
+            &state,
+        ))),
+        run_sink,
+        harness_daemon::runner::DEFAULT_JITTER_WINDOW_SECS,
+        harness_daemon::automations::NetworkPolicy::Online,
+    ) {
+        Ok(runner) => runner.spawn_loop(wall_clock, std::time::Duration::from_secs(5)),
+        Err(e) => eprintln!("harness-daemon: scheduler failed to start: {e}"),
+    }
+
     let ipc_state = Arc::clone(&state);
     tokio::spawn(async move {
         if let Err(e) = harness_daemon::ipc::serve_ipc(ipc_state, &ipc_name).await {

@@ -1,0 +1,248 @@
+TASK 41 - Scheduled runs + notifications (rust-agent-harness)
+==============================================================
+Date: 2026-09-13 | HEAD at start: 4f8fc31 (confirmed) | Worker: T41 implementation worker
+Toolchain: Rust 1.98 / edition 2024 / lints warnings=deny + clippy all=deny (workspace)
+
+RECOVERY RUN (disclosed): a prior T41 worker was killed ~00:08Z by a harness
+restart. Survey of the working tree found its partial work ENTIRELY ABSENT
+(git status: zero harness-daemon modifications, zero untracked daemon files,
+no task-41 evidence file) — nothing to salvage; this run is a fresh TDD
+implementation from the plan text.
+
+Env: task-13/29 MSVC shell recipe (INCLUDE/LIB, CC unset), private target dir
+%TEMP%\opencode\target-task-41. The MAIN working tree is unbuildable this
+session (a parallel frontend worker's in-flight harness-web edit breaks the
+build); every build/test ran in a detached worktree at HEAD 4f8fc31
+(%TEMP%\opencode\task-41-dev, daemon files synced in, private target) —
+dirty_worktree isolation for siblings by construction.
+
+------------------------------------------------------------------------
+1. WHAT LANDED (plan todo 41, clause by clause)
+------------------------------------------------------------------------
+All in harness-daemon (PROTOCOL v1 UNTOUCHED — protocol.rs has zero diffs;
+the frozen surface is additive-only and this task added nothing to it).
+
+ daemon cron of packs (goose-scheduler pattern):
+   runner.rs CronRunner composes T35's CronExpr into the loop T35's bin
+   deliberately did not run: per-automation high-water cursors, window
+   scan bounded by MAX_CATCHUP_MINUTES, MISSED-FIRE COALESCING (a window
+   with N matches fires once, at the latest), DETERMINISTIC JITTER
+   (blake3(job,minute) % window in [0,30)s — a catch-up burst after
+   downtime spreads across the window reproducibly; window 0 disables).
+   The BIN now loads automations at startup and runs the loop
+   (spawn_loop, 5s pump) — closing T35's "bin does not run scheduler
+   loops" disclosure. A broken automations file leaves the scheduler
+   idle LOUDLY while every transport keeps serving (fail-open daemon,
+   fail-closed scheduling).
+
+ AUTOMATIONS AS DECLARATIVE DEFINITIONS (terraform-style):
+   automations.rs — AutomationDefinition persisted to
+   {data}/automations.json (atomic tmp+rename), revalidated on every
+   load (cron parse + pack tier), register() API validates-then-persists
+   (duplicate ids typed-rejected). Per-automation BUDGET
+   (budget_turns -> LoopConfig.max_turns through the new
+   DaemonState::session_scheduled + SessionHost::spawn_engine_with_config
+   seam — proven end-to-end: budget_turns=1 with a two-step script ends
+   failed::MaxTurns) + INVOCATION CAPS (lifetime total + per-UTC-day,
+   enforced pre-fire from the persisted ledger; a suppressed fire is a
+   DURABLE "scheduled.skip" journal activity so restarts never
+   reconsider it) + NETWORK-POLICY INTERSECTION (automation.network
+   intersect daemon baseline, offline wins; the EFFECTIVE policy is
+   carried in the KickOff, journaled, and recorded on history rows;
+   tool-level enforcement composes at T35's worker ToolGrants).
+
+ Must NOT schedule unapproved draft-tier skills:
+   PackGate seam — FilePackGate reads {data}/pack-tiers.json; unknown,
+   missing, or corrupt tiers file => every pack is Draft => NOTHING
+   schedules (fail closed). Rejected at register() AND at load() from
+   disk (typed AutomationError::DraftTier).
+
+ System notifications on completion/approval-needed (extensible via
+ skills/MCP) + OSC 777/9 TERMINAL NOTIFICATION EMISSION:
+   bridge.rs RunSink + session watchers: PermissionAsk broadcasts ->
+   ApprovalNeeded notifications; TurnFinished -> completion gate ->
+   TurnComplete notification carrying the verdict. osc.rs OscSink emits
+   BOTH OSC 777 (title+body) and OSC 9 (body) frames on the existing
+   NotificationSink trait — the same seam TracingSink/MemorySink
+   implement, which IS the skills/MCP extension point. Payloads are
+   SANITIZED (all C0 controls + DEL stripped, char-boundary-bounded 200B)
+   — a notification can never smuggle a second escape sequence
+   (test-delivered notification with embedded \x1b]9;... emits exactly
+   the two framing ESCs).
+
+ Run history in sessions store:
+   run_history.rs — append-only {data}/runs.jsonl, one row per lifecycle
+   event (started row at fire; outcome+verdict row at completion),
+   linked into the session store by session_id; torn tails skipped,
+   never fatal.
+
+ COMPLETION GATE for unattended loops (adversarial evidence-review):
+   gate.rs — CONFIRMED/REFUTED/INCONCLUSIVE vocabulary with evidence
+   links (stable wire names pinned). CompletionGate seam +
+   CriteriaGate deterministic default (criterion covered iff an
+   evidence link claims it verbatim; all covered => Confirmed, any gap
+   => Inconclusive — a coverage check CANNOT derive contradiction, so
+   Refuted is reserved for adversarial reviewers, wired via the same
+   seam with real providers). FAIL-CLOSED RESTART: a completion whose
+   run context was lost across a restart is Inconclusive — criteria are
+   never invented, runs never auto-confirm (test-pinned).
+
+ Scheduler DST fix (found by RED test, root cause):
+   T35's Scheduler::tick rewound last_minute on a BACKWARD clock jump —
+   a DST fall-back re-fired already-fired minutes (true runtime RED,
+   panic "already-fired minute re-fired" at scheduler.rs:453). Fixed
+   1:1: the high-water mark never rewinds (now_minute.max(last)).
+
+New-module map (pure LOC, excl. doc comments/blank/#[cfg(test)]):
+  automations.rs 170 | bridge.rs 205 | gate.rs 70 | kickoff.rs 99 |
+  ledger.rs 52 | osc.rs 60 | run_history.rs 71 | runner.rs 228
+  (runner split into kickoff/ledger/runner for the <=250 rule) |
+  scheduler.rs 212 (1:1 fix, tests added) | bin 180 (scheduler wiring).
+  No unwrap/expect/panic! in any non-test src (grep-verified).
+  Committed edits: engine.rs +spawn_engine_with_config (delegating
+  spawn_engine keeps all T35 call sites untouched), server.rs
+  +session_scheduled/session_with_config, lib.rs +8 module decls,
+  bin/harness-daemon.rs scheduler composition.
+
+------------------------------------------------------------------------
+2. TESTS (TDD: red first, exact commands + results)
+------------------------------------------------------------------------
+RED (captured before any implementation):
+  - cargo test -p harness-daemon --lib backward_clock_jump_never_refires
+    => FAILED: panicked 'already-fired minute re-fired: [Fired { job_id:
+    "j", at_minute: 600, ... }]' (scheduler.rs:453) — genuine double-fire
+    bug, fixed and regression-pinned.
+  - new-module test suites written first: cargo => 15x E0432/E0425
+    (AutomationStore/RunSink/GateVerdict/CronRunner/... unresolved) —
+    compile-RED, items did not exist yet.
+
+GREEN (worktree, MSVC recipe env, private target):
+  cargo test -p harness-daemon
+    lib:            127 passed, 0 failed (was 87 at T35; +40: scheduler
+                    DST+coalescing suite grew, automations 9, gate 5,
+                    run_history 3, osc 4, bridge 6, runner 11, jitter...)
+    bin:             0 tests
+    auth_http:       6 passed (unchanged)
+    engine:          6 passed (unchanged — T35 suites untouched-green)
+    ipc:             2 passed (unchanged)
+    scheduler_e2e:   5 passed (NEW: happy fire->kick->gate->notify over a
+                    real DaemonState w/ scripted inference; per-run budget
+                    ends failed::MaxTurns; restart-between-fire-and-
+                    completion fails closed inconclusive; refusing kicker
+                    surfaces typed RunnerError::Fire; injected shared
+                    clock)
+    ws_e2e:          4 passed (unchanged)
+    => 150 passed, 0 failed
+
+  Determinism (flaky x3+): identical 150/150 on every run (>=3 full runs
+  after the last code change; pre-fix runs only ever failed the 4
+  genuinely-broken things: gate semantics, skip-activity routing, a
+  watcher subscribe/spawn race, one clippy lint).
+
+  cargo fmt -p harness-daemon -- --check  => clean
+  cargo clippy -p harness-daemon --all-targets => clean (warnings=deny,
+    clippy all=deny; includes the qa_task41 example)
+
+------------------------------------------------------------------------
+3. MANUAL QA (real binary transcript; driver: cargo run -p
+   harness-daemon --example qa_task41 — seeds a declarative automation
+   on disk, spawns target debug\harness-daemon.exe, watches the WALL
+   CLOCK minute boundary)
+------------------------------------------------------------------------
+=== TASK-41 QA: real binary, declarative automation, wall clock ===
+banner: harness-daemon listening on http://127.0.0.1:18909 (token: b452f4...)
+automation seeded: qa41 `* * * * *` pack=qa-pack (approved tier)
+
+=== [HAPPY] scheduled fire on the wall clock ===
+durable journal has scheduled.fire : true
+run history started row            : true
+
+=== [HAPPY] session kicked off (visible on the live API) ===
+GET /sessions shows auto-qa41-*    : true
+
+=== run history rows (runs.jsonl) ===
+  {"automation_id":"qa41","session_id":"auto-qa41-29822497","fired_at_minute":29822497,
+   "outcome":"started","verdict":null,"network":"online"}
+  {"automation_id":"qa41","session_id":"auto-qa41-29822497","fired_at_minute":29822497,
+   "outcome":"failed::InferenceExhausted { cause: \"no provider configured (daemon hosts
+   the loop; provider wiring lands with todo 40)\", retries: 0 }","verdict":"confirmed",
+   "network":"online"}
+
+=== [HAPPY] notifications: OSC 777/9 on daemon stdout ===
+OSC 777/9 bytes captured           : true
+frame: "\x1b]777;notify;harness;automation qa41 fired; run kicked off\x07
+        \x1b]9;automation qa41 fired; run kicked off\x07"
+gate verdict row present           : true (confirmed=true)
+
+QA transcript PASSED.
+(Disclosed: the turn itself fails with `no provider configured` — provider
+wiring is todo 40. The scheduler loop, durable fire, kickoff, live-session
+visibility, completion gate, run history, and BOTH notification channels
+are what this QA proves, and all are asserted on JOURNALED EFFECTS.)
+
+------------------------------------------------------------------------
+4. ADVERSARIAL SCENARIOS
+------------------------------------------------------------------------
+ dst-style clock jumps: backward jump never re-fires (high-water mark;
+   unit + runner-level tests); forward jump coalesces to ONE run with
+   bounded window and deterministic jitter (catchup_window_stays_bounded
+   _after_long_gap, missed_minutes_coalesce_into_one_kick,
+   jitter_defers_current_minute_fire_until_effective).
+ restart durability: ledger cursors + journal replay — second runner over
+   the same root does not re-kick the same minute
+   (restart_resumes_cursor_without_double_fire,
+   journal_replay_prevents_reexecution_after_restart); a completion
+   arriving after restart fails CLOSED (inconclusive, never auto-confirm).
+ flaky x3: full suite identical every run (see section 2).
+ misleading_success: assertions are on journal steps, runs.jsonl rows,
+   MemorySink deliveries and OSC bytes — never on loop ticks.
+ stale_state: torn-tail history rows skipped not fatal; corrupt/absent
+   ledger loads empty (cursors rebuild from the next fire); corrupt
+   pack-tiers file => all-draft => nothing schedules.
+ malformed schedule: bad cron typed at register AND at load; draft-tier
+   pack typed-rejected (fail-closed incl. on-disk defs); duplicate ids
+   typed; kicker QueueFull is a typed RETRYABLE activity error
+   (RunnerError::Fire); broken automations.json => daemon serves,
+   scheduler idle, loud stderr.
+ hung_or_long: watch loops resubscribe on broadcast lag; completion
+   watchers exit after TurnFinished; queue-full never blocks the pump.
+ notification injection: OSC payloads sanitized (C0/DEL stripped,
+   bounded) — embedded escape sequences cannot escape the frame
+   (exactly-two-framing-ESCs assertion).
+ dirty_worktree: only harness-daemon/** + this evidence file staged;
+   sibling workers' files (frontends, plans, skills) untouched.
+
+------------------------------------------------------------------------
+5. DEPENDENCIES
+------------------------------------------------------------------------
+NONE. Zero new crates, zero manifest changes (root Cargo.toml/Cargo.lock
+untouched by this task). Everything composes existing workspace deps
+(blake3 for jitter ids, serde/serde_json, tokio, thiserror) and T35
+primitives (CronExpr, Journal/JournalingExecutor, NotificationSink,
+SessionHost/mediator).
+
+------------------------------------------------------------------------
+6. DISCLOSURES & DEVIATIONS
+------------------------------------------------------------------------
+ - RECOVERY RUN: prior worker's uncommitted work was entirely absent
+   from the tree (nothing to validate/keep/discard) — fresh TDD build.
+ - Bin runs UnconfiguredInference (T35 stub; T40 wires providers): every
+   scheduled turn ends failed::InferenceExhausted. Scheduler/kickoff/
+   gate/notify are fully proven regardless (tests use scripted
+   inference through the REAL engine).
+ - Empty-criteria automations gate Confirmed by design: the verdict
+   gates CRITERIA COVERAGE (the /goal pattern), not run success — run
+   success remains the outcome field on the same row.
+ - The deterministic CriteriaGate never emits Refuted (coverage cannot
+   derive contradiction); adversarial LLM reviewers land on the
+   CompletionGate seam once T40 providers exist (AlwaysRefuse test
+   proves the Refuted path records verbatim).
+ - Network-policy INTERSECTION is computed, journaled, and recorded on
+   history rows now; tool-grant-level enforcement composes at T35's
+   WorkerToolExecutor grants (documented composition point, not
+   re-implemented here).
+ - Main tree unbuildable (sibling harness-web edit): all builds in the
+   detached task-41-dev worktree at 4f8fc31; MSVC env shell-scoped;
+   private target dirs — nothing repo-side.
+ - Protocol v1 frozen surface: zero protocol.rs changes (verified in
+   the staged diff).

@@ -76,9 +76,27 @@ impl DaemonState {
         })
     }
 
-    /// Create (or return) a session host; the id is the stable,
-    /// deep-linkable URL segment.
+    /// Create (or return) a session host with default loop settings;
+    /// the id is the stable, deep-linkable URL segment.
     pub fn session(&self, id: &str) -> Arc<SessionHost> {
+        self.session_with_config(id, harness_core::agent_loop::LoopConfig::default())
+    }
+
+    /// Create (or return) a SCHEDULED session host: per-automation
+    /// turn budgets (`loop_config.max_turns`) bound the unattended run.
+    pub fn session_scheduled(&self, id: &str, turn_budget: Option<u32>) -> Arc<SessionHost> {
+        let mut config = harness_core::agent_loop::LoopConfig::default();
+        if let Some(max_turns) = turn_budget {
+            config.max_turns = max_turns;
+        }
+        self.session_with_config(id, config)
+    }
+
+    fn session_with_config(
+        &self,
+        id: &str,
+        loop_config: harness_core::agent_loop::LoopConfig,
+    ) -> Arc<SessionHost> {
         let mut hosts = match self.hosts.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -103,11 +121,12 @@ impl DaemonState {
         let _ = std::fs::create_dir_all(&session_dir);
         let executor =
             WorkerToolExecutor::new(Arc::clone(&self.worker_router), None, host.event_sink());
-        let _ = host.spawn_engine(
+        let _ = host.spawn_engine_with_config(
             session_dir,
             host.standard_stages(executor),
             (self.inference_factory)(),
             cmd_rx,
+            loop_config,
         );
         hosts.insert(id.to_owned(), Arc::clone(&host));
         host

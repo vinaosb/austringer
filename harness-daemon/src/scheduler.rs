@@ -268,7 +268,9 @@ impl Scheduler {
             }
             m = m.saturating_add(1);
         }
-        self.last_minute = Some(now_minute);
+        // High-water mark never rewinds: a backward (DST fall-back)
+        // clock jump must not re-expose already-evaluated minutes.
+        self.last_minute = Some(now_minute.max(last));
         fired
     }
 
@@ -429,6 +431,34 @@ mod tests {
         sched.tick(0);
         let fired = sched.tick(7 * 86400);
         assert_eq!(fired.len() as u64, MAX_CATCHUP_MINUTES);
+        Ok(())
+    }
+
+    #[test]
+    fn backward_clock_jump_never_refires_fired_minutes() -> Result<(), CronError> {
+        // DST fall-back: clock steps backward; already-evaluated minutes
+        // (rewound-now .. old high-water mark) must never re-fire.
+        let job = ScheduledJob {
+            id: "j".into(),
+            name: "j".into(),
+            cron: CronExpr::parse("0 * * * *")?,
+            action: JobAction::Notify {
+                kind: "k".into(),
+                message: "m".into(),
+            },
+        };
+        let mut sched = Scheduler::new(vec![job]);
+        sched.tick(0);
+        assert_eq!(sched.tick(10 * 3600).len(), 10, "hourly 00:00..10:00");
+        assert!(sched.tick(9 * 3600 + 1800).is_empty(), "fell back 09:30");
+        let refired = sched.tick(10 * 3600 + 60);
+        assert!(
+            refired.is_empty(),
+            "already-fired minute re-fired: {refired:?}"
+        );
+        let resumed = sched.tick(11 * 3600);
+        assert_eq!(resumed.len(), 1, "firing resumes past the mark");
+        assert_eq!(resumed[0].at_minute, 11 * 60);
         Ok(())
     }
 }

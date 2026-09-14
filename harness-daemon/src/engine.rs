@@ -66,17 +66,36 @@ impl Steer for SharedSteerer {
 }
 
 impl SessionHost {
-    /// Spawn the engine driver: owns the `AgentLoop`, consumes host
-    /// commands, publishes recorded events after each run, journals
-    /// turn workflows when a journal root is configured.
+    /// Spawn the engine driver with default loop configuration.
     pub fn spawn_engine(
         self: &Arc<Self>,
         session_dir: PathBuf,
         stages: StageSet,
         inference: Box<dyn Inference>,
-        mut cmd_rx: mpsc::Receiver<HostCommand>,
+        cmd_rx: mpsc::Receiver<HostCommand>,
     ) -> Result<(), std::io::Error> {
-        let mut engine = AgentLoop::open(&session_dir, LoopConfig::default(), stages, inference)?;
+        self.spawn_engine_with_config(
+            session_dir,
+            stages,
+            inference,
+            cmd_rx,
+            LoopConfig::default(),
+        )
+    }
+
+    /// Spawn the engine driver: owns the `AgentLoop`, consumes host
+    /// commands, publishes recorded events after each run, journals
+    /// turn workflows when a journal root is configured. Scheduled
+    /// runs pass a per-automation turn budget via `loop_config`.
+    pub fn spawn_engine_with_config(
+        self: &Arc<Self>,
+        session_dir: PathBuf,
+        stages: StageSet,
+        inference: Box<dyn Inference>,
+        mut cmd_rx: mpsc::Receiver<HostCommand>,
+        loop_config: LoopConfig,
+    ) -> Result<(), std::io::Error> {
+        let mut engine = AgentLoop::open(&session_dir, loop_config, stages, inference)?;
         let host = Arc::clone(self);
         let cancel = engine.cancel_handle();
         let mut published_through: usize = 0;
