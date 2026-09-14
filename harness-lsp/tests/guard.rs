@@ -138,11 +138,19 @@ async fn guard_loop_kills_a_runaway_within_a_few_intervals() {
 async fn real_process_kill_path_through_the_guard() {
     // A real child process (any stdin-blocked process stands in for a fat
     // server): the REAL probe must see it, and the guard kill must end it.
+    // Windows has no plain `sleep` binary; unix has no powershell.
+    #[cfg(windows)]
     let mut child = std::process::Command::new("powershell")
         .args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"])
         .stdin(std::process::Stdio::piped())
         .spawn()
         .expect("powershell spawns");
+    #[cfg(not(windows))]
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .expect("sleep spawns");
     let pid = child.id();
 
     let probe = SysinfoProbe::new();
