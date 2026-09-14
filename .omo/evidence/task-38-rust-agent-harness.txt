@@ -1,0 +1,230 @@
+TASK 38 — harness-vscode: thin-client VS Code extension (plan todo 38)
+=================================================================
+Worker: todo-38 RECOVERY RUN (Sisyphus-junior; prior worker was killed
+mid-run by a harness restart). Date: 2026-09-13. HEAD at start:
+4f8fc31 (confirmed). Machine: Windows 11, PowerShell, Node 25.9.0.
+Parallel workers active (six): todo-36 TUI (root Cargo.toml uncommitted
+ratatui/crossterm block — NOT mine, left untouched), todo-37 web
+(harness-web uncommitted — NOT mine, left untouched). I own
+harness-vscode + this evidence file only.
+
+LANGUAGE / WORKSPACE DECISION (six-worker discipline)
+-----------------------------------------------------
+The extension is TypeScript => harness-vscode is deliberately NOT a
+Cargo workspace member (root Cargo.toml line 29 already documents
+this). No Rust was compiled in this task; the task-13 MSVC recipe was
+not needed. Root Cargo.toml, Cargo.lock, and every harness-* crate
+untouched by me (verified: git diff of my commit contains only
+harness-vscode/** + this file).
+
+RECOVERY TRIAGE (the dead worker's uncommitted tree)
+----------------------------------------------------
+Left on disk: protocol.ts (typed daemon protocol v1 mirror), client.ts
+(SSE attach loop + command POSTs), nodehttp.ts (node:http transport),
+test/{client,protocol}.test.ts + fakedaemon.ts, package/tsconfig
+edits. extension.ts was still the todo-1 scaffold stub; telemetry /
+omnibar / hunks / gauge / bridge were missing entirely.
+
+The three fixes the dead worker had diagnosed, verified on disk:
+(1) deleted `let response` -> ReferenceError per request: LANDED in
+    spirit (postJson uses `const request`), BUT its restructure left
+    three sibling defects (below).
+(2) SSE parser test fixture semantically wrong: NOT LANDED — the
+    fixture pushed 'data: {"a"' + '1}' which spells {"a"1} (colon lost
+    at the chunk split) while asserting {"a":1}. Fixed: first chunk is
+    'data: {"a":'.
+(3) socket pooling off for clean exit: LANDED (agent:false on both
+    the SSE GET and the command POST).
+
+Additional defects found under those three (all RED-captured before
+any fix, TDD):
+(a) nodehttp.openSse conflated "open settled" with "stream ended":
+    settled=true was set in the 200 path BEFORE wiring res.on("end"),
+    whose !settled guard could then never fire => a clean server-side
+    stream close NEVER reached onEnd => the client parked forever on
+    its `ended` promise (no reconnect, stop() deadlock). Isolated by
+    running the attach test under node:test: connect SUCCEEDED
+    ("SAW ['status','status'] opens=1") yet the test hit the 15 s
+    runner timeout and the process never exited.
+(b) stream.close() used request.destroy() with NO error argument =>
+    Node emits no 'error' the client could observe => stop() hung
+    awaiting run(). Fixed: destroy(new Error(...)) funnels through one
+    finishStream() (exactly-once onError/onEnd).
+(c) postJson timeout path destroyed without an error => the POST
+    promise NEVER settled (the briefing's "unresolved promises"
+    family). Fixed the same way; black-holed daemon now answers
+    {ok:false,error:{kind:"unreachable"}} at the timeout (test drives
+    it with a 200 ms transport, effect asserted, not timing).
+(d) client.postCommand mapped 404 only on the network-failed branch;
+    a real HTTP 404 (outcome.ok===true) became a generic http error —
+    unknown_ask was unreachable. Fixed: unified status mapping
+    (401/403 => auth, 404 => unknown_ask, 202 => ok). Matches the
+    daemon handlers (404 "unknown ask {id}", 202 accepted).
+(e) client.run(): stop() racing an in-flight openSse saw stream===null
+    and closed nothing => later `await ended` hung forever. Fixed:
+    after a successful open, if stopped => close the fresh stream.
+(f) Dead worker's backoff test raced setImmediate retries against a
+    10 ms poller (20 sleeps recorded where 3 were asserted) — the
+    test was racy by construction, not the client. Rewritten with
+    gate-released sleeps: the loop cannot retry until the test
+    releases each backoff, so [1000,2000,4000,8000,15000,15000,15000]
+    is asserted deterministically (exponential + cap proven).
+(g) wrong-token test expected sseOpens===1, but auth is refused by
+    the daemon middleware BEFORE routing (verified against
+    harness-daemon/src/server.rs presented_token/auth_mw) =>
+    sseOpens===0 is the correct effect; assertion fixed to pin "exactly
+    one attempt, zero SSE handler opens".
+(h) one self-inflicted test-harness leak during recovery: a polling
+    helper rescheduled itself unconditionally => perpetual timer chain
+    kept the event loop alive after a PASSING test (suite flakily
+    failed to exit). Fixed with a done flag. Suite exit is now stable
+    (EXIT=0 every run, x5).
+(i) package.json "node --test test/" directory form does not resolve
+    on Windows/Node 25 (MODULE_NOT_FOUND on the directory) => glob
+    form "test/*.test.ts".
+
+WHAT SHIPPED (harness-vscode; 14 src modules, every file <= 250 pure
+LOC, largest 248; no unwrap-equivalents; strict tsc passes)
+----------------------------------------------------------------
+- protocol.ts: typed wire mirror of harness-daemon protocol v1
+  (serde snake_case tags, all bounds: 1 MiB frame, 64 KiB text, 128 B
+  ids, printable-id gate). Verified against the committed daemon
+  source (protocol.rs / handlers.rs / server.rs; read-only, never
+  touched): routes /s/{sid}/events + /s/{sid}/cmd + /sessions; auth
+  via ?token= / Bearer / x-harness-token (middleware, loopback-only);
+  token file .harness-daemon/daemon-token (bin writes data_dir/
+  daemon-token); 202 accepted / 404 unknown ask semantics.
+- decode.ts + codec.ts: parse-don't-validate decoders (every unknown
+  tag / wrong field => typed malformed, never null-silent) + outbound
+  client-message validation (bounds enforced BEFORE anything leaves
+  the editor).
+- sse.ts: incremental SSE framing (chunk splits, comment blocks carry
+  no data, multi-line data joins).
+- http.ts: the transport seam (HttpIo) — client is transport-agnostic.
+- nodehttp.ts: node:http binding, agent:false, every failure path
+  funnels to exactly one settle (clean end, socket death, client
+  close, POST timeout).
+- client.ts: the daemon client — cursor-exact resume (?after=), gap
+  detection => forced resume, state_resync_required snapshot
+  acceptance, capped exponential backoff with jitter, auth refusal
+  stops the loop (no retry storm), typed CommandError for every
+  unhealthy path.
+- omnibar.ts: command-palette grammar (/steer <text>, /cancel, plain
+  text submits; unknown slash => typed usage listing, never a silent
+  submit of "/typo ...").
+- telemetry.ts: OPT-IN (default off) editor context: active file,
+  language, cursor line:col, bounded selection (512 ch), top-5
+  diagnostics; null when disabled or no editor focus.
+- hunks.ts: diff-event -> per-hunk new-side ranges (lens/decoration
+  plan; unparseable headers skipped, not guessed), dirty-worktree
+  accept gate (confirm, never silent apply), accept/reject decision
+  (answers the pending ask when one targets the file, else steers).
+- gauge.ts: status-bar projection (pending asks > turn > status;
+  connecting shows attempt count; kind ok/warn/error/action).
+- bridge.ts: opt-in IDE bridge — loopback-only HTTP endpoint
+  (/ide/search, /ide/definition), daemon-token auth BEFORE any
+  provider touch, 1 MiB body cap, typed 400/401/404/405/502. Gives
+  the daemon the IDE's already-running language servers (priority
+  over the harness's own) — extension binds definition to
+  vscode.executeDefinitionProvider.
+- session.ts + extension.ts: VS Code glue (thin, typechecked only —
+  see Deviation note): activation, status-bar gauge, diff decorations
+  + per-hunk Accept/Reject code lenses, permission quick-pick
+  (allow once / allow session / deny), omnibar input, bridge
+  lifecycle, dirty-file confirm before hunk apply.
+- package.json: commands (open/reconnect/hunkAccept/hunkReject/
+  permission.*), configuration (daemonBaseUrl, daemonTokenFile,
+  sessionId, telemetry.enabled=false default, ideBridge.enabled=false
+  default), engines aligned to @types/vscode ^1.137. No model calls
+  anywhere in the extension (thin client only, per plan Must-NOT).
+
+TEST HARNESS (hermetic, per briefing: no live VS Code, protocol/logic
+layer tested; no live daemon — test/fakedaemon.ts speaks the REAL HTTP
+surface: SSE + replay-after cursor + resync snapshot + 401 middleware
++ 404 unknown-ask + 202, over real loopback sockets).
+
+TDD RECORD
+----------
+RED (captured in session, quoted shapes):
+- suite hang: "attach reaches connected" test => node:test 15 s
+  timeout marker only, process never exited (defects a+b).
+- parser fixture: AssertionError actual '{"a"1}' expected '{"a":1}'.
+- 404 mapping: actual {kind:'http',status:404} expected
+  {kind:'unknown_ask'} (defect d).
+- backoff race: actual 20 sleeps (15 s cap x16) expected 3 (defect f).
+- wrong token: 0 !== 1 on sseOpens (defect g).
+- five new modules: all five new test files failed to load (sources
+  absent) before implementation; green after.
+GREEN (final):
+  npm test            => 60 pass / 0 fail (5.4 s), stable x5 runs,
+                         process EXIT=0 every time
+  npm run typecheck   => tsc -p ./ --noEmit clean (strict +
+                         noUncheckedIndexedAccess +
+                         exactOptionalPropertyTypes + verbatimModuleSyntax)
+  npm run compile     => emits out/src/*.js (14 modules)
+  committed-tree worktree isolation: after the commit, worktree at
+  the commit + fresh npm install + npm test => 60/60 green (below).
+
+QA CHANNELS (test names are the transcript)
+-------------------------------------------
+happy (plan: "fix this" uses cursor context, no file question):
+  telemetry.test "'fix this' with telemetry carries the file so the
+  agent never asks which file" (file + 42:7 + selection in the
+  submitted text); full session: client.test "full session: attach,
+  frames, steer, permission answer, turn completes" (attach ->
+  turn_started -> recorded user turn -> permission_ask -> answerAsk
+  allow_once POSTED and verified verbatim on the daemon -> steer
+  accepted 202 -> turn_finished complete; asserts the daemon's
+  received bodies, i.e. protocol EFFECT).
+failure (plan: daemon down -> reconnect UX):
+  reconnect.test "daemon absent retries with capped exponential
+  backoff" (1000->2000->4000->8000->15000->15000, deterministic);
+  "wrong token is a typed auth failure with no retry loop";
+  "black-holed command post fails typed within the post timeout";
+  "unknown ask answer maps to a typed unknown_ask error".
+adversarial:
+  malformed/bounded: protocol.test oversized/garbage/unknown-tag/
+    nested-mystery-event rejections; client.test oversized submit
+    refused client-side with zero requests sent; bridge.test
+    malformed body 400 with provider-never-called, 1 MiB body cap.
+  flaky x3: reconnect.test "flaky daemon: three drops, exact-once
+    resume from cursor" (ids [1..5] exactly once, afters
+    [null,2,3,4]); suite x3 stable.
+  misleading_success: daemon.posts bodies asserted verbatim
+    (submit shape, permission_answer shape); gauge/hunks assert
+    projected EFFECT not internal state.
+  stale_state: "state_resync_required is accepted with its snapshot
+    replacing deltas" + "gap in the frame ids forces a resume from
+    the last cursor" + "clean server-side stream end surfaces as
+    disconnected and reconnects".
+  dirty_worktree: hunks.test "accept on a dirty file demands explicit
+    confirmation, never a silent apply" (gate -> confirm reason).
+  hung streams: "stop resolves promptly after a live attach instead
+    of hanging on a dead socket" (3 s bound; passes in ~15 ms).
+
+DEVIATION NOTE (plan acceptance "extension integration test harness
+(vscode-test)")
+---------------------------------------------------------------
+No live VS Code can run in this hermetic environment (no GUI host);
+per the task briefing the protocol/logic layer is what the plan's test
+path proves here. Every decision the extension makes is a pure module
+with node:test coverage (60 tests); session.ts/extension.ts are thin
+typed glue over @types/vscode (compile-checked, no logic). The
+vscode-test GUI harness remains future work where a display exists.
+
+COMMIT (single, per plan todo): feat(vscode): thin-client extension
+Files: harness-vscode/** (src, test, package.json, tsconfig.json,
+.gitignore) + this evidence file. Nothing else.
+
+COMMITTED-TREE WORKTREE ISOLATION (post-commit, transcript)
+-----------------------------------------------------------
+git worktree add <tmp>\harness-wt38 <commit> (detached, clean tree,
+no sibling-worker dirt) => fresh npm install (4 pkgs) =>
+  npm test          => tests 60, pass 60, fail 0, EXIT=0
+  npm run typecheck => EXIT=0
+Worktree deregistered + directory removed (git worktree list shows no
+residual harness-wt38). This proof amended into the same single
+commit; HEAD was still this task's own commit at amend time (no
+sibling commit on top — verified via git log before amending).
+Final: plan's test path green in the committed tree itself.
+
