@@ -223,6 +223,16 @@ tokio-tungstenite = "0.29"
 # Todo-36 acceptance: insta snapshot suites for main screens
 # (plan-named). Pure Rust, dev-only.
 insta = "1"
+# Todo-39 CLI: clap is the plan-named argument parser (todo 39 "clap").
+# derive feature only; string/unicode feature trees stay out. Pure Rust,
+# MIT/Apache-2.0 dual-licensed.
+clap = { version = "4", features = ["derive"] }
+# Todo-39 acceptance: assert_cmd suite (plan-named). Dev-only, pulls
+# predicates + escarg; MIT/Apache-2.0. Pure Rust.
+assert_cmd = "2"
+# assert_cmd's assertion helpers (str contains/predicate combinatorics).
+# Dev-only. Pure Rust, MIT/Apache-2.0.
+predicates = "3"
 
 [workspace.lints.rust]
 warnings = "deny"

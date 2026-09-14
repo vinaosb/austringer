@@ -1,0 +1,221 @@
+TASK 39 - CLI (rust-agent-harness)
+==============================================================
+Worker: task-39 recovery worker (Sisyphus-junior). Date: 2026-09-14.
+Base: started at HEAD 4f8fc31; landed on top of c68a218 (siblings
+04a0bba intel, 26e72c3 daemon scheduler, ec0df7e web, 610f057 vscode,
+c68a218 tui committed mid-run; tolerated per plan parallelization).
+Parallel workers disclosed: intel / daemon(scheduler) / web / vscode /
+tui active in the shared tree. Untouched (locked): harness-daemon,
+harness-skills, harness-wasm, harness-web sources; exactly ZERO
+edits outside harness-cli/*, root Cargo.toml (one anchored dep hunk),
+Cargo.lock (regenerated, purely additive), and this evidence file.
+
+RECOVERY CONTEXT (disclosed)
+------------------------------------------------------------------------------
+A prior worker died mid-run. Inherited uncommitted state: harness-cli
+Cargo.toml (dep skeleton), src/lib.rs (13 module DECLARATIONS, no
+module files), and three test files (cli_args.rs, inproc_flow.rs,
+e2e_daemon.rs) whose contracts this run treated as binding intent.
+Re-derived rather than trusted: every integration assumption was
+re-verified against the live daemon sources (protocol.rs, server.rs,
+handlers.rs, ws.rs, ipc.rs, transport.rs, attach.rs, events.rs,
+engine.rs) before implementation. Survey verdict: tests kept (fixed
+where they encoded untestable fixtures — see RED #4/#5/#6), Cargo
+skeleton kept (deps trimmed: dropped harness-providers/blake3/
+futures-util from the dead worker's list where unused, added
+tokio-tungstenite + async-trait(dev) + reqwest json feature + tokio
+io-std), lib.rs kept (minus the sse module after RED #2).
+
+RED RECORDS (true failing states observed before each green)
+------------------------------------------------------------------------------
+RED #0 (inherited): cargo build -p harness-cli failed with 13x
+  E0583 "file not found for module" — the dead worker's declared
+  modules never landed. Reproduced at survey start.
+RED #1 (environment): MSVC toolchain headers STILL gutted (task-13
+  incident persists): libsqlite3-sys C1083 stdarg.h; then LNK1104
+  msvcrt.lib. Fixed session-scoped per the task-13 recipe: INCLUDE =
+  VS18 ScopeCppSDK vc15 VC include FIRST + WinSDK 10.0.26100.0
+  ucrt/shared/um; LIB = MSVC 14.50.35717 lib\onecore\x64 + SDK
+  ucrt/um x64. CC/CXX unset. Nothing repo-side changed.
+RED #2 (design defect caught by tests): the SSE carrier died at the
+  daemon: GET /s/{sid}/events handler spawns pump_client with a
+  dropped inbound sender -> biased select hits inbound.recv()==None
+  -> PumpExit::ClientGone -> SSE body ends right after HelloAck.
+  Verified live: "harness: protocol error: stream ended mid-turn"
+  against the real binary. Daemon is LOCKED -> the CLI switched its
+  --url carrier to the WebSocket attach socket (/s/{sid}/attach?
+  after=N&token=), the daemon's own tested duplex transport. The sse
+  decoder module was deleted with its failing tests documented here;
+  SSE remains a daemon-side fix for its owner.
+RED #3 (unit RED -> real bugs): sse tests exposed take_data() not
+  draining (duplicate emission feed+flush) and flush() ignoring the
+  pending partial line. Both fixed pre-deletion of the module (the
+  same drain lesson carried into the WS framing). webp VP8L fixture
+  was missing the 4-byte chunk length (test bug, fixed).
+RED #4 (dead worker's fixture, never run): inproc_flow used
+  #[tokio::test] (current-thread) + blocking .assert() inside the
+  async fn -> the in-process axum daemon starves -> EVERY inproc run
+  hung. Fixed: flavor = "multi_thread", worker_threads = 2.
+RED #5 (dead worker's fixture): e2e spawn_daemon reused ONE pipe name
+  per process (harness-cli-e2e-{pid}) -> parallel tests connected to
+  the WRONG daemon -> os error 232 pipe-closing. Fixed: per-spawn
+  serial suffix.
+RED #6 (dead worker's fixture): e2e capture_then_attach assumed two
+  turns on one session replay two prompts. The REAL stub engine is
+  one-shot after a failed run: turn 2 finishes failed::Terminal
+  WITHOUT recording its prompt (observed: events.jsonl carries the
+  user event of turn 1 only). Redesigned honestly: one session per
+  capture, replay asserted per session.
+RED #7 (the 50% bimodal flake, root-caused with hub forensics):
+  capture exited immediately after the WS submit write; when the
+  daemon's read loop lost the race, the submit VANISHED (hub
+  last_event_id=0, daemon idle at 0.015s CPU; captured via live SSE
+  replay dump of the hung daemon's hubs). Fix (client-side): capture
+  now holds the connection until the daemon's TurnStarted frame
+  acknowledges acceptance, then prints "queued". 12/12 + 3x full
+  suite stable after the fix (was 5/12 hang rate).
+RED #8 (self-inflicted, caught by main-tree run): LOC-squeeze
+  compaction of daemon_exe() broke the fallback path math (returned
+  %TEMP%\harness-daemon.exe). Fixed with a fresh current_exe walk.
+
+DISCLOSED DAEMON-SIDE OBSERVATIONS (not fixed here; crate locked)
+------------------------------------------------------------------------------
+- SSE endpoint terminates on idle attach (RED #2 above).
+- Stub engine drops a second turn's prompt after a failed run
+  (failed::Terminal, no Recorded user event).
+- Attaching mid-turn can DUPLICATE the recorded user frame (observed
+  seq 1..3 for one submit); the e2e unicode assertion pins the
+  CLI-owned contract (verbatim at-least-once replay) instead of
+  daemon-side dedup.
+- The daemon truncating the shared working-tree Cargo.lock to one
+  line mid-run (sibling incident) produced TOML parse errors; the
+  committed lock was restored and regenerated additively.
+
+DELIVERABLE
+------------------------------------------------------------------------------
+Crate harness-cli (14 source files + bin, all <=250 pure LOC):
+  cli.rs      (74) clap surface: run/capture/repl/attach/doctor +
+               global --url/--token/--data-dir/--ipc-name/--image/
+               --output-json (top-level help pins the surface)
+  client.rs  (246) the typed client: one SessionTransport over the WS
+               attach carrier (--url) and the interprocess local
+               socket (default); Hello handshake, LIVE_ONLY cursor,
+               bounded decode via the daemon's own protocol fns
+  run.rs     (197) headless run (event stream + turn_result, exit by
+               outcome), capture (submit + TurnStarted ack, "queued"),
+               replay_until_live (delta + snapshot expansion), the
+               shared wait_turn loop, stdin permission answers
+  attach.rs   (45) observer attach: replay (delta Events AND snapshot
+               frames count toward --max-events), live follow, Bye end
+  repl.rs     (56) REPL: /exit /cancel /image <path>, streamed turns,
+               permission asks answered interactively
+  render.rs  (185) --output-json envelopes ({"event":{"id","event"}}
+               with Recorded unwrapped to the core event) + turn_result
+               {type,ok,outcome,turn}; human lines pinned keywords
+  image.rs   (162) + image/format.rs (168): --image validation (magic
+               sniff + dims for png/jpeg/gif/webp), typed harness-core
+               marker submit text, content-addressed MediaStore spill
+               into {data}/sessions/{sid}/media when data-dir known
+  target.rs  (171) HTTP/IPC resolution, daemon-token file, default
+               cli-{pid}-{millis} session ids, session-dir mapping
+  doctor.rs   (39) + doctor_probes.rs (224): daemon/network (probe is
+               side-effect-free: GET /sessions or bare socket connect,
+               never creates a session), provider (HARNESS_PROVIDER
+               known-name check + key env WARN), env, sandbox backend
+               name, mcp scan_directories diagnostics, sessions store
+               open (Corrupt/Schema -> FAIL = migration probe; absent
+               root = healthy fresh), skills loader scan
+  error.rs    (92) typed CliError: "unreachable"/"auth"/"image" pinned
+               Display strings; usage errors stay clap's exit 2
+  version.rs  (37) nightly tag vX.Y-nightly.DATE.SHA via
+               HARNESS_NIGHTLY_DATE/HARNESS_NIGHTLY_SHA build envs
+  bin/harness.rs (121) parse -> target resolve -> image validation
+               BEFORE any daemon contact -> dispatch; exit-code funnel
+
+TESTS (assert_cmd suite = plan acceptance; hermetic + real daemon)
+------------------------------------------------------------------------------
+  cargo test -p harness-cli:
+    lib            25 passed  (0.02s)   pure-unit: formats, markers,
+                                        envelopes, answers, targets
+    cli_args       14 passed  (2.1s)    hermetic: help surface pins
+                                        run/capture/repl/attach/doctor
+                                        + --output-json + --image,
+                                        --version embed, clap usage
+                                        exit 2, missing/non-image/
+                                        directory attachments typed
+                                        "image" BEFORE daemon contact,
+                                        daemon-absent "unreachable"
+                                        (run+capture), doctor FAIL
+                                        exits 1 on absent daemon /
+                                        HARNESS_PROVIDER=not-a-provider
+                                        / malformed .harness/mcp.json /
+                                        corrupt store.db --sessions
+    e2e_daemon      5 passed  (0.25s)   REAL daemon binary: scripted
+                                        headless run OBSERVES
+                                        failed::InferenceExhausted and
+                                        exits 1; capture->attach
+                                        replays the detached turn with
+                                        the prompt verbatim (per
+                                        session, see RED #6); wrong
+                                        token = typed "auth" exit 1;
+                                        default IPC transport captures
+                                        + replays unicode (héllo 🌏)
+                                        with NO --url; doctor PASS
+                                        against a live daemon
+    inproc_flow     5 passed  (0.10s)   REAL daemon router + scripted
+                                        inference: json mode observes
+                                        user+assistant events and
+                                        turn_result ok task_completed;
+                                        human mode prints the assistant
+                                        text; permission ask answered
+                                        from stdin "n" -> denied ->
+                                        task_completed; REPL streams
+                                        and /exit quits; doctor green
+  Flakiness: e2e looped 12/12 after RED #7 fix (previously ~5/12
+  hangs); full suite x3 stable (49 tests each run). Final proof runs
+  executed in BOTH the isolated committed-tree worktree (04a0bba
+  base) and the live main tree at c68a218 (current HEAD) after the
+  sibling daemon commit landed.
+  Gates: cargo fmt --check clean; cargo clippy -p harness-cli
+  --all-targets (workspace lints: warnings=deny, clippy all=deny)
+  clean; every file <=250 pure LOC (max: client.rs 246, e2e 249).
+
+ISOLATION PROOF
+------------------------------------------------------------------------------
+Siblings broke the shared tree twice mid-run (harness-web mid-edit
+into_boxed_str; harness-daemon bridge.rs mid-edit E0004/E0609). This
+run never touched those crates; verification moved to a git worktree
+at the committed tree (t39-wt, base 04a0bba) with a private target
+dir until the siblings landed their commits, then re-proved in the
+main tree. Root Cargo.toml: exactly one anchored hunk (clap derive +
+assert_cmd + predicates with rationale comments) appended after the
+sibling-committed insta line; Cargo.lock diff is purely additive
+(239 insertions, the clap/assert_cmd/predicates/escarg trees).
+
+MANUAL QA (channels from the task brief)
+------------------------------------------------------------------------------
+happy: real-daemon scripted headless run, json + human modes,
+       permission answered from stdin, detach -> later attach replays
+       missed turns (HTTP + IPC), REPL /exit, doctor PASS on live
+       daemon (all above are the automated suites' assertions).
+failure: daemon absent -> "harness: daemon unreachable: ..." exit 1;
+       bad subcommand -> clap exit 2 "unrecognized subcommand"; run
+       without prompt -> exit 2; wrong token -> "harness: auth
+       failed: daemon refused the token (401 Unauthorized)" exit 1;
+       missing --image -> typed image rejection BEFORE daemon contact.
+adversarial: unicode prompt args survive verbatim both transports;
+       malformed input bounded (daemon decode fns enforce frame/text
+       bounds; unknown sniff bytes rejected typed); flaky x3 + 12x
+       e2e loops; misleading_success guarded by asserting OBSERVED
+       session output (turn_result + event frames), never bare exit
+       codes; stale_state covered by capture->attach replay (delta
+       AND snapshot shapes); dirty_worktree covered by cwd-quarantined
+       doctor runs and the isolated-worktree proof.
+
+RESIDUAL RISKS
+------------------------------------------------------------------------------
+- WS carrier only for --url (SSE abandoned; see RED #2) — TUI/web may
+  still prefer SSE once the daemon fixes its idle teardown.
+- The daemon-side observations above remain open for their owner.
+- REPL long turns can hit the daemon's 300s idle eviction (repl turn
+  deadline is 300s; run default 120s) — documented in run.rs docs.
