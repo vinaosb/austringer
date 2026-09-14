@@ -53,7 +53,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust 1.98 (workspace MSRV)
-        run: rustup update 1.98 --no-self-update && rustup default 1.98
+        # GitHub runner images default to rustup's minimal profile, which
+        # ships no rustfmt/clippy for newly installed toolchains.
+        run: rustup update 1.98 --no-self-update && rustup default 1.98 && rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt
         run: cargo fmt --all -- --check
@@ -112,10 +114,11 @@ jobs:
       - name: Install Rust 1.98 (workspace MSRV)
         run: rustup update 1.98 --no-self-update && rustup default 1.98
       - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-llvm-cov
+      - name: Install cargo-nextest + cargo-llvm-cov
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov@0.9.1
+          # llvm-cov's nextest backend invokes cargo-nextest as the runner.
+          tool: cargo-nextest@0.9.144,cargo-llvm-cov@0.9.1
       - name: Generate LCOV report (nextest backend)
         run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
       - name: Upload coverage artifact
