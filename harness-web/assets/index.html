@@ -1,9 +1,23 @@
 <!doctype html>
-<!-- Scaffold placeholder: dashboard assets land with the harness-web implementation todo. -->
+<!-- harness web dashboard: zero-build SPA served by the daemon (todo 37).
+     SELF-CONTAINED document: the stylesheet, the import map, and the
+     entry module are inlined at registry build time (module sources
+     ride data: URLs), because the daemon's router currently exposes
+     no /assets route (disclosed in the task-37 evidence). Template
+     tokens: {{FAVICON}} {{IMPORT_MAP}} {{STYLE}} {{APP_JS}}. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>harness web</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'" />
+    <title>harness</title>
+    <link rel="icon" href="{{FAVICON}}" />
+    <script type="importmap">{{IMPORT_MAP}}</script>
+    <style>{{STYLE}}</style>
   </head>
-  <body></body>
+  <body>
+    <div id="app" aria-live="polite"></div>
+    <noscript>harness web requires JavaScript (served locally by the daemon; no cloud services).</noscript>
+    <script type="module">{{APP_JS}}</script>
+  </body>
 </html>

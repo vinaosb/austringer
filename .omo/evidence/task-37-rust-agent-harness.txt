@@ -1,0 +1,232 @@
+TASK 37 - Web frontend (rust-agent-harness)
+==============================================================
+Worker: task-37 RECOVERY implementation worker (Sisyphus-junior).
+Date: 2026-09-13. Base: HEAD 4f8fc31 on main. Commit: feat(web):
+dashboard frontend (single commit: harness-web/** + this evidence
+file; Cargo.lock and root Cargo.toml deliberately NOT included —
+the working-tree diffs in both are the TUI/CLI/scheduler siblings'
+additions (clap/anstream/ratatui/cranelift trees), and this crate
+adds zero new workspace dependencies).
+
+RECOVERY CONTEXT (disclosed)
+--------------------------------------------------------------
+A prior worker was killed mid-run by a harness restart during a cold
+daemon-tree build. Its uncommitted tree contained:
+  KEPT (sound, after 3 compile fixes): src/lib.rs asset-registry
+    design (content-addressed /assets/<name>-<blake3[0..12]>.<ext>
+    routes + import map + OnceLock registry), assets/index.html
+    template, tests/served_assets.rs contract tests, Cargo.toml
+    skeleton, favicon placeholder.
+  BROKEN (fixed): lib.rs `Box::leak("/".into_boxed_str())` (no such
+    method on &'static str) -> "/"; two &str/&&str type errors and a
+    str-index-by-usize in served_assets.rs; favicon carried a bare
+    w3.org namespace (now allowed explicitly, see guard below).
+  PLACEHOLDERS (implemented from scratch): all five JS modules and
+    the CSS were "// stub" one-liners; e2e/ and examples/ were empty
+    directories (intent only).
+
+PARALLEL WORKERS / ISOLATION INCIDENTS (disclosed)
+--------------------------------------------------------------
+Six workers active. Mid-run, harness-daemon (locked for this task)
+was being edited by the scheduler/notifier sibling (uncommitted
+automations.rs / osc.rs / runner.rs etc.) and its lib transiently
+FAILED TO COMPILE (watch_turn borrow errors), breaking any build of
+this crate's dev-dependency chain in the main tree. Response (per
+task brief): all verification moved to a COMMITTED-TREE GIT WORKTREE
+at 4f8fc31 (clean daemon) with this crate copied in and a private
+CARGO_TARGET_DIR; zero daemon files touched. Main-tree sibling
+changes were never staged. The killed worker's %TEMP% target cache
+was not reused; a fresh private target dir was used throughout.
+Env: the task-13 MSVC recipe (CC unset; vc15 INCLUDE first) was
+required in EVERY shell that ran cargo (ring/libsqlite3-sys cc
+builds fail otherwise — machine-wide VS servicing issue, unchanged
+since task-13).
+
+TDD / RED FIRST
+--------------------------------------------------------------
+Rust RED (first suite run after fixing the dead worker's compile
+errors): js_modules_are_substantive FAILED
+  "/assets/app-4e51cbe5a2b7.js is too small to be a real module (9)"
+and no_cloud_dependencies_anywhere FAILED on the bare w3.org
+namespace in the favicon (byte 12). Node RED: tests/js against the
+stub modules failed with "Named export 'createStore' not found ...
+module is a CommonJS module" (stubs had no ESM surface). Both reds
+were captured before any module implementation.
+
+DELIVERABLE (harness-web, all Rust files <= 250 pure LOC)
+--------------------------------------------------------------
+src/lib.rs (98)          registry: SELF-CONTAINED entry document at
+                          "/" (inline <style>, inline entry module,
+                          import map whose targets are data: URLs
+                          carrying the exact module sources, favicon
+                          as data: URL) PLUS content-addressed
+                          /assets/* artifact entries kept published
+                          for the daemon route that does not exist
+                          yet (see DISCLOSED DAEMON GAPS). Tripwire
+                          test: inline sources never contain
+                          </style>/</script>.
+assets/index.html (23)   template: hardened CSP (default-src 'self';
+                          script-src 'self' 'unsafe-inline' data:;
+                          connect-src self + loopback ws/http), mount
+                          point, <noscript>.
+assets/proto.js (149)    protocol v1 codec (total decode) + WS-
+                          primary / SSE-fallback transports, hello
+                          handshake, resume-with-after, POST /cmd
+                          when only SSE is reachable.
+assets/store.js (247)    total non-throwing reducer over every
+                          ServerMsg/SessionEvent/engine-Event variant:
+                          transcript, HUD (turns/events/llm-visible/
+                          results/tool heatmap/outcomes), asks +
+                          resolved log, diffs, notifications, worker
+                          events, snapshot REPLACES history on
+                          resync, anomalies counter for malformed
+                          frames, auth flag.
+assets/share.js (67)     client-side share links: redacted (tool
+                          text/args always "(redacted)", 200-char
+                          truncation) + expiring snapshot encoded
+                          unicode-safe unpadded base64url in the
+                          fragment; expired -> {status:"gone"} which
+                          the UI renders as 410 Gone.
+assets/ui.js (378)       DOM renderer; untrusted text reaches the
+                          document ONLY via textContent (no innerHTML
+                          anywhere — enforced by served-content test);
+                          dashboard (sessions, tool heatmap, trends,
+                          packs), session view (HUD, permission gates
+                          y/a/n/cancel-vote, hunk review with
+                          e=steer-edit, transcript, composer with
+                          image paste/drop/upload previews, replay
+                          stepper over the captured frame log, share
+                          minting), token gate, 410/400 share views.
+assets/app.js (153)      bootstrap: deep-link /s/{sid} parsing,
+                          ?token= capture into sessionStorage +
+                          URL strip, transport wiring, actions,
+                          hashchange routing for share links.
+assets/app.css (86)      dark minimal theme, no web fonts.
+examples/e2e_daemon/     3-file example (main 10 / daemon 109 /
+                          transcript 170): scripted two-step inference
+                          + mock worker returning a diff; --serve-for-
+                          e2e mode for the browser driver; default
+                          mode prints the QA transcript.
+tests/served_assets.rs   9 contract tests over the SERVED CONTENT
+  (215)                   through the daemon's own web module: shell
+                          bytes + headers, content-addressing of every
+                          artifact, self-containment (zero artifact
+                          references), import-map data: payloads
+                          decode to the exact module sources, CSP/
+                          mount/noscript, no-cloud guard (loopback
+                          only; the ONLY allowances: the w3.org SVG
+                          XML-namespace identifier and scheme+"${"
+                          dynamic-origin templates — both documented
+                          in the guard), js modules substantive.
+tests/js/*.test.mjs (2)  14 node:test unit tests (store reducer:
+                          happy stream, CJK/emoji, malformed->anomaly
+                          counting, resync+snapshot replacement, auth
+                          flag, cancel-vote, image text markers;
+                          share: roundtrip, URL-safety, expiry->gone,
+                          redaction, CJK, tamper->invalid). Run:
+                          node --test tests/js/store.test.mjs tests/js/share.test.mjs
+e2e/run-e2e.mjs          playwright-core driver (REAL chromium; zero
+                          network: playwright-core resolved from the
+                          global npm tree via NODE_PATH, chromium-1234
+                          executable from the local ms-playwright
+                          cache). Scenarios: happy acceptance, expired
+                          share 410, auth negatives + wrong-token, absent daemon.
+
+INTEGRATION FACT DISCOVERED (why the entry document is self-contained)
+--------------------------------------------------------------
+The locked daemon's build_router() wires NO route for /assets/* even
+though is_public() admits those paths and web::serve() can serve
+them; task-35's QA only ever fetched "/" and "/s/{sid}" (the shell),
+so the gap was never exercised. A naive SPA boots to a page whose
+every script/link 404s (verified in chromium: net::ERR_ABORTED 404
+on all /assets/* subresources). Daemon change is forbidden for this
+task, so the boot path was made self-contained: ES module sources
+stay byte-identical files (node tests import them directly) while
+the built index inlines style/entry module and resolves "spa/*"
+imports through data: URLs (CSP requires UNQUOTED data: — 'data:'
+quoted is an invalid source expression per chromium, verified).
+The registry still publishes every artifact content-addressed, so
+the day the daemon adds the route the same bytes serve immutable.
+
+DISCLOSED DAEMON GAPS (needed changes; NOT made — crate locked)
+--------------------------------------------------------------
+1. Router: add `.route("/assets/{path}", get(...))` -> web::serve()
+   to make the published content-addressed artifacts reachable (the
+   self-contained entry document exists to survive without it).
+2. Protocol v1 SessionCommand::Submit carries text only: image
+   paste/upload in the composer previews locally (mime/2MiB checks)
+   but cannot ride the wire; needs a media command (todo 4 media
+   subsystem is engine-side already). Composer states this honestly.
+3. No packs/registry, eval, or usage/cost endpoints exist: the
+   dashboard renders real data from the live stream (sessions, tool
+   heatmap, turn-outcome trend, context gauge = llm-visible events)
+   and marks cost/cache/eval panels "not carried by protocol v1"
+   instead of fabricating numbers.
+
+VERIFICATION (all in the committed-tree worktree at 4f8fc31)
+--------------------------------------------------------------
+- cargo test -p harness-web ..... 4 lib + 9 integration passed,
+  0 failed (private target dir; MSVC INCLUDE recipe)
+- cargo clippy -p harness-web --all-targets ... clean (workspace
+  warnings=deny + clippy all=deny posture)
+- cargo fmt -p harness-web --check ......... clean
+- node --test tests/js/... ................. 14 passed / 0 failed
+- node --check on every served JS module .... clean (syntax gate)
+- cargo run -p harness-web --example e2e_daemon (QA transcript):
+    GET /            -> 200 text/html; charset=utf-8 no-cache
+    GET /s/qa-session-> 200 (deep link, same shell)
+    /sessions: no token 401 | wrong token 401 | spoofed Host +
+      valid token 403 | spoofed Host + no token 403
+    submit -> ask broadcast (tool=echo) -> allow_once 202 -> SSE
+      stream shows the full turn: recorded user/assistant/tool_call/
+      tool_result, diff event (src/demo.rs hunks), turn_finished
+      task_completed
+    absent daemon -> HTTP 0 transport failure (reported, no panic)
+- node e2e/run-e2e.mjs (real chromium, 2 browser contexts):
+    PASS happy: two browsers attach (WS), submit from A, gate
+      renders in BOTH, "y (once)" approved in A, diff + completed
+      transcript + HUD delta visible in BOTH, identical final
+      stat-events across pages, zero page errors  [x3 runs,
+      identical results — flaky check]
+    PASS failure: expired share link renders 410 Gone
+    PASS failure: auth negatives (401/401/403) and wrong-token page
+      never sees events (transcript stays empty)
+    PASS failure: absent daemon (killed) -> reconnecting state
+QA channels: happy = daemon run -> GET / -> app boots -> WS attach
+-> turns render + permission mediation (above); failure = expired
+share 410, auth negatives, absent daemon, slow-client resync (client
+side pinned by the snapshot-replacement unit test; server-side
+forced-resync is pinned by the daemon's own ws_e2e suite);
+adversarial = malformed frames (unit: garbage never throws, counts
+anomalies), unicode/CJK (unit: byte-for-byte reducer survival),
+misleading_success (contract tests assert SERVED CONTENT through
+the daemon's own web module + the browser e2e asserts wired
+behavior — HUD numbers change because of a real approved turn, not
+static markup), stale_state (snapshot replaces history test),
+dirty_worktree (sibling daemon breakage -> committed-tree worktree
+verification instead of trusting a dirty tree).
+
+REPRODUCE
+--------------------------------------------------------------
+PowerShell, per shell:
+  $env:INCLUDE="C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include;$env:INCLUDE"
+  $env:CARGO_TARGET_DIR="<private target dir>"
+  cargo test -p harness-web && cargo clippy -p harness-web --all-targets
+  node --test harness-web/tests/js/store.test.mjs harness-web/tests/js/share.test.mjs
+  cargo run -p harness-web --example e2e_daemon
+  cargo build -p harness-web --example e2e_daemon
+  $env:NODE_PATH="C:\Users\vsbb1\AppData\Roaming\npm\node_modules"
+  $env:HARNESS_E2E_EXE="<target>\debug\examples\e2e_daemon.exe"
+  node harness-web/e2e/run-e2e.mjs
+
+RISKS / RESIDUAL
+--------------------------------------------------------------
+- The self-contained index trades byte-size (99 KB document) for
+  router-independence; when the daemon route lands, flip the
+  template back to hashed <link>/<script> references (registry
+  already publishes them).
+- Share links are client-side only (no daemon endpoint); expiry is
+  enforced at open time by design (nothing secret rides the link —
+  payloads are redacted snapshots).
+- playwright-core/chromium are machine-local dev tools (documented
+  paths); CI would need `npx playwright install chromium`.

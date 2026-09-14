@@ -8,3 +8,30 @@ repository.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+# Content-addressed asset routes (blake3[0..12] of each artifact's bytes);
+# pure Rust, already in the workspace tree.
+blake3.workspace = true
+# base64 for the data:-URL import map of the self-contained entry
+# document (workspace dep, pure Rust, alloc only).
+base64ct.workspace = true
+
+[dev-dependencies]
+# Dev-cycle (cargo supports dev-dependency cycles): the daemon SERVES
+# these assets (harness-daemon -> harness-web regular dep); its web
+# module is exercised read-only here to prove SERVED CONTENT + headers.
+harness-daemon = { path = "../harness-daemon" }
+# E2E example: scripted inference + worker over the daemon router.
+harness-core = { path = "../harness-core" }
+axum.workspace = true
+base64ct.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+serde_json.workspace = true
+tempfile.workspace = true
+# HTTP probes for the QA transcript in the e2e example.
+reqwest.workspace = true
+# SSE stream consumption in the same example.
+futures-util.workspace = true
+# Inference trait impls (async fn in trait) in the same example.
+async-trait.workspace = true
