@@ -285,3 +285,24 @@ VERIFICATION
    run-from-archive, so the CI matrix job picks it up.
 7. perf-gate leg PASSED on windows-latest (commit 13c8433): budgets and
    committed baselines hold on CI — no re-record needed.
+8. run 34898160361 (497d70e) surfaced the next unix batch (cargo aborts
+   pending units after a failure, so the class surfaces incrementally):
+   lint clippy harness-snapshots/src/restore.rs:282 collapsible_if
+   (cfg(unix) code never compiled on the windows dev box);
+   ubuntu preflight_fs unused PreFlightConfig/PreFlightDeps + dead
+   SleepyCheck; coverage(ubuntu) pty_qa unused count_processes/System;
+   macos shell_default unresolved import harness_exec::shell
+   (module is #[cfg(windows)]).
+   Audit beyond the compiler evidence (batch-aborts hide unstarted
+   units): pty_live's non-gated fixtures shell out to cmd (runtime-fatal
+   on unix) -> windows gate; pty_chaos thread/CancelToken imports are
+   windows-test-only -> cfg gates + drop the shadowing inner use;
+   harness-lsp guard.rs spawns powershell -> sleep stand-in on unix
+   (golden_rust_analyzer taskkill is #[ignore]d compile-only; container
+   and dhat-gated suites never compile in CI defaults).
+   FIXES fbdb54b pty_live/shell_default windows gates; 07def98 import
+   cfg-gates (pty_chaos, pty_qa, preflight_fs); guard.rs unix stand-in;
+   5e46f6d restore.rs let-chain collapse.
+   Local gates on final tree: fmt exit=0; clippy -p harness-exec
+   -p harness-lsp -p harness-snapshots --all-targets exit=0; nextest
+   -p harness-exec -p harness-lsp 200/200 PASS (11 ignored QA/golden).
