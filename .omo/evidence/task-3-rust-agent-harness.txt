@@ -391,3 +391,98 @@ COMMIT TRAIL (this CI-greening series): 20e037c e66f4f0 5d91b90 8936a6f
   90e232a f105a77 7ca4646 6713b77 432b4e9 f6779e3 28cd0e7 b1a7a7a
   771a05b c1bf11a 85ab44d (+ evidence chores folded in 9550487/497d70e/
   b1a7a7a/771a05b/85ab44d).
+
+================================================================================
+TASK-3 FOLLOW-UP: CLOSURE ATTEMPT 2026-09-21 — PARTIALLY COMPLETE, BLOCKED ON
+ACCOUNT-LEVEL ARTIFACT STORAGE QUOTA (interim record; plan checkbox 3 NOT yet
+flipped — it flips only when CI and Release are green)
+================================================================================
+INHERITED STATE: HEAD 175419d; CI 34908873722 red on ONE windows job; Release
+  run 34908794673 (tag v0.1.0) red ONLY at custom-publish-container/
+  build-push-ghcr; announce skipped downstream.
+
+1. WINDOWS CI FAILURE DIAGNOSED — FLAKE, NOT REGRESSION (log-verified):
+   run 34908873722 job 104191669915: failing test is NOT pty_chaos but
+   harness-exec::pathologies::teardown_mid_active_run_is_bounded_ordered_
+   and_repeatable at pathologies.rs:183 — assert "round 6 leaves zero
+   orphans", left=0 right=1. Mechanism (structurally verified in source):
+   the UNGATED sibling concurrent_active_runs_tearing_down_do_not_deadlock
+   (no common::live_gate(), spawns 8 x ping -n 600) overlaps the gated
+   teardown test; the teardown test's PING.EXE baseline sample picks up the
+   sibling's ping (baseline=1); when the sibling reaps it mid-run the count
+   drops to 0 -> assert_eq!(after=0, baseline=1) fails at a load-dependent
+   round. Decisive non-regression evidence: 175419d differs from green-run
+   85ab44d by ONE evidence .txt (git diff verified); the same bytes passed
+   windows-latest 6/6 at 23:04Z (run 34907125723). CONTRIBUTING rerun
+   discipline applies. The flake fired AGAIN on run 35559699441 (fcc7b7f,
+   04:14Z, round 9, same signature) — 2 of the last 3 full-suite windows
+   runs; still a flake (bytes identical to the 23:04 green), but frequent.
+   Local isolation rerun per CONTRIBUTING was IMPOSSIBLE: this dev box
+   cannot compile tree-sitter's C (both VS installs have EMPTY
+   VC include dirs; SDK ucrt missing stdbool.h — cf. stray msvc-probe.obj).
+   FOLLOW-UP RECOMMENDED (out of closure scope): take common::live_gate()
+   in concurrent_active_runs_tearing_down_do_not_deadlock to serialize all
+   PING.EXE-spawning tests.
+   Rerun attempts on 34908873722: attempt 1 cancelled externally after
+   1m34s (04:03:52Z, before any test ran) — not consumed.
+
+2. RELEASE GHCR FAILURE DIAGNOSED + FIXED (log-verified root cause):
+   run 34908794673 job 104194976444 died at actions/checkout fetch —
+   "Repository not found" x3 on https://github.com/vinaosb/harness — NOT a
+   docker-push problem. custom-publish-container sets job-level
+   permissions id-token:write + packages:write only; unlisted scopes reset
+   to none -> contents:none -> the reusable publish-container.yml's
+   checkout cannot read the PRIVATE repo. FIX: fcc7b7f adds
+   "contents": "read" to that permissions block (with a regen-guard NOTE
+   comment; actionlint clean; verified all other jobs inherit the
+   workflow-level contents:write).
+
+3. TAG DECISION: v0.1.0 RE-POINTED to fcc7b7f (force, sanctioned: repo
+   hours old, private, single maintainer; precedent — predecessor had
+   already re-tagged v0.1.0 once fba416c->85ab44d). The incomplete v0.1.0
+   GH release (34 assets, no container, no announcement) was deleted
+   (--cleanup-tag) so the re-run's host job can recreate it complete.
+   v0.1.0 now: annotated tag 56d33a1 -> commit fcc7b7f.
+
+4. NEW BLOCKER DISCOVERED MID-CLOSURE — ARTIFACT STORAGE QUOTA (account
+   level): accumulated artifacts (4.75 GB; ~400 MB x 3 nextest archives
+   per CI run x many runs, no retention) exhausted the quota at ~04:05Z.
+   Every upload-artifact step in the repo fails with "Failed to
+   CreateArtifact: Artifact storage quota has been hit" — docs site (KBs),
+   CI archives, and the Release plan job's dist cache (the two 10s-red
+   Release runs 35559742127/35559759474 are exactly this; their earlier
+   "failure" is NOT a workflow defect). MITIGATIONS EXECUTED:
+     - purged all 40 artifacts (4.75 GB) from this repo at ~04:10Z;
+     - 157ca51 adds retention-days: 1 to the CI archive upload (steady
+       state capped at one run's worth).
+   Wall did NOT clear: probed 15x via docs reruns 04:12Z-18:14Z (all
+   probes: CreateArtifact quota error; runs themselves execute fine).
+   GitHub's message promises recalculation "every 6-12 hours" — we are
+   >14h post-purge with repo artifact count = 0. Remaining consumers are
+   outside this repo's reach (account-level: other private repos'
+   artifacts/packages, or plan spending limit set to ) — needs the
+   account owner: check https://github.com/settings/billing, raise the
+   Actions spending limit or clean other private repos' artifacts
+   (Assistente-de-AI is the only recently-active other private repo), or
+   open a GitHub support ticket (recalc job failures are a known incident
+   class).
+   CI status under the wall: run 35559699441 (fcc7b7f) — lint GREEN;
+   ubuntu tests 1761/1761 PASS (upload-only failure); macos same class;
+   windows tests 785/786 (the item-1 flake) + upload failure; coverage
+   tests green + upload failure; perf-gate inconclusive (cancelled by
+   run completion).
+
+UNBLOCK PLAYBOOK (when the platform frees the quota):
+   a. gh run rerun --failed <latest CI run on main>  (or push any commit);
+      if the windows pathologies flake fires again, rerun --failed once
+      more (attempt budget: 1 used of 2);
+   b. gh run rerun 35559759474  (full Release rerun on tag v0.1.0 @
+      fcc7b7f): plan -> 4x build-local -> build-global -> host (recreates
+      the complete v0.1.0 release) -> custom-publish-container (first real
+      exercise of the contents:read fix; ghcr push of ghcr.io/vinaosb/
+      harness:{0.1.0,v0.1.0,latest}) -> announce;
+   c. gh run rerun 35559699422 (docs, currently the quota canary);
+   d. then flip "- [ ] 3. CI pipelines..." -> "- [x] 3. ..." in
+      .omo/plans/rust-agent-harness.md (line 74; the F2-F4 verification
+      flips in the working tree are the predecessor's, uncommitted) and
+      append the final green-run URLs to this file.
