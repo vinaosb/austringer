@@ -112,11 +112,15 @@ jobs:
         run: cargo nextest run --archive-file nextest-archive.tar.zst
       - name: Upload test archive
         # Replayable artifact: `cargo nextest run --archive-file ...` locally.
+        # 1-day retention: each archive is ~400 MB and three of them per run
+        # exhausted the private repo's Actions storage quota (2026-09-21);
+        # replay value decays within a day, storage cost does not.
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: nextest-archive-${{ matrix.os }}
           path: nextest-archive.tar.zst
+          retention-days: 1
 
   coverage:
     name: cargo-llvm-cov
