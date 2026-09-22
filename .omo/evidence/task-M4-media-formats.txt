@@ -1,0 +1,185 @@
+TASK M4 - MediaStore generalization + derived-projection store (media-formats-wave)
+===============================================================================
+
+Worker: M4 implementation worker (Sisyphus-junior). Date: 2026-09-22.
+Base: HEAD 437a71c on main (M3 = 27286e4 landed MediaBlock + widened
+MimeType). Plan authority: .omo/plans/media-formats-wave.md todo 4 (M4),
+lines 111-117. Pre-existing dirty state (.omo/* runtime files,
+harness-snapshots temp files, msvc-probe.obj, target-task-36/, and the
+UNTRACKED parallel-lane M5 files under harness-media/) untouched; this
+commit stages only harness-core/{src,tests} plus this evidence file.
+
+ENVIRONMENT INCIDENT (disclosed; same machine-wide VS servicing damage
+task-13/task-M1/task-M3 recorded)
+-------------------------------------------------------------------------------
+First cold build of the session hit libsqlite3-sys cc C1083 "Cannot open
+include file: 'stdarg.h'". Recipe applied = the task-13 INCLUDE-order
+variant, shell-scoped ONLY (nothing repo-side changed): INCLUDE starting
+at C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\
+vc15\VC\include + Windows SDK 10.0.26100.0 shared/ucrt/um/winrt/cppwinrt.
+Every cargo command below ran with that shell-scoped INCLUDE.
+
+TDD RED (compile-level red for additive API, verbatim)
+-------------------------------------------------------------------------------
+tests/media_derived.rs written FIRST in full (13 tests over the intended
+API) + 2 store_media tests appended to tests/media_store.rs. Command and
+verbatim first errors:
+
+  cargo nextest run -p harness-core --test media_derived --test media_store
+    error[E0432]: unresolved imports `harness_core::event::DerivedCorrupt`,
+    `harness_core::event::DerivedStore`, `harness_core::event::ProjectionKind`
+    error[E0599]: no method named `store_media` found for struct `MediaStore`
+    (x3: media_store.rs:120, :142, :143)
+
+Right-reason check: every error names API that did not exist yet; no typos
+or import mistakes in the failing set. One mid-green compile iteration
+afterwards was a thiserror foot-gun, not a test error: a variant field
+named `source` is claimed by thiserror's error-source chain (E0599
+AsDynError) - renamed to `requested` (the lookup key's hash), test
+pattern updated in lockstep.
+
+DELIVERABLE (per plan lines 112-115)
+-------------------------------------------------------------------------------
+harness-core/src/event/media.rs (208 pure LOC, <=250):
+  - store_media(bytes) -> io::Result<MediaRef>: content-addressed store
+    for ANY payload via the existing write_atomic pattern; NO dimensions
+    (image-specific, stay on store()/image path); identical bytes dedup
+    by exists() exactly like store().
+  - write_atomic + ContentHash::hex widened to pub(super) so the sibling
+    derived module reuses the SAME atomic-write + filename discipline
+    (no copy). Module doc generalized; image path byte-identical.
+
+harness-core/src/event/derived.rs (NEW, 201 pure LOC, <=250):
+  - ProjectionKind {TextProjection|Transcript|Thumbnail|SceneDescription},
+    serde snake_case ("transcript", ...), const as_slug() + Display.
+  - DerivedStore::open(session_dir) -> <session>/media/derived/
+    {artifacts/,manifests/} (root composed from MediaStore::DIR_NAME).
+  - store_derived(source, producer, kind, bytes) -> io::Result<MediaRef>
+    (4 args: the plan-mandated signature, plan line 112):
+      * producer validated at the boundary: 1..=128 bytes
+        (MAX_PRODUCER_BYTES), else typed io InvalidInput;
+      * artifact = content-addressed projection bytes (dedup by exists,
+        shared pool across ALL entries - identical projections across
+        keys are ONE file);
+      * manifest = JSON {source, producer, kind, created_ms (unix ms),
+        artifact {hash, bytes}} written LAST via write_atomic -> the pair
+        is crash-safe: a crash between the writes leaves an ignorable
+        orphan artifact, never a dangling reference;
+      * dedup fast path: an already-valid entry holding exactly these
+        bytes writes NOTHING (created_ms stays byte-stable); a corrupt
+        manifest on the write path is overwritten (repair), not an error;
+      * re-store same key with NEW bytes: manifest repoints at the new
+        artifact; superseded artifact deliberately KEPT (MUST-NOT-GC,
+        plan line 112 - retention is later work).
+  - load_derived(source, producer, kind) -> Result<Option<Vec<u8>>,
+    DerivedCorrupt>: plain miss (no manifest) = Ok(None); structural
+    problems = typed variants, never silent:
+      Malformed (invalid/truncated JSON) | KeyMismatch (manifest fields
+      != lookup key) | MissingArtifact (manifest w/o artifact on disk) |
+      ArtifactHash (artifact bytes hash != manifest claim) | Io.
+  - Manifest filename: {source-hex}.{producer-slug}-{blake3-tag8}.
+    {kind-slug}.json; producer_slug folds unsafe chars to '-' and appends
+    an 8-hex blake3 tag of the RAW id so distinct producers that sanitize
+    identically (e.g. "whisper:cpp" vs "whisper-cpp") never share a
+    manifest file (test-pinned; hostile ids stay single path components).
+  - Projections never touch the JSONL: DerivedStore writes only under
+    media/derived/ (test asserts the session root contains only "media").
+
+harness-core/src/event/mod.rs (131 pure LOC): pub mod derived + re-export
+DerivedCorrupt/DerivedStore/ProjectionKind. Additive; zero changes to
+existing serialized forms (full event suite green).
+
+VERIFICATION (all with the shell-scoped INCLUDE above)
+-------------------------------------------------------------------------------
+  cargo nextest run -p harness-core --test media_derived --test media_store
+    Summary: 20 tests run: 20 passed, 0 skipped
+      (13 derived + 7 store, of which 2 new store_media)
+  cargo nextest run -p harness-core
+    Summary: 395 tests run: 395 passed, 5 skipped
+      (was 380 per M3 evidence; +15 = +13 derived +2 store_media)
+  cargo clippy -p harness-core --all-targets -- -D warnings
+    Finished `dev` profile (zero warnings)
+  cargo check --workspace --all-targets --exclude harness-media
+    Finished (entire workspace compiles; harness-media EXCLUDED because
+    the PARALLEL M5 lane has untracked mid-flight files there
+    (tests importing a not-yet-existing harness_media::diff module;
+    "cannot use a comma after the base struct" in their tests) - NOT this
+    task's files, same class of parallel-lane disclosure M3 recorded for
+    harness-intel. Root Cargo.toml untouched by this lane.)
+  lsp_diagnostics derived.rs: no diagnostics. grep unwrap/expect/panic/
+  todo! over all three touched src files: zero hits.
+  LOC (canonical: non-blank non-comment, attributes included):
+    derived.rs 201, media.rs 208, mod.rs 131 - all <= 250. Test files:
+    media_derived.rs 382 / media_store.rs 151 pure LOC - within repo
+    test-file practice (media_blocks.rs from M3 = 282; seven existing
+    harness-core test files exceed 250; the ceiling governs src per
+    house-rule application in every prior todo evidence).
+
+ACCEPTANCE MAPPING (plan line 115)
+-------------------------------------------------------------------------------
+  derived store/load round-trip ............................ PASS
+    (store_derived_roundtrips_when_projection_cached: bytes equal;
+    manifest pins source/producer/kind/created_ms/artifact{hash,bytes};
+    artifact file IS the projection; session root holds only "media")
+  re-store same producer+kind dedups (content-addressed) ... PASS
+    (store_derived_dedupes_when_same_key_and_bytes_restored: manifest
+    byte-identical before/after = created_ms stable; 1 artifact)
+  tampered manifest -> typed failure ....................... PASS
+    (truncated -> Malformed; source-hash swap -> KeyMismatch;
+    artifact swap -> ArtifactHash{stored,actual} both hashes asserted)
+  crash-safety kill test ................................... PASS
+    (crash_between_pair_writes_leaves_ignorable_orphan_when_manifest_
+    missing: manifest removed = state a crash-after-artifact-write
+    leaves -> lookup Ok(None), orphan KEPT; foreign orphan equally
+    ignorable; load_derived_fails_typed_when_manifest_references_
+    missing_artifact: dangling manifest -> DerivedCorrupt::MissingArtifact)
+  MUST-NOT-GC .............................................. PASS
+    (overwrite test: 2 artifacts retained after re-store; orphan tests:
+    artifacts never deleted by any operation)
+  MUST-NOT store projections inside the JSONL .............. PASS
+    (session-root assertion above; DerivedStore has no event surface)
+
+ADVERSARIAL
+-------------------------------------------------------------------------------
+  malformed-input: three tamper variants all typed, zero panics
+  (truncated JSON, wrong source hash, artifact swapped) + hostile
+  producer ids ("..\\..\\evil", "../evil", unicode, emoji, whitespace/
+  control chars, model ids with colons) store+load round-trip and every
+  manifest name stays a single path component. Empty/129-byte producer
+  -> typed io InvalidInput; 128-byte boundary accepted.
+  stale-state: dedup + overwrite semantics pinned (dedup test: nothing
+  rewritten; overwrite test: manifest repoints, old artifact retained,
+  load returns v2).
+  hung: N/A - pure synchronous fs operations, no threads/timeouts/
+  waiting anywhere in the module.
+  flaky: N/A - no sleeps, no wall-clock assertions (created_ms is only
+  asserted to BE a u64, never compared across time); TempSession gives
+  per-test unique dirs (pid + counter).
+  interrupts/crash: simulated deterministically by manifest removal and
+  artifact removal (the two crash windows of the pair write) instead of
+  process-kill tests, which are non-hermetic on CI; both windows typed
+  or ignorable as designed.
+  misleading-success-output: N/A-by-construction - every corruption test
+  asserts the exact DerivedCorrupt variant (and both hashes for a swap),
+  so a silent-miss regression cannot pass green.
+  concurrent-lane: harness-media M5 mid-flight files untracked and
+  excluded from the workspace check (reason above); nothing in this
+  task's scope touches them.
+
+MANUAL-QA ARTIFACT (tempdir lifecycle, recorded via --no-capture)
+-------------------------------------------------------------------------------
+  cargo nextest run -p harness-core --test media_derived artifact_swapped
+    --no-capture
+  harness-core::media_derived::load_derived_fails_typed_when_artifact_swapped
+  PASS; lifecycle recorded by the test itself:
+    BEFORE TAMPER artifacts=["231e2d46133eb135e4a3346deae36ba08845623f
+    f912e82ed7a8acd45d82183a"]
+    manifests=["098167bed5d3b1b63a0018fae11e9193716137ed119d0aead4b6b8a
+    beedb6989.whisper-cpp-4999bf70.transcript.json"]
+    AFTER TAMPER  artifacts=["231e2d46133eb135e4a3346deae36ba08845623f
+    f912e82ed7a8acd45d82183a"]
+    manifests=["098167bed5d3b1b63a0018fae11e9193716137ed119d0aead4b6b8a
+    beedb6989.whisper-cpp-4999bf70.transcript.json"]
+  (tamper swaps artifact CONTENT in place - filenames unchanged, lookup
+  catches it as ArtifactHash; layout: bare 64-hex artifact, keyed
+  source.producer-tag.kind.json manifest)

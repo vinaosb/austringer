@@ -7,11 +7,13 @@
 //! ([`EventKind::class`]), not a convention.
 
 pub mod content;
+pub mod derived;
 pub mod media;
 
 pub use content::{
     ContentBlock, ImageBlock, InvalidMediaMeta, InvalidMimeType, MediaBlock, MimeType,
 };
+pub use derived::{DerivedCorrupt, DerivedStore, ProjectionKind};
 pub use media::{ContentHash, InvalidContentHash, MediaRef, MediaStore};
 
 use serde::{Deserialize, Serialize};

@@ -112,6 +112,50 @@ fn jsonl_never_inlines_image_bytes_when_event_serialized() {
 }
 
 #[test]
+fn store_media_roundtrips_arbitrary_bytes_when_loaded_by_hash() {
+    let session = TempSession::new("media-store-general");
+    let store = MediaStore::open(session.path()).expect("open media store");
+    let bytes = b"%PDF-1.7\narbitrary non-image payload".to_vec();
+
+    let media = store.store_media(&bytes).expect("store media");
+
+    assert_eq!(media.bytes, bytes.len() as u64);
+    assert_eq!(
+        store.load(&media.hash).expect("load").expect("present"),
+        bytes,
+        "generalized store must round-trip any payload"
+    );
+    let media_dir = session.path().join("media");
+    let entries: Vec<_> = fs::read_dir(&media_dir)
+        .expect("media dir")
+        .collect::<Result<_, _>>()
+        .expect("entries");
+    assert_eq!(entries.len(), 1, "one content-addressed file, no dimensions");
+}
+
+#[test]
+fn store_media_dedupes_when_identical_bytes_stored_twice() {
+    let session = TempSession::new("media-store-general-dedup");
+    let store = MediaStore::open(session.path()).expect("open media store");
+    let bytes = deterministic_bytes(21, 256);
+
+    let first = store.store_media(&bytes).expect("first store");
+    let second = store.store_media(&bytes).expect("second store");
+    assert_eq!(first, second);
+
+    let media_dir = session.path().join("media");
+    let entries: Vec<_> = fs::read_dir(&media_dir)
+        .expect("media dir")
+        .collect::<Result<_, _>>()
+        .expect("entries");
+    assert_eq!(
+        entries.len(),
+        1,
+        "identical content must not duplicate files"
+    );
+}
+
+#[test]
 fn text_marker_is_deterministic_when_image_rendered_for_text_consumers() {
     let session = TempSession::new("media-marker");
     let store = MediaStore::open(session.path()).expect("open media store");

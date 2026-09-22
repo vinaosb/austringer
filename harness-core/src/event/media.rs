@@ -1,9 +1,12 @@
-//! Content-addressed, out-of-line media storage for image payloads.
+//! Content-addressed, out-of-line media storage.
 //!
-//! Image bytes never ride inside the JSONL: they are written once to
+//! Bytes never ride inside the JSONL: they are written once to
 //! `<session>/media/<blake3-hex>` (temp file + fsync + rename, so a crash
 //! never leaves a half-written media file under its final name) and are
-//! referenced from events by content hash.
+//! referenced from events by content hash. The image-specific path
+//! ([`MediaStore::store`]) additionally records pixel dimensions;
+//! [`MediaStore::store_media`] stores any payload; derived projections
+//! live in [`super::derived::DerivedStore`].
 
 use std::fmt;
 use std::fs::{self, File};
@@ -72,7 +75,8 @@ impl ContentHash {
         Ok(Self(digest))
     }
 
-    fn hex(&self) -> String {
+    /// Lowercase hexadecimal form (the on-disk filename of a hash).
+    pub(super) fn hex(&self) -> String {
         fn digit(value: u8) -> char {
             match value {
                 0..=9 => (b'0' + value) as char,
@@ -184,6 +188,22 @@ impl MediaStore {
         })
     }
 
+    /// Store arbitrary media bytes content-addressed, returning the
+    /// reference. Dimensions are image-specific and stay on the
+    /// [`MediaStore::store`] path. Identical content stored twice
+    /// writes nothing the second time.
+    pub fn store_media(&self, bytes: &[u8]) -> io::Result<MediaRef> {
+        let hash = ContentHash::from_bytes(bytes);
+        let target = self.path_for(&hash);
+        if !target.exists() {
+            write_atomic(&self.dir, &target, bytes)?;
+        }
+        Ok(MediaRef {
+            hash,
+            bytes: bytes.len() as u64,
+        })
+    }
+
     /// Load stored bytes by hash; `Ok(None)` when the hash is unknown.
     pub fn load(&self, hash: &ContentHash) -> io::Result<Option<Vec<u8>>> {
         match fs::read(self.path_for(hash)) {
@@ -200,10 +220,11 @@ impl MediaStore {
     }
 }
 
-/// Durable atomic file write: temp file in the same directory, fsync, then
-/// rename over the target. A rename target that already exists (identical
-/// content stored concurrently) counts as success.
-fn write_atomic(dir: &Path, target: &Path, data: &[u8]) -> io::Result<()> {
+/// Durable atomic file write: temp file in the same directory, fsync,
+/// then rename over the target. A rename target that already exists
+/// (identical content stored concurrently) counts as success. Shared
+/// with the derived-projection store.
+pub(super) fn write_atomic(dir: &Path, target: &Path, data: &[u8]) -> io::Result<()> {
     static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
     let temp = dir.join(format!(
         ".tmp-{}-{}",
