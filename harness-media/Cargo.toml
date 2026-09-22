@@ -1,0 +1,40 @@
+[package]
+name = "harness-media"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Media family topology (plan M1): every codec family is opt-in; the empty
+# default keeps the crate (and anything that depends on it) free of format
+# codecs until a caller names the families it wants.
+#
+# The daemon's `media-core` set is:
+#     image, svg, pdf, audio, office, gltf, georaster, data, text
+# `avif` and `geovector` are deliberately NON-DEFAULT opt-ins (avif carries
+# rav1e's 10-25 MB encoder; geovector carries rusqlite's bundled sqlite3.c,
+# the single digest-sanctioned C build, which must stay out of the default
+# tree). The M27 honesty matrix discloses feature-gated rows as such.
+default = []
+image = []
+svg = []
+gltf = []
+pdf = []
+audio = []
+office = []
+avif = []
+georaster = []
+geovector = []
+data = []
+text = []
+
+[dependencies]
+harness-core = { path = "../harness-core", version = "0.1.0" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

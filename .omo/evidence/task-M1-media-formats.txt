@@ -1,0 +1,174 @@
+TASK M1 - harness-media crate scaffold + format adapter contract (media-formats-wave)
+================================================================                              ====
+
+Worker: M1 implementation worker (Sisyphus-junior). Date: 2026-09-21.
+Base: HEAD 54f150b on main (chore(evidence): record 2026-09-21 closure attempt).
+Plan authority: .omo/plans/media-formats-wave.md todo 1 (M1), lines 87-93.
+Pre-existing dirty state (.omo/* runtime files, harness-snapshots temp files, msvc-probe.obj,
+target-task-36/) left untouched; this commit stages only Cargo.toml, harness-media/, and this
+evidence file.
+
+ENVIRONMENT INCIDENT (disclosed, per task-13 precedent)
+-------------------------------------------------------------------------------
+First `cargo nextest run -p harness-media` failed in libsqlite3-sys v0.38.2's cc build
+(inherited via harness-core -> rusqlite/bundled): VS18 Insiders cl.exe 14.50.35717 +
+C1083 "Cannot open include file: 'stdarg.h'" - BOTH machine MSVC include dirs
+(VS18 14.50.35707, VS2022 14.44.35207) are gutted of stdarg.h (same machine-wide VS
+servicing damage task-13 recorded). Recipe applied = the task-13 one, INCLUDE-order
+variant: shell-scoped INCLUDE pointing FIRST at the surviving
+VS18 ScopeCppSDK vc15 include (C:\Program Files\Microsoft Visual Studio\18\Insiders\
+SDK\ScopeCppSDK\vc15\VC\include) + Windows SDK 10.0.26100.0 shared/ucrt/um/winrt/
+cppwinrt; LIB left at the working onecore+ucrt+um set; Env:CC removed (unset).
+NOTHING repo-side changed; every cargo command in this evidence ran with that
+shell-scoped INCLUDE. libsqlite3-sys then compiled clean.
+
+TDD RED (true red, after env workaround, before any contract type existed)
+-------------------------------------------------------------------------------
+tests/contract.rs written FIRST in full (14 tests over the intended API); src/lib.rs
+carried only the crate doc + `#![deny(missing_docs)]`. Command + verbatim output:
+
+  cargo nextest run -p harness-media
+    error[E0432]: unresolved import `harness_media::descriptor`
+    error[E0432]: unresolved import `harness_media::error`
+    error[E0432]: unresolved import `harness_media::extract`
+    error[E0432]: unresolved import `harness_media::format`
+    error[E0432]: unresolved import `harness_media::generate`
+    error: could not compile `harness-media` (test "contract") due to 5 previous errors
+    error: command `...cargo.exe' ... --package harness-media` exited with code 101
+
+Right-reason check: every failure names a contract type that did not exist yet
+(an earlier run also flagged a test typo `SLAT`/`SLATE`; fixed and re-run so the
+recorded RED fails ONLY for missing implementation).
+
+DELIVERABLE (all <=250 pure LOC per file; zero unwrap/expect/panic in src)
+-------------------------------------------------------------------------------
+  Cargo.toml (workspace)   members += "harness-media" (alphabetical, after harness-mcp)
+  harness-media/Cargo.toml deps only harness-core(path), serde, serde_json, thiserror;
+                           edition/rust-version/license via workspace; lints workspace;
+                           11 named per-family features (svg, gltf, pdf, audio, office,
+                           image, avif, georaster, geovector, data, text), default = [];
+                           `media-core` daemon set documented in the [features] comment:
+                           image, svg, pdf, audio, office, gltf, georaster, data, text
+                           (avif + geovector NON-DEFAULT by design)
+  src/lib.rs       (11)    crate doctrine: contract-only scope (probe=M2, diff=M5,
+                           executor=M6 are later), determinism + extract-safety
+                           summaries, feature topology; #![deny(missing_docs)]; root
+                           re-exports of the primary contract types
+  src/format.rs   (121)    FormatId: serde snake_case enum, exactly the 34 slate
+                           variants (png..arrow), FormatId::ALL (34, slate order) for
+                           M6 registry-completeness enumeration, Display == wire name
+  src/descriptor.rs (56)   Operation {Probe,Extract,Generate,Verify} (snake_case, Ord
+                           for BTreeMap keys), OpSupport {Supported | Unsupported{reason}},
+                           FormatDescriptor {id, mime, extensions, ops: BTreeMap}
+                           (sorted-key serde), FormatRegistry {new/register/lookup}:
+                           duplicate register refused (false, no overwrite); empty/unknown
+                           lookup -> typed MediaError::UnsupportedFormat
+  src/extract.rs   (26)    Extracted {tree: serde_json::Value (canonical sorted keys),
+                           text_projection (<= TEXT_PROJECTION_MAX_CHARS=2000 CHARS,
+                           never tokens; per-format defaults may be lower),
+                           thumbnails: Vec<MediaRef> (harness-core::event::MediaRef)};
+                           ExtractBudgets {deadline, max_total_bytes} caller-passed,
+                           defaults 10 s wall-clock + 64 MiB cap (fixture-scoped
+                           starting points); enforcement documented to land with the
+                           extractors as typed ExtractTooLarge (pathological inputs
+                           10k-page PDFs / 500 MB parquet fail typed, never hang)
+  src/generate.rs  (10)    GenerationSpec {format, params: serde_json::Value}; module-doc
+                           DETERMINISM CONTRACT: every writer pins document timestamps
+                           (OOXML docProps created/modified, gpkg_contents.last_change,
+                           PDF CreationDate, STEP FILE_NAME clock) to the fixed epoch
+                           unless spec overrides; byte-determinism is an
+                           adapter-contract property (M25 byte-identical reps rely on it);
+                           pub consts DETERMINISM_EPOCH = "2026-01-01T00:00:00Z" and
+                           DETERMINISM_EPOCH_UNIX = 1_767_225_600 (same instant; verified
+                           independently via PowerShell
+                           [DateTimeOffset]::new(2026,1,1,0,0,0,[TimeSpan]::Zero)
+                           .ToUnixTimeSeconds())
+  src/error.rs     (55)    MediaError typed enum, exactly the 11 mandated variants
+                           (UnsupportedFormat / UnsupportedOperation{format,op,reason} /
+                           ToolUnavailable{tool,install_hint} / InstallFailed /
+                           SandboxDenied / Timeout / InvalidSpec / ParseFailure /
+                           EncryptedUnsupported / NoProjector / ExtractTooLarge), serde
+                           + thiserror; every Display names a next action (probe /
+                           install / re-run / check / fix / decrypt / register / raise /
+                           split / request / use / resubmit / narrow / re-probe)
+  tests/contract.rs(237)   14 hermetic tests (no network, no fs writes, no tools)
+
+VERIFICATION (all commands run with the shell-scoped INCLUDE workaround above)
+-------------------------------------------------------------------------------
+1. cargo build -p harness-media
+     Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.22s
+2. cargo clippy -p harness-media --all-targets -- -D warnings
+     Checking harness-media v0.1.0
+     Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.98s   (zero warnings)
+3. cargo nextest run -p harness-media
+     Summary [ 0.868s] 14 tests run: 14 passed, 0 skipped
+   Test list (all PASS):
+     format_id_serde_roundtrips_when_canonical_snake_case_name_used
+       (ALL.len()==34, wire=="png"... for every slate name, Display==wire,
+        deserialize identity, no duplicates)
+     format_id_rejects_malformed_strings_when_deserialized
+     format_id_never_panics_when_fed_garbage_bytes (256 deterministic LCG byte strings)
+     media_error_serde_roundtrips_when_any_variant_serialized (all 11 variants)
+     media_error_display_carries_actionable_hint_when_rendered (non-empty + action verb)
+     media_error_display_surfaces_its_fields_when_variant_carries_them
+       (hdf5/extract/deferred + gdal/install-hint all appear in Display)
+     empty_registry_lookup_fails_typed_when_nothing_registered
+       (matches!(.., Err(MediaError::UnsupportedFormat)) - the RIGHT variant)
+     registry_lookup_succeeds_when_descriptor_registered (+ duplicate refused)
+     descriptor_serializes_ops_with_sorted_keys_when_roundtripped
+       (op keys byte-sorted: extract,generate,probe,verify)
+     descriptor_rejects_unknown_operation_names_when_deserialized ("transcode" -> Err)
+     generation_spec_roundtrips_and_epoch_constants_are_pinned (epoch str + unix pinned)
+     generation_spec_rejects_malformed_json_when_deserialized
+     extracted_roundtrips_and_projection_bound_is_chars (TEXT_PROJECTION_MAX_CHARS==2000)
+     extract_budgets_default_is_fixture_scoped_and_overridable
+4. cargo deny check
+     advisories ok, bans ok, licenses ok, sources ok   (workspace stays green)
+5. Feature smoke: cargo build -p harness-media --features
+     "image,svg,gltf,pdf,audio,office,avif,georaster,geovector,data,text"
+     Finished `dev` profile ... exit=0   (topology resolves; no feature gates code yet)
+
+MANUAL QA (auxiliary-first: build/test output is the scaffold's surface)
+-------------------------------------------------------------------------------
+cargo doc -p harness-media --no-deps -> Generated C:\ct\doc\harness_media\index.html.
+Render check (grep of generated HTML):
+  lib index.html: "DETERMINISM CONTRACT" -> True; "2026-01-01T00:00:00Z" -> True;
+    "media-core" -> True; "geovector" -> True; "Feature topology" -> True;
+    "Extract safety" -> True
+  generate/index.html: "DETERMINISM" -> True
+The determinism-contract and feature-topology docs render.
+
+ADVERSARIAL CLASSES (probe + record)
+-------------------------------------------------------------------------------
+- malformed-input: PROBED and pinned by tests. (a) FormatId deserialize of 12 malformed
+  strings (empty, wrong case, whitespace, unicode, digits) -> typed serde Err, zero
+  panics; (b) 256 deterministic garbage byte strings through from_slice -> Err or
+  accidental-valid, loop completes (zero panics); (c) GenerationSpec broken JSON +
+  unknown format name -> typed serde Err; (d) FormatDescriptor ops naming an unknown
+  operation ("transcode") -> typed serde Err.
+- misleading-success-output: PROBED. Typed-failure paths return the RIGHT variant, not
+  generic errors: empty-registry lookup asserted via matches! to be exactly
+  MediaError::UnsupportedFormat; duplicate register returns false (no silent overwrite);
+  field-bearing variants surface their fields in Display.
+- stale-state: N/A - contract types are pure data + a caller-owned in-memory registry;
+  no persisted state exists at M1.
+- dirty-worktree: N/A for the deliverable - pre-existing unrelated dirty files
+  (.omo runtime state, snapshot temp files) were left untouched; only the three
+  task-owned paths were staged (verified via git diff --cached before commit).
+- flaky-tests: N/A - all 14 tests are deterministic (no clock, no fs, no network;
+  the LCG is seeded fixed); 0.868s total.
+- hung-commands: N/A at M1 - no extract loops exist yet (their deadline/cap types are
+  the deliverable; enforcement + hang-proof tests land with the extractors, M11+).
+- interrupts: N/A - pure data types; no interruptible operations in scope.
+- injection: N/A - no process spawning, no shell, no path handling beyond types;
+  deps are harness-core/serde/serde_json/thiserror only.
+
+HOUSE-RULE COMPLIANCE
+-------------------------------------------------------------------------------
+deps only harness-core/serde/serde_json/thiserror; edition 2024 (workspace); workspace
+lints (warnings=deny, clippy all=deny) pass; <=250 pure LOC/file (max 121 in src, 237 in
+tests); zero unwrap/expect/panic in src; hermetic tests; no C deps added (the C build
+seen is harness-core's pre-existing bundled sqlite3.c, unmodified); serde sorted-key
+stability (BTreeMap ops table; preserve_order never enabled).
+
+Commit: feat(media): harness-media crate + adapter contract types

@@ -11,6 +11,7 @@ members = [
     "harness-intel",
     "harness-lsp",
     "harness-mcp",
+    "harness-media",
     "harness-orchestration",
     "harness-providers",
     "harness-repomap",
