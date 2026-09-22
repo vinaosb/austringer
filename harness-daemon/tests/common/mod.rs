@@ -5,6 +5,8 @@
 // used by every binary.
 #![allow(dead_code)]
 
+pub mod cassette;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -130,6 +132,20 @@ impl Inference for TwoStepInference {
 pub async fn spawn_daemon(
     tweak: impl FnOnce(DaemonConfig) -> DaemonConfig,
 ) -> Result<Spawned, String> {
+    spawn_daemon_with_factory(tweak, {
+        let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
+            Arc::new(|| Box::new(TwoStepInference::new()));
+        factory
+    })
+    .await
+}
+
+/// `spawn_daemon` with the session factory injected — the M32 provider
+/// wiring tests compose the production factory and plug it in here.
+pub async fn spawn_daemon_with_factory(
+    tweak: impl FnOnce(DaemonConfig) -> DaemonConfig,
+    factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>,
+) -> Result<Spawned, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
     let config = DaemonConfig {
         data_dir: dir.path().to_owned(),
@@ -138,8 +154,6 @@ pub async fn spawn_daemon(
         ..DaemonConfig::default()
     };
     let config = tweak(config);
-    let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
-        Arc::new(|| Box::new(TwoStepInference::new()));
     let state = Arc::new(DaemonState::new(config, factory).map_err(|e| format!("state: {e}"))?);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

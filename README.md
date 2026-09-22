@@ -50,8 +50,14 @@ cargo build --release -p harness-daemon -p harness-cli -p harness-tui
 cargo nextest run --workspace     # full test suite: hermetic, zero API keys, zero network
 ```
 
-Talking to a live model additionally requires provider wiring in the daemon's
-session factory — see [Status](#status).
+Talking to a live model is opt-in per daemon: set `HARNESS_PROVIDER`
+(`anthropic` | `openai` | `google` | `xai` | `compat`),
+`HARNESS_MODEL`, and `HARNESS_PROVIDER_KEY_ENV` naming the environment
+variable that holds the API key (the key value itself never appears in
+any committed file); `compat` additionally takes
+`HARNESS_PROVIDER_BASE_URL`. An unconfigured daemon stays fully
+servable and answers inference with a typed, actionable error naming
+those keys.
 
 ## Four frontends, one engine
 
@@ -205,17 +211,15 @@ an eval table, harness-matched rows only:
 Works at this commit (HEAD `c8926a4`, all with recorded task evidence): the
 full engine crate set (events, operation-pipeline loop, tool registry with
 schema hydration, inspector chain, autonomy modes, compaction, tiered
-eviction, budgets, hooks), five cassette-tested provider adapters, ast /
-repomap / search / lsp, exec + ConPTY + WSL2 bridge, transactional shadows,
-snapshots, encrypted sessions store, sandboxes, permission engine, MCP
-client + server mode, skills + Skill Forge + registry, model profiles,
-daemon protocol (multi-client, token auth, scheduler), TUI, web dashboard,
-VS Code extension, CLI, WASM plugin runtime, perf gates, evals crate.
-
-Pending: live provider wiring into the daemon's session factory — the daemon
-binary currently returns a typed `no provider configured` error at inference
-time; the adapters exist and are cassette-tested, composing them into the
-shipped daemon loop is the remaining work. Live-model eval sweeps are
+eviction, budgets, hooks), five cassette-tested provider adapters composed
+into the daemon's session factory behind environment configuration
+(`HARNESS_PROVIDER` / `HARNESS_MODEL` / `HARNESS_PROVIDER_KEY_ENV`; opt-in,
+never enabled by default), ast / repomap / search / lsp, exec + ConPTY +
+WSL2 bridge, transactional shadows, snapshots, encrypted sessions store,
+sandboxes, permission engine, MCP client + server mode, skills + Skill
+Forge + registry, model profiles, daemon protocol (multi-client, token
+auth, scheduler), TUI, web dashboard, VS Code extension, CLI, WASM plugin
+runtime, perf gates, evals crate. Live-model eval sweeps are
 scheduled-only by policy and never gate PRs.
 
 ## Roadmap

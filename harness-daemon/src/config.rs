@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::mediation::MediationPolicy;
+use crate::provider::ProviderSelection;
 
 /// Daemon-wide configuration.
 #[derive(Debug, Clone)]
@@ -42,6 +43,10 @@ pub struct DaemonConfig {
     pub durable: bool,
     /// Remote-worker per-call timeout.
     pub worker_call_timeout: Duration,
+    /// Provider seam for the session factory (M32). `None` — the
+    /// default — leaves the daemon unconfigured: no provider is ever
+    /// enabled implicitly, and inference fails typed and actionable.
+    pub provider: Option<ProviderSelection>,
 }
 
 impl Default for DaemonConfig {
@@ -59,6 +64,7 @@ impl Default for DaemonConfig {
             ask_timeout: Duration::from_secs(120),
             durable: true,
             worker_call_timeout: Duration::from_secs(60),
+            provider: None,
         }
     }
 }

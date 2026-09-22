@@ -29,6 +29,7 @@ pub mod osc;
 pub mod otel;
 pub mod outposts;
 pub mod protocol;
+pub mod provider;
 pub mod registry;
 pub mod reload;
 pub mod run_history;

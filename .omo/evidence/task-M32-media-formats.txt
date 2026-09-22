@@ -1,0 +1,198 @@
+M32: daemon provider wiring behind config â€” TDD evidence
+=========================================================
+Date: 2026-09-21  Runner: Sisyphus-junior (task M32, .omo/plans/media-formats-wave.md lines 335-341)
+Shell note: cargo runs through C:\Users\vsbb1\AppData\Local\Temp\opencode\msvc-cargo.cmd
+(BuildTools vcvars64; the agent shell has no MSVC INCLUDE/LIB and the VS 18
+Insiders instance ships no vcvarsall.bat).
+
+--- Build environment note (pre-existing, not caused by this task) ---
+The first `cargo nextest run -p harness-daemon` failed compiling
+libsqlite3-sys (cl.exe could not find stdarg.h): plain-PowerShell shells on
+this machine lack the MSVC environment. Fixed for all runs in this evidence
+by importing C:\BuildTools\VC\Auxiliary\Build\vcvars64.bat first. No repo
+change; workspace code untouched by this.
+
+================================================================
+PHASE 0 â€” CHARACTERIZATION BASELINE (before any production change)
+================================================================
+Test added first: harness-daemon/tests/provider_binary_tests.rs
+(unconfigured_daemon_fails_typed_over_the_wire). It spawns the REAL shipped
+binary (CARGO_BIN_EXE_harness-daemon, provider env scrubbed), does the
+stdout handshake, GET / (health surface), one WS attach + HTTP submit, and
+collects frames through turn_finished.
+
+Command:
+  cargo nextest run -p harness-daemon -E "binary(provider_binary_tests)"
+
+Output:
+  Finished `test` profile [unoptimized + debuginfo] target(s) in 11.13s
+  Nextest run ID 2dbc1801-f3b5-4f1f-99ac-7d4e07cea84f with nextest profile: default
+      Starting 1 test across 1 binary (7 binaries skipped)
+          PASS [   0.089s] (1/1) harness-daemon::provider_binary_tests unconfigured_daemon_fails_typed_over_the_wire
+      Summary [   0.090s] 1 test run: 1 passed, 0 skipped
+
+BASELINE PINNED (current error surface, on the wire, unconfigured daemon):
+  - outcome frame: turn_finished with failed::InferenceExhausted { cause:
+    "no provider configured (daemon hosts the loop; provider wiring lands
+    with todo 40)" }  -> typed InferenceError::Failure, turn terminates,
+    never a panic, daemon stays up (root page served before and after).
+  - Stale reference "todo 40" present (this is what M32 removes).
+  - The binary test asserts exactly these strings; it was GREEN on the
+    pre-change tree, so the baseline is a true characterization.
+
+================================================================
+PHASE 1 — RED (failing-first, new behavior)
+================================================================
+Tests added (after the green baseline, unchanged production code):
+  harness-daemon/tests/provider_config_tests.rs  (10 tests)
+  harness-daemon/tests/provider_ws_e2e_tests.rs  (1 test: cassette e2e)
+  harness-daemon/tests/common/mod.rs: spawn_daemon_with_factory +
+    CassetteTransport (Sse | Hang) + anthropic_text_cassette builder.
+  Cargo.toml: dep harness-providers, dev-dep harness-test-support
+  (RED setup so the failure is the missing module, not missing crates).
+
+Command:
+  cargo nextest run -p harness-daemon -E "binary(provider_config_tests) or binary(provider_ws_e2e_tests)"
+
+Output (right-reason RED):
+  error[E0432]: unresolved import `harness_daemon::provider`
+    --> harness-daemon\tests\provider_ws_e2e_tests.rs:15:21
+  error[E0432]: unresolved import `harness_daemon::provider`
+    --> harness-daemon\tests\provider_config_tests.rs:16:21
+  error: could not compile `harness-daemon` (test ...) due to 2 previous errors
+
+================================================================
+PHASE 2 — GREEN (implementation landed)
+================================================================
+Implementation:
+  harness-daemon/src/provider/mod.rs        (16 pure LOC)  facade + docs
+  harness-daemon/src/provider/selection.rs (144 pure LOC)  family parse,
+    typed ProviderSetupError, ProviderSelection::from_parts validation,
+    key resolution via NAMED env var (resolve) / injected lookup
+    (resolve_with) -> ResolvedProvider
+  harness-daemon/src/provider/compose.rs   (137 pure LOC)  family->adapter
+    composition (anthropic/openai/google/xai/compat over any Transport),
+    UnconfiguredInference (new actionable message), DeadlineInference
+    (typed timeout, abandon-not-drain), daemon RecoveryConfig
+  harness-daemon/src/config.rs: DaemonConfig.provider: Option<ProviderSelection>
+    (default None -> NO provider enabled implicitly)
+  harness-daemon/src/bin/harness-daemon.rs: UnconfiguredInference removed;
+    provider_from_env() parses HARNESS_PROVIDER / HARNESS_MODEL /
+    HARNESS_PROVIDER_KEY_ENV / HARNESS_PROVIDER_BASE_URL /
+    HARNESS_PROVIDER_TIMEOUT_SECS (set-but-invalid = startup error;
+    absent = unconfigured); factory composed via compose_factory over
+    the production ReqwestTransport.
+  harness-daemon/Cargo.toml: +harness-providers dep, +harness-test-support dev-dep
+  (first cut was one 270-LOC provider.rs; split by responsibility to
+   respect the 250 ceiling — mod/selection/compose)
+
+Command:
+  cargo nextest run -p harness-daemon
+Output:
+  Summary [   2.507s] 162 tests run: 162 passed, 0 skipped
+  (was 151 pre-change; +12: 10 provider_config_tests, 1 provider_ws_e2e
+   cassette round-trip, 1 updated provider_binary_tests characterization)
+
+Command:
+  cargo clippy -p harness-daemon --all-targets -- -D warnings
+Output: Finished `dev` profile ... (clean, zero warnings)
+
+Key new acceptance (the plan's hermetic e2e):
+  PASS harness-daemon::provider_ws_e2e_tests
+       cassette_configured_daemon_answers_submit_over_ws
+  - daemon spawned through the production compose path (anthropic family,
+    key resolved via injected lookup, CassetteTransport)
+  - WS attach -> HTTP submit -> RESPONSE EVENT carries the cassette text;
+    turn_finished outcome = turn_complete
+  - provider request body carries the submitted prompt bytes (prompt-bytes
+    assertion); URL = api.anthropic.com/v1/messages; x-api-key header = key
+  - zero network (in-memory transport), zero real keys
+
+Adversarial:
+  PASS hanging_provider_surfaces_typed_timeout_without_hanging
+      (250ms budget, Hang transport; typed "provider timeout", bounded <5s)
+  PASS unknown_family/blank_model/absent_model/compat_no_base/
+       keyed_family_no_keyenv/missing_key_value — all typed actionable,
+       naming the exact config key; zero panics
+
+================================================================
+PHASE 3 — MANUAL QA (shipped release binary, dev machine)
+================================================================
+Build: cargo build --release -p harness-daemon
+  -> C:\ct\release\harness-daemon.exe, 5.54 MB stripped
+     (daemon budget < 40 MB; +~2.4 MB vs 3.09 MB baseline from linking
+      the providers stack — well inside the gate; M27 re-verifies)
+
+--- PART A: unconfigured binary (headless) ---
+Run: harness-daemon.exe --data-dir %TEMP%\m32-qa-a   (no provider env)
+Startup stdout:
+  harness-daemon listening on http://127.0.0.1:58554 (token: 72e5...9b)
+  harness-daemon: 0 automation(s) scheduled
+Health: GET / (Bearer token) -> HTTP 200, 99381 bytes (SPA shell).
+Submit: POST /s/m32-manual-a/cmd {"type":"command","command":{"type":"submit","text":"manual QA: please answer"}} -> HTTP 202.
+WS frames observed (attach before submit):
+  state_resync_required -> snapshot -> hello_ack -> turn_started ->
+  recorded user text -> turn_finished:
+  {"type":"event","frame":{"id":3,"event":{"type":"turn_finished","turn":1,"outcome":"failed::InferenceExhausted { cause: \"no provider configured: set HARNESS_PROVIDER (one of anthropic, openai, google, xai, compat), HARNESS_MODEL, and - for keyed families - HARNESS_PROVIDER_KEY_ENV naming the environment variable that holds the API key, then restart the daemon\", retries: 0 }"}}}
+Typed, actionable, names the exact keys; stale 'todo 40' GONE; daemon
+stayed up the whole time (killed manually afterwards; no panic, no crash).
+
+--- PART B: cassette-configured binary (compat family -> loopback SSE mock) ---
+Env: HARNESS_PROVIDER=compat, HARNESS_MODEL=mock-model,
+     HARNESS_PROVIDER_BASE_URL=http://127.0.0.1:18931/v1
+     (compat = no key required; loopback mock serves one chat-completions
+      SSE reply — zero external network, zero real keys)
+Startup stdout:
+  harness-daemon listening on http://127.0.0.1:58559 (token: 7a49...20)
+Submit: POST .../cmd {"text":"M32 manual QA: is the projection sufficient?"} -> 202
+WS frames observed:
+  turn_started -> recorded user text ->
+  {"type":"event","frame":{"id":3,"event":{"type":"recorded","seq":2,"event":{"type":"assistant","blocks":[{"type":"text","text":"m32 manual-qa answer: the projection is sufficient"}]}}} ->
+  {"type":"event","frame":{"id":4,"event":{"type":"turn_finished","turn":1,"outcome":"turn_complete"}}}
+RESPONSE CONTENT asserted (assistant event carries the model answer;
+outcome turn_complete — not transport-only success).
+Provider request captured by the mock (proof through the REAL reqwest
+transport of the shipped binary — prompt-bytes assertion):
+  POST /v1/chat/completions, User-Agent harness/0.1.0, Accept text/event-stream
+  body: {"messages":[{"content":"<focus-chain>\nstatus: 0 open / 0 total\n</focus-chain>\nuser: M32 manual QA: is the projection sufficient?","role":"user"}],"model":"mock-model","stream":true,"stream_options":{"include_usage":true}}
+
+================================================================
+DEPENDENT CRATES (DaemonConfig gained a field)
+================================================================
+cargo nextest run -p harness-cli -p harness-web -p harness-tui
+  Summary [  16.711s] 123 tests run: 123 passed, 0 skipped
+
+================================================================
+ADVERSARIAL MATRIX
+================================================================
+- hung-commands: hanging_provider_surfaces_typed_timeout_without_hanging
+  (Cassette::Hang + 250ms budget; typed "provider timeout: inference
+  exceeded the 0.25s budget (HARNESS_PROVIDER_TIMEOUT_SECS adjusts it)";
+  bounded < 5s outer guard; the in-flight future is dropped, not drained).
+- malformed-input: unknown family / blank model / absent model / compat
+  w/o base URL / keyed family w/o key-env name -> typed actionable errors
+  at PARSE; unset key VALUE -> typed KeyEnvUnset at factory build
+  (startup for the binary — run() exits 1 with the message). Zero panics.
+- misleading-success-output: e2e + manual QA assert the response EVENT
+  payload (assistant text == cassette/mock text) and outcome
+  turn_complete; prompt bytes asserted reaching the provider request.
+- dirty-worktree: one clean commit; only the files listed below staged
+  (pre-existing .omo runtime churn left untouched).
+- N/A: privilege-escalation (no new authority surface; env-read only),
+  supply-chain (no new external crates; in-workspace deps only),
+  data-corruption (no persistence changes; sessions path untouched).
+
+================================================================
+FILES CHANGED (one commit)
+================================================================
+ harness-daemon/Cargo.toml, Cargo.lock
+ harness-daemon/src/lib.rs, src/config.rs, src/bin/harness-daemon.rs
+ harness-daemon/src/provider/{mod,selection,compose}.rs
+ harness-daemon/tests/common/{mod.rs,cassette.rs}
+ harness-daemon/tests/{provider_binary,provider_config,provider_ws_e2e}_tests.rs
+ README.md (Quickstart + Status: wiring landed, env seam documented —
+   key NAMES only; no key values anywhere)
+ .omo/evidence/task-M32-media-formats.txt
+
+SECURITY NOTE: no API key value is committed, logged, or persisted; the
+config carries only the env-var NAME (HARNESS_PROVIDER_KEY_ENV).

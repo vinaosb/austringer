@@ -16,6 +16,7 @@ dist = true
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
+harness-providers = { path = "../harness-providers", version = "0.1.0" }
 harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
 harness-web = { path = "../harness-web", version = "0.1.0" }
 serde.workspace = true
@@ -48,6 +49,8 @@ libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# M32: cassette SSE scripts + scripted in-memory provider transports.
+harness-test-support = { path = "../harness-test-support", version = "0.1.0" }
 # WS client for integration tests against the real axum WebSocket transport
 # (axum is server-side only). Pure Rust, dev-only.
 tokio-tungstenite = "0.28"

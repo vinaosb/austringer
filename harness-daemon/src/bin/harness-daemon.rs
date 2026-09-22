@@ -25,26 +25,6 @@ fn main() {
     }
 }
 
-/// Inference stub until provider wiring (todo 40 composes the T9
-/// adapter into the daemon's session factory); frontends and the
-/// protocol layer are fully exercisable without a provider.
-struct UnconfiguredInference;
-
-#[async_trait::async_trait]
-impl harness_core::agent_loop::Inference for UnconfiguredInference {
-    async fn infer(
-        &mut self,
-        _request: &harness_core::agent_loop::InferenceRequest<'_>,
-        _cancel: &harness_core::agent_loop::CancelToken,
-    ) -> Result<harness_core::agent_loop::AssistantTurn, harness_core::agent_loop::InferenceError>
-    {
-        Err(harness_core::agent_loop::InferenceError::Failure(
-            "no provider configured (daemon hosts the loop; provider wiring lands with todo 40)"
-                .into(),
-        ))
-    }
-}
-
 fn config_from_env_and_args() -> Result<DaemonConfig, String> {
     let mut config = DaemonConfig::default();
     let mut args = std::env::args().skip(1);
@@ -74,7 +54,36 @@ fn config_from_env_and_args() -> Result<DaemonConfig, String> {
             config.bind_addr
         ));
     }
+    config.provider = provider_from_env()?;
     Ok(config)
+}
+
+/// The provider seam (M32): family, model, key-variable NAME, optional
+/// base URL and timeout, read from the environment. No HARNESS_PROVIDER
+/// leaves the daemon unconfigured (frontends and the protocol stay
+/// exercisable; inference fails typed); a set-but-invalid value is a
+/// startup error. Key VALUES are resolved from the named variable at
+/// factory build — never stored, never logged, never committed.
+fn provider_from_env() -> Result<Option<harness_daemon::provider::ProviderSelection>, String> {
+    let env_str = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+    let Some(family) = env_str("HARNESS_PROVIDER") else {
+        return Ok(None);
+    };
+    let timeout = match env_str("HARNESS_PROVIDER_TIMEOUT_SECS") {
+        Some(raw) => Some(raw.trim().parse::<u64>().map_err(|_| {
+            format!("HARNESS_PROVIDER_TIMEOUT_SECS must be whole seconds, got {raw:?}")
+        })?),
+        None => None,
+    };
+    let selection = harness_daemon::provider::ProviderSelection::from_parts(
+        &family,
+        env_str("HARNESS_MODEL").as_deref(),
+        env_str("HARNESS_PROVIDER_KEY_ENV").as_deref(),
+        env_str("HARNESS_PROVIDER_BASE_URL").as_deref(),
+        timeout,
+    )
+    .map_err(|failure| failure.to_string())?;
+    Ok(Some(selection))
 }
 
 async fn run() -> Result<(), String> {
@@ -83,8 +92,16 @@ async fn run() -> Result<(), String> {
         .map_err(|e| format!("data dir {}: {e}", config.data_dir.display()))?;
     let ipc_name = config.ipc_name.clone();
 
-    let factory: Arc<dyn Fn() -> Box<dyn harness_core::agent_loop::Inference> + Send + Sync> =
-        Arc::new(|| Box::new(UnconfiguredInference));
+    // M32: config-driven provider composition over the production
+    // reqwest transport (the same seam cassette tests swap for in-memory
+    // transports). An unset key variable fails HERE — at startup, typed
+    // and actionable — instead of mid-turn.
+    let transport: Arc<dyn harness_providers::transport::Transport> = Arc::new(
+        harness_providers::transport_reqwest::ReqwestTransport::new()
+            .map_err(|e| format!("provider transport init: {e}"))?,
+    );
+    let factory = harness_daemon::provider::compose_factory(config.provider.as_ref(), transport)
+        .map_err(|e| format!("provider config: {e}"))?;
     let state =
         Arc::new(DaemonState::new(config, factory).map_err(|e| format!("token generation: {e}"))?);
 
