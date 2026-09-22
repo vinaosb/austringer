@@ -1,0 +1,8 @@
+{
+  // OpenCode project config (harness repo)
+  "background_task": {
+    // Agents composing large documents from multiple big inputs can go >10min
+    // between visible tool calls while reading/thinking. 30min stale window.
+    "staleTimeoutMs": 1800000
+  }
+}
