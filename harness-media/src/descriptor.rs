@@ -108,4 +108,11 @@ impl FormatRegistry {
     pub fn lookup(&self, id: &FormatId) -> Result<&FormatDescriptor, MediaError> {
         self.descriptors.get(id).ok_or(MediaError::UnsupportedFormat)
     }
+
+    /// Iterate every registered (format, descriptor) pair in canonical
+    /// order (the M6 executor wiring walks this; the honesty matrix is
+    /// generated from it).
+    pub fn iter(&self) -> impl Iterator<Item = (FormatId, &FormatDescriptor)> {
+        self.descriptors.iter().map(|(id, descriptor)| (*id, descriptor))
+    }
 }

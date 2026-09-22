@@ -34,6 +34,19 @@ fn unknown_capability_is_typed() {
 }
 
 #[test]
+fn media_adapter_capability_parses_and_round_trips() -> R {
+    // Given: an interface-2 media-adapter declaration (M6 seam).
+    let text = GOOD.replace("download", "media-adapter");
+    // When: parsed.
+    let m = parse(text.as_bytes())?;
+    // Then: the typed capability comes back and renders canonically.
+    assert_eq!(m.capabilities, vec![Capability::MediaAdapter]);
+    assert_eq!(Capability::MediaAdapter.as_str(), "media-adapter");
+    assert_eq!(Capability::MediaAdapter.to_string(), "media-adapter");
+    Ok(())
+}
+
+#[test]
 fn unknown_mode_is_typed() {
     let text = GOOD.replace("\"rw\"", "\"rx\"");
     assert!(

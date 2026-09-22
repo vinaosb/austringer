@@ -19,6 +19,24 @@
 //! with a release note. Adding interface 2 means: bump [`INTERFACE_MAX`],
 //! add an [`Interface::V2`] arm, and teach [`negotiate`] to route to it.
 //!
+//! # Interface 2 (SPEC ONLY in v0.2 - plan M6)
+//!
+//! Interface 2 = interface 1 + the media-adapter surface, declared in
+//! the manifest via `Capability::MediaAdapter` ("media-adapter"). The
+//! host functions are SPEC + manifest validation ONLY in v0.2 - NO
+//! implementations are linked, so a plugin importing them fails
+//! instantiation (typed link error) today; that is the documented v0.2
+//! boundary, not an oversight. Planned host-fn table (shapes reserved
+//! and may be adjusted before the implementation lands):
+//!
+//! | Import        | Signature                                            | Purpose |
+//! | -------------- | ---------------------------------------------------- | ------- |
+//! | `read_media`  | `(hash_ptr, hash_len, buf, buf_cap: i32) -> i32`      | read a content-addressed blob from the host `MediaStore` into `buf`; byte count or a negative code (interface-1 code table + hash-not-found) |
+//! | `write_media` | `(data_ptr, data_len, hash_buf, hash_cap: i32) -> i32`| store bytes into the `MediaStore`; the returned blake3 content hash (64 hex chars) is written to `hash_buf`; 0 or a negative code |
+//!
+//! The engine-side counterpart is `harness-media`'s
+//! `AdapterTier::Wasm` (third media tier: pure, subprocess, wasm).
+//!
 //! # ABI table, interface 1
 //!
 //! The guest exports:
@@ -56,8 +74,10 @@
 /// Oldest interface this host runs.
 pub const INTERFACE_MIN: u8 = 1;
 
-/// Newest interface this host runs.
-pub const INTERFACE_MAX: u8 = 1;
+/// Newest interface this host runs. Interface 2 declares the
+/// media-adapter surface (plan M6 seam: spec + manifest validation only
+/// in v0.2 - see the interface-2 section of the module docs).
+pub const INTERFACE_MAX: u8 = 2;
 
 /// Offset of the host-written tool input region.
 pub const INPUT_OFFSET: usize = 4096;
@@ -85,6 +105,11 @@ pub const HOST_MODULE: &str = "harness";
 pub enum Interface {
     /// Interface 1 - the ABI table in this module's docs.
     V1,
+    /// Interface 2 - interface 1 + the media-adapter declaration surface
+    /// (`Capability::MediaAdapter`; host fns spec-only in v0.2, so this
+    /// arm routes manifests and loads plugins that import nothing beyond
+    /// the interface-1 ABI table).
+    V2,
 }
 
 impl Interface {
@@ -92,6 +117,7 @@ impl Interface {
     pub fn version(self) -> u8 {
         match self {
             Self::V1 => 1,
+            Self::V2 => 2,
         }
     }
 }
@@ -131,15 +157,20 @@ pub fn negotiate(declared: u8) -> Result<Interface, InterfaceError> {
             min: INTERFACE_MIN,
         });
     }
-    if declared > INTERFACE_MAX {
-        return Err(InterfaceError::TooNew {
-            declared,
-            max: INTERFACE_MAX,
-        });
-    }
     // The dispatch ladder: every supported version routes somewhere, and
-    // new versions are added as new arms without touching old ones.
-    Ok(Interface::V1)
+    // new versions are added as new arms without touching old ones. The
+    // catch-all re-checks the ceiling so a future INTERFACE_MAX bump can
+    // never silently misroute an unbuilt arm.
+    Ok(match declared {
+        1 => Interface::V1,
+        2 => Interface::V2,
+        _ => {
+            return Err(InterfaceError::TooNew {
+                declared,
+                max: INTERFACE_MAX,
+            })
+        }
+    })
 }
 
 #[cfg(test)]
@@ -149,7 +180,9 @@ mod tests {
     #[test]
     fn in_range_versions_negotiate() {
         assert_eq!(negotiate(INTERFACE_MIN), Ok(Interface::V1));
-        assert_eq!(negotiate(INTERFACE_MAX), Ok(Interface::V1));
+        assert_eq!(negotiate(2), Ok(Interface::V2));
+        assert_eq!(negotiate(INTERFACE_MAX), Ok(Interface::V2));
+        assert_eq!(INTERFACE_MAX, 2, "interface 2 (media adapter) is declared");
     }
 
     #[test]
@@ -173,10 +206,10 @@ mod tests {
     fn too_new_carries_upgrade_guidance() -> Result<(), Box<dyn std::error::Error>> {
         match negotiate(INTERFACE_MAX + 1) {
             Err(InterfaceError::TooNew {
-                declared: 2,
-                max: 1,
+                declared: 3,
+                max: 2,
             }) => {}
-            other => return Err(format!("expected TooNew(2, 1), got {other:?}").into()),
+            other => return Err(format!("expected TooNew(3, 2), got {other:?}").into()),
         }
         let msg = negotiate(INTERFACE_MAX + 1).err().map(|e| e.to_string());
         assert!(

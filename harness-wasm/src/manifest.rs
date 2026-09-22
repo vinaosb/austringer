@@ -18,6 +18,12 @@ pub enum Capability {
     Download,
     /// Install host packages.
     PackageInstall,
+    /// Act as a media format adapter (interface 2, plan M6). The
+    /// interface-2 host functions (`read_media` / `write_media`) are SPEC
+    /// ONLY in v0.2 - declared and validated here, never linked - so a
+    /// plugin importing them cannot instantiate today (the documented
+    /// v0.2 boundary).
+    MediaAdapter,
 }
 
 impl Capability {
@@ -27,6 +33,7 @@ impl Capability {
             Self::ProcessExec => "process-exec",
             Self::Download => "download",
             Self::PackageInstall => "package-install",
+            Self::MediaAdapter => "media-adapter",
         }
     }
 }
@@ -113,7 +120,9 @@ pub enum ManifestError {
         capacity: usize,
     },
     /// A capability string outside the known enum.
-    #[error("unknown capability `{raw}`; known: process-exec, download, package-install")]
+    #[error(
+        "unknown capability `{raw}`; known: process-exec, download, package-install, media-adapter"
+    )]
     UnknownCapability {
         /// The unknown string.
         raw: String,
@@ -193,6 +202,7 @@ pub fn parse(bytes: &[u8]) -> Result<PluginManifest, ManifestError> {
             "process-exec" => Capability::ProcessExec,
             "download" => Capability::Download,
             "package-install" => Capability::PackageInstall,
+            "media-adapter" => Capability::MediaAdapter,
             other => return Err(ManifestError::UnknownCapability { raw: other.into() }),
         });
     }

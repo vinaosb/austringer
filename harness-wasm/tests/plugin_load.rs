@@ -119,8 +119,8 @@ fn interface_too_new_fails_with_guidance() -> R {
         matches!(
             err,
             WasmError::InterfaceTooNew {
-                declared: 2,
-                max: 1,
+                declared: 3,
+                max: 2,
                 ..
             }
         ),
@@ -129,6 +129,60 @@ fn interface_too_new_fails_with_guidance() -> R {
     assert!(
         err.to_string().contains("upgrade"),
         "guidance must tell the user to upgrade the host: {err}"
+    );
+    Ok(())
+}
+
+#[test]
+fn interface1_fixture_plugin_loads_unchanged_on_the_interface2_host() -> R {
+    // Given: an interface-1 fixture plugin and the host whose ladder now
+    // tops out at interface 2 (M6 seam).
+    let dir = tempfile::tempdir()?;
+    let handle = load(
+        "good.wat",
+        &grant_with_data(dir.path(), PreopenMode::ReadOnly),
+    )?;
+    // Then: it still loads, still declares interface 1 - the ladder
+    // never breaks old plugins (Zed 10-WIT-versions lesson).
+    assert_eq!(handle.manifest().interface, 1);
+    assert_eq!(handle.manifest().name, "echo-fixture");
+    Ok(())
+}
+
+#[test]
+fn media_adapter_interface2_plugin_loads_when_granted() -> R {
+    // Given: an interface-2 plugin declaring the media-adapter capability
+    // (manifest validation seam; v0.2 has NO host-fn impls - the plugin
+    // imports nothing beyond the interface-1 ABI table).
+    let grant = PluginGrant {
+        capabilities: vec![Capability::MediaAdapter],
+        scopes: vec![],
+    };
+    let handle = load("media_adapter.wat", &grant)?;
+    // Then: it negotiates interface 2 and the capability round-trips.
+    assert_eq!(handle.manifest().interface, 2);
+    assert_eq!(
+        handle.manifest().capabilities,
+        vec![Capability::MediaAdapter]
+    );
+    Ok(())
+}
+
+#[test]
+fn media_adapter_capability_ungranted_fails_load_typed() -> R {
+    // Given: the same plugin with an empty grant.
+    let err = load("media_adapter.wat", &empty_grant())
+        .err()
+        .ok_or("expected failure")?;
+    // Then: declared-but-not-granted fails the load - never a silent
+    // escalation.
+    assert!(
+        matches!(
+            err,
+            WasmError::CapabilityNotGranted { ref plugin, ref capability }
+                if plugin == "media-adapter-fixture" && capability == "media-adapter"
+        ),
+        "unexpected error: {err}"
     );
     Ok(())
 }

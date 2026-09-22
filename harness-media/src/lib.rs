@@ -12,9 +12,12 @@
 //!
 //! # What is deliberately NOT here yet
 //!
-//! The tiered executor dispatch (M6) is a later todo. The probe registry
-//! (M2, magic sniffing) lives in [`probe`]; the structural diff engine
-//! and round-trip verifier (M5) live in [`diff`].
+//! The per-format adapters (M11-M23, M28-M30) land as their own todos on
+//! top of the executor. The probe registry (M2, magic sniffing) lives in
+//! [`probe`]; the structural diff engine and round-trip verifier (M5)
+//! live in [`diff`]; the tiered executor dispatch (M6) lives in
+//! [`executor`] - the single dispatch authority, with producer
+//! disclosure type-enforced on every artifact.
 //!
 //! # Structural diff + round-trip verification (summary)
 //!
@@ -61,6 +64,7 @@
 pub mod descriptor;
 pub mod diff;
 pub mod error;
+pub mod executor;
 pub mod extract;
 pub mod format;
 pub mod generate;
@@ -71,6 +75,10 @@ pub use diff::{
     spec_tree, structural_diff, verify_roundtrip, RoundTripVerdict, StructuralDiff, Tolerances,
 };
 pub use error::MediaError;
+pub use executor::{
+    AdapterTier, ExecutorRegistry, ExecutorRegistryBuilder, ExecutorWiringError, OpBinding,
+    OpOutput, OpRequest, Produced, ProducerInfo,
+};
 pub use extract::{ExtractBudgets, Extracted};
 pub use format::FormatId;
 pub use generate::GenerationSpec;
