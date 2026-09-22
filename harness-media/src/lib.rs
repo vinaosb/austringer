@@ -12,9 +12,9 @@
 //!
 //! # What is deliberately NOT here yet
 //!
-//! The probe registry (M2, magic sniffing) and the tiered executor
-//! dispatch (M6) are later todos. The structural diff engine and round-trip
-//! verifier (M5) live in [`diff`].
+//! The tiered executor dispatch (M6) is a later todo. The probe registry
+//! (M2, magic sniffing) lives in [`probe`]; the structural diff engine
+//! and round-trip verifier (M5) live in [`diff`].
 //!
 //! # Structural diff + round-trip verification (summary)
 //!
@@ -64,6 +64,7 @@ pub mod error;
 pub mod extract;
 pub mod format;
 pub mod generate;
+pub mod probe;
 
 pub use descriptor::{FormatDescriptor, FormatRegistry, Operation, OpSupport};
 pub use diff::{
@@ -73,3 +74,4 @@ pub use error::MediaError;
 pub use extract::{ExtractBudgets, Extracted};
 pub use format::FormatId;
 pub use generate::GenerationSpec;
+pub use probe::{probe, Confidence, ProbeResult};

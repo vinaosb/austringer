@@ -26,7 +26,10 @@ svg = []
 gltf = []
 pdf = []
 audio = []
-office = []
+# M2: the OOXML zip lane reads the central directory via the zip crate
+# (pure-Rust deflate backend); without this feature a zip is honestly
+# Unknown with a note naming it.
+office = ["dep:zip"]
 avif = []
 georaster = []
 geovector = []
@@ -38,3 +41,10 @@ harness-core = { path = "../harness-core", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+zip = { version = "8", default-features = false, features = ["deflate"], optional = true }
+
+[dev-dependencies]
+# Self-reference so a bare `cargo nextest run -p harness-media` compiles
+# the integration tests with the office feature on (feature-unification
+# across dev-deps); the library default stays feature-empty.
+harness-media = { path = ".", features = ["office"] }

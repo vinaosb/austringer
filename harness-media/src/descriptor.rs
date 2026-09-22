@@ -93,7 +93,14 @@ impl FormatRegistry {
     /// adapters claiming one format is a wiring bug the caller surfaces,
     /// not a condition this container papers over.
     pub fn register(&mut self, descriptor: FormatDescriptor) -> bool {
-        self.descriptors.insert(descriptor.id, descriptor).is_none()
+        use std::collections::btree_map::Entry;
+        match self.descriptors.entry(descriptor.id) {
+            Entry::Vacant(slot) => {
+                slot.insert(descriptor);
+                true
+            }
+            Entry::Occupied(_) => false,
+        }
     }
 
     /// Look up a format's descriptor; typed

@@ -1,0 +1,5 @@
+# Fixtures are committed byte-exact artifacts under test: no EOL
+# normalization, no text diffs. Without this, git's autocrlf would rewrite
+# LF bytes inside fixtures git classifies as text (pdf.pdf has no NUL
+# bytes) and corrupt them on fresh checkouts.
+fixtures/* -text
