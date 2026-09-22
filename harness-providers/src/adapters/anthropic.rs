@@ -95,7 +95,7 @@ impl WireCodec for AnthropicCodec {
             "model": request.identity.model,
             "max_tokens": self.max_tokens,
             "stream": true,
-            "messages": [{ "role": "user", "content": request.prompt }],
+            "messages": [{ "role": "user", "content": super::wire_media::anthropic_content(request) }],
         });
         json_request(
             &self.url,

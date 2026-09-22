@@ -109,8 +109,8 @@ impl AcknowledgedFallback {
 }
 
 /// One streaming completion request: explicit target identity, rendered
-/// model-context prompt, transport headers, and an optional acknowledged
-/// fallback audit trail.
+/// model-context prompt, native media payloads for capable models,
+/// transport headers, and an optional acknowledged fallback audit trail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompletionRequest {
     /// The model this request targets (post-fallback target when a fallback
@@ -118,6 +118,12 @@ pub struct CompletionRequest {
     pub identity: ModelIdentity,
     /// The rendered model-context input (llm-visible events + focus block).
     pub prompt: String,
+    /// Native media payloads planned for a capable model (plan M8). The
+    /// payloads carry content-addressed references plus bytes resolved at
+    /// request-build time; bytes are serde-skipped and Debug-redacted so
+    /// they exist only inside the rendered wire request.
+    #[serde(default)]
+    pub media: Vec<crate::media::NativeMedia>,
     /// Extra request headers (auth material, per-provider options).
     pub headers: BTreeMap<String, String>,
     /// Audit trail present only when this request is an acknowledged
@@ -141,10 +147,20 @@ impl CompletionRequest {
         Self {
             identity,
             prompt,
+            media: Vec::new(),
             headers: BTreeMap::new(),
             fallback: None,
             turn_id: TurnId(hasher.finalize().to_hex().to_string()),
         }
+    }
+
+    /// Attaches natively-delivered media (plan M8). The [`TurnId`] is
+    /// unchanged: it derives from the prompt, which already embeds the
+    /// content-hash-keyed marker of every planned block, so the same
+    /// media yields the same id with or without the payload list.
+    pub fn with_native_media(mut self, media: Vec<crate::media::NativeMedia>) -> Self {
+        self.media = media;
+        self
     }
 
     /// Attaches a header (builder style). Headers ride on the request but are

@@ -32,7 +32,7 @@ impl WireCodec for ResponsesCodec {
         let body = json!({
             "model": request.identity.model,
             "stream": true,
-            "input": request.prompt,
+            "input": super::wire_media::responses_input(request),
         });
         super::json_request(
             &self.url,

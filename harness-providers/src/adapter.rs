@@ -13,6 +13,12 @@
 //!     rendered into [`InferenceError`]; silent partials are impossible
 //!     because envelopes only exist post-`Finish`.
 //!
+//! Plan M8 adds capability-aware media delivery: block rendering goes
+//! through the harness-core delivery planner (capable models get native
+//! payloads with bytes fetched from the session media store at
+//! request-build time; incapable models get deterministic markers with
+//! cached projections inlined and missing ones queued).
+//!
 //! The dependency direction is providers -> core, permanently: core owns the
 //! seam, must never depend back on providers, and this binding lets the
 //! seam's contract be TESTED against the resilient stack today.
@@ -23,13 +29,20 @@ use async_trait::async_trait;
 use harness_core::agent_loop::{
     AssistantTurn, Inference, InferenceError, InferenceRequest, PendingCall,
 };
-use harness_core::event::content::ContentBlock;
+use harness_core::event::content::{ContentBlock, MimeType};
+use harness_core::event::media::MediaRef;
 use harness_core::event::{Event, RecordedEvent};
+use harness_core::media_delivery::{
+    self, DeliveryCapabilities, EmptyCache, ProjectionCache, WireBlock,
+};
 
 use crate::identity::CompletionRequest;
+use crate::media::{MediaDelivery, NativeKind, NativeMedia, native_mimes};
 use crate::provider::Provider;
 use crate::retry::SeededJitter;
 use crate::turn::{RecoveryConfig, ResumableTurn};
+
+static EMPTY_CACHE: EmptyCache = EmptyCache;
 
 /// Drives any [`Provider`] through harness-core's `Inference` seam, with
 /// retry, resume, and exactly-once recovery active underneath.
@@ -37,17 +50,100 @@ pub struct InferenceAdapter {
     provider: Arc<dyn Provider>,
     config: RecoveryConfig,
     jitter_seed: u64,
+    caps: DeliveryCapabilities,
+    media: Option<MediaDelivery>,
 }
 
 impl InferenceAdapter {
-    /// Builds the adapter. Every inference call seeds a fresh
-    /// [`SeededJitter`] from `jitter_seed`, so backoff sequences are
-    /// reproducible per call in tests.
+    /// Builds the adapter text-only (fail-closed): capabilities and the
+    /// session media context attach explicitly. Every inference call
+    /// seeds a fresh [`SeededJitter`] from `jitter_seed`, so backoff
+    /// sequences are reproducible per call in tests.
     pub fn new(provider: Arc<dyn Provider>, config: RecoveryConfig, jitter_seed: u64) -> Self {
         Self {
             provider,
             config,
             jitter_seed,
+            caps: DeliveryCapabilities::default(),
+            media: None,
+        }
+    }
+
+    /// Sets the delivery capabilities (mapped from the harness-intel
+    /// per-model flags at compose time, where overrides may only
+    /// restrict).
+    #[must_use]
+    pub fn with_capabilities(mut self, caps: DeliveryCapabilities) -> Self {
+        self.caps = caps;
+        self
+    }
+
+    /// Attaches the session media context (byte source + derived
+    /// projection cache). Without one the adapter plans text-only even
+    /// for capable models — it cannot fetch bytes, so it does not
+    /// promise them.
+    #[must_use]
+    pub fn with_media_delivery(mut self, media: MediaDelivery) -> Self {
+        self.media = Some(media);
+        self
+    }
+}
+
+/// Everything block rendering needs: capabilities in force, the media
+/// context (if any), and the provider family's native-MIME allowlist.
+struct DeliveryContext<'a> {
+    caps: DeliveryCapabilities,
+    delivery: Option<&'a MediaDelivery>,
+    allowlist: &'static [&'static str],
+}
+
+impl DeliveryContext<'_> {
+    fn cache(&self) -> &dyn ProjectionCache {
+        match self.delivery {
+            Some(source) => source,
+            None => &EMPTY_CACHE,
+        }
+    }
+
+    /// Resolves a planned native block into wire payloads: dropped when
+    /// the family cannot carry the MIME (the prompt already carries its
+    /// marker), failed typed when the bytes are missing — never faked,
+    /// never silently dropped after being promised.
+    fn attach_native(
+        &self,
+        kind: NativeKind,
+        mime: &MimeType,
+        media: MediaRef,
+        out: &mut Vec<NativeMedia>,
+    ) -> Result<(), InferenceError> {
+        if !self.allowlist.contains(&mime.as_str()) {
+            return Ok(());
+        }
+        let Some(delivery) = self.delivery else {
+            return Err(InferenceError::Failure(
+                "adapter bug: native block planned without a media source".to_owned(),
+            ));
+        };
+        match delivery.load_bytes(&media.hash) {
+            Ok(Some(bytes)) => {
+                out.push(NativeMedia {
+                    kind,
+                    mime: mime.as_str().to_owned(),
+                    hash: media.hash,
+                    bytes,
+                });
+                Ok(())
+            }
+            Ok(None) => Err(InferenceError::Failure(format!(
+                "media {} missing from the content-addressed store ({} bytes declared): \
+                 refusing to fake or silently drop it",
+                media.hash.to_ref(),
+                media.bytes
+            ))),
+            Err(error) => Err(InferenceError::Failure(format!(
+                "media store read failed for {}: {error}",
+                media.hash.to_ref()
+            ))),
         }
     }
 }
@@ -59,12 +155,20 @@ impl Inference for InferenceAdapter {
         request: &InferenceRequest<'_>,
         cancel: &harness_core::agent_loop::CancelToken,
     ) -> Result<AssistantTurn, InferenceError> {
-        let prompt = format!(
-            "{}\n{}",
-            request.focus_block,
-            render_context(request.events)
-        );
-        let completion = CompletionRequest::new(self.provider.identity().clone(), prompt);
+        let family = self.provider.identity().provider.clone();
+        let context = DeliveryContext {
+            caps: if self.media.is_some() {
+                self.caps
+            } else {
+                DeliveryCapabilities::default()
+            },
+            delivery: self.media.as_ref(),
+            allowlist: native_mimes(&family),
+        };
+        let (rendered, media_blocks) = render_context(request.events, &context)?;
+        let prompt = format!("{}\n{}", request.focus_block, rendered);
+        let completion = CompletionRequest::new(self.provider.identity().clone(), prompt)
+            .with_native_media(media_blocks);
         let mut turn = ResumableTurn::start(
             self.provider.clone(),
             completion,
@@ -103,31 +207,64 @@ impl Inference for InferenceAdapter {
     }
 }
 
-/// Renders the llm-visible events exactly the way the todo-5 test kit's
-/// `FakeApiInference` does — one line per event, deterministic, no internal
-/// kinds (the `Condensation`/`Snapshot` arms are unreachable through the
-/// filter and kept only for match exhaustiveness).
-fn render_context(events: &[RecordedEvent]) -> String {
-    harness_core::event::llm_visible(events)
+/// Renders the llm-visible events through the delivery planner — one
+/// line per event, deterministic, no internal kinds (the
+/// `Condensation`/`Snapshot` arms are unreachable through the filter and
+/// kept only for match exhaustiveness). Native payloads collected along
+/// the way ride the completion request, not the text.
+fn render_context(
+    events: &[RecordedEvent],
+    context: &DeliveryContext<'_>,
+) -> Result<(String, Vec<NativeMedia>), InferenceError> {
+    let mut native = Vec::new();
+    let lines: Vec<String> = harness_core::event::llm_visible(events)
         .map(|event| match event {
-            Event::User { blocks } => format!("user: {}", block_text(blocks)),
-            Event::Assistant { blocks } => format!("assistant: {}", block_text(blocks)),
-            Event::ToolCall { call_id, tool, .. } => format!("tool-call {call_id} {tool}"),
-            Event::ToolResult { call_id, .. } => format!("tool-result {call_id}"),
-            Event::System { text } => format!("system: {text}"),
-            Event::Condensation { .. } | Event::Snapshot { .. } => String::new(),
+            Event::User { blocks } => Ok(format!(
+                "user: {}",
+                render_blocks(blocks, context, &mut native)?
+            )),
+            Event::Assistant { blocks } => Ok(format!(
+                "assistant: {}",
+                render_blocks(blocks, context, &mut native)?
+            )),
+            Event::ToolCall { call_id, tool, .. } => Ok(format!("tool-call {call_id} {tool}")),
+            Event::ToolResult { call_id, .. } => Ok(format!("tool-result {call_id}")),
+            Event::System { text } => Ok(format!("system: {text}")),
+            Event::Condensation { .. } | Event::Snapshot { .. } => Ok(String::new()),
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect::<Result<_, _>>()?;
+    Ok((lines.join("\n"), native))
 }
 
-fn block_text(blocks: &[ContentBlock]) -> String {
-    blocks
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text { text } => Some(text.as_str()),
-            ContentBlock::Image(_) | ContentBlock::Media(_) => None,
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+/// Plan-driven block rendering (replaces the M3-era image drop): every
+/// block contributes its deterministic text (verbatim text, markers,
+/// inlined cached projections) and capable-model native blocks
+/// additionally resolve into wire payloads.
+fn render_blocks(
+    blocks: &[ContentBlock],
+    context: &DeliveryContext<'_>,
+    native: &mut Vec<NativeMedia>,
+) -> Result<String, InferenceError> {
+    let delivery = media_delivery::plan(blocks, context.caps, context.cache());
+    if !delivery.needed_projections.is_empty() {
+        tracing::debug!(
+            queued = delivery.needed_projections.len(),
+            "media projections queued (the M10 pipeline resolves them)"
+        );
+    }
+    let mut parts = Vec::with_capacity(delivery.wire.len());
+    for block in &delivery.wire {
+        match block {
+            WireBlock::NativeImage { mime, media } => {
+                parts.push(block.text());
+                context.attach_native(NativeKind::Image, mime, *media, native)?;
+            }
+            WireBlock::NativeAudio { mime, media } => {
+                parts.push(block.text());
+                context.attach_native(NativeKind::Audio, mime, *media, native)?;
+            }
+            WireBlock::Text(_) | WireBlock::Marker(_) => parts.push(block.text()),
+        }
+    }
+    Ok(parts.join(" "))
 }

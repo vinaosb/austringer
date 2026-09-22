@@ -10,6 +10,7 @@
 
 pub mod frames;
 pub mod inferkit;
+pub mod mediakit;
 pub mod turnkit;
 pub mod wirekit;
 

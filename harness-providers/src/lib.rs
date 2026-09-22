@@ -19,6 +19,7 @@ pub mod cost;
 pub mod error;
 pub mod event;
 pub mod identity;
+pub mod media;
 pub mod provider;
 pub mod retry;
 pub mod state;
