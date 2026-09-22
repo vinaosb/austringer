@@ -3,8 +3,26 @@
 //! row cites its source fact; the effort grids and trap lists are
 //! PER-MODEL facts — fragmentation inside a family is the documented
 //! reason this table exists (SS33.1 invariant 3).
+//!
+//! # Media capability citations (plan M7)
+//!
+//! Flags are conservative: `true` ONLY where a cited row documents
+//! support; absent/unknown stays `false` (fail-closed). Provider-doc
+//! citations below were verified as fetched sources in harness-research
+//! SS33.8; the M8 wire table (media-formats plan) names each family's
+//! native media encoding.
+//!
+//! | model(s) | vision | audio_input | video_input | cited source row |
+//! |---|---|---|---|---|
+//! | claude-opus-4-6/4-7/5, claude-sonnet-4-6, claude-fable-5-1 | true | false | false | platform.claude.com Messages API documents image input; no audio/video input blocks exist (SS33.8; M8 Anthropic native wire = image source only) |
+//! | gpt-5-5, gpt-6-astra | true | false | false | developers.openai.com Responses API documents image input for the GPT-5/6 series (SS33.8). The OpenAI `input_audio` WIRE format exists (M8) but no cited row documents AUDIO acceptance for these models — conservative false until one does |
+//! | gemini-2-5-pro, gemini-3-pro, gemini-3-1-pro | true | true | true | ai.google.dev Gemini input docs: Pro models accept image, audio, AND video input (SS33.8; M8 Google inline_data) |
+//! | grok-4-6 | true | false | false | docs.x.ai documents grok-4 image input; M8 xAI native wire = image_url only; no audio/video input documented |
+//! | deepseek-reasoner | false | false | false | DeepSeek API is text-only (no image input endpoint); `.omo/research/model-profiles.md` SS3 "DeepSeek" row is a text-editing profile |
 
-use super::catalog::{CatalogEntry, EffortValue as E, Family, Feature, ThinkingLevel};
+use super::catalog::{
+    Capabilities, CatalogEntry, EffortValue as E, Family, Feature, ThinkingLevel,
+};
 use super::dialect::ProtocolDialect;
 
 /// All seeded entries.
@@ -21,6 +39,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: false,
             traps: vec![Feature::Prefill],
+            // claude image input (platform.claude.com, SS33.8); no
+            // audio/video input blocks.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // 4.7 respects effort more strictly; start xhigh for coding
         // (SS33.2); budget_tokens now 400s.
@@ -33,6 +58,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: false,
             traps: vec![Feature::ThinkingBudget, Feature::Prefill],
+            // claude image input (platform.claude.com, SS33.8); no
+            // audio/video input blocks.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // Sonnet 4.6: medium is the documented balance (SS33.2).
         CatalogEntry {
@@ -44,6 +76,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: false,
             traps: vec![Feature::Prefill],
+            // claude image input (platform.claude.com, SS33.8); no
+            // audio/video input blocks.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // Fable 5.1: thinking always-on; forced tool_choice 400s; the
         // per-message effort beta exists here (SS33.1).
@@ -56,6 +95,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: true,
             traps: vec![Feature::ForcedToolChoice],
+            // claude image input (platform.claude.com, SS33.8); no
+            // audio/video input blocks.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // Opus 5: thinking on, effort beta available (SS33.1).
         CatalogEntry {
@@ -67,6 +113,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: true,
             traps: vec![],
+            // claude image input (platform.claude.com, SS33.8); no
+            // audio/video input blocks.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // GPT-5.5: none..xhigh (no max), default medium; verbosity is the
         // length knob, orthogonal to effort (SS33.1).
@@ -79,6 +132,14 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: false,
             traps: vec![],
+            // GPT-5.5 vision: Responses image input documented
+            // (developers.openai.com, SS33.8); input_audio wire exists
+            // family-wide but no row documents audio for THIS model.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // GPT-6 Astra: no `none` (400), floor low; sampling params 400
         // (SS33.1).
@@ -91,6 +152,14 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: true,
             traps: vec![Feature::Sampling],
+            // GPT-6 Astra vision: Responses image input documented
+            // (developers.openai.com, SS33.8); audio/video input not
+            // documented for this model — conservative false.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // Gemini 2.5 Pro: thinking_budget 128..=32768 (0 invalid);
         // budget+level together 400; cannot disable thinking (SS33.1).
@@ -103,6 +172,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: Some(ThinkingLevel::Low),
             per_message_effort_beta: false,
             traps: vec![Feature::ThinkingBudgetWithLevel],
+            // Gemini Pro multimodal input: image, audio, AND video
+            // documented (ai.google.dev, SS33.8; M8 inline_data).
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: true,
+                video_input: true,
+            },
         },
         // Gemini 3 Pro: thinking_level replaces budget across the
         // generation boundary; Pro floor is low (SS33.1).
@@ -115,6 +191,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: Some(ThinkingLevel::Low),
             per_message_effort_beta: false,
             traps: vec![Feature::ThinkingBudgetWithLevel],
+            // Gemini Pro multimodal input: image, audio, AND video
+            // documented (ai.google.dev, SS33.8; M8 inline_data).
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: true,
+                video_input: true,
+            },
         },
         CatalogEntry {
             model: "gemini-3-1-pro".into(),
@@ -125,6 +208,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: Some(ThinkingLevel::Low),
             per_message_effort_beta: false,
             traps: vec![Feature::ThinkingBudgetWithLevel],
+            // Gemini Pro multimodal input: image, audio, AND video
+            // documented (ai.google.dev, SS33.8; M8 inline_data).
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: true,
+                video_input: true,
+            },
         },
         // Grok: always-on reasoning at default high — the most expensive
         // default of the four families; penalties/stop error on reasoning
@@ -138,6 +228,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: false,
             traps: vec![Feature::Penalties, Feature::StopSequences],
+            // grok-4 image input documented (docs.x.ai, SS33.8; M8 xAI
+            // wire = image_url only); no audio/video input documented.
+            capabilities: Capabilities {
+                vision: true,
+                audio_input: false,
+                video_input: false,
+            },
         },
         // DeepSeek reasoner: strongest architect-mode editor; wire usage
         // is cache-hit-inclusive (research SS6 DeepSeek pattern).
@@ -150,6 +247,13 @@ pub fn entries() -> Vec<CatalogEntry> {
             thinking_floor: None,
             per_message_effort_beta: false,
             traps: vec![],
+            // TEXT-ONLY: no image input endpoint in the DeepSeek API;
+            // model-profiles.md SS3 "DeepSeek" row is text-only.
+            capabilities: Capabilities {
+                vision: false,
+                audio_input: false,
+                video_input: false,
+            },
         },
     ]
 }

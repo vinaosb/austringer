@@ -1,7 +1,8 @@
 //! The model catalog: per-model capability/legality records carrying the
-//! EXPLICIT protocol dialect, the per-model effort grid, and the 400-trap
-//! feature-detection table (research SS33.1). Legality is feature-detected
-//! per MODEL, never per provider — effort-support grids are fragmented
+//! EXPLICIT protocol dialect, the per-model effort grid, the 400-trap
+//! feature-detection table (research SS33.1), and the per-model media
+//! input capabilities (plan M7). Legality is feature-detected per MODEL,
+//! never per provider — effort-support grids are fragmented
 //! model-by-model inside a single family, and every family has a trap
 //! list.
 //!
@@ -156,6 +157,40 @@ pub struct TrapViolation {
     pub remedy: &'static str,
 }
 
+/// Per-model media input capabilities (plan M7). Fail-closed like the
+/// trap table: a flag is `true` ONLY when the entry's cited source row
+/// documents support (see the sidecar table in [`seed`]) — absent or
+/// unknown support is `false`, so a model never receives media it
+/// cannot use. Flags are PER-MODEL catalog facts, never inferred from
+/// [`Family`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Capabilities {
+    /// Accepts image input.
+    pub vision: bool,
+    /// Accepts audio input.
+    pub audio_input: bool,
+    /// Accepts video input.
+    pub video_input: bool,
+}
+
+/// A runtime override attempted to RAISE a capability flag above the
+/// entry's catalog-owned value. Capability truth comes from cited
+/// source rows; overrides may only restrict (lower), never expand.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[error(
+    "cannot raise media capabilities on {model}: flags are catalog-owned \
+     source-cited data (requested {requested:?} over {current:?}) — \
+     overrides may only lower them"
+)]
+pub struct CapabilityRaiseRefused {
+    /// The model whose flags were targeted.
+    pub model: String,
+    /// The offending requested flags.
+    pub requested: Capabilities,
+    /// The catalog-owned flags at refusal time.
+    pub current: Capabilities,
+}
+
 /// The model is not in the catalog. Never guessed around: an unknown model
 /// has no dialect, no effort grid, and no trap table, so no request may be
 /// built for it.
@@ -175,6 +210,17 @@ pub enum CatalogError {
     /// A trap violation.
     #[error(transparent)]
     Trap(#[from] TrapViolation),
+}
+
+/// Everything a runtime capability override can fail with (plan M7).
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum OverrideError {
+    /// Unknown model.
+    #[error(transparent)]
+    UnknownModel(#[from] UnknownModel),
+    /// A raise was attempted (catalog-owned, source-cited data).
+    #[error(transparent)]
+    Raise(#[from] CapabilityRaiseRefused),
 }
 
 /// One catalog record: everything the harness must know about one model
@@ -199,6 +245,10 @@ pub struct CatalogEntry {
     pub per_message_effort_beta: bool,
     /// Features this model rejects (the 400-trap table).
     pub traps: Vec<Feature>,
+    /// Media input capabilities — per-model, source-cited, fail-closed
+    /// (a field absent from serialized data deserializes all-false).
+    #[serde(default)]
+    pub capabilities: Capabilities,
 }
 
 /// The catalog: model id -> entry, seeded from research SS33.
@@ -224,6 +274,42 @@ impl Catalog {
         self.entries.get(model).ok_or_else(|| UnknownModel {
             model: model.to_string(),
         })
+    }
+
+    /// The model's media input capabilities (plan M7): `true` only where
+    /// the entry's cited source row documents support. Unknown models
+    /// are typed errors; the answer is the entry's own PER-MODEL data —
+    /// there is deliberately no family-keyed lookup path.
+    pub fn capabilities(&self, model: &str) -> Result<Capabilities, UnknownModel> {
+        Ok(self.entry(model)?.capabilities)
+    }
+
+    /// Restriction-only runtime capability override: `requested` may
+    /// only LOWER flags below the entry's current catalog-owned values —
+    /// any `false -> true` transition (including restoring a previously
+    /// lowered flag) is refused with a typed [`CapabilityRaiseRefused`],
+    /// leaving the entry untouched. Unknown models are typed errors.
+    pub fn override_capabilities(
+        &mut self,
+        model: &str,
+        requested: Capabilities,
+    ) -> Result<(), OverrideError> {
+        let entry = self.entries.get_mut(model).ok_or_else(|| UnknownModel {
+            model: model.to_string(),
+        })?;
+        let raises = (requested.vision && !entry.capabilities.vision)
+            || (requested.audio_input && !entry.capabilities.audio_input)
+            || (requested.video_input && !entry.capabilities.video_input);
+        if raises {
+            return Err(CapabilityRaiseRefused {
+                model: model.to_string(),
+                requested,
+                current: entry.capabilities,
+            }
+            .into());
+        }
+        entry.capabilities = requested;
+        Ok(())
     }
 
     /// Iterates every entry in model-id order (the todo-42 catalog

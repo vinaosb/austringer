@@ -1,0 +1,158 @@
+TASK M7 - Per-model media capability flags in the intel catalog (media-formats-wave plan todo 7)
+==============================================================================================
+
+Worker: Sisyphus-junior (GLM 5.2). Date: 2026-09-21. Base: HEAD 54f150b on main.
+Commit: feat(intel): per-model media capability flags (single commit, this file included).
+
+SCOPE (held): harness-intel/src/catalog.rs, harness-intel/src/seed.rs,
+harness-intel/tests/* + this evidence. Trap/dialect semantics UNTOUCHED.
+
+ENVIRONMENT (task-13/34 recipe, disclosed)
+-------------------------------------------------------------------------------
+Windows 11 / PowerShell 5.1; Rust 1.98.0. INCLUDE prepended with
+  C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include
+first (required: harness-intel's test target transitively builds
+libsqlite3-sys via harness-skills; cl.exe needs the CRT headers from the
+ScopeCppSDK include dir). CC unset. Shared repo target dir (C:\ct).
+
+TDD - RED (failing first)
+-------------------------------------------------------------------------------
+tests/capabilities.rs written BEFORE any implementation.
+`cargo nextest run -p harness-intel --test capabilities` failed compile
+with exactly the right reasons:
+  E0432 unresolved import `harness_intel::catalog::Capabilities`
+  E0599 no method named `capabilities` found for struct `Catalog` (x many)
+  E0599 no method named `override_capabilities` found for struct `Catalog`
+  CatalogError/CatalogEntry surface absent
+Full text in the session tool log. One test-file syntax fix during RED
+(matches! takes no message arg) - still red-for-the-right-reason after.
+
+DESIGN (what landed)
+-------------------------------------------------------------------------------
+catalog.rs (233 pure LOC):
+  - Capabilities {vision, audio_input, video_input} - Copy/Eq/serde,
+    Default = ALL FALSE. Fail-closed: CatalogEntry.capabilities carries
+    #[serde(default)] so JSON lacking the key deserializes all-false
+    (absent/unknown support never upgrades to true).
+  - Catalog::capabilities(model) -> Result<Capabilities, UnknownModel>
+    typed lookup; per-entry data only - NO family-keyed path exists.
+  - Catalog::override_capabilities(model, requested) -> Result<(),
+    OverrideError>: restriction-only runtime override. Any false->true
+    transition (INCLUDING restoring a previously lowered flag) is
+    refused with typed CapabilityRaiseRefused {model, requested,
+    current}; the entry is left untouched. Lowering is legal (pin a
+    vision model text-only for a run).
+  - NEW OverrideError {UnknownModel, Raise} instead of extending
+    CatalogError: routing/config.rs has an exhaustive
+    From<CatalogError> for RoutingConfigError, and M7's MUST-NOT bars
+    touching trap semantics - a dedicated enum is the zero-ripple diff.
+    (First implementation DID add CatalogError::Raise; the compiler
+    surfaced the routing match; reverted to OverrideError same turn.)
+seed.rs (188 pure LOC):
+  - Module-doc SIDECAR CITATION TABLE (plan: "Record the citation per
+    row") + a citation comment on every seeded row. Conservative rule
+    enforced: true ONLY where a cited row documents support.
+  - Seeded flags (12 models):
+      claude-opus-4-6/4-7/5, sonnet-4-6, fable-5-1  vision=T audio=F video=F
+        <- platform.claude.com Messages image input (SS33.8-verified
+           docs); no audio/video input blocks exist (M8 wire = image
+           source only)
+      gpt-5-5, gpt-6-astra                        vision=T audio=F video=F
+        <- developers.openai.com Responses image input for GPT-5/6
+           (SS33.8). NOTE recorded in seed.rs: OpenAI input_audio WIRE
+           format exists (M8) but no cited row documents AUDIO
+           acceptance for these specific models - conservative false
+           until a per-model source row exists.
+      gemini-2-5-pro, 3-pro, 3-1-pro              vision=T audio=T video=T
+        <- ai.google.dev Gemini Pro multimodal input docs (image+audio+
+           video; SS33.8; M8 inline_data)
+      grok-4-6                                    vision=T audio=F video=F
+        <- docs.x.ai grok-4 image input (SS33.8; M8 wire = image_url
+           only); no audio/video input documented
+      deepseek-reasoner                           all F (TEXT-ONLY)
+        <- DeepSeek API text-only, no image input endpoint;
+           .omo/research/model-profiles.md SS3 "DeepSeek" row
+
+TESTS (10 new, hermetic, zero network/keys/tools)
+-------------------------------------------------------------------------------
+tests/capabilities.rs (7): per-model table pinned exhaustively; >=3-row
+  spot-checks asserting seed == cited sources (gemini-3-pro all-true;
+  claude-sonnet-4-6 vision-only; deepseek-reasoner text-only; grok-4-6
+  vision-only); text-only model all-false; unknown/misspelled ids
+  ("gpt-5.6-turbo", trailing space, wrong case, "", bare "sonnet") ->
+  typed UnknownModel, zero panic; JSON snapshot of the whole table vs a
+  pinned constant (the drift catcher); entry JSON WITHOUT the
+  capabilities key fails closed to all-false; flagship printout test.
+tests/capability_overrides.rs (3): raise attempt refused typed + entry
+  untouched; lowering legal + re-raise to the ORIGINAL seed refused
+  (false->true never happens) + unknown model typed; per-model-not-
+  family pinned by restricting ONE of two same-family Anthropic models
+  and asserting they stay different (no family collapse path).
+
+VERIFICATION (exact commands, ScopeCppSDK INCLUDE recipe active)
+-------------------------------------------------------------------------------
+  cargo nextest run -p harness-intel ........... 83 passed, 0 skipped
+       (73 pre-existing + 10 new; run 5x total incl. after fmt/split -
+        identical every time - flaky x3 channel satisfied)
+  cargo clippy -p harness-intel --all-targets -- -D warnings ... clean
+  cargo fmt -p harness-intel -- --check .......... clean (after apply)
+  lsp diagnostics catalog.rs .................... none
+  pure-LOC: catalog.rs 233, seed.rs 188, capabilities.rs 216,
+       capability_overrides.rs 67 (all <= 250 ceiling; the original
+       single test file measured 282 -> split by responsibility)
+  grep unwrap/expect/panic/unreachable in changed src ... no matches
+
+MANUAL-QA (auxiliary surface: the human-readable capability table)
+-------------------------------------------------------------------------------
+cargo nextest run -p harness-intel --test capabilities capability_table_printout -- --nocapture
+  claude-opus-4-7: vision=true audio_input=false video_input=false
+  gpt-6-astra: vision=true audio_input=false video_input=false
+  gemini-3-pro: vision=true audio_input=true video_input=true
+  grok-4-6: vision=true audio_input=false video_input=false
+  deepseek-reasoner: vision=false audio_input=false video_input=false
+  Summary: 1 test run: 1 passed
+
+QA CHANNELS
+-------------------------------------------------------------------------------
+happy    per-model table + flagship printout above; typed lookup green.
+failure  runtime override attempting to RAISE a capability -> typed
+         CapabilityRaiseRefused, entry untouched (test-pinned); unknown
+         model -> typed UnknownModel on both lookup and override paths.
+adversarial
+  malformed_input: misspelled/case-wrong/padded/empty model ids ->
+    typed error naming the offender, zero panics (pinned).
+  stale_state: the JSON snapshot test IS the drift catcher - any seeded
+    flag change must consciously update the pinned constant (recorded).
+  misleading_success: spot-check assertions tie seed data to the cited
+    model-profiles/provider rows - snapshot stability alone cannot
+    catch wrong seed data; the seed-vs-source assertions can (recorded).
+  concurrency: N/A - in-memory BTreeMap, no shared mutation surface.
+  resource_exhaustion: N/A - static seed table, bounded types.
+  privilege/egress: N/A - crate performs no I/O (store.rs aside,
+    untouched here) and has no network-capable dependency.
+  dirty_worktree: shared tree carries sibling M3 worker's in-flight
+    harness-core edits (ContentBlock::Media) - one build raced their
+    mid-edit state (gates.rs briefly non-exhaustive) and failed; rerun
+    green once their arm landed. NONE of their files staged below.
+
+COMMIT DISCIPLINE
+-------------------------------------------------------------------------------
+Staged surgically, ONLY task-M7 content:
+  harness-intel/src/catalog.rs
+  harness-intel/src/seed.rs
+  harness-intel/tests/capabilities.rs      (new)
+  harness-intel/tests/capability_overrides.rs (new)
+  .omo/evidence/task-M7-media-formats.txt  (this file)
+No other file touched; sibling workers' harness-core/providers/orchestration
+edits, .omo state, and snapshot junk left uncommitted.
+
+RISKS / NOTES
+-------------------------------------------------------------------------------
+- Seed flags are 2026-09 research snapshots; new models/flips are added
+  by editing seed.rs (per-model, source-cited) + updating the pinned
+  snapshot constant + spot-checks.
+- OpenAI audio flag stays FALSE despite the M8 input_audio wire format:
+  a wire format is a family fact, a flag is a model fact (M7 law) - no
+  cited row documents audio acceptance for gpt-5-5/gpt-6-astra.
+- M8 (delivery planner) consumes Catalog::capabilities directly;
+  restrict-only overrides let a run pin any model text-only safely.
