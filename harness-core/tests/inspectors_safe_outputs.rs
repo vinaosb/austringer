@@ -31,7 +31,7 @@ fn sanitized_texts(outcome: &SanitizedOutput) -> Vec<&str> {
         .iter()
         .filter_map(|block| match block {
             ContentBlock::Text { text } => Some(text.as_str()),
-            ContentBlock::Image(_) => None,
+            ContentBlock::Image(_) | ContentBlock::Media(_) => None,
         })
         .collect()
 }

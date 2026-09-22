@@ -49,7 +49,7 @@ pub fn tool_result_texts(events: &[RecordedEvent]) -> Vec<String> {
                     .iter()
                     .filter_map(|block| match block {
                         ContentBlock::Text { text } => Some(text.as_str()),
-                        ContentBlock::Image(_) => None,
+                        ContentBlock::Image(_) | ContentBlock::Media(_) => None,
                     })
                     .collect::<Vec<_>>()
                     .join(" ")

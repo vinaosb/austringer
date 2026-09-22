@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use super::content::{ImageBlock, MimeType};
+use super::content::{ImageBlock, InvalidMimeType, MimeType};
 
 /// Reasons a content-hash string fails to parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -150,10 +150,11 @@ impl MediaStore {
         Ok(Self { dir })
     }
 
-    /// Store bytes, returning the referencing image block.
+    /// Store image bytes, returning the referencing image block.
     ///
     /// Storing identical content twice writes nothing the second time
-    /// (content addressing gives dedup for free).
+    /// (content addressing gives dedup for free). Non-image MIME types
+    /// are rejected typed: a widened type belongs in a media block.
     pub fn store(
         &self,
         mime: &MimeType,
@@ -161,6 +162,12 @@ impl MediaStore {
         height: u32,
         data: &[u8],
     ) -> io::Result<ImageBlock> {
+        if !mime.is_image() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                InvalidMimeType::NotImage(mime.to_string()),
+            ));
+        }
         let hash = ContentHash::from_bytes(data);
         let target = self.path_for(&hash);
         if !target.exists() {

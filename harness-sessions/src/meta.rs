@@ -139,7 +139,7 @@ pub(crate) fn extract_text(event: &Event) -> Option<String> {
         .iter()
         .filter_map(|block| match block {
             ContentBlock::Text { text } => Some(text.as_str()),
-            ContentBlock::Image { .. } => None,
+            ContentBlock::Image { .. } | ContentBlock::Media(_) => None,
         })
         .collect();
     if text.is_empty() {

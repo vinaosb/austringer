@@ -9,7 +9,9 @@
 pub mod content;
 pub mod media;
 
-pub use content::{ContentBlock, ImageBlock, InvalidMimeType, MimeType};
+pub use content::{
+    ContentBlock, ImageBlock, InvalidMediaMeta, InvalidMimeType, MediaBlock, MimeType,
+};
 pub use media::{ContentHash, InvalidContentHash, MediaRef, MediaStore};
 
 use serde::{Deserialize, Serialize};
