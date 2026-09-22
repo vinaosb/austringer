@@ -156,3 +156,63 @@ RISKS / NOTES
   cited row documents audio acceptance for gpt-5-5/gpt-6-astra.
 - M8 (delivery planner) consumes Catalog::capabilities directly;
   restrict-only overrides let a run pin any model text-only safely.
+
+AMENDMENT 2026-09-22 - house-rule breach correction (LOC ceiling)
+=================================================================
+Worker: Sisyphus-junior (GLM 5.2). Commit: refactor(intel): split
+capabilities surface to honor the 250 pure-LOC ceiling (new commit on
+top of the M7 commit; NOT an amend).
+
+THE BREACH (from M7 independent verification):
+  This evidence originally claimed "catalog.rs 233 pure LOC". That
+  number was produced by silently EXCLUDING catalog.rs's 36 attribute
+  lines - a counting method no prior evidence used. Under the
+  repo-canonical method (attributes INCLUDED), catalog.rs at commit
+  6725f5d was 269 pure LOC against the 250 ceiling (plan standing
+  constraint 6). Parent file was 218; commit 6725f5d introduced the
+  breach. Calibration: the canonical method exactly reproduces the
+  repo's recorded claims (segments.rs 241 w/16 attrs, doctrine.rs 210
+  w/5, anthropic.rs 234 w/4).
+
+CANONICAL METHOD (repo-canonical pure-LOC counting):
+  (Get-Content f | Where-Object { $_ -notmatch '^\s*$' -and
+    $_ -notmatch '^\s*//' }).Count
+  i.e. non-blank, non-`//`-comment lines (doc comments `///` and
+  `//!` count as comments and are excluded), ATTRIBUTES COUNTED as
+  lines. All future evidence in this repo uses this method.
+
+THE SPLIT (behavior-preserving, public API path stable):
+  New module harness-intel/src/capabilities.rs now owns the M7-added
+  surface: Capabilities, CapabilityRaiseRefused, OverrideError, and
+  the two Catalog methods (capabilities lookup + restriction-only
+  override_capabilities, via a second inherent impl block - legal in
+  a sibling module of the same crate). catalog.rs re-exports
+  {CapabilityRaiseRefused, Capabilities, OverrideError} so every
+  existing path harness_intel::catalog::* still resolves: the 10 M7
+  tests, seed.rs, harness-orchestration src+tests, and
+  routing/config.rs all compile UNCHANGED (zero test or consumer
+  edits). The only structural accommodation: Catalog's `entries`
+  field widened private -> pub(crate) (crate-internal visibility
+  only; external API unchanged). Seed citations, docs, and trap
+  semantics untouched.
+
+POST-SPLIT PURE LOC (canonical method, attributes counted):
+  harness-intel/src/catalog.rs ......... 221  (was 269 - breach gone)
+  harness-intel/src/capabilities.rs ....  53  (new module)
+  harness-intel/src/lib.rs .............  13  (one module line added)
+  harness-intel/src/seed.rs ............ 188  (untouched; matches the
+                                             original claim exactly)
+  All <= 250 ceiling.
+
+VERIFICATION (ScopeCppSDK INCLUDE recipe active, same as above):
+  cargo nextest run -p harness-intel ...... 83 passed, 0 skipped
+  cargo clippy -p harness-intel --all-targets -- -D warnings
+                                          ...... exit 0, clean
+  cargo fmt -p harness-intel -- --check .. clean
+  cargo check -p harness-orchestration --all-targets (the downstream
+  consumer of harness_intel::catalog; no harness-routing crate exists
+  - routing is a module inside harness-intel)
+                                          ...... exit 0, API stable
+  lsp diagnostics capabilities.rs/lib.rs . none (catalog.rs LSP probe
+  timed out post-edit; clippy -D warnings under workspace
+  warnings="deny" covers the same surface and is clean)
