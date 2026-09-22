@@ -12,9 +12,21 @@
 //!
 //! # What is deliberately NOT here yet
 //!
-//! The probe registry (M2, magic sniffing), the structural diff engine
-//! (M5), and the tiered executor dispatch (M6) are later todos. This
-//! scaffold contains contract types only - no format logic.
+//! The probe registry (M2, magic sniffing) and the tiered executor
+//! dispatch (M6) are later todos. The structural diff engine and round-trip
+//! verifier (M5) live in [`diff`].
+//!
+//! # Structural diff + round-trip verification (summary)
+//!
+//! Every format's acceptance gate is the M5 diff engine
+//! ([`diff::structural_diff`] over canonical trees, per-format tolerance
+//! profiles, empty diff = semantic-equivalence PASS) composed by
+//! [`diff::verify_roundtrip`]. Expected trees come from an INDEPENDENT
+//! spec->tree projection ([`diff::spec_tree`] at the generic level; one per
+//! format as adapters land) - never from the adapter's own extractor run
+//! over its own output. See [`diff`] for the full provenance contract and
+//! the pinned decisions (non-finite floats, integer/float meeting point,
+//! null-vs-missing, unordered leftovers).
 //!
 //! # Determinism contract (summary)
 //!
@@ -47,12 +59,16 @@
 #![deny(missing_docs)]
 
 pub mod descriptor;
+pub mod diff;
 pub mod error;
 pub mod extract;
 pub mod format;
 pub mod generate;
 
 pub use descriptor::{FormatDescriptor, FormatRegistry, Operation, OpSupport};
+pub use diff::{
+    spec_tree, structural_diff, verify_roundtrip, RoundTripVerdict, StructuralDiff, Tolerances,
+};
 pub use error::MediaError;
 pub use extract::{ExtractBudgets, Extracted};
 pub use format::FormatId;

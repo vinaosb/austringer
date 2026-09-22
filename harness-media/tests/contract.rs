@@ -43,6 +43,7 @@ fn every_error_variant() -> Vec<MediaError> {
         MediaError::EncryptedUnsupported,
         MediaError::NoProjector,
         MediaError::ExtractTooLarge,
+        MediaError::DiffTooLarge,
     ]
 }
 

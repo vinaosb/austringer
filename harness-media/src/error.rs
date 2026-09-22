@@ -80,4 +80,10 @@ pub enum MediaError {
         "extraction exceeded its budget (deadline or size cap): raise the caller-provided ExtractBudgets or split the input into smaller pieces"
     )]
     ExtractTooLarge,
+    /// The structural diff exceeded its depth cap (64) or node cap
+    /// (100_000 compared nodes).
+    #[error(
+        "structural diff exceeded its budget (depth or node cap): project or split the trees into smaller canonical forms and diff those"
+    )]
+    DiffTooLarge,
 }
