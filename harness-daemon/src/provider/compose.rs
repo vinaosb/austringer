@@ -2,6 +2,8 @@
 //! wiring, the unconfigured posture, and the wall-clock deadline that
 //! keeps a hung provider typed instead of turn-fatal.
 
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,11 +11,13 @@ use async_trait::async_trait;
 use harness_core::agent_loop::{
     AssistantTurn, CancelToken, Inference, InferenceError, InferenceRequest,
 };
+use harness_core::media_delivery::DeliveryCapabilities;
 use harness_providers::adapter::InferenceAdapter;
 use harness_providers::adapters::{
     AnthropicAdapter, CompatAdapter, GoogleAdapter, OpenAiAdapter, XaiAdapter,
 };
 use harness_providers::auth::CredentialSource;
+use harness_providers::media::MediaDelivery;
 use harness_providers::provider::Provider;
 use harness_providers::retry::RetryPolicy;
 use harness_providers::transport::Transport;
@@ -98,6 +102,75 @@ impl ResolvedProvider {
                 Arc::new(CompatAdapter::new(transport, auth, base, model))
             }
         }
+    }
+
+    /// Composes the model-mediated projection factory (plan M10): the
+    /// same adapter + deadline stack as [`Self::compose_factory`], with
+    /// the PROJECTOR model's delivery capabilities and the session media
+    /// context attached, so a queued projection rides the real family
+    /// wire (native payload in, projection text out). `caps` must be the
+    /// M7-mapped flags of `model_id`'s model — the resolver's capability
+    /// gate is the caller's to enforce before building this.
+    ///
+    /// # Errors
+    /// [`io::Error`] when the session media context cannot be opened.
+    pub fn compose_projection_factory(
+        &self,
+        transport: Arc<dyn Transport>,
+        caps: DeliveryCapabilities,
+        session_dir: &Path,
+    ) -> io::Result<Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>> {
+        let provider = self.compose_provider(transport);
+        let timeout = self.inference_timeout;
+        let session_dir = session_dir.to_path_buf();
+        Ok(Arc::new(move || {
+            Box::new(SessionMediaInference {
+                provider: Arc::clone(&provider),
+                caps,
+                session_dir: session_dir.clone(),
+                timeout,
+            })
+        }))
+    }
+}
+
+/// One projection-capable inference call: the adapter is composed per
+/// call with a freshly opened session [`MediaDelivery`] (bytes fetch +
+/// derived-cache inlining), because the delivery context is owned by the
+/// adapter it is attached to. A session dir that stops opening mid-flight
+/// is a typed inference failure — never a marker-less prompt.
+struct SessionMediaInference {
+    provider: Arc<dyn Provider>,
+    caps: DeliveryCapabilities,
+    session_dir: PathBuf,
+    timeout: Duration,
+}
+
+#[async_trait]
+impl Inference for SessionMediaInference {
+    async fn infer(
+        &mut self,
+        request: &InferenceRequest<'_>,
+        cancel: &CancelToken,
+    ) -> Result<AssistantTurn, InferenceError> {
+        let delivery = MediaDelivery::open(&self.session_dir).map_err(|error| {
+            InferenceError::Failure(format!(
+                "projection session media context unavailable: {error}"
+            ))
+        })?;
+        let mut inner = DeadlineInference {
+            inner: Box::new(
+                InferenceAdapter::new(
+                    Arc::clone(&self.provider),
+                    daemon_recovery_config(),
+                    0x5EED_0000_0032,
+                )
+                .with_capabilities(self.caps)
+                .with_media_delivery(delivery),
+            ),
+            deadline: self.timeout,
+        };
+        inner.infer(request, cancel).await
     }
 }
 

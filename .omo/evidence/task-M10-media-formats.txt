@@ -1,0 +1,159 @@
+M10 — text-projection pipeline + derived caching (plan .omo/plans/media-formats-wave.md lines 159-165, verbatim authority)
+=====================================================================================
+Status: IN PROGRESS (incremental)
+
+Dependency surface (all landed, verified by git log):
+  M3 content blocks 27286e4 | M4 derived store 152f93a | M7 caps 6725f5d+a8342cd
+  M8 planner 2196a24       | M6 executor 792f445      | M32 provider wiring 437a71c
+
+M9 PARALLEL-LANE SURVEY (git status at task start)
+-------------------------------------------------------------------------------------
+Dirty (M9 in flight, DO NOT TOUCH / COMMIT): harness-daemon {Cargo.toml, attach.rs,
+config.rs, engine.rs, events.rs, handlers.rs, ipc.rs, lib.rs, protocol.rs, server.rs,
+transport.rs, ws.rs, tests/engine_tests.rs} + untracked {src/ask.rs, compat.rs, errors.rs,
+media.rs, tests/media_v2_tests.rs, v1_corpus_capture.rs, v1_replay_tests.rs,
+tests/fixtures/} + harness-core {dispatch/pipeline/stages/content/derived + 4 tests} +
+harness-cli/render.rs + harness-tui/{app.rs, client_ws.rs} + Cargo.lock.
+M9 owns the ENTIRE submit-intake chain (SubmitMedia->SubmitBlocks in attach.rs, driver
+in engine.rs, protocol surface). Baseline `cargo check -p harness-daemon --lib` on the
+dirty tree: GREEN (with MSVC INCLUDE recipe, see below).
+
+M10 PLACEMENT DECISION (blessed by task caution: "scope your daemon integration to the
+files M9 is NOT touching and note it in evidence")
+-------------------------------------------------------------------------------------
+- The resolve pipeline CORE lives in harness-media (new src/pipeline.rs): it composes
+  ONLY harness-core seams (DerivedStore/MediaStore, media_delivery::plan, Inference,
+  DeliveryCapabilities = the M8-established data mirror of the M7 flags). Capabilities
+  arrive as data; the intel Catalog lookup stays at the daemon edge, exactly like M8.
+- The daemon-side LIVE composition lands in CLEAN files only:
+  harness-daemon/src/provider/compose.rs (+mod re-export) — compose_projection_factory()
+  builds the M32 adapter stack with projector-model capabilities + session MediaDelivery
+  attached, so model-mediated projection rides the real family wire.
+- BLOCKED ON M9 MERGE (noted, per instructions): (a) the submit-time CALL SITE
+  (SubmitMedia intake in attach.rs/engine.rs + Event::System notice append + lib.rs
+  `pub mod projection;`-style wiring are all inside M9's dirty files — committing them
+  would commit M9's uncommitted work); (b) T42 routing-table wiring for the capable
+  utility role (harness-daemon does not depend on harness-intel at HEAD; the resolver
+  receives the utility route as Mediation data, ready for that wiring); (c) the
+  harness-media dependency line in harness-daemon/Cargo.toml is M9's uncommitted delta
+  — the new daemon test rides it in the working tree and will stand alone once M9
+  commits; (d) Cargo.lock left uncommitted (shared dirty file; M10's only lock delta is
+  harness-media's dependency edge on the already-resolved workspace tokio).
+
+TDD RED (captured before any implementation)
+-------------------------------------------------------------------------------------
+cargo nextest run -p harness-media
+  error[E0432]: unresolved import `harness_media::projection`   (projection_registry.rs)
+  error[E0432]: unresolved import `harness_media::pipeline`     (projection_pipeline.rs)
+cargo nextest run -p harness-daemon --test provider_projection_tests
+  error[E0432]: unresolved import `harness_media::{pipeline,projection}`
+  error[E0599]: no method named `compose_projection_factory` found for `ResolvedProvider`
+=> RED for the right reason: the API under test does not exist. No assertion ran yet.
+
+DESIGN NOTES
+-------------------------------------------------------------------------------------
+- Producer ids in the M4 derived store: deterministic `deterministic:{format}`;
+  model-mediated `model:{model-id}:{PROJECTION_PROMPT_VERSION}` (v1) — the prompt
+  template version is the material generation param, so provenance carries model id +
+  params per the MUST-NOT. Every resolution ALSO writes the canonical delivery alias
+  (`delivery`, == harness-providers DELIVERY_PROJECTION_PRODUCER, equality pinned in
+  tests) so the M8 delivery cache inlines at request-build time.
+- Resolution order per (media, kind): delivery alias -> deterministic registry ->
+  model producer cache -> capability-gated model call. Cache hits short-circuit BEFORE
+  any model call (counter-pinned); capability check (vision/audio_input mapped from M7)
+  ALWAYS precedes a model call (MUST-NOT, counter-pinned from both arms).
+- Model-mediated prompt: single Event::User{blocks:[original media block]} + per-kind
+  focus instruction; non-text or empty assistant turns are typed failures — never
+  fabricated transcripts (MUST-NOT). Per-call wall-clock timeout -> Unprojectable::Timeout,
+  marker survives, nothing stored.
+- Notices: Unprojectable carries notice() text naming mime + kind (the daemon submit hook
+  appends it as Event::System when the M9 merge lands; the text is produced + pinned now).
+
+(continued below as work lands)
+
+GREEN (implementation landed, all runs on the M9-dirty working tree)
+-------------------------------------------------------------------------------------
+Files delivered (the ONLY files in this commit):
+  harness-media/src/projection.rs        [68 pure LOC]  ProjectionProvider{kind,project(bytes,ctx)}
+                                                        + ProjectionContext + ProjectionRegistry
+                                                        (duplicate refused typed; (format,kind)
+                                                        lookup -> MediaError::NoProjector)
+  harness-media/src/pipeline/mod.rs      [226]          resolver orchestration + outcome vocabulary
+  harness-media/src/pipeline/deterministic.rs [34]      probe -> registry arm (FallThrough/Refused/
+                                                        Projected{producer: deterministic:{format}})
+  harness-media/src/pipeline/mediate.rs  [101]          capability-gated model-mediated arm:
+                                                        session-if-capable -> utility-if-capable ->
+                                                        NoProjector; per-kind focus instruction;
+                                                        wall-clock timeout; empty/tool-call turns
+                                                        typed, never fabricated
+  harness-media/src/lib.rs               [31]           module + re-export wiring
+  harness-media/Cargo.toml               tokio dep (time); dev-deps async-trait/tokio-rt-macros/
+                                                        tempfile
+  harness-daemon/src/provider/compose.rs [196]          ResolvedProvider::compose_projection_factory()
+                                                        + SessionMediaInference (per-call adapter w/
+                                                        projector caps + session MediaDelivery)
+  harness-daemon/tests/provider_projection_tests.rs     4 cassette tests (hermetic, zero network)
+  harness-media/tests/projection_registry.rs            6 seam tests
+  harness-media/tests/projection_pipeline.rs            11 pipeline tests
+
+TEST VERDICTS (cargo nextest, dev profile)
+  -p harness-media                     : 94 run, 94 passed, 1 skipped (pre-existing skip)
+  -p harness-daemon (FULL, incl M9)    : 190 run, 190 passed, 1 skipped
+  -p harness-daemon --test provider_projection_tests : 4/4 passed
+  clippy -p harness-media --all-targets : clean (workspace warnings=deny, clippy all=deny)
+  clippy -p harness-daemon --all-targets: clean
+  Hygiene: zero unwrap/expect/panic/todo/unreachable in touched src files.
+  LOC: every touched src file <= 226 pure LOC (ceiling 250). compose.rs sits in the
+  200-250 warning band at 196 with no further lines planned.
+
+ACCEPTANCE CROSS-CHECK (plan lines 163-164, verbatim criteria)
+  deterministic projection cached (second submit -> zero recompute, counter-pinned)
+    -> projection_pipeline::deterministic_projection_caches_second_submit_zero_recompute
+       (projector AtomicUsize stays 1 across the second resolve; delivery alias present)
+  model-mediated projection via scripted mock provider lands derived + provenance
+    -> projection_pipeline::model_mediated_projection_lands_derived_with_provenance
+       (producer model:fixture-vision-model:v1; bytes pinned)
+    -> daemon provider_projection_tests::model_mediated_projection_composes_over_the_real_wire_
+       with_provenance (anthropic family endpoint, cassette SSE, derived + alias pinned)
+  no-capable-model path -> marker + typed notice
+    -> no_projector_anywhere_is_typed_notice_and_nothing_stored
+    -> no_capable_model_never_calls_any_model (both scripted counters stay 0)
+    -> daemon unprojection_under_no_mediation_keeps_the_marker_and_names_the_gap
+  text-only fixture model's built prompt CONTAINS the projection text (assert on prompt bytes)
+    -> daemon text_only_session_prompt_contains_the_projection_text: the captured
+       anthropic request BODY bytes contain the cached projection text verbatim
+       (the anti-fake proof) and the focus block; answer flows back.
+  QA happy (text-only model answers "how many bands" from its projection)
+    -> same daemon test narrative (focus asks the band count, model answers from the
+       inlined projection).
+  QA failure (audio with no projector anywhere -> marker + notice, transcript never invented)
+    -> audio_with_no_projector_anywhere_keeps_marker_and_never_invents_a_transcript
+  ADVERSARIAL: malformed-input -> corrupt_media_is_typed_parse_failure_and_retries_for_repair
+    (+ registry provider_failure_propagates_typed_never_fabricated);
+    stale-state -> cache_hit_wins_over_model_drift_same_media_never_projects_twice
+    (byte-stable first answer wins over model drift; zero new calls);
+    misleading-success-output -> the prompt-bytes assertion above;
+    hung-commands -> hung_model_is_a_typed_timeout_and_the_marker_survives (<5s wall,
+    nothing stored). N/A: none.
+
+MUST-NOT AUDIT
+  never fabricate: empty/tool-call/hung/parse-failure all typed; store asserted empty after
+    every failure arm; deterministic fabrications impossible (registry empty until M11+).
+  never model-mediated without capability check: mediates() gate precedes the factory call;
+    zero-call counters pinned for incapable session AND utility.
+  never store without provenance: deterministic:{format} / model:{id}:{PROJECTION_PROMPT_VERSION}
+    producers pinned by load_derived assertions; the `delivery` alias is written ALONGSIDE the
+    provenance entry, never instead of it (M8 media.rs contract: alias consulted by providers).
+
+KNOWN-GOOD HANDOFF FOR THE M9 MERGE (precise block)
+  When M9's attach/engine/lib/Cargo.toml land, wire the submit hook:
+    on SubmitMedia intake (attach.rs resolve path) -> ProjectionResolver::new(session_dir,
+    &projection_registry).resolve(Submission{blocks, session_caps}, Mediation{session, utility})
+    -> for each outcome.notice() append Event::System. Caps from the M7 Catalog via the
+    session's ProviderSelection.model; utility route via T42 RoutingTable as Mediation data.
+  harness-daemon/Cargo.toml harness-media dep + Cargo.lock ride M9's commit (shared dirty
+  files); this commit's tests stand alone once that lands.
+
+MSVC NOTE: cold builds needed the provided recipe (vcruntime.h missing) -
+  INCLUDE='C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include;...'
+  applied per-invocation; with it all builds/tests were deterministic.

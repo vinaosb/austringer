@@ -68,7 +68,9 @@ pub mod executor;
 pub mod extract;
 pub mod format;
 pub mod generate;
+pub mod pipeline;
 pub mod probe;
+pub mod projection;
 
 pub use descriptor::{FormatDescriptor, FormatRegistry, Operation, OpSupport};
 pub use diff::{
@@ -82,4 +84,11 @@ pub use executor::{
 pub use extract::{ExtractBudgets, Extracted};
 pub use format::FormatId;
 pub use generate::GenerationSpec;
+pub use pipeline::{
+    DELIVERY_CACHE_PRODUCER, MediatedProjection, Mediation, ProjectionOutcome, ProjectionResolver,
+    Submission, Unprojectable,
+};
 pub use probe::{probe, Confidence, ProbeResult};
+pub use projection::{
+    ProjectionContext, ProjectionProvider, ProjectionRegistry, ProjectionWiringError,
+};

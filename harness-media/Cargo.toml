@@ -41,6 +41,9 @@ harness-core = { path = "../harness-core", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# M10 resolve pipeline: wall-clock timeouts around model-mediated
+# projection calls (workspace baseline already carries sync/time/macros).
+tokio = { workspace = true }
 zip = { version = "8", default-features = false, features = ["deflate"], optional = true }
 
 [dev-dependencies]
@@ -48,3 +51,7 @@ zip = { version = "8", default-features = false, features = ["deflate"], optiona
 # the integration tests with the office feature on (feature-unification
 # across dev-deps); the library default stays feature-empty.
 harness-media = { path = ".", features = ["office"] }
+# M10 pipeline tests: scripted Inference impls + async test runtime.
+async-trait.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+tempfile.workspace = true
