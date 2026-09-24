@@ -31,6 +31,21 @@ pub enum MediaError {
         /// The honest why, surfaced verbatim from the descriptor.
         reason: String,
     },
+    /// The input uses a format FEATURE the adapter deliberately does not
+    /// implement (M12: compressed glTF primitives). The bytes are refused
+    /// whole - never mangled into a partial extraction.
+    #[error(
+        "format {format} uses unsupported feature {feature}: {reason}; request an \
+         uncompressed variant or route the file through its tool tier"
+    )]
+    UnsupportedFeature {
+        /// The format carrying the feature.
+        format: FormatId,
+        /// The feature name (extension identifier, codec, ...).
+        feature: String,
+        /// The honest why.
+        reason: String,
+    },
     /// An opt-in external tool is not installed.
     #[error("external tool {tool} is unavailable: {install_hint}")]
     ToolUnavailable {

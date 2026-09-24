@@ -14,7 +14,13 @@ use crate::format::FormatId;
 pub fn registry() -> FormatRegistry {
     let mut registry = FormatRegistry::new();
     for &(id, mime, extensions) in TABLE {
-        registry.register(descriptor(id, mime, extensions));
+        let mut entry = descriptor(id, mime, extensions);
+        if cfg!(feature = "gltf") && id == FormatId::Gltf {
+            for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+                entry.ops.insert(op, OpSupport::Supported);
+            }
+        }
+        registry.register(entry);
     }
     registry
 }

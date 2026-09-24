@@ -23,7 +23,12 @@ workspace = true
 default = []
 image = []
 svg = []
-gltf = []
+# M12 gltf lane: read via the khronos-ecosystem `gltf` crate (import-only
+# by design); write via its re-exported gltf-json serde types + Glb
+# container writer. default-features=false keeps the `image` crate (a
+# raster codec, out of this module's lane) out of the tree; `names`
+# exposes the name fields the name-keyed tree view needs.
+gltf = ["dep:gltf", "dep:base64"]
 pdf = []
 audio = []
 # M2: the OOXML zip lane reads the central directory via the zip crate
@@ -45,12 +50,18 @@ thiserror.workspace = true
 # projection calls (workspace baseline already carries sync/time/macros).
 tokio = { workspace = true }
 zip = { version = "8", default-features = false, features = ["deflate"], optional = true }
+# M12: khronos glTF 2.0 reader (pure Rust; validated by cargo-deny).
+# default-features off: the `import` feature pulls the image crate.
+gltf = { version = "1.4.1", default-features = false, features = ["names"], optional = true }
+# M12: .gltf writer inlines the buffer as a base64 data URI.
+base64 = { version = "0.22", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 # Self-reference so a bare `cargo nextest run -p harness-media` compiles
-# the integration tests with the office feature on (feature-unification
-# across dev-deps); the library default stays feature-empty.
-harness-media = { path = ".", features = ["office"] }
+# the integration tests with the landed adapter features on
+# (feature-unification across dev-deps); the library default stays
+# feature-empty. Append per-lane features as their todos land.
+harness-media = { path = ".", features = ["office", "gltf"] }
 # M10 pipeline tests: scripted Inference impls + async test runtime.
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

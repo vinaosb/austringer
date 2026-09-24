@@ -61,6 +61,7 @@
 
 #![deny(missing_docs)]
 
+pub mod adapter;
 pub mod descriptor;
 pub mod diff;
 pub mod error;

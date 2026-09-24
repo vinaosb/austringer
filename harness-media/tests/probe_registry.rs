@@ -25,6 +25,11 @@ fn registry_covers_all_34_formats_with_probe_supported() {
         assert!(!descriptor.mime.is_empty(), "{id}: empty mime");
         assert!(!descriptor.extensions.is_empty(), "{id}: no extensions");
         for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+            // M12: the gltf adapter flips its claims to Supported (paired
+            // with the executor bindings under the same feature).
+            if cfg!(feature = "gltf") && *id == FormatId::Gltf {
+                continue;
+            }
             match descriptor.ops.get(&op) {
                 Some(OpSupport::Unsupported { reason }) => {
                     assert!(!reason.is_empty(), "{id} {op}: empty reason");

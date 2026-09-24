@@ -114,6 +114,47 @@ fn pending<H>(id: FormatId) -> OpBinding<H> {
     unsupported(&format!("arrives with the {} adapter todo", lane(id)))
 }
 
+// M12 gltf lane: pure handlers bound under the `gltf` feature; without
+// it the honest pending placeholder stays.
+#[cfg(feature = "gltf")]
+fn gltf_extract_binding() -> OpBinding<ExtractHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::gltf::ENGINE.to_owned(),
+        handler: crate::adapter::gltf::extract,
+    }
+}
+
+#[cfg(not(feature = "gltf"))]
+fn gltf_extract_binding() -> OpBinding<ExtractHandler> {
+    pending(FormatId::Gltf)
+}
+
+#[cfg(feature = "gltf")]
+fn gltf_generate_binding() -> OpBinding<GenerateHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::gltf::ENGINE.to_owned(),
+        handler: crate::adapter::gltf::generate,
+    }
+}
+
+#[cfg(not(feature = "gltf"))]
+fn gltf_generate_binding() -> OpBinding<GenerateHandler> {
+    pending(FormatId::Gltf)
+}
+
+#[cfg(feature = "gltf")]
+fn gltf_verify_binding() -> OpBinding<VerifyHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::gltf::ENGINE.to_owned(),
+        handler: crate::adapter::gltf::verify,
+    }
+}
+
+#[cfg(not(feature = "gltf"))]
+fn gltf_verify_binding() -> OpBinding<VerifyHandler> {
+    pending(FormatId::Gltf)
+}
+
 fn tier(id: FormatId) -> AdapterTier {
     match id {
         FormatId::Blend
@@ -129,6 +170,7 @@ fn tier(id: FormatId) -> AdapterTier {
 
 fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
     match id {
+        FormatId::Gltf => gltf_extract_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
         FormatId::Blend => tool_binding("blender"),
@@ -139,6 +181,7 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
 
 fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
     match id {
+        FormatId::Gltf => gltf_generate_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_ADOPTION),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
@@ -155,6 +198,7 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
 
 fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
     match id {
+        FormatId::Gltf => gltf_verify_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_EXTRACT_ONLY_VERIFY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),

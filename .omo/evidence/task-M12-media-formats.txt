@@ -1,0 +1,173 @@
+TASK M12 - glTF/GLB adapter (pure tier) (media-formats-wave)
+============================================================
+
+Worker: M12 implementation worker (Sisyphus-junior). Date: 2026-09-24.
+Base: HEAD cee88c4 (M9 landed mid-task). Plan authority:
+.omo/plans/media-formats-wave.md todo 12 (M12), lines 175-181.
+Parallel lanes in flight during the whole todo (shared-file protocol honored):
+M11 svg (src/adapter/svg/*, tests/svg_*.rs, Cargo.toml svg deps, adapter.rs mods),
+M13 pdf (src/adapter/pdf*.rs, fixtures/pdf, fixtures/fonts), M9 daemon (committed
+mid-task as cee88c4). This commit stages ONLY owned gltf files + minimal shared
+hunks (verified via `git diff --cached` before commit); the sibling lanes' staged
+entries were unstaged back to their ownership before committing.
+
+ENVIRONMENT
+-----------
+Machine-wide VS servicing damage persists: cc-rs picks VS18-Insiders cl.exe 14.50
+whose toolchain headers lack stdarg.h. Recipe (per task-M6 evidence), applied
+per-invocation:
+  $env:INCLUDE = "C:\Program Files\Microsoft Visual Studio\18\Insiders\
+  SDK\ScopeCppSDK\vc15\VC\include;" + $env:INCLUDE
+Global CARGO_TARGET_DIR=C:\ct (workspace target/ does not exist).
+
+TDD RED (true red; tests written first against the intended API)
+----------------------------------------------------------------
+Tests written before any implementation: harness-media/tests/gltf_adapter.rs
+(15 tests) + tests/gltf_roundtrip.rs (9 tests, incl. 1 #[ignore] real-tool tier).
+With the gltf feature enabled via the dev self-reference (feature-unification),
+the RED run failed exactly on the missing implementation:
+  error[E0432]: unresolved import `harness_media::adapter`
+    --> harness-media\tests\gltf_roundtrip.rs:18:20 / gltf_adapter.rs:10:20
+  error[E0433]: cannot find `adapter` in `harness_media`   (cascade, x3)
+  error: could not compile `harness-media` (test "gltf_adapter") due to 3 previous errors
+  error: could not compile `harness-media` (test "gltf_roundtrip") due to 2 previous errors
+Right-reason check: every RED failure names the missing module; nothing else.
+(The M11 svg lane's identical-class failures visible in the same run are theirs.)
+
+VERIFICATION ISOLATION (parallel-lane discipline)
+-------------------------------------------------
+Sibling lanes' broken intermediate lib code repeatedly blocked the shared-tree
+compile, so the GREEN gate ran in an ISOLATED worktree containing exactly the
+content of this commit (HEAD + staged hunks, nothing else):
+  git worktree add --detach %TEMP%\opencode\m12-verify HEAD   (+ staged content)
+  CARGO_TARGET_DIR=%TEMP%\opencode\m12-verify-target
+All verification below ran there unless noted.
+
+DELIVERABLE (all files <=250 pure LOC; zero unwrap/expect/panic in src - scanned)
+-------------------------------------------------------------------------------
+harness-media/src/adapter.rs (20):
+  Module root created by this todo (first adapter lane to land): feature-gated
+  declarations; M11/M13 append siblings.
+harness-media/src/adapter/gltf.rs (61):
+  Decision record in module docs (plan-mandated): READ via khronos `gltf` crate
+  1.4.1 (import-only BY DESIGN, digest-verified; default-features=false keeps
+  its optional `image` codec OUT of the tree); WRITE via gltf-json Serialize
+  types + gltf::Glb::to_vec (binary.rs L177-231 verified in the published
+  tarball); NO maintained high-level exporter exists - the serde-subset writer
+  IS the digest-endorsed shape. Facade: ENGINE const, handlers (extract/
+  generate/verify wired into the M6 executor), tolerance profile (eps 1e-6;
+  unordered: /materials, /nodes - name-keyed view), spec_tree, reparse
+  (independent khronos reader on generated artifacts), glb_chunks re-export,
+  GltfOutline ProjectionProvider (TextProjection; kind per harness-core's
+  media_delivery: model/* -> TextProjection) + register_projection.
+harness-media/src/adapter/gltf_container.rs (127):
+  Own 12-byte-header + chunk walk (plan References: "trivially parseable"):
+  offset-precise GlbFormatError (HeaderTruncated@0, Magic@0, Version@4,
+  Length@8, ChunkHeader@JsonMissing@12, ChunkLength@chunk header) ->
+  MediaError::ParseFailure; unknown chunk types skipped per spec.
+harness-media/src/adapter/gltf_extract.rs (218):
+  extract(): size-cap -> container split -> compressed-variant pre-scan ->
+  gltf::Gltf::from_slice (validated) -> canonical tree (shape pinned in module
+  docs; anonymous nodes keyed "#<index>"; TRS null when absent read from
+  json::Root so absence never becomes identity; pre-order walk = document
+  order; depth cap 64 doubles as cycle guard -> ExtractTooLarge; wall-clock
+  deadline honored) + bounded scene outline (<=1200 chars, char boundary).
+harness-media/src/adapter/gltf_spec.rs (249):
+  Typed subset spec (container glb|gltf default glb; nodes{name,TRS,children,
+  mesh} BY NAME; meshes{primitives{positions,normals?,indices?,material?}};
+  materials{name,base_color,alpha_mode}); strict parse (unique names, known
+  refs, normals length, index range, forest rule - no double child refs) ->
+  typed InvalidSpec; INDEPENDENT spec->tree projection (M5 provenance:
+  separate function, own size arithmetic incl. the u16/u32 index-width rule
+  and the quaternion-normalization contract, separately tested).
+harness-media/src/adapter/gltf_write.rs (180) + gltf_encode.rs (154):
+  Writer: Root assembly from the spec (materials w/ base color + alpha mode;
+  meshes; nodes w/ children indices + mesh refs; single scene, roots = nodes
+  nobody lists as child; asset pinned 2.0 + fixed GENERATOR - glTF has NO
+  timestamp field, determinism is trivially byte-exact); Layout packs one
+  4-byte-aligned bufferView per accessor (positions w/ computed min/max,
+  normals, u16/u32 indices); full gltf-json validation sweep must pass before
+  any byte is emitted; .gltf = JSON + inline base64 data-URI buffer;
+  .glb = gltf::Glb::to_vec (JSON chunk + BIN chunk; empty BIN omitted).
+Fixtures (owned, built by an INDEPENDENT PowerShell builder - never by the
+writer under test): fixtures/gltf/scene.gltf (106+ B data-URI buffer variant,
+1772 B), scene.glb (1704 B, BIN chunk 148 B), draco.glb (552 B,
+extensionsRequired KHR_draco_mesh_compression).
+Shared files (minimal hunks only, re-read fresh before each edit):
+  error.rs: + UnsupportedFeature{format,feature,reason} variant (M12's typed
+    compressed-variant refusal; additive).
+  Cargo.toml: gltf feature = [dep:gltf, dep:base64]; gltf 1.4.1 optional
+    default-features=false features=["names"]; base64 0.22 optional; dev
+    self-reference features += "gltf".
+  lib.rs: + `pub mod adapter;`.
+  probe/registry.rs: gltf descriptor claims flip to Supported when
+    cfg!(feature="gltf") (paired with the executor bindings per the M6
+    descriptor/binding sync rule).
+  executor/wiring.rs: three cfg-gated gltf_*_binding() helpers + Gltf match
+    arms binding pure handlers under ENGINE="harness-media::gltf".
+  tests/probe_registry.rs: skip the gltf row's placeholder expectation under
+    the feature (stale-by-design after the claim flip).
+  Cargo.lock: +44 lines, purely additive (gltf 1.4.1, gltf-json 1.4.1,
+    gltf-derive 1.4.1, inflections 1.x) - regenerated in the isolated
+    worktree so no sibling-lane deps leak into this commit.
+
+PLAN-PREMISE CORRECTION (recorded; gates strengthened, not weakened)
+---------------------------------------------------------------------
+The plan's "Khronos glTF-Validator (pure Rust, hermetic, runs IN CI)" premise
+is FACTUALLY WRONG, verified during research: the KhronosGroup glTF-Validator
+is DART (github languages: 455 KB Dart, 0 Rust); the only crates.io
+`gltf-validator` crate (0.3.0, KittyCAD) downloads a prebuilt foreign binary
+from GitHub releases AT BUILD TIME (reqwest+tar+xz build-deps), shells out at
+runtime, has NO Windows support (build.rs early-return), and takes a path, not
+bytes. None of that is admissible in hermetic CI (standing constraint 5: zero
+network in the PR path; zero unpinned tool downloads).
+In-CI gate (hermetic, pure Rust) - all pinned in tests/gltf_roundtrip.rs:
+  1. M5 structural diff vs the INDEPENDENT spec->tree projection (empty=PASS),
+  2. full re-parse through the khronos-ecosystem reader (gltf::Gltf::from_slice,
+     validating) on EVERY generated artifact - third-party code path, breaks
+     writer/reader circularity,
+  3. gltf-json's own spec-validation sweep enforced zero-error before emit.
+Real-tool tier (#[ignore], never in CI; constraint-5 cadence): the Khronos CLI
+binary over every generated GLB, errors=0 pinned. Run at-todo-time on the dev
+machine: downloaded win64 2.0.0-dev.3.10 to %TEMP% (never the repo) and ran:
+  GLTF_VALIDATOR_BIN=... cargo nextest run -p harness-media --run-ignored only
+    --test gltf_roundtrip        -> 1 passed (numErrors=0 across the corpus)
+  The tier EARNED its place immediately: it caught two real writer defects the
+  circular gates could not (see FIXES), both fixed and re-verified.
+
+FIXES DURING GREEN (Khronos validator findings)
+-----------------------------------------------
+  1. ROTATION_NON_UNIT (severity 0): the writer passed spec quaternions
+     through verbatim; glTF requires UNIT quaternions. Writer now normalizes
+     (zero-norm -> typed InvalidSpec); the independent projection applies the
+     same format contract. Fixture pins unaffected (extract never normalizes).
+  2. VALUE_NOT_IN_RANGE /buffers/0/byteLength=0 + GLB_EMPTY_BIN_CHUNK: a
+     mesh-less spec emitted a zero-length buffer and an empty BIN chunk;
+     both are now omitted entirely.
+
+TEST VERDICTS (cargo nextest, dev profile, isolated worktree)
+-------------------------------------------------------------
+cargo nextest run -p harness-media --no-fail-fast
+  Summary: 117 tests run: 117 passed, 2 skipped
+  (skips = the 2 #[ignore] real-tool tiers: size_canary, khronos validator)
+cargo nextest run -p harness-media --run-ignored only --test gltf_roundtrip
+  (GLTF_VALIDATOR_BIN set): 1 passed - Khronos errors=0 on every generated GLB.
+cargo clippy -p harness-media --all-targets : clean (workspace warnings=deny,
+  clippy all=deny). cargo build -p harness-media (default features, gltf OFF)
+  : clean (cfg(not(feature="gltf")) placeholder arms compile).
+cargo deny check : advisories ok, bans ok, licenses ok, sources ok
+  (gltf/gltf-json/gltf-derive/inflections/base64/byteorder all MIT OR
+  Apache-2.0; pre-existing winnow duplicate warning, unrelated).
+Pure LOC: adapter.rs 20, gltf.rs 61, gltf_container.rs 127, gltf_encode.rs 154,
+  gltf_extract.rs 218, gltf_spec.rs 249, gltf_write.rs 180 (ceiling 250).
+Panic scan (src/adapter/gltf*.rs + adapter.rs): zero unwrap/expect/panic.
+
+SIZE CANARY (M6 standing duty - M12 is a named heavy-dep todo)
+--------------------------------------------------------------
+Ran once at-todo-time in the isolated worktree (separate target dir
+%TEMP%\opencode\m12-size-target; media features are not wired into the daemon
+until M9/M32, so this measures the pre-media daemon - the baseline every heavy
+dep is delta'd against, per the canary's own docs):
+  SIZE_CANARY daemon=5.97 baseline=5.97 delta=+0.00MiB(+0.1%) budget=40.00 verdict=OK
+
+Commit: feat(media): gltf/glb adapter with dual writers
