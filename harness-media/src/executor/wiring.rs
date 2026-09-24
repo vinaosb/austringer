@@ -155,6 +155,48 @@ fn gltf_verify_binding() -> OpBinding<VerifyHandler> {
     pending(FormatId::Gltf)
 }
 
+
+// M13 pdf lane: pure handlers bound under the `pdf` feature; without it
+// the honest pending placeholder stays.
+#[cfg(feature = "pdf")]
+fn pdf_extract_binding() -> OpBinding<ExtractHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::pdf::EXTRACT_ENGINE.to_owned(),
+        handler: crate::adapter::pdf::extract,
+    }
+}
+
+#[cfg(not(feature = "pdf"))]
+fn pdf_extract_binding() -> OpBinding<ExtractHandler> {
+    pending(FormatId::Pdf)
+}
+
+#[cfg(feature = "pdf")]
+fn pdf_generate_binding() -> OpBinding<GenerateHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::pdf::GENERATE_ENGINE.to_owned(),
+        handler: crate::adapter::pdf::generate,
+    }
+}
+
+#[cfg(not(feature = "pdf"))]
+fn pdf_generate_binding() -> OpBinding<GenerateHandler> {
+    pending(FormatId::Pdf)
+}
+
+#[cfg(feature = "pdf")]
+fn pdf_verify_binding() -> OpBinding<VerifyHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::pdf::VERIFY_ENGINE.to_owned(),
+        handler: crate::adapter::pdf::verify,
+    }
+}
+
+#[cfg(not(feature = "pdf"))]
+fn pdf_verify_binding() -> OpBinding<VerifyHandler> {
+    pending(FormatId::Pdf)
+}
+
 fn tier(id: FormatId) -> AdapterTier {
     match id {
         FormatId::Blend
@@ -208,6 +250,7 @@ fn svg_verify_binding() -> OpBinding<VerifyHandler> {
 
 fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
     match id {
+        FormatId::Pdf => pdf_extract_binding(),
         FormatId::Svg => svg_extract_binding(),
         FormatId::Gltf => gltf_extract_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
@@ -220,6 +263,7 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
 
 fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
     match id {
+        FormatId::Pdf => pdf_generate_binding(),
         FormatId::Svg => svg_generate_binding(),
         FormatId::Gltf => gltf_generate_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
@@ -238,6 +282,7 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
 
 fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
     match id {
+        FormatId::Pdf => pdf_verify_binding(),
         FormatId::Svg => svg_verify_binding(),
         FormatId::Gltf => gltf_verify_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),

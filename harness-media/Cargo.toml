@@ -29,7 +29,10 @@ svg = ["dep:quick-xml", "dep:usvg"]
 # raster codec, out of this module's lane) out of the tree; `names`
 # exposes the name fields the name-keyed tree view needs.
 gltf = ["dep:gltf", "dep:base64"]
-pdf = []
+# M13 pdf lane: lopdf for the extract surface (DOM + ToUnicode text decode),
+# krilla for the writer (subsetted embedded fonts + ToUnicode CMaps). Both
+# pure Rust; rationale recorded in src/adapter/pdf.rs module docs.
+pdf = ["dep:lopdf", "dep:krilla"]
 audio = []
 # M2: the OOXML zip lane reads the central directory via the zip crate
 # (pure-Rust deflate backend); without this feature a zip is honestly
@@ -55,6 +58,11 @@ zip = { version = "8", default-features = false, features = ["deflate"], optiona
 gltf = { version = "1.4.1", default-features = false, features = ["names"], optional = true }
 # M12: .gltf writer inlines the buffer as a base64 data URI.
 base64 = { version = "0.22", default-features = false, features = ["std"], optional = true }
+# M13: >=0.42 required - 0.40/0.41 carry RUSTSEC-2026-0187 (stack
+# overflow in load_mem via deeply nested objects - this adapter's exact
+# untrusted-parse surface).
+lopdf = { version = "0.42", default-features = false, optional = true }
+krilla = { version = "0.8.2", default-features = false, features = ["simple-text"], optional = true }
 # M11 svg adapter: quick-xml pulls the structure walk (pure Rust, no
 # default features - utf8 in, no encoding_rs); usvg is the digest's
 # stage-1 strict-parse verify hook (text-less: font-dependent rendering is
@@ -67,7 +75,7 @@ usvg = { version = "0.48", default-features = false, optional = true }
 # the integration tests with the landed adapter features on
 # (feature-unification across dev-deps); the library default stays
 # feature-empty. Append per-lane features as their todos land.
-harness-media = { path = ".", features = ["office", "gltf", "svg"] }
+harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg"] }
 # M10 pipeline tests: scripted Inference impls + async test runtime.
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

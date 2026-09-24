@@ -35,6 +35,11 @@ fn registry_covers_all_34_formats_with_probe_supported() {
             if cfg!(feature = "gltf") && *id == FormatId::Gltf {
                 continue;
             }
+            // M13: the pdf adapter flips its claims to Supported (paired with
+            // the executor bindings under the same feature).
+            if cfg!(feature = "pdf") && *id == FormatId::Pdf {
+                continue;
+            }
             match descriptor.ops.get(&op) {
                 Some(OpSupport::Unsupported { reason }) => {
                     assert!(!reason.is_empty(), "{id} {op}: empty reason");

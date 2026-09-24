@@ -25,6 +25,11 @@ pub fn registry() -> FormatRegistry {
                 entry.ops.insert(op, OpSupport::Supported);
             }
         }
+        if cfg!(feature = "pdf") && id == FormatId::Pdf {
+            for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+                entry.ops.insert(op, OpSupport::Supported);
+            }
+        }
         registry.register(entry);
     }
     registry

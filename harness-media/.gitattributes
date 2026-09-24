@@ -1,5 +1,7 @@
 # Fixtures are committed byte-exact artifacts under test: no EOL
 # normalization, no text diffs. Without this, git's autocrlf would rewrite
 # LF bytes inside fixtures git classifies as text (pdf.pdf has no NUL
-# bytes) and corrupt them on fresh checkouts.
+# bytes) and corrupt them on fresh checkouts. The ** rule extends the same
+# guarantee to fixture subdirectories (M13: fixtures/pdf/, fixtures/fonts/).
 fixtures/* -text
+fixtures/** -text

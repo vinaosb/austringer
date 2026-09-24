@@ -21,3 +21,11 @@ mod gltf_extract;
 mod gltf_spec;
 #[cfg(feature = "gltf")]
 mod gltf_write;
+#[cfg(feature = "pdf")]
+pub mod pdf;
+#[cfg(feature = "pdf")]
+mod pdf_extract;
+#[cfg(feature = "pdf")]
+mod pdf_generate;
+#[cfg(feature = "pdf")]
+mod pdf_verify;

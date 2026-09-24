@@ -10,6 +10,18 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Deliberate, reviewed additions (todo M13, evidence task-M13-media-formats):
+# krilla 0.8.2's text shaping rides rustybuzz (and lopdf's font lane rides
+# ttf-parser); both crates are UNMAINTAINED-not-vulnerable (announced
+# upstream), ship in no untrusted-input parse lane (shaping runs only on
+# validated generation specs; lopdf's parser is the audit surface and its
+# RUSTSEC-2026-0187 stack-overflow vuln is FIXED by the 0.42 pin), and have
+# no in-tree upgrade path short of dropping the digest-verified writer.
+# Revisit when krilla migrates to harfrust.
+ignore = [
+    "RUSTSEC-2026-0206", # rustybuzz unmaintained
+    "RUSTSEC-2026-0192", # ttf-parser unmaintained
+]
 
 # Licenses: dual MIT OR Apache-2.0 project. The allow-list below covers the
 # permissive licenses commonly carried by Rust dev-dependencies; anything
