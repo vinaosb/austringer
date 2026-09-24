@@ -11,6 +11,26 @@ use serde::{Deserialize, Serialize};
 use crate::descriptor::Operation;
 use crate::format::FormatId;
 
+/// Why a pinned tool installation failed (M15 install gate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallFailure {
+    /// Downloaded bytes did not match the pinned SHA-256 (or the pin was
+    /// malformed - malformed pins fail closed the same way).
+    ShaMismatch,
+    /// The asset could not be fetched.
+    Download,
+}
+
+impl std::fmt::Display for InstallFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::ShaMismatch => "sha-256 mismatch",
+            Self::Download => "download failed",
+        })
+    }
+}
+
 /// Why a media operation failed. Every variant's `Display` is actionable.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 pub enum MediaError {
@@ -56,9 +76,24 @@ pub enum MediaError {
     },
     /// A pinned tool installation failed.
     #[error(
-        "pinned tool installation failed: re-run the install step and verify the recorded SHA-256 release pin"
+        "pinned tool installation failed ({reason}): re-run the install step and verify the \
+         recorded SHA-256 release pin"
     )]
-    InstallFailed,
+    InstallFailed {
+        /// Which install discipline failed.
+        reason: InstallFailure,
+    },
+    /// The external tool ran and exited non-zero.
+    #[error(
+        "external tool exited with code {code}: {stderr_head}; check the command and input \
+         and retry (stderr is head-bounded)"
+    )]
+    NonZeroExit {
+        /// The tool's exit code.
+        code: i32,
+        /// Bounded stderr head (<= 4096 bytes) - never the full pipe.
+        stderr_head: String,
+    },
     /// The OS sandbox refused the operation.
     #[error(
         "the OS sandbox denied the operation: check the tool's writable-scope and network profile, then widen the sandbox explicitly if warranted"

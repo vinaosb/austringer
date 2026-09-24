@@ -17,3 +17,14 @@ tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "test-util"] }
+
+# M15 mocktool: hermetic external-tool stand-in (argv-driven canned
+# outputs; golden files under golden/mocktool are real captures — see
+# golden/mocktool/capture.md). Test-support probe binary, not a release
+# artifact — cargo-dist must skip it.
+[[bin]]
+name = "mocktool"
+path = "src/bin/mocktool.rs"
+
+[package.metadata.dist]
+dist = false

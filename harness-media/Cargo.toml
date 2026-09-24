@@ -46,6 +46,9 @@ text = []
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
+# M15 tool executor: sandbox policy vocabulary + the promoted supply-chain
+# primitives (ReleaseAsset/verify_sha256/redact_env - plan decision 5).
+harness-safety = { path = "../harness-safety", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -80,3 +83,15 @@ harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg"] }
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
 tempfile.workspace = true
+# M15 tool-executor tests: mocktool stand-in + synthetic install-pin
+# digests.
+harness-test-support = { path = "../harness-test-support", version = "0.1.0" }
+sha2.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# M15 kill-tree: Job Object (KILL_ON_JOB_CLOSE) tree termination.
+win32job.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# M15 kill-tree: process-group kill of the session leader.
+libc.workspace = true

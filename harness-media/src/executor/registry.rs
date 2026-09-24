@@ -27,6 +27,7 @@ use super::types::{AdapterTier, OpOutput, OpRequest, Produced, ProducerInfo};
 use crate::descriptor::{Operation, OpSupport};
 use crate::error::MediaError;
 use crate::format::FormatId;
+use crate::tool::ToolExecutor;
 
 /// Wiring bugs the builder refuses, each naming the fix.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -71,6 +72,7 @@ pub enum ExecutorWiringError {
 #[derive(Debug, Default)]
 pub struct ExecutorRegistryBuilder {
     entries: BTreeMap<FormatId, AdapterEntry>,
+    tools: ToolExecutor,
 }
 
 impl ExecutorRegistryBuilder {
@@ -78,6 +80,15 @@ impl ExecutorRegistryBuilder {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Binds the subprocess-tier tool executor (M15). The default is
+    /// the all-tools-disabled executor: subprocess bindings dispatch to
+    /// the genuine typed `ToolUnavailable` until a caller opts a tool
+    /// in here.
+    pub fn tools(&mut self, executor: ToolExecutor) -> &mut Self {
+        self.tools = executor;
+        self
     }
 
     /// Register one adapter entry under the wiring rules (see the module
@@ -126,6 +137,7 @@ impl ExecutorRegistryBuilder {
     pub fn build(self) -> ExecutorRegistry {
         ExecutorRegistry {
             entries: self.entries,
+            tools: self.tools,
         }
     }
 }
@@ -134,6 +146,7 @@ impl ExecutorRegistryBuilder {
 #[derive(Debug, Clone, Default)]
 pub struct ExecutorRegistry {
     entries: BTreeMap<FormatId, AdapterEntry>,
+    tools: ToolExecutor,
 }
 
 impl ExecutorRegistry {
@@ -148,10 +161,48 @@ impl ExecutorRegistry {
         self.entries.keys().copied()
     }
 
+    /// The bound subprocess-tier tool executor (M15; read-only seam for
+    /// adapters and the engine tool surface).
+    #[must_use]
+    pub fn tools(&self) -> &ToolExecutor {
+        &self.tools
+    }
+
+    /// A copy of this registry with a different tool executor bound.
+    /// The wiring's default registry is all-tools-disabled; callers opt
+    /// tools in through this seam (M15) instead of rebuilding the
+    /// per-format wiring.
+    #[must_use]
+    pub fn with_tools(&self, tools: ToolExecutor) -> Self {
+        Self {
+            entries: self.entries.clone(),
+            tools,
+        }
+    }
+
+    /// One binding's refusal, routed through the tool executor when the
+    /// lane is a decided subprocess op (M15): the typed
+    /// `ToolUnavailable` fires only when the tool is genuinely not
+    /// enabled/installed; an available tool with no bound adapter yet
+    /// reports the pending adapter honestly.
+    fn refuse_binding<H>(
+        &self,
+        binding: &OpBinding<H>,
+        format: FormatId,
+        op: Operation,
+    ) -> MediaError {
+        if let OpBinding::Subprocess { tool, install_hint } = binding {
+            return self
+                .tools
+                .subprocess_refusal(tool, install_hint, format, op);
+        }
+        binding.refusal(format, op)
+    }
+
     /// Dispatch one operation. Every success is a [`Produced`] - artifact
     /// plus producer disclosure, type-enforced. Every refusal is typed:
     /// unregistered format, unsupported op (verbatim reason), or the
-    /// pre-M15 subprocess seam (tool + install hint).
+    /// subprocess seam routed through the M15 tool executor.
     pub fn dispatch(
         &self,
         format: FormatId,
@@ -165,28 +216,28 @@ impl ExecutorRegistry {
                     OpOutput::Probe(handler(bytes, name_hint)),
                     pure_producer(engine),
                 )),
-                other => Err(other.refusal(format, op)),
+                other => Err(self.refuse_binding(other, format, op)),
             },
             OpRequest::Extract { bytes, budgets } => match &entry.ops.extract {
                 OpBinding::Pure { engine, handler } => Ok(Produced::new(
                     OpOutput::Extract(handler(bytes, budgets)?),
                     pure_producer(engine),
                 )),
-                other => Err(other.refusal(format, op)),
+                other => Err(self.refuse_binding(other, format, op)),
             },
             OpRequest::Generate { spec } => match &entry.ops.generate {
                 OpBinding::Pure { engine, handler } => Ok(Produced::new(
                     OpOutput::Generate(handler(spec)?),
                     pure_producer(engine),
                 )),
-                other => Err(other.refusal(format, op)),
+                other => Err(self.refuse_binding(other, format, op)),
             },
             OpRequest::Verify { expected, bytes } => match &entry.ops.verify {
                 OpBinding::Pure { engine, handler } => Ok(Produced::new(
                     OpOutput::Verify(handler(expected, bytes)?),
                     pure_producer(engine),
                 )),
-                other => Err(other.refusal(format, op)),
+                other => Err(self.refuse_binding(other, format, op)),
             },
         }
     }

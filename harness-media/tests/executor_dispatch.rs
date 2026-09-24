@@ -150,9 +150,9 @@ fn jxl_verify_on_extract_only_lane_is_typed_unsupported_operation() {
 }
 
 #[test]
-fn subprocess_dispatch_is_typed_tool_unavailable_pre_m15() {
+fn subprocess_dispatch_routes_through_the_m15_tool_executor() {
     // Given: the decided subprocess lanes (pandoc for pptx generation,
-    // blender for blend) with M15 not yet wiring the executor.
+    // blender for blend) with the default all-tools-disabled executor.
     let spec = GenerationSpec {
         format: FormatId::Pptx,
         params: serde_json::json!({}),

@@ -30,11 +30,13 @@ pub type VerifyHandler = fn(&Value, &[u8]) -> Result<RoundTripVerdict, MediaErro
 /// subprocess lane, or a typed-unsupported refusal with the honest
 /// reason.
 ///
-/// `Subprocess` bindings are the plan's M6 seam: until M15 wires the
-/// sandboxed tool executor, dispatching one is the typed
-/// [`MediaError::ToolUnavailable`] carrying the tool name and install
-/// hint - support is DECIDED, execution is pending, and neither fact is
-/// ever faked.
+/// `Subprocess` bindings route through the M15
+/// [`ToolExecutor`](crate::tool::ToolExecutor): dispatching one answers
+/// the typed
+/// [`MediaError::ToolUnavailable`](crate::error::MediaError::ToolUnavailable)
+/// with the manifest install hint while the tool is genuinely not
+/// enabled/installed, and reports the pending per-format adapter
+/// honestly once it is - support is DECIDED, execution is never faked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpBinding<H> {
     /// A pure-Rust handler is registered under `engine`.

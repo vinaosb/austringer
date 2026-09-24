@@ -72,6 +72,7 @@ pub mod generate;
 pub mod pipeline;
 pub mod probe;
 pub mod projection;
+pub mod tool;
 
 pub use descriptor::{FormatDescriptor, FormatRegistry, Operation, OpSupport};
 pub use diff::{

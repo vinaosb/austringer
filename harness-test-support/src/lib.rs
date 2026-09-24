@@ -11,6 +11,7 @@
 
 pub mod cassette;
 pub mod gate;
+pub mod mocktool;
 pub mod provider;
 pub mod sse;
 pub mod util;

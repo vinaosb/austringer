@@ -18,9 +18,11 @@
 //! proof on the type). Refusals are typed
 //! [`MediaError`](crate::error::MediaError)s: unknown format,
 //! [`UnsupportedOperation`](crate::error::MediaError::UnsupportedOperation)
-//! with the verbatim reason, or the pre-M15 subprocess seam
-//! [`ToolUnavailable`](crate::error::MediaError::ToolUnavailable)
-//! carrying tool + install hint.
+//! with the verbatim reason, or - for the decided subprocess lanes - the
+//! M15 tool executor's routing
+//! ([`ToolUnavailable`](crate::error::MediaError::ToolUnavailable) with
+//! tool + install hint only when the tool is genuinely not
+//! enabled/installed; an available tool reports its pending adapter).
 //!
 //! ## Day one
 //!
@@ -34,6 +36,9 @@
 //! refusals. The registry-completeness test enumerates the whole slate
 //! so coverage gaps surface now, not in MW6. M31 registers these same
 //! ops as engine tools - this registry stays the dispatch authority.
+//! Subprocess dispatch consults the M15
+//! [`ToolExecutor`](crate::tool::ToolExecutor) (all tools disabled by
+//! default; see [`crate::tool`]).
 //!
 //! ## WASM seam
 //!

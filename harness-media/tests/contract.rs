@@ -35,7 +35,13 @@ fn every_error_variant() -> Vec<MediaError> {
             tool: "pandoc".into(),
             install_hint: "enable the office format pack and run the pinned installer".into(),
         },
-        MediaError::InstallFailed,
+        MediaError::InstallFailed {
+            reason: harness_media::error::InstallFailure::ShaMismatch,
+        },
+        MediaError::NonZeroExit {
+            code: 3,
+            stderr_head: "tool exploded".into(),
+        },
         MediaError::SandboxDenied,
         MediaError::Timeout,
         MediaError::InvalidSpec,
