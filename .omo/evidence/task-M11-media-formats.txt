@@ -1,0 +1,155 @@
+M11 - SVG adapter, pure tier (plan .omo/plans/media-formats-wave.md lines 167-173, verbatim authority)
+=====================================================================================
+Status: DONE (GREEN + full verification sweep + committed)
+
+Dependencies confirmed landed before start (git log at task start):
+  M1 contract | M2 probe registry e816161 | M5 diff engine cf1bbac
+  M6 executor 792f445 | M10 projection pipeline 5cd6bf4 (the ProjectionRegistry
+  seam: svg's deterministic projector registers alongside its adapter)
+
+M9 PARALLEL-LANE SURVEY (git status at task start)
+-------------------------------------------------------------------------------------
+M9 recovery lane was active in harness-daemon ONLY. This todo touched
+harness-media exclusively. M9 committed DURING this task (cee88c4) and the
+M12 gltf lane landed mid-task too (def6a35) - see LANE RACES below.
+
+MSVC NOTE: cold builds need the provided recipe - cargo runs through
+C:\Users\vsbb1\AppData\Local\Temp\opencode\msvc-cargo.cmd (BuildTools
+vcvars64; same recipe as M9/M10/M32 evidence). Without it, libsqlite3-sys
+picks the gutted VS 18 Insiders cl.exe (stdarg.h C1083).
+
+NEW DEPS (plan-named candidates, cargo-deny green, feature-gated under M1's `svg`)
+-------------------------------------------------------------------------------------
+  quick-xml 0.42.0 (MIT; sole mandatory dep memchr ^2.1) - structure walk.
+    default-features = false (utf8 in; no encoding_rs).
+  usvg 0.48.1 (Apache-2.0 OR MIT; linebender/resvg) - stage-1 strict-parse
+    verify hook. default-features = false: the `text` feature (fontdb +
+    harfrust + skriffa, ~+500kb) is OFF - <text> is dropped by usvg at this
+    stage by design; glyph conversion is the deferred resvg render stage,
+    while OUR quick-xml extractor still fully parses and gates text.
+  Lock additions staged: arrayref, data-url, imagesize, kurbo, pico-args,
+    polycool, quick-xml, roxmltree, simplecss, strict-num, svgtypes,
+    tiny-skia-path, usvg (13 new [[package]] blocks; euclid/num-traits/
+    log/bytemuck/siphasher/float-cmp/memchr already in the lock).
+
+SCOPE DECISIONS (recorded)
+-------------------------------------------------------------------------------------
+- Files owned by this todo: src/adapter/svg/{mod,spec,shapes,tree,extract,
+  generate,verify}.rs, tests/svg_{extract,generate,roundtrip,registry}.rs,
+  fixtures/svg-{rich,xxe,billion-laughs}.svg.
+- Shared files, minimal hunks (mirroring the gltf lane's concurrent pattern):
+  lib.rs `pub mod adapter;`, adapter.rs svg decl, Cargo.toml svg feature +
+  deps + dev word, executor/wiring.rs svg_*_binding() fns + 3 match arms,
+  probe/registry.rs svg descriptor-claim flip, tests/probe_registry.rs svg
+  guard, tests/executor_{dispatch,registry}.rs pin/fixture flips (svg pin ->
+  wav/M14; svg builder fixture -> docx/M18 - both because svg is now WIRED),
+  Cargo.lock my 13 packages.
+- Registration pattern (mirrored by later adapters): M2-table claim flip +
+  cfg-gated per-op binding fns in executor wiring + ENGINE const for
+  producer disclosure + deterministic ProjectionProvider (M10 seam).
+- Canonical extract tree (plan-verbatim field set): {animation_elements,
+  census (ALL elements incl. root), classes (sorted unique), embedded_rasters
+  (sorted unique <image> hrefs - listed, NEVER fetched), ids (sorted unique),
+  root {viewBox [f64;4] when 4 numbers else raw, width/height number-or-raw},
+  text (collapsed <text> contents, space-joined, bounded 1200)}, title?, desc?.
+  Numbers serialize via Number::from_f64 on BOTH the extract and spec->tree
+  sides so canonical Value equality holds (int/float meets in f64 space in
+  the M5 diff).
+- Expected trees: SvgSpec::canonical_tree() is the INDEPENDENT spec->tree
+  projection (pure function of the spec; separately tested). Mutated-
+  expectation test pins the gate non-vacuous (exact pointer /census/rect).
+- XXE/billion-laughs: ANY <!DOCTYPE refused typed ParseFailure (quick-xml
+  never expands custom entities, so the quadratic blowup cannot begin);
+  GeneralRef resolves ONLY the five predefined XML names + numeric char
+  refs; anything else is typed ParseFailure. Both pinned (fixtures
+  svg-xxe.svg, svg-billion-laughs.svg; refusal measured < 5s, actually ~us).
+- MediaError untouched (M1-frozen shape; M9's daemon lane compiles against
+  this crate). XXE/malformed -> ParseFailure; budget trips -> ExtractTooLarge.
+- Budget enforcement (M1 contract): wall-clock deadline + cumulative-size
+  cap checked EVERY event; plus structural caps (1024 distinct tags, 4096
+  list entries) -> typed ExtractTooLarge. Zero-deadline and 64-byte-cap
+  tests pin both axes.
+- Writer: quick-xml Writer, fixed attr order per element kind, partial_escape
+  for text content, Attribute::from (which escapes) for attr values, XML
+  decl + xmlns always, title/desc before shapes, default font stack
+  "sans-serif" on <text> (digest: font availability is the #1 render
+  divergence). SVG 1.1 constructs only -> no SVG2-only feature is emitted,
+  no fallback owed. No clock fields -> byte-determinism unconditional
+  (byte-identical repeat pinned).
+- Verify: strict usvg parse (typed ParseFailure on structural violation,
+  e.g. width=0 pinned) THEN extract + M5 diff under svg profile
+  (float_epsilon 1e-9, NO unordered pointers, NO ignored subtrees).
+- Thumbnails: none in v0.2 (honest row, pinned by test). svgz: probed,
+  never decoded (gzip bytes -> typed ParseFailure; disclosed in mod docs).
+- Size canary: M11 is NOT in the M12/M13/M14/M22/M28 minimum set; the
+  daemon at HEAD depends on harness-media only via M9's just-committed
+  edge WITHOUT media features, so a canary run now measures the pre-media
+  daemon. First canary duty lands with M12 (whose lane committed def6a35
+  during this task).
+
+TDD RED (captured before any implementation)
+-------------------------------------------------------------------------------------
+cargo nextest run -p harness-media  (via msvc-cargo.cmd)
+  error[E0432]: unresolved import `harness_media::adapter`   (svg_extract.rs)
+  error[E0432]: unresolved import `harness_media::adapter`   (svg_generate.rs)
+  error[E0432]: unresolved import `harness_media::adapter`   (svg_roundtrip.rs)
+  error[E0433]: cannot find `adapter` in `harness_media`     (svg_registry.rs)
+  => RED for the right reason: the adapter module under test does not
+  exist. No assertion ran. Two test-internal bugs found during RED
+  (inline-format var name; registry temporary lifetime) fixed before the
+  run was accepted as RED.
+
+GREEN + VERIFICATION (final states; staged tree re-verified in a throwaway
+worktree at the exact commit content - see LANE RACES)
+-------------------------------------------------------------------------------------
+Working tree (all lanes live: office+pdf+gltf+svg dev features):
+  cargo nextest run -p harness-media       : 164 run, 164 passed, 2 skipped
+  cargo clippy -p harness-media --all-targets --features svg -- -D warnings
+                                            : clean
+  cargo clippy -p harness-media --lib (default + svg feature sets): clean
+  cargo deny --log-level error check       : advisories/bans/licenses/sources ok
+  Pure LOC per new src file (non-doc/comment/blank): extract 231, generate
+  159, mod 30, shapes 182, spec 65, tree 135, verify 31 - all <= 250.
+  unwrap/expect/panic/unreachable! in new src: ZERO (grep-pinned).
+  lsp_diagnostics on all 7 src files: no errors (test files: rust-analyzer
+  cold timeouts; covered by the compiler/clippy passes above).
+Staged commit tree (throwaway worktree, def6a35 + my hunks only):
+  cargo nextest run -p harness-media       : 153 run, 153 passed, 2 skipped
+  cargo clippy -p harness-media --all-targets -- -D warnings : clean
+  cargo deny --log-level error check       : ok
+  (153 vs 164: the pdf lane's uncommitted in-flight tests are excluded
+  from my commit by design; pdf files remain theirs to land.)
+
+ACCEPTANCE CRITERIA (plan lines 171-172) - each pinned by a test
+-------------------------------------------------------------------------------------
+[x] fixtures (minimal M2 fixture + adversarial incl. billion-laughs
+    truncated) extract typed                        (svg_extract.rs)
+[x] generate->extract->diff empty on spec corpus >= 10 (13-row corpus,
+    incl. every shape kind, unicode, escaping, empty doc)  (svg_roundtrip.rs)
+[x] XXE attempt rejected (typed ParseFailure, through executor dispatch too)
+[x] malformed XML -> ParseFailure (3 malformed shapes + non-svg root +
+    non-utf8)
+[x] text_projection <= 1200 chars (M1 ceiling 2000; const-asserted
+    compile-time <= ceiling; runtime truncation pinned at char boundary)
+[x] usvg strict parse stage-1 hook (zero-size refusal pinned; corpus all
+    strict-parses)
+[x] registration pattern: descriptor Supported claims + pure handlers +
+    producer disclosure (tier Pure, engine "harness-media::svg", version,
+    command None) via executor dispatch          (svg_registry.rs)
+[x] deterministic projector on the M10 seam (thin wrap equality + kind
+    mismatch typed NoProjector + duplicate registration refused)
+[x] thumbnails honestly absent in v0.2
+[x] determinism: byte-identical repeat generation
+
+LANE RACES (recorded for the wave history; nothing repo-side lost)
+-------------------------------------------------------------------------------------
+M9 (daemon) committed cee88c4 and M12 (gltf) committed def6a35 WHILE this
+lane was assembling its commit; the shared index was concurrently re-staged
+by a sibling lane mid-assembly (observed: wiring blob swapped under the
+index between commands). Countermeasure: the commit was assembled through
+a PRIVATE index (GIT_INDEX_FILE) built as HEAD + my hunks only, verified in
+a throwaway worktree, and landed with a compare-and-swap update-ref against
+the observed parent. Shared-file hunks in my commit contain ONLY svg
+additions on top of def6a35 (git diff of the landed commit shows zero
+foreign deletions); the gltf lane's svg-less wiring staging was left for
+their commit to supersede.

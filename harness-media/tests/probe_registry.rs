@@ -27,6 +27,11 @@ fn registry_covers_all_34_formats_with_probe_supported() {
         for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
             // M12: the gltf adapter flips its claims to Supported (paired
             // with the executor bindings under the same feature).
+            // M11: the svg adapter flips its claims to Supported (paired
+            // with the executor bindings under the same feature).
+            if cfg!(feature = "svg") && *id == FormatId::Svg {
+                continue;
+            }
             if cfg!(feature = "gltf") && *id == FormatId::Gltf {
                 continue;
             }

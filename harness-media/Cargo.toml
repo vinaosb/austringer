@@ -22,7 +22,7 @@ workspace = true
 # tree). The M27 honesty matrix discloses feature-gated rows as such.
 default = []
 image = []
-svg = []
+svg = ["dep:quick-xml", "dep:usvg"]
 # M12 gltf lane: read via the khronos-ecosystem `gltf` crate (import-only
 # by design); write via its re-exported gltf-json serde types + Glb
 # container writer. default-features=false keeps the `image` crate (a
@@ -55,13 +55,19 @@ zip = { version = "8", default-features = false, features = ["deflate"], optiona
 gltf = { version = "1.4.1", default-features = false, features = ["names"], optional = true }
 # M12: .gltf writer inlines the buffer as a base64 data URI.
 base64 = { version = "0.22", default-features = false, features = ["std"], optional = true }
+# M11 svg adapter: quick-xml pulls the structure walk (pure Rust, no
+# default features - utf8 in, no encoding_rs); usvg is the digest's
+# stage-1 strict-parse verify hook (text-less: font-dependent rendering is
+# the deferred resvg stage, so no fontdb/harfrust tree lands here).
+quick-xml = { version = "0.42", default-features = false, optional = true }
+usvg = { version = "0.48", default-features = false, optional = true }
 
 [dev-dependencies]
 # Self-reference so a bare `cargo nextest run -p harness-media` compiles
 # the integration tests with the landed adapter features on
 # (feature-unification across dev-deps); the library default stays
 # feature-empty. Append per-lane features as their todos land.
-harness-media = { path = ".", features = ["office", "gltf"] }
+harness-media = { path = ".", features = ["office", "gltf", "svg"] }
 # M10 pipeline tests: scripted Inference impls + async test runtime.
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

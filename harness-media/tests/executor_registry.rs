@@ -36,9 +36,11 @@ fn probe_adapter(bytes: &[u8], name_hint: Option<&str>) -> harness_media::probe:
     probe::probe(bytes, name_hint)
 }
 
-/// The svg descriptor from the M2 table (builder-test base).
-fn svg_descriptor() -> FormatDescriptor {
-    probe::registry().lookup(&FormatId::Svg).expect("svg descriptor").clone()
+/// The docx descriptor from the M2 table (builder-test base; docx stays a
+/// typed-unsupported placeholder until M18, so its claims do not shift
+/// under the dev feature set).
+fn docx_descriptor() -> FormatDescriptor {
+    probe::registry().lookup(&FormatId::Docx).expect("docx descriptor").clone()
 }
 
 #[test]
@@ -128,21 +130,21 @@ fn builder_rejects_an_entry_without_a_bound_probe() {
     // When: registered.
     let error = ExecutorRegistryBuilder::new()
         .register(harness_media::executor::AdapterEntry {
-            descriptor: svg_descriptor(),
+            descriptor: docx_descriptor(),
             tier: AdapterTier::Pure,
             ops,
         })
         .expect_err("probe-less entry must be rejected");
     // Then: the typed wiring error (the plan's MUST-NOT is constructor-
     // enforced, not convention).
-    assert!(matches!(error, ExecutorWiringError::ProbeNotBound { format } if format == FormatId::Svg));
+    assert!(matches!(error, ExecutorWiringError::ProbeNotBound { format } if format == FormatId::Docx));
 }
 
 #[test]
 fn builder_rejects_duplicate_and_drifted_entries() {
     // Duplicate: two adapters claiming one format is a wiring bug.
     let first = ExecutorRegistryBuilder::new().register(harness_media::executor::AdapterEntry {
-        descriptor: svg_descriptor(),
+        descriptor: docx_descriptor(),
         tier: AdapterTier::Pure,
         ops: pure_probe_ops(),
     });
@@ -150,25 +152,25 @@ fn builder_rejects_duplicate_and_drifted_entries() {
     let mut builder = ExecutorRegistryBuilder::new();
     builder
         .register(harness_media::executor::AdapterEntry {
-            descriptor: svg_descriptor(),
+            descriptor: docx_descriptor(),
             tier: AdapterTier::Pure,
             ops: pure_probe_ops(),
         })
         .expect("first registers");
     let duplicate = builder
         .register(harness_media::executor::AdapterEntry {
-            descriptor: svg_descriptor(),
+            descriptor: docx_descriptor(),
             tier: AdapterTier::Pure,
             ops: pure_probe_ops(),
         })
         .expect_err("duplicate must be rejected");
     assert!(
-        matches!(duplicate, ExecutorWiringError::DuplicateAdapter { format } if format == FormatId::Svg)
+        matches!(duplicate, ExecutorWiringError::DuplicateAdapter { format } if format == FormatId::Docx)
     );
 
     // Drift: a descriptor claiming Supported extract while the binding is
     // a typed refusal (README-ahead-of-code is unrepresentable).
-    let mut ahead = svg_descriptor();
+    let mut ahead = docx_descriptor();
     ahead.ops.insert(Operation::Extract, OpSupport::Supported);
     let drifted = ExecutorRegistryBuilder::new().register(harness_media::executor::AdapterEntry {
         descriptor: ahead,
@@ -178,7 +180,7 @@ fn builder_rejects_duplicate_and_drifted_entries() {
     assert!(matches!(
         drifted,
         Err(ExecutorWiringError::SupportedWithoutDispatch { format, op })
-            if format == FormatId::Svg && op == Operation::Extract
+            if format == FormatId::Docx && op == Operation::Extract
     ));
 }
 
@@ -188,7 +190,7 @@ fn unknown_format_dispatch_fails_typed_unsupported_format() {
     let mut builder = ExecutorRegistryBuilder::new();
     builder
         .register(harness_media::executor::AdapterEntry {
-            descriptor: svg_descriptor(),
+            descriptor: docx_descriptor(),
             tier: AdapterTier::Pure,
             ops: pure_probe_ops(),
         })

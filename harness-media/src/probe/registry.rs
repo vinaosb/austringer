@@ -15,6 +15,11 @@ pub fn registry() -> FormatRegistry {
     let mut registry = FormatRegistry::new();
     for &(id, mime, extensions) in TABLE {
         let mut entry = descriptor(id, mime, extensions);
+        if cfg!(feature = "svg") && id == FormatId::Svg {
+            for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+                entry.ops.insert(op, OpSupport::Supported);
+            }
+        }
         if cfg!(feature = "gltf") && id == FormatId::Gltf {
             for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
                 entry.ops.insert(op, OpSupport::Supported);

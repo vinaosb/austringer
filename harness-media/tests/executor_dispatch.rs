@@ -76,21 +76,23 @@ fn dispatch_is_repeatable_and_leaves_no_stale_state() {
 
 #[test]
 fn generate_on_unwired_pure_format_is_typed_refusal_citing_the_lane() {
-    // Given: svg generation arrives with M11 (not yet landed).
+    // Given: wav generation arrives with M14 (not yet landed; this pin
+    // moved off svg at M11 and off gltf at M12 - it always names a
+    // still-pending pure lane).
     let spec = GenerationSpec {
-        format: FormatId::Svg,
-        params: serde_json::json!({"shapes": []}),
+        format: FormatId::Wav,
+        params: serde_json::json!({"tones": []}),
     };
     // When: generate is dispatched.
     let error = registry()
-        .dispatch(FormatId::Svg, OpRequest::Generate { spec: &spec })
-        .expect_err("generate must refuse until M11 lands");
+        .dispatch(FormatId::Wav, OpRequest::Generate { spec: &spec })
+        .expect_err("generate must refuse until M14 lands");
     // Then: typed UnsupportedOperation naming format, op, and the lane.
     match error {
         MediaError::UnsupportedOperation { format, op, reason } => {
-            assert_eq!(format, FormatId::Svg);
+            assert_eq!(format, FormatId::Wav);
             assert_eq!(op, harness_media::descriptor::Operation::Generate);
-            assert!(reason.contains("M11"), "reason cites the lane: {reason}");
+            assert!(reason.contains("M14"), "reason cites the lane: {reason}");
         }
         other => panic!("expected UnsupportedOperation, got {other:?}"),
     }

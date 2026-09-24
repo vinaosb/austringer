@@ -5,6 +5,9 @@
 //! the M6 executor. The first lane to land establishes the module; later
 //! lanes append siblings and never touch each other's files.
 
+#[cfg(feature = "svg")]
+pub mod svg;
+
 #[cfg(feature = "gltf")]
 pub mod gltf;
 

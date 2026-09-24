@@ -168,8 +168,47 @@ fn tier(id: FormatId) -> AdapterTier {
     }
 }
 
+// M11 svg lane: pure handlers bound under the `svg` feature; without it
+// the honest typed placeholder stands (mirrors the gltf/pdf lanes).
+#[cfg(feature = "svg")]
+fn svg_extract_binding() -> OpBinding<ExtractHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::svg::ENGINE.to_owned(),
+        handler: crate::adapter::svg::extract,
+    }
+}
+#[cfg(not(feature = "svg"))]
+fn svg_extract_binding() -> OpBinding<ExtractHandler> {
+    pending(FormatId::Svg)
+}
+
+#[cfg(feature = "svg")]
+fn svg_generate_binding() -> OpBinding<GenerateHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::svg::ENGINE.to_owned(),
+        handler: crate::adapter::svg::generate,
+    }
+}
+#[cfg(not(feature = "svg"))]
+fn svg_generate_binding() -> OpBinding<GenerateHandler> {
+    pending(FormatId::Svg)
+}
+
+#[cfg(feature = "svg")]
+fn svg_verify_binding() -> OpBinding<VerifyHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::svg::ENGINE.to_owned(),
+        handler: crate::adapter::svg::verify,
+    }
+}
+#[cfg(not(feature = "svg"))]
+fn svg_verify_binding() -> OpBinding<VerifyHandler> {
+    pending(FormatId::Svg)
+}
+
 fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
     match id {
+        FormatId::Svg => svg_extract_binding(),
         FormatId::Gltf => gltf_extract_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
@@ -181,6 +220,7 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
 
 fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
     match id {
+        FormatId::Svg => svg_generate_binding(),
         FormatId::Gltf => gltf_generate_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_ADOPTION),
@@ -198,6 +238,7 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
 
 fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
     match id {
+        FormatId::Svg => svg_verify_binding(),
         FormatId::Gltf => gltf_verify_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_EXTRACT_ONLY_VERIFY),
