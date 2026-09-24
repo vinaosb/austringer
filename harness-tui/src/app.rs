@@ -271,6 +271,14 @@ impl App {
                     .note(&format!("daemon error ({code:?}): {message}"));
                 self.dirty = true;
             }
+            ServerMsg::MediaResult {
+                producer,
+                diff_summary,
+                ..
+            } => {
+                self.view.note(&format!("media ({producer}): {diff_summary}"));
+                self.dirty = true;
+            }
             ServerMsg::Bye { reason } => {
                 self.view.note(&format!("daemon closed: {reason}"));
                 self.dirty = true;

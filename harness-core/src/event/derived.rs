@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use super::media::{write_atomic, ContentHash, MediaRef, MediaStore};
+use super::media::{ContentHash, MediaRef, MediaStore, write_atomic};
 
 /// Maximum byte length of a producer id (it becomes a filename part).
 pub const MAX_PRODUCER_BYTES: usize = 128;
@@ -210,13 +210,12 @@ impl DerivedStore {
         let Some(raw) = read_optional(&self.manifest_path(source, producer, kind))? else {
             return Ok(None);
         };
-        let manifest: DerivedManifest = serde_json::from_slice(&raw).map_err(|error| {
-            DerivedCorrupt::Malformed {
+        let manifest: DerivedManifest =
+            serde_json::from_slice(&raw).map_err(|error| DerivedCorrupt::Malformed {
                 producer: producer.to_owned(),
                 kind,
                 reason: error.to_string(),
-            }
-        })?;
+            })?;
         if manifest.source != *source || manifest.producer != producer || manifest.kind != kind {
             return Err(DerivedCorrupt::KeyMismatch {
                 requested: *source,

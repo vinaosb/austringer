@@ -28,6 +28,8 @@ pub struct StageCtx<'a> {
     pub(super) mirror: &'a mut Vec<RecordedEvent>,
     /// Queued user input not yet absorbed into the conversation.
     pub steer_queue: &'a mut VecDeque<String>,
+    /// Queued typed user turns (text + media blocks) not yet absorbed.
+    pub block_queue: &'a mut VecDeque<Vec<ContentBlock>>,
     /// Set when this iteration absorbed user input.
     pub steered: &'a mut bool,
     /// Completed inference turns this run.
@@ -79,6 +81,10 @@ pub trait SlashCommands: Send {
 pub trait Steer: Send {
     /// Absorbs queued input.
     async fn steer(&mut self, ctx: &mut StageCtx<'_>) -> Result<Flow, StageError> {
+        while let Some(blocks) = ctx.block_queue.pop_front() {
+            ctx.append(Event::User { blocks })?;
+            *ctx.steered = true;
+        }
         while let Some(text) = ctx.steer_queue.pop_front() {
             ctx.append(Event::User {
                 blocks: vec![ContentBlock::Text { text }],

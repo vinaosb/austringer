@@ -9,7 +9,7 @@ use std::time::Duration;
 use common::{wait_until, wire};
 use futures_util::{SinkExt, StreamExt};
 use harness_daemon::protocol::{
-    ClientMsg, Frame, ServerMsg, SessionEvent, decode_client, encode_server,
+    ClientMsg, Frame, PROTOCOL_VERSION, ServerMsg, SessionEvent, decode_client, encode_server,
 };
 use harness_tui::app::{App, Conn};
 use harness_tui::client::{ClientCmd, ClientError, ClientEvent};
@@ -100,8 +100,8 @@ async fn handshake_streams_events_and_delivers_sends() {
         .and_then(|result| result.ok())
         .unwrap_or_else(|| panic!("server task failed"));
     assert!(
-        matches!(hello, ClientMsg::Hello { version: 1, .. }),
-        "handshake is a typed v1 hello"
+        matches!(hello, ClientMsg::Hello { version, .. } if version == PROTOCOL_VERSION),
+        "handshake speaks the current protocol version"
     );
     assert!(ping.is_some(), "the UI-loop send reached the server");
 }

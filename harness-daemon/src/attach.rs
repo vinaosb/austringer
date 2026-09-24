@@ -12,20 +12,45 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::{broadcast, mpsc};
 
+use harness_core::event::{ContentBlock, MediaBlock, MediaRef, MediaStore};
+
 use crate::events::{EventHub, ReplayKind, Subscription};
 use crate::mediation::{MediationPolicy, PermissionMediator, control_bus};
 use crate::protocol::{Frame, ServerMsg, SessionEvent};
 
-/// Engine-driver commands.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Engine-driver commands. (No `Eq`: content blocks carry strings only
+/// compared by `PartialEq`.)
+#[derive(Debug, Clone, PartialEq)]
 pub enum HostCommand {
     /// Start a new turn with this prompt.
     Submit(String),
+    /// Start a new turn carrying previously uploaded media (intake
+    /// form; resolved to blocks before queueing).
+    SubmitMedia {
+        /// User text (may be empty when the turn is media-only).
+        text: String,
+        /// Stored media references from the upload route.
+        media: Vec<MediaRef>,
+    },
+    /// Start a new turn with typed content blocks (resolved form).
+    SubmitBlocks(Vec<ContentBlock>),
     /// Steer the running turn (signal-with-start: journaled, queued to
     /// the live turn, or starts one when idle).
     Steer(String),
     /// Cancel the running turn.
     Cancel,
+}
+
+/// Why a submit was rejected at intake (typed, surfaced to the
+/// submitting connection).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CommandRejected {
+    /// A media reference named nothing in the session store.
+    #[error("unknown media ref {0}")]
+    UnknownMedia(String),
+    /// The submit carried no content at all.
+    #[error("empty submit")]
+    Empty,
 }
 
 /// Attach failures.
@@ -63,6 +88,9 @@ pub struct SessionHost {
     cmd_tx: mpsc::Sender<HostCommand>,
     event_sink_tx: mpsc::Sender<SessionEvent>,
     steer_queue: SteerQueue,
+    /// Session directory (media store root for submit resolution);
+    /// set once by the session factory after construction.
+    pub(crate) media_dir: std::sync::OnceLock<PathBuf>,
     pub(crate) turn_counter: AtomicU64,
     pub(crate) journal_root: Option<PathBuf>,
 }
@@ -100,6 +128,7 @@ impl SessionHost {
             cmd_tx,
             event_sink_tx,
             steer_queue: Arc::clone(&steer_queue),
+            media_dir: std::sync::OnceLock::new(),
             turn_counter: AtomicU64::new(0),
             journal_root,
         });
@@ -149,8 +178,13 @@ impl SessionHost {
     /// Intake for transports: Steer resolves IMMEDIATELY (journal +
     /// shared queue — the loop's Steer stage drains it mid-run; the
     /// engine driver is busy inside `run()` and cannot process it),
-    /// while Submit/Cancel queue to the driver.
-    pub async fn handle_command(&self, command: HostCommand) {
+    /// SubmitMedia resolves its refs against the session media store
+    /// (typed refusal on unknown hashes, MediaResult receipts to v2
+    /// wires), while Submit/SubmitBlocks/Cancel queue to the driver.
+    pub async fn handle_command(
+        &self,
+        command: HostCommand,
+    ) -> Result<(), CommandRejected> {
         match &command {
             HostCommand::Steer(text) => {
                 self.record_signal(text);
@@ -158,10 +192,74 @@ impl SessionHost {
                     queue.push_back(text.clone());
                 }
             }
-            HostCommand::Submit(_) | HostCommand::Cancel => {
+            HostCommand::SubmitMedia { text, media } => {
+                let blocks = self.resolve_media_blocks(text, media)?;
+                self.queue_blocks(blocks, media);
+            }
+            HostCommand::Submit(_) | HostCommand::SubmitBlocks(_) | HostCommand::Cancel => {
                 let _ = self.cmd_tx.send(command).await;
             }
         }
+        Ok(())
+    }
+
+    /// Resolve uploaded refs into typed media blocks: each ref must
+    /// exist in the session media store (unknown hash = typed refusal);
+    /// the mime + format metadata come from probing the stored bytes.
+    fn resolve_media_blocks(
+        &self,
+        text: &str,
+        media: &[MediaRef],
+    ) -> Result<Vec<ContentBlock>, CommandRejected> {
+        if text.is_empty() && media.is_empty() {
+            return Err(CommandRejected::Empty);
+        }
+        let mut blocks = Vec::new();
+        if !text.is_empty() {
+            blocks.push(ContentBlock::Text {
+                text: text.to_owned(),
+            });
+        }
+        let Some(dir) = self.media_dir.get().cloned() else {
+            return Err(match media.first() {
+                Some(reference) => CommandRejected::UnknownMedia(reference.hash.to_ref()),
+                None => CommandRejected::Empty,
+            });
+        };
+        let store = MediaStore::open(&dir).map_err(|_| {
+            CommandRejected::UnknownMedia(
+                media
+                    .first()
+                    .map_or_else(String::new, |reference| reference.hash.to_ref()),
+            )
+        })?;
+        for reference in media {
+            let bytes = store
+                .load(&reference.hash)
+                .map_err(|_| CommandRejected::UnknownMedia(reference.hash.to_ref()))?
+                .ok_or_else(|| CommandRejected::UnknownMedia(reference.hash.to_ref()))?;
+            let (mime, format_note) = crate::media::probe_mime(&bytes);
+            let mut meta = std::collections::BTreeMap::new();
+            meta.insert("format".to_owned(), format_note);
+            let block = MediaBlock::new(mime, *reference, meta).map_err(|_| {
+                CommandRejected::UnknownMedia(reference.hash.to_ref())
+            })?;
+            blocks.push(ContentBlock::Media(block));
+        }
+        Ok(blocks)
+    }
+
+    fn queue_blocks(&self, blocks: Vec<ContentBlock>, media: &[MediaRef]) {
+        for reference in media {
+            self.with_hub(|hub| {
+                hub.broadcast(ServerMsg::MediaResult {
+                    producer: "daemon-media-intake".into(),
+                    artifact: *reference,
+                    diff_summary: "media appended to user event".into(),
+                })
+            });
+        }
+        let _ = self.cmd_tx.try_send(HostCommand::SubmitBlocks(blocks));
     }
 
     fn lock_clients(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {

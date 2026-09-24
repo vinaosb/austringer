@@ -1,0 +1,16 @@
+{"await":null,"dir":"c2s","raw":"{\"type\":\"hello\",\"version\":1,\"token\":\"e2e-token\",\"client_id\":\"corpus-ws\",\"session\":null}"}
+{"dir":"s2c","raw":"{\"type\":\"state_resync_required\",\"last_event_id\":0}"}
+{"dir":"s2c","raw":"{\"type\":\"snapshot\",\"frames\":[]}"}
+{"dir":"s2c","raw":"{\"type\":\"hello_ack\",\"version\":1,\"last_event_id\":0}"}
+{"await":"hello_ack","dir":"c2s","raw":"{\"type\":\"command\",\"command\":{\"type\":\"submit\",\"text\":\"hello v1 corpus\"}}"}
+{"dir":"s2c","raw":"{\"type\":\"event\",\"frame\":{\"id\":1,\"event\":{\"type\":\"turn_started\",\"turn\":1}}}"}
+{"dir":"s2c","raw":"{\"type\":\"event\",\"frame\":{\"id\":2,\"event\":{\"type\":\"recorded\",\"seq\":1,\"event\":{\"type\":\"user\",\"blocks\":[{\"type\":\"text\",\"text\":\"hello v1 corpus\"}]}}}}"}
+{"dir":"s2c","raw":"{\"type\":\"event\",\"frame\":{\"id\":3,\"event\":{\"type\":\"recorded\",\"seq\":2,\"event\":{\"type\":\"assistant\",\"blocks\":[{\"type\":\"text\",\"text\":\"done\"}]}}}}"}
+{"dir":"s2c","raw":"{\"type\":\"event\",\"frame\":{\"id\":4,\"event\":{\"type\":\"recorded\",\"seq\":3,\"event\":{\"type\":\"tool_call\",\"call_id\":\"done\",\"tool\":\"task_completed\",\"arguments\":{}}}}}"}
+{"dir":"s2c","raw":"{\"type\":\"event\",\"frame\":{\"id\":5,\"event\":{\"type\":\"recorded\",\"seq\":4,\"event\":{\"type\":\"tool_result\",\"call_id\":\"done\",\"blocks\":[{\"type\":\"text\",\"text\":\"task completed\"}]}}}}"}
+{"dir":"s2c","raw":"{\"type\":\"event\",\"frame\":{\"id\":6,\"event\":{\"type\":\"turn_finished\",\"turn\":1,\"outcome\":\"task_completed\"}}}"}
+{"action":"publish_image_event","dir":"srv"}
+{"await":"turn_finished","dir":"c2s","raw":"{\"type\":\"hello\",\"version\":1,\"token\":\"e2e-token\",\"client_id\":\"corpus-ws\",\"session\":null}"}
+{"dir":"s2c","raw":"{\"type\":\"event\",\"frame\":{\"id\":7,\"event\":{\"type\":\"recorded\",\"seq\":900,\"event\":{\"type\":\"user\",\"blocks\":[{\"type\":\"text\",\"text\":\"see this diagram\"},{\"type\":\"image\",\"mime\":\"image/png\",\"width\":800,\"height\":600,\"media\":{\"hash\":\"blake3:bd73fddcac24bfa73fafda8bc070c87b707b5e277a7b953aa1961ec527aa1546\",\"bytes\":31}}]}}}}"}
+{"await":"recorded","dir":"c2s","raw":"{\"type\":\"ping\"}"}
+{"dir":"s2c","raw":"{\"type\":\"pong\"}"}

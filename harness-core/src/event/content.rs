@@ -117,6 +117,14 @@ impl fmt::Display for MimeType {
     }
 }
 
+impl Default for MimeType {
+    /// `application/octet-stream` — the RFC 2046 default for unknown
+    /// bytes (the honest fallback for unidentified media).
+    fn default() -> Self {
+        Self("application/octet-stream".to_owned())
+    }
+}
+
 impl From<MimeType> for String {
     fn from(mime: MimeType) -> Self {
         mime.0

@@ -52,8 +52,9 @@ fn store_derived_roundtrips_when_projection_cached() {
     assert_eq!(loaded, bytes);
 
     let (artifacts, manifests) = derived_dirs(&session);
-    let manifest: serde_json::Value = serde_json::from_slice(&fs::read(sole_file(&manifests)).expect("manifest"))
-        .expect("manifest json");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(sole_file(&manifests)).expect("manifest"))
+            .expect("manifest json");
     assert_eq!(manifest["source"], serde_json::json!(source.to_ref()));
     assert_eq!(manifest["producer"], serde_json::json!(PRODUCER));
     assert_eq!(manifest["kind"], serde_json::json!("transcript"));
@@ -62,7 +63,10 @@ fn store_derived_roundtrips_when_projection_cached() {
         manifest["artifact"]["hash"],
         serde_json::json!(artifact.hash.to_ref())
     );
-    assert_eq!(manifest["artifact"]["bytes"], serde_json::json!(bytes.len()));
+    assert_eq!(
+        manifest["artifact"]["bytes"],
+        serde_json::json!(bytes.len())
+    );
     assert_eq!(
         fs::read(sole_file(&artifacts)).expect("artifact file"),
         bytes,
@@ -70,7 +74,13 @@ fn store_derived_roundtrips_when_projection_cached() {
     );
     let session_entries: Vec<String> = fs::read_dir(session.path())
         .expect("session dir")
-        .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+        .map(|entry| {
+            entry
+                .expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     assert_eq!(
         session_entries,
@@ -149,10 +159,9 @@ fn store_derived_overwrites_entry_when_same_key_restored_with_new_bytes() {
         2,
         "superseded artifact is deliberately kept: no garbage collection"
     );
-    let manifest: serde_json::Value = serde_json::from_slice(
-        &fs::read(sole_file(&manifests)).expect("manifest"),
-    )
-    .expect("manifest json");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(sole_file(&manifests)).expect("manifest"))
+            .expect("manifest json");
     assert_eq!(
         manifest["artifact"]["hash"],
         serde_json::json!(second.hash.to_ref()),
@@ -170,7 +179,12 @@ fn crash_between_pair_writes_leaves_ignorable_orphan_when_manifest_missing() {
     // exactly what a crash after the artifact write (before the manifest
     // write) leaves behind.
     store
-        .store_derived(&source, PRODUCER, ProjectionKind::SceneDescription, b"scene")
+        .store_derived(
+            &source,
+            PRODUCER,
+            ProjectionKind::SceneDescription,
+            b"scene",
+        )
         .expect("store");
     let (artifacts, manifests) = derived_dirs(&session);
     fs::remove_file(sole_file(&manifests)).expect("drop manifest");
@@ -259,15 +273,29 @@ fn load_derived_fails_typed_when_artifact_swapped() {
     let listing = |dir: &Path| -> Vec<String> {
         let mut names: Vec<String> = fs::read_dir(dir)
             .expect("read dir")
-            .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect();
         names.sort();
         names
     };
-    eprintln!("BEFORE TAMPER artifacts={:?} manifests={:?}", listing(&artifacts), listing(&manifests));
+    eprintln!(
+        "BEFORE TAMPER artifacts={:?} manifests={:?}",
+        listing(&artifacts),
+        listing(&manifests)
+    );
     let replacement = b"swapped bytes";
     fs::write(sole_file(&artifacts), replacement).expect("swap artifact");
-    eprintln!("AFTER TAMPER  artifacts={:?} manifests={:?}", listing(&artifacts), listing(&manifests));
+    eprintln!(
+        "AFTER TAMPER  artifacts={:?} manifests={:?}",
+        listing(&artifacts),
+        listing(&manifests)
+    );
 
     let error = store
         .load_derived(&source, PRODUCER, kind)
@@ -364,7 +392,12 @@ fn projection_kinds_are_distinct_cache_entries_for_same_producer() {
     let source = source_hash(12);
 
     store
-        .store_derived(&source, PRODUCER, ProjectionKind::TextProjection, b"structure")
+        .store_derived(
+            &source,
+            PRODUCER,
+            ProjectionKind::TextProjection,
+            b"structure",
+        )
         .expect("store text");
     store
         .store_derived(&source, PRODUCER, ProjectionKind::Transcript, b"words")
@@ -409,7 +442,12 @@ fn hostile_producer_ids_roundtrip_typed_without_panicking() {
     for (index, producer) in hostile.iter().enumerate() {
         let bytes = format!("payload-{index}");
         store
-            .store_derived(&source, producer, ProjectionKind::TextProjection, bytes.as_bytes())
+            .store_derived(
+                &source,
+                producer,
+                ProjectionKind::TextProjection,
+                bytes.as_bytes(),
+            )
             .expect("hostile producer must store");
         assert_eq!(
             store
@@ -422,7 +460,11 @@ fn hostile_producer_ids_roundtrip_typed_without_panicking() {
     }
     let (_, manifests) = derived_dirs(&session);
     for entry in fs::read_dir(&manifests).expect("manifests dir") {
-        let name = entry.expect("entry").file_name().to_string_lossy().into_owned();
+        let name = entry
+            .expect("entry")
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
         assert!(
             Path::new(&name).components().count() == 1,
             "manifest name must stay a single path component: {name:?}"

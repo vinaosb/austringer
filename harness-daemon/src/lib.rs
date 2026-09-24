@@ -9,13 +9,16 @@
 //! reconciliation; zero-downtime reload; and optional OTel export.
 
 pub mod activity;
+pub mod ask;
 pub mod attach;
 pub mod auth;
 pub mod automations;
 pub mod bridge;
+pub mod compat;
 pub mod config;
 pub mod durable;
 pub mod engine;
+pub mod errors;
 pub mod events;
 pub mod gate;
 pub mod handlers;
@@ -23,6 +26,7 @@ pub mod ipc;
 pub mod journal;
 pub mod kickoff;
 pub mod ledger;
+pub mod media;
 pub mod mediation;
 pub mod notify;
 pub mod osc;

@@ -4,9 +4,75 @@
 
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use crate::protocol::{Frame, MAX_SNAPSHOT_FRAMES, ServerMsg, SessionEvent};
+use crate::protocol::{ServerMsg, MAX_SNAPSHOT_FRAMES};
+
+/// Daemon-emitted session events on the typed event stream. `recorded`
+/// wraps the engine's own durable event; the rest are daemon-level.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SessionEvent {
+    /// An engine event, sequence-stamped.
+    Recorded {
+        /// Engine sequence number (1-based).
+        seq: u64,
+        /// The durable event.
+        event: harness_core::event::Event,
+    },
+    /// A turn workflow started.
+    TurnStarted {
+        /// Turn number.
+        turn: u64,
+    },
+    /// A turn workflow finished.
+    TurnFinished {
+        /// Turn number.
+        turn: u64,
+        /// Run outcome summary.
+        outcome: String,
+    },
+    /// A semantic diff surfaced for review UIs.
+    Diff {
+        /// Changed path (relative, forward slashes).
+        path: String,
+        /// blake3 of the before content (hex, empty for adds).
+        before_hash: String,
+        /// blake3 of the after content (hex, empty for deletes).
+        after_hash: String,
+        /// Rendered hunks.
+        hunks: Vec<String>,
+    },
+    /// A notification crossed the daemon bus.
+    Notification {
+        /// Notification kind (typed vocabulary).
+        kind: String,
+        /// Human-facing message.
+        message: String,
+    },
+    /// A worker claimed this session from a named queue.
+    WorkerClaimed {
+        /// Queue name.
+        queue: String,
+        /// Worker id.
+        worker: String,
+    },
+    /// The claiming worker vanished; session self-healed.
+    WorkerHealed {
+        /// Queue the session returned to.
+        queue: String,
+    },
+}
+
+/// One numbered frame on the monotonic per-session event stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Frame {
+    /// Monotonic, gap-free, 1-based event id.
+    pub id: u64,
+    /// The event.
+    pub event: SessionEvent,
+}
 
 /// What a subscriber needs before switching to the live stream.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,6 +153,16 @@ impl EventHub {
             frame: frame.clone(),
         });
         frame
+    }
+
+    /// Fan out one transient (non-framed) server message — e.g. a v2
+    /// `MediaResult` receipt — to live subscribers without assigning an
+    /// event id or retaining it in the ring: receipts are ephemeral,
+    /// the durable record lives in the engine's recorded events. v1
+    /// connections receive nothing on the wire (the pump downgrade
+    /// withholds v2-only variants per connection).
+    pub fn broadcast(&mut self, msg: ServerMsg) {
+        let _ = self.tx.send(msg);
     }
 
     /// Subscribe with the client's last seen event id. `None` means a

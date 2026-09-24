@@ -130,7 +130,11 @@ fn store_media_roundtrips_arbitrary_bytes_when_loaded_by_hash() {
         .expect("media dir")
         .collect::<Result<_, _>>()
         .expect("entries");
-    assert_eq!(entries.len(), 1, "one content-addressed file, no dimensions");
+    assert_eq!(
+        entries.len(),
+        1,
+        "one content-addressed file, no dimensions"
+    );
 }
 
 #[test]

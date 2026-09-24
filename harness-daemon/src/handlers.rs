@@ -14,7 +14,7 @@ use crate::attach::HostCommand;
 use crate::protocol::{ClientMsg, ServerMsg, SessionCommand, encode_server};
 use crate::reload;
 use crate::server::DaemonState;
-use crate::transport::pump_client;
+use crate::transport::{PumpParams, pump_client};
 use crate::web;
 pub(crate) async fn root() -> Response {
     web::serve("/")
@@ -45,6 +45,10 @@ pub(crate) async fn sse_events(
 ) -> Response {
     let host = state.session(&sid);
     let after = query.after;
+    let peer_version = query
+        .version
+        .filter(|version| crate::protocol::version_compatible(*version))
+        .unwrap_or(1);
     let (outbound_tx, outbound_rx) = tokio::sync::mpsc::channel::<ServerMsg>(64);
     tokio::spawn({
         let host = Arc::clone(&host);
@@ -55,9 +59,12 @@ pub(crate) async fn sse_events(
             let _ = pump_client(
                 &host,
                 "sse-readonly",
-                after,
-                false,
-                std::time::Duration::MAX,
+                PumpParams {
+                    peer_version,
+                    after,
+                    enforce_idle: false,
+                    idle_timeout: std::time::Duration::MAX,
+                },
                 inbound_rx,
                 outbound_tx,
             )
@@ -92,11 +99,16 @@ pub(crate) async fn post_command(
         ClientMsg::Command { command } => {
             let host_command = match command {
                 SessionCommand::Submit { text } => HostCommand::Submit(text),
+                SessionCommand::SubmitMedia { text, media } => {
+                    HostCommand::SubmitMedia { text, media }
+                }
                 SessionCommand::Steer { text } => HostCommand::Steer(text),
                 SessionCommand::Cancel => HostCommand::Cancel,
             };
-            host.handle_command(host_command).await;
-            (StatusCode::ACCEPTED, "accepted").into_response()
+            match host.handle_command(host_command).await {
+                Ok(()) => (StatusCode::ACCEPTED, "accepted").into_response(),
+                Err(rejection) => (StatusCode::BAD_REQUEST, rejection.to_string()).into_response(),
+            }
         }
         ClientMsg::PermissionAnswer { ask_id, answer } => {
             match host.mediator().answer(ask_id, "http", answer) {

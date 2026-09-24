@@ -39,8 +39,13 @@ impl SharedSteerer {
 #[async_trait]
 impl Steer for SharedSteerer {
     async fn steer(&mut self, ctx: &mut StageCtx<'_>) -> Result<Flow, StageError> {
-        // Drain the loop's own submit queue first (turn prompts), then
-        // any mid-run signals from the daemon's shared queue.
+        // Typed block turns (protocol v2 media submits) first, then
+        // the loop's own submit queue (turn prompts), then any
+        // mid-run signals from the daemon's shared queue.
+        while let Some(blocks) = ctx.block_queue.pop_front() {
+            ctx.append(Event::User { blocks })?;
+            *ctx.steered = true;
+        }
         while let Some(text) = ctx.steer_queue.pop_front() {
             ctx.append(Event::User {
                 blocks: vec![ContentBlock::Text { text }],
@@ -62,6 +67,30 @@ impl Steer for SharedSteerer {
             *ctx.steered = true;
         }
         Ok(Flow::Continue)
+    }
+}
+
+/// How a turn starts: plain text or typed blocks (v2 media submits).
+enum TurnKickoff {
+    /// A text prompt.
+    Text(String),
+    /// Typed content blocks.
+    Blocks(Vec<ContentBlock>),
+}
+
+impl TurnKickoff {
+    fn journal_text(&self) -> String {
+        match self {
+            TurnKickoff::Text(text) => text.clone(),
+            TurnKickoff::Blocks(blocks) => blocks
+                .iter()
+                .map(|block| match block {
+                    ContentBlock::Text { text } => text.clone(),
+                    other => other.text_marker(),
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+        }
     }
 }
 
@@ -103,8 +132,22 @@ impl SessionHost {
             while let Some(command) = cmd_rx.recv().await {
                 match command {
                     HostCommand::Submit(text) => {
-                        host.run_turn(&mut engine, &cancel, text, &mut published_through)
+                        host.run_turn(&mut engine, &cancel, TurnKickoff::Text(text), &mut published_through)
                             .await;
+                    }
+                    HostCommand::SubmitMedia { .. } => {
+                        // Intake resolves SubmitMedia to SubmitBlocks
+                        // before queueing; the driver never sees the
+                        // unresolved form.
+                    }
+                    HostCommand::SubmitBlocks(blocks) => {
+                        host.run_turn(
+                            &mut engine,
+                            &cancel,
+                            TurnKickoff::Blocks(blocks),
+                            &mut published_through,
+                        )
+                        .await;
                     }
                     HostCommand::Steer(text) => {
                         // Belt-and-braces: the intake path normally
@@ -147,7 +190,7 @@ impl SessionHost {
         &self,
         engine: &mut AgentLoop,
         _cancel: &CancelHandle,
-        prompt: String,
+        kickoff: TurnKickoff,
         published_through: &mut usize,
     ) {
         let turn = self.turn_counter.fetch_add(1, Ordering::SeqCst) + 1;
@@ -155,10 +198,13 @@ impl SessionHost {
             crate::durable::TurnWorkflow::open(root, self.session_id(), turn).ok()
         });
         if let Some(workflow) = workflow.as_mut() {
-            let _ = workflow.begin(&prompt);
+            let _ = workflow.begin(&kickoff.journal_text());
         }
         self.publish(crate::protocol::SessionEvent::TurnStarted { turn });
-        engine.submit(prompt);
+        match kickoff {
+            TurnKickoff::Text(text) => engine.submit(text),
+            TurnKickoff::Blocks(blocks) => engine.submit_blocks(blocks),
+        }
         let outcome = engine.run().await;
         let outcome_text = match &outcome {
             RunOutcome::TaskCompleted => "task_completed".to_owned(),

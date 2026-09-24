@@ -16,6 +16,13 @@ dist = true
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
+# M2 probe registry for the media routes (upload sniff + GET mime). The
+# daemon enables the committed media-core feature set (everything but
+# the non-default avif/geovector opt-ins; today only `office` pulls a
+# dependency - the pure-Rust zip crate).
+harness-media = { path = "../harness-media", version = "0.1.0", features = [
+    "image", "svg", "pdf", "audio", "office", "gltf", "georaster", "data", "text",
+] }
 harness-providers = { path = "../harness-providers", version = "0.1.0" }
 harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
 harness-web = { path = "../harness-web", version = "0.1.0" }

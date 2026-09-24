@@ -27,7 +27,11 @@ const V01_IMAGE_MARKER: &str = "[image: image/png 800x600 blake3:636ca83a67253e2
 fn fixture_file_matches_embedded_frozen_line() {
     let raw = fs::read_to_string("tests/fixtures/v01_image_event.jsonl")
         .expect("committed fixture must be readable");
-    assert_eq!(raw.trim_end(), V01_LINE, "fixture file drifted from the frozen v0.1 line");
+    assert_eq!(
+        raw.trim_end(),
+        V01_LINE,
+        "fixture file drifted from the frozen v0.1 line"
+    );
 }
 
 #[test]

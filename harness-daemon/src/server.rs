@@ -122,12 +122,13 @@ impl DaemonState {
         let executor =
             WorkerToolExecutor::new(Arc::clone(&self.worker_router), None, host.event_sink());
         let _ = host.spawn_engine_with_config(
-            session_dir,
+            session_dir.clone(),
             host.standard_stages(executor),
             (self.inference_factory)(),
             cmd_rx,
             loop_config,
         );
+        let _ = host.media_dir.set(session_dir);
         hosts.insert(id.to_owned(), Arc::clone(&host));
         host
     }
@@ -153,6 +154,10 @@ impl DaemonState {
 #[derive(Deserialize)]
 pub(crate) struct TokenQuery {
     pub(crate) after: Option<u64>,
+    /// SSE wire-version opt-in: the event stream carries no Hello, so
+    /// v2 (typed media frames + media results) is opt-in via
+    /// `?version=2`; anything else serves the v1 downgrade.
+    pub(crate) version: Option<u32>,
 }
 
 fn query_token(uri: &axum::http::Uri) -> Option<String> {
@@ -251,6 +256,8 @@ pub fn build_router(state: Arc<DaemonState>) -> Router {
         .route("/s/{sid}/attach", get(crate::handlers::attach_ws))
         .route("/s/{sid}/events", get(crate::handlers::sse_events))
         .route("/s/{sid}/cmd", post(crate::handlers::post_command))
+        .route("/s/{sid}/media", post(crate::media::upload_media))
+        .route("/s/{sid}/media/{hash}", get(crate::media::get_media))
         .route("/worker", get(crate::ws::worker_ws))
         .route("/admin/reload", post(crate::handlers::reload_endpoint))
         .layer(middleware::from_fn_with_state(Arc::clone(&state), auth_mw))

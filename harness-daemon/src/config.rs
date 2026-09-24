@@ -43,6 +43,9 @@ pub struct DaemonConfig {
     pub durable: bool,
     /// Remote-worker per-call timeout.
     pub worker_call_timeout: Duration,
+    /// Upload cap for `POST /s/{sid}/media` (and the GET fetch cap).
+    /// Default 512 MiB; bodies beyond it fail typed 413 mid-stream.
+    pub media_upload_cap_bytes: u64,
     /// Provider seam for the session factory (M32). `None` — the
     /// default — leaves the daemon unconfigured: no provider is ever
     /// enabled implicitly, and inference fails typed and actionable.
@@ -64,6 +67,7 @@ impl Default for DaemonConfig {
             ask_timeout: Duration::from_secs(120),
             durable: true,
             worker_call_timeout: Duration::from_secs(60),
+            media_upload_cap_bytes: 512 * 1024 * 1024,
             provider: None,
         }
     }

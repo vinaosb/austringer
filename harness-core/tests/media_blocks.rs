@@ -158,9 +158,12 @@ fn image_block_new_rejects_non_image_mime_when_pinned() {
 
 #[test]
 fn media_block_constructs_when_meta_within_bounds() {
-    let block =
-        MediaBlock::new(MimeType::png(), fixture_media_ref(), meta(&[("format", "png")]))
-            .expect("valid meta accepted");
+    let block = MediaBlock::new(
+        MimeType::png(),
+        fixture_media_ref(),
+        meta(&[("format", "png")]),
+    )
+    .expect("valid meta accepted");
     assert_eq!(block.mime, MimeType::png());
     assert_eq!(block.media, fixture_media_ref());
     assert_eq!(block.meta.get("format").map(String::as_str), Some("png"));
@@ -172,12 +175,14 @@ fn media_block_constructs_when_meta_within_bounds() {
     assert!(MediaBlock::new(MimeType::png(), fixture_media_ref(), full).is_ok());
     let edge_key = "k".repeat(128);
     let edge_value = "v".repeat(128);
-    assert!(MediaBlock::new(
-        MimeType::png(),
-        fixture_media_ref(),
-        meta(&[(&edge_key, &edge_value)])
-    )
-    .is_ok());
+    assert!(
+        MediaBlock::new(
+            MimeType::png(),
+            fixture_media_ref(),
+            meta(&[(&edge_key, &edge_value)])
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -226,8 +231,12 @@ fn media_block_marker_is_deterministic_snapshot() {
     );
     assert_eq!(block.text_marker(), block.text_marker());
     // No-meta form: the marker closes right after the short hash.
-    let bare = MediaBlock::new(MimeType::new("model/gltf+json").expect("widened"), fixture_media_ref(), BTreeMap::new())
-        .expect("valid block");
+    let bare = MediaBlock::new(
+        MimeType::new("model/gltf+json").expect("widened"),
+        fixture_media_ref(),
+        BTreeMap::new(),
+    )
+    .expect("valid block");
     assert_eq!(
         bare.text_marker(),
         "[media: model/gltf+json blake3:390869c344ddd280…]"
@@ -285,7 +294,10 @@ fn media_content_block_roundtrips_through_serde_when_in_event() {
     let encoded_scrambled = serde_json::to_string(&scrambled).expect("serialize");
     let aa = encoded_scrambled.find("\"aa\"").expect("aa key");
     let zz = encoded_scrambled.find("\"zz\"").expect("zz key");
-    assert!(aa < zz, "meta keys must serialize sorted: {encoded_scrambled}");
+    assert!(
+        aa < zz,
+        "meta keys must serialize sorted: {encoded_scrambled}"
+    );
     // Round-trip equality and double-serialization byte stability.
     let decoded: Event = serde_json::from_str(&encoded).expect("deserialize");
     assert_eq!(decoded, event);

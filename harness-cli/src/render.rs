@@ -51,6 +51,11 @@ pub fn human(msg: &ServerMsg) -> Option<String> {
         ServerMsg::Bye { reason } => Some(format!("— daemon closed the stream: {reason} —")),
         ServerMsg::HelloAck { .. } | ServerMsg::Pong => None,
         ServerMsg::Error { code, message } => Some(format!("daemon error ({code:?}): {message}")),
+        ServerMsg::MediaResult {
+            producer,
+            diff_summary,
+            ..
+        } => Some(format!("media ({producer}): {diff_summary}")),
     }
 }
 

@@ -14,9 +14,10 @@ use futures_util::{SinkExt, StreamExt};
 use crate::attach::SessionHost;
 use crate::protocol::{
     ClientMsg, ErrorCode, PROTOCOL_VERSION, ServerMsg, decode_client, encode_server,
+    version_compatible,
 };
 use crate::server::DaemonState;
-use crate::transport::pump_client;
+use crate::transport::{PumpParams, pump_client};
 use crate::worker::{DaemonToWorker, ToolGrant, WorkerRouter, WorkerToDaemon};
 
 /// Upgrade handler for `/s/{sid}/attach`.
@@ -38,8 +39,10 @@ async fn run_ws_client(
     let (mut ws_sink, mut ws_source) = socket.split();
     // Handshake: the first frame must be a versioned Hello naming the
     // client. Authentication already happened at the HTTP layer (the
-    // WS transport cannot see headers).
-    let client_id = loop {
+    // WS transport cannot see headers). v1 Hellos are served through
+    // the per-connection wire downgrade; only versions this build
+    // never spoke are refused.
+    let (client_id, peer_version) = loop {
         let message = ws_source.next().await;
         let Some(Ok(message)) = message else {
             return;
@@ -54,7 +57,7 @@ async fn run_ws_client(
             Ok(ClientMsg::Hello {
                 version, client_id, ..
             }) => {
-                if version != PROTOCOL_VERSION {
+                if !version_compatible(version) {
                     let _ = ws_sink
                         .send(Message::Text(
                             serde_json::to_string(&ServerMsg::Error {
@@ -67,7 +70,7 @@ async fn run_ws_client(
                         .await;
                     return;
                 }
-                break client_id;
+                break (client_id, version);
             }
             _ => {
                 let _ = ws_sink
@@ -133,9 +136,12 @@ async fn run_ws_client(
     let _ = pump_client(
         &host,
         &client_id,
-        after,
-        true,
-        idle_timeout,
+        PumpParams {
+            peer_version,
+            after,
+            enforce_idle: true,
+            idle_timeout,
+        },
         inbound_rx,
         outbound_tx,
     )
