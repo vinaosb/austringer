@@ -30,6 +30,21 @@ pub fn registry() -> FormatRegistry {
                 entry.ops.insert(op, OpSupport::Supported);
             }
         }
+        // M30 text substrate: all five lanes are extract+generate+verify.
+        if cfg!(feature = "text")
+            && matches!(
+                id,
+                FormatId::Markdown
+                    | FormatId::Html
+                    | FormatId::Json
+                    | FormatId::Csv
+                    | FormatId::Toml
+            )
+        {
+            for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+                entry.ops.insert(op, OpSupport::Supported);
+            }
+        }
         registry.register(entry);
     }
     registry

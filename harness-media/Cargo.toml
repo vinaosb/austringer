@@ -42,7 +42,13 @@ avif = []
 georaster = []
 geovector = []
 data = []
-text = []
+# M30 text-substrate lane: comrak (CommonMark 0.31.2 + GFM) for markdown
+# parse/render; maud for self-contained single-file HTML5 generation
+# (compile-time templates, escaping built in); html5gum for the html5
+# reparse/tag-census (tokenizer-only by design - a full DOM tree is
+# unnecessary for a census and tokenizer-only is the bounded untrusted-
+# input posture); csv for RFC 4180; toml for TOML 1.0. All pure Rust.
+text = ["dep:comrak", "dep:maud", "dep:html5gum", "dep:csv", "dep:toml"]
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
@@ -72,13 +78,28 @@ krilla = { version = "0.8.2", default-features = false, features = ["simple-text
 # the deferred resvg stage, so no fontdb/harfrust tree lands here).
 quick-xml = { version = "0.42", default-features = false, optional = true }
 usvg = { version = "0.48", default-features = false, optional = true }
+# M30: CommonMark 0.31.2 + GFM parse/render (BSD-2-Clause; cmark-gfm
+# port; default features are the builder API only - no syntect/clap
+# trees).
+comrak = { version = "0.55", default-features = false, optional = true }
+# M30: compile-time HTML templates for the self-contained single-file
+# html5 writer (escaping is built into text interpolation).
+maud = { version = "0.27", optional = true }
+# M30: WHATWG-conforming html5 tokenizer for the tag-census extract +
+# reparse verify (zero-dep beyond jetscii SIMD scanning).
+html5gum = { version = "0.8", default-features = false, optional = true }
+# M30: RFC 4180 CSV read/write (MIT OR Unlicense; the OR satisfies the
+# deny allow-list via MIT).
+csv = { version = "1.4", optional = true }
+# M30: TOML 1.0 parse/display (workspace-pinned).
+toml = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Self-reference so a bare `cargo nextest run -p harness-media` compiles
 # the integration tests with the landed adapter features on
 # (feature-unification across dev-deps); the library default stays
 # feature-empty. Append per-lane features as their todos land.
-harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg"] }
+harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "text"] }
 # M10 pipeline tests: scripted Inference impls + async test runtime.
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

@@ -248,9 +248,86 @@ fn svg_verify_binding() -> OpBinding<VerifyHandler> {
     pending(FormatId::Svg)
 }
 
+// M30 text substrate: pure handlers bound under the `text` feature;
+// without it the honest pending placeholder stays (mirrors the
+// svg/gltf/pdf/audio lanes).
+#[cfg(feature = "text")]
+fn text_extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
+    let (engine, handler): (&str, ExtractHandler) = match id {
+        FormatId::Markdown => {
+            (crate::adapter::text::markdown::ENGINE, crate::adapter::text::markdown::extract)
+        }
+        FormatId::Html => {
+            (crate::adapter::text::html::ENGINE, crate::adapter::text::html::extract)
+        }
+        FormatId::Json => {
+            (crate::adapter::text::json::ENGINE, crate::adapter::text::json::extract)
+        }
+        FormatId::Csv => (crate::adapter::text::csv::ENGINE, crate::adapter::text::csv::extract),
+        FormatId::Toml => {
+            (crate::adapter::text::toml::ENGINE, crate::adapter::text::toml::extract)
+        }
+        _ => return pending(id),
+    };
+    OpBinding::Pure { engine: engine.to_owned(), handler }
+}
+
+#[cfg(feature = "text")]
+fn text_generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
+    let (engine, handler): (&str, GenerateHandler) = match id {
+        FormatId::Markdown => {
+            (crate::adapter::text::markdown::ENGINE, crate::adapter::text::markdown::generate)
+        }
+        FormatId::Html => {
+            (crate::adapter::text::html::ENGINE, crate::adapter::text::html::generate)
+        }
+        FormatId::Json => {
+            (crate::adapter::text::json::ENGINE, crate::adapter::text::json::generate)
+        }
+        FormatId::Csv => (crate::adapter::text::csv::ENGINE, crate::adapter::text::csv::generate),
+        FormatId::Toml => {
+            (crate::adapter::text::toml::ENGINE, crate::adapter::text::toml::generate)
+        }
+        _ => return pending(id),
+    };
+    OpBinding::Pure { engine: engine.to_owned(), handler }
+}
+
+#[cfg(feature = "text")]
+fn text_verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
+    let (engine, handler): (&str, VerifyHandler) = match id {
+        FormatId::Markdown => {
+            (crate::adapter::text::markdown::ENGINE, crate::adapter::text::markdown::verify)
+        }
+        FormatId::Html => {
+            (crate::adapter::text::html::ENGINE, crate::adapter::text::html::verify)
+        }
+        FormatId::Json => {
+            (crate::adapter::text::json::ENGINE, crate::adapter::text::json::verify)
+        }
+        FormatId::Csv => (crate::adapter::text::csv::ENGINE, crate::adapter::text::csv::verify),
+        FormatId::Toml => {
+            (crate::adapter::text::toml::ENGINE, crate::adapter::text::toml::verify)
+        }
+        _ => return pending(id),
+    };
+    OpBinding::Pure { engine: engine.to_owned(), handler }
+}
+
 fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
     match id {
         FormatId::Pdf => pdf_extract_binding(),
+        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv
+        | FormatId::Toml => {
+            #[cfg(feature = "text")]
+            {
+                text_extract_binding(id)
+            }
+            #[cfg(not(feature = "text"))]
+            {
+                pending(id)
+            }
+        }
         FormatId::Svg => svg_extract_binding(),
         FormatId::Gltf => gltf_extract_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
@@ -264,6 +341,17 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
 fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
     match id {
         FormatId::Pdf => pdf_generate_binding(),
+        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv
+        | FormatId::Toml => {
+            #[cfg(feature = "text")]
+            {
+                text_generate_binding(id)
+            }
+            #[cfg(not(feature = "text"))]
+            {
+                pending(id)
+            }
+        }
         FormatId::Svg => svg_generate_binding(),
         FormatId::Gltf => gltf_generate_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
@@ -283,6 +371,17 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
 fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
     match id {
         FormatId::Pdf => pdf_verify_binding(),
+        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv
+        | FormatId::Toml => {
+            #[cfg(feature = "text")]
+            {
+                text_verify_binding(id)
+            }
+            #[cfg(not(feature = "text"))]
+            {
+                pending(id)
+            }
+        }
         FormatId::Svg => svg_verify_binding(),
         FormatId::Gltf => gltf_verify_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),

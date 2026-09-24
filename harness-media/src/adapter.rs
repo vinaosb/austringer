@@ -29,3 +29,5 @@ mod pdf_extract;
 mod pdf_generate;
 #[cfg(feature = "pdf")]
 mod pdf_verify;
+#[cfg(feature = "text")]
+pub mod text;

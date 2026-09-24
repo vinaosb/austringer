@@ -40,6 +40,20 @@ fn registry_covers_all_34_formats_with_probe_supported() {
             if cfg!(feature = "pdf") && *id == FormatId::Pdf {
                 continue;
             }
+            // M30: the text-substrate adapters flip their claims to
+            // Supported (same feature-paired pattern).
+            if cfg!(feature = "text")
+                && matches!(
+                    id,
+                    FormatId::Markdown
+                        | FormatId::Html
+                        | FormatId::Json
+                        | FormatId::Csv
+                        | FormatId::Toml
+                )
+            {
+                continue;
+            }
             match descriptor.ops.get(&op) {
                 Some(OpSupport::Unsupported { reason }) => {
                     assert!(!reason.is_empty(), "{id} {op}: empty reason");
