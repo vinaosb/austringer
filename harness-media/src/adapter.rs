@@ -29,5 +29,19 @@ mod pdf_extract;
 mod pdf_generate;
 #[cfg(feature = "pdf")]
 mod pdf_verify;
+
+#[cfg(feature = "audio")]
+pub mod audio;
+#[cfg(feature = "audio")]
+mod audio_decode;
+#[cfg(feature = "audio")]
+mod audio_flac;
+#[cfg(feature = "audio")]
+mod audio_synth;
+#[cfg(feature = "audio")]
+mod audio_wav;
 #[cfg(feature = "text")]
 pub mod text;
+
+#[cfg(feature = "image")]
+pub mod image;

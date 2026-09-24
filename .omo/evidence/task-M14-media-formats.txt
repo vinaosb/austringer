@@ -1,0 +1,129 @@
+TASK M14 - audio adapter (pure decode + WAV/FLAC synth + transcription seam) (media-formats-wave)
+=============================================================================================
+
+Worker: M14 implementation worker (Sisyphus-junior). Date: 2026-09-24.
+Base: HEAD adc2c2e (M15 tool executor) + in-flight parallel lanes observed in the SAME
+worktree (M28 image family, M30 text substrate: their src/, tests/, fixtures, and shared-file
+feature lines appeared mid-task; read-modified beyond nothing - only this lane's own files and
+the declared shared-file additions below were touched).
+Plan authority: .omo/plans/media-formats-wave.md todo 14 (M14), lines 191-197, verbatim.
+
+ENVIRONMENT (disclosed, per task-13/M1/M6 precedent)
+-------------------------------------------------------------------------------
+All cargo commands ran with the M6-documented shell-scoped INCLUDE workaround for the
+machine-wide VS servicing damage (gutted stdarg.h) + Env:CC removal; CARGO_TARGET_DIR was
+pre-set to C:\ct (shared, warm). The size canary ran in a SEPARATE CARGO_TARGET_DIR per the
+M6 precedent. Parallel lanes M28/M30 were actively compiling mid-task; their transient
+compile errors repeatedly blocked whole-crate test builds - M14 verification used targeted
+--test selections (only M14 + shared-surface targets) and is re-run at final commit time.
+
+TDD RED (true red, tests written FIRST against the intended API)
+-------------------------------------------------------------------------------
+Test files written before any implementation existed:
+  harness-media/tests/audio_extract.rs   (6 tests)
+  harness-media/tests/audio_roundtrip.rs (8 tests)
+  harness-media/tests/audio_pipeline.rs  (3 tests)
+Command: cargo nextest run -p harness-media --test audio_extract --test audio_roundtrip
+         --test audio_pipeline
+
+  error[E0432]: unresolved import `harness_media::adapter::audio`
+   --> harness-media\tests\audio_extract.rs:11:5
+   --> harness-media\tests\audio_roundtrip.rs:9:29
+   --> harness-media\tests\audio_pipeline.rs:14:5
+  error[E0432]: could not find `adapter` in `harness_media` (lib built featureless)
+  exit code 101
+
+Right-reason check: every failure names the missing module (the M6/M13 RED shape).
+One test-only wart (unused `use std::sync::Arc;` in audio_pipeline.rs) was removed before
+implementation began - a test-file issue, not implementation drift.
+
+FIXTURES (committed under harness-media/fixtures/audio/, all <= 64 KB)
+-------------------------------------------------------------------------------
+Generated ONE dev-time with the locally installed ffmpeg 8.x (tools stay opt-in at RUNTIME;
+the committed bytes are the only thing tests read - hermetic). Ground truth via ffprobe +
+astats, recorded:
+  sine-440-16k-mono.wav    16,078 B  pcm_s16le 16000 Hz 1 ch, 0.500 s, 8000 samples,
+                                     peak -18.06 dB (0.125 linear, lavfi sine default),
+                                     RMS -21.07 dB (0.0883 ~ 0.125/sqrt(2))
+  sine-440-16k-mono.flac  11,196 B  flac 16000 Hz 1 ch, 0.500 s, 8000 samples
+  sine-440-22k-mono.mp3    2,526 B  mp3 22050 Hz 1 ch, 0.500 s; symphonia 0.6 gapless
+                                     (default AudioDecoderOptions{gapless:true}) trims
+                                     LAME delay/padding -> 11,025 decoded samples
+  sine-440-16k-mono.ogg    3,921 B  vorbis 16000 Hz 1 ch, 0.500 s, 8000 samples
+  mp3-truncated.mp3          100 B  the corpus mp3 cut inside the FIRST frame (no
+                                     decodable packet exists; symphonia probe refuses
+                                     -> typed ParseFailure, pinned)
+
+DEPENDENCY DECISIONS (executor's pick, recorded per plan; cargo-deny VERDICTS)
+-------------------------------------------------------------------------------
+- symphonia 0.6.1 (MPL-2.0, already in deny.toml's allow-list via the dhat precedent):
+  pure-Rust decode for wav/pcm, flac, mp3, ogg/vorbis, exactly the four family codecs +
+  their containers via features [flac, mp3, ogg, pcm, vorbis, wav], default-features=false
+  (no aac/alac/isomp4/mkv trees; mp3 is NOT in symphonia's default set - explicitly
+  enabled). OPUS remains UNIMPLEMENTED in symphonia 0.6 (verified in the codec registry:
+  no opus feature, no opus decoder) -> the plan's M17 ffmpeg redirect stands, typed at TWO
+  guards (pre-probe M2 sniff + codec-params check for crafted streams).
+- hound 3.5.1 (Apache-2.0): WAV read/write (decode to f32; write pcm16/pcm32/f32).
+- flacenc 0.5.1 (Apache-2.0), default-features=false (single-threaded, log-free ->
+  deterministic encode): FLAC encode, the only A/V format fully generable pure Rust.
+- cargo deny: licenses/bans/sources pass for the M14 tree (symphonia MPL-2.0 allowed,
+  hound/flacenc Apache-2.0 allowed). TWO pre-existing rejections come from the PARALLEL
+  lanes' in-flight deps (jpeg-encoder 0.7.1 "IJG" [M28], libfuzzer-sys "NCSA" via the
+  jxl-oxide tree [M28]) - not M14 deps, left to their todos. Advisories: clean.
+
+RECORDED INTEROP DECISION: flacenc STREAMINFO min-blocksize normalization
+-------------------------------------------------------------------------------
+flacenc reports the ACTUAL minimum block size in STREAMINFO (a short final frame shrinks
+it below the nominal fixed block size). The fixed-blocksize convention ffmpeg/libFLAC emit
+- and the symphonia 0.6 reader enforces via strict_frame_header_check (is_fixed =
+min==max, frame-numbered headers rejected otherwise) - is min == max == nominal with the
+final short frame exempt. Empirically verified in an isolated scratch (outside the
+workspace): symphonia decodes ffmpeg's min==max stream (8,000 samples, bs 1152, short
+final block) but refuses flacenc's min<max one with IoError(UnexpectedEof) at probe, for
+partial-final/single-short-block streams (exact-multiple streams pass either way).
+Fix: after encode, stream.stream_info_mut().set_block_sizes(nominal, nominal) with
+flacenc's own max_block_size - no frame byte is touched.
+Cross-check (dev-time, ffmpeg 8.x as the independent decoder):
+  ffmpeg -i normalized.flac -f md5 -        => 7bfcfe5d814a544c1521508427e7fdfd
+  reference pcm_s16le input bytes md5       => 7bfcfe5d814a544c1521508427e7fdfd  (identical)
+Lossless guarantee intact; documented in src/adapter/audio_flac.rs module docs.
+
+TDD GREEN (verification commands + results)
+-------------------------------------------------------------------------------
+Date: 2026-09-24 (re-verified after parallel lanes landed).
+MSVC env: shell-scoped INCLUDE/LIB workaround via ScopeCppSDK vc15 (VS18 Insiders
+gutted-include precedent from M6). CC unset; CARGO_TARGET_DIR=C:\ct.
+
+1. cargo nextest run -p harness-media --test audio_extract --test audio_roundtrip
+                --test audio_pipeline
+
+   17 tests run: 17 passed, 0 skipped (0.651 s)
+
+   PASS audio_extract::opus_decode_is_typed_redirect_to_the_m17_ffmpeg_lane
+   PASS audio_extract::text_projection_is_the_codec_hz_ch_mmss_line
+   PASS audio_extract::fixture_corpus_extracts_codec_rate_channels_duration_pinned
+   PASS audio_extract::audio_family_ops_are_dispatchable_with_producer_disclosure
+   PASS audio_extract::extract_budget_trip_is_the_typed_extract_too_large
+   PASS audio_extract::truncated_mp3_fails_typed_parse_failure_never_panics
+   PASS audio_roundtrip::synth_wav_probes_and_round_trips_the_independent_tree
+   PASS audio_roundtrip::synth_flac_probes_and_round_trips_the_independent_tree
+   PASS audio_roundtrip::synth_is_byte_deterministic_noise_included
+   PASS audio_roundtrip::invalid_synth_specs_fail_the_typed_invalid_spec
+   PASS audio_roundtrip::wav_pcm16_transcode_is_bit_exact_and_byte_deterministic
+   PASS audio_roundtrip::wav_f32_transcode_is_bit_exact
+   PASS audio_roundtrip::flac_encode_round_trips_losslessly_through_symphonia
+   PASS audio_roundtrip::lossy_encode_is_typed_redirect_to_the_m17_ffmpeg_lane
+   PASS audio_pipeline::deterministic_text_projection_registers_for_the_audio_family
+   PASS audio_pipeline::transcript_without_capable_model_or_tool_is_typed_no_projector_with_notice
+   PASS audio_pipeline::audio_projector_kind_is_text_projection_only
+
+2. cargo clippy -p harness-media --features audio --all-targets -- -D warnings
+   => 9 errors, ALL in image adapter files (pixels.rs, png.rs, avif_write.rs)
+      from parallel lanes M28/M30. ZERO warnings/errors in M14 audio files.
+      LSP diagnostics: all 5 audio source files clean (no diagnostics found).
+      Pre-existing image-lane clippy regressions are NOT in M14 scope.
+
+3. cargo check -p harness-media --lib --features audio
+   => Finished (7.37 s) - lib compiles cleanly.
+
+VERDICT: GREEN. All 17 M14 tests pass. Audio source files zero-warning clean.
