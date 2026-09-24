@@ -21,18 +21,29 @@ use harness_core::event::{ContentBlock, Event, RecordedEvent};
 use crate::attach::{HostCommand, SessionHost, SteerQueue};
 use crate::stages::WorkerToolExecutor;
 
+/// Pops one drained signal or notice from a shared queue (poison-safe).
+fn pop_queued(queue: &SteerQueue) -> Option<String> {
+    let mut guard = match queue.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.pop_front()
+}
+
 /// A Steer stage draining the daemon's shared queue (mid-run steering:
 /// each drained signal becomes a recorded user event inside the live
 /// turn).
 pub struct SharedSteerer {
     queue: SteerQueue,
+    notices: SteerQueue,
 }
 
 impl SharedSteerer {
-    /// Stage over the shared queue.
+    /// Stage over the shared steer queue and the projection notice
+    /// queue.
     #[must_use]
-    pub fn new(queue: SteerQueue) -> Self {
-        Self { queue }
+    pub fn new(queue: SteerQueue, notices: SteerQueue) -> Self {
+        Self { queue, notices }
     }
 }
 
@@ -46,6 +57,14 @@ impl Steer for SharedSteerer {
             ctx.append(Event::User { blocks })?;
             *ctx.steered = true;
         }
+        // Projection notices (plan M10): one Event::System per media a
+        // submit could not project, riding the turn their blocks queued
+        // into. LlmVisible by design — the model is told what the
+        // marker stands for.
+        while let Some(text) = pop_queued(&self.notices) {
+            ctx.append(Event::System { text })?;
+            *ctx.steered = true;
+        }
         while let Some(text) = ctx.steer_queue.pop_front() {
             ctx.append(Event::User {
                 blocks: vec![ContentBlock::Text { text }],
@@ -53,13 +72,7 @@ impl Steer for SharedSteerer {
             *ctx.steered = true;
         }
         loop {
-            let next = {
-                let mut guard = match self.queue.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
-                guard.pop_front()
-            };
+            let next = pop_queued(&self.queue);
             let Some(text) = next else { break };
             ctx.append(Event::User {
                 blocks: vec![ContentBlock::Text { text }],
@@ -229,11 +242,23 @@ impl SessionHost {
         }
     }
 
+    /// The projection notice queue for the steer stage (an empty
+    /// dedicated queue when no intake is wired — it drains nothing).
+    #[must_use]
+    pub fn projection_notice_queue(&self) -> SteerQueue {
+        self.projection
+            .get()
+            .map_or_else(SteerQueue::default, |intake| intake.notice_queue())
+    }
+
     /// Build the daemon's standard stage set over a worker executor.
     #[must_use]
     pub fn standard_stages(&self, executor: WorkerToolExecutor) -> StageSet {
         let mut stages = StageSet::default();
-        stages.steer = Box::new(SharedSteerer::new(self.steer_queue()));
+        stages.steer = Box::new(SharedSteerer::new(
+            self.steer_queue(),
+            self.projection_notice_queue(),
+        ));
         stages.approval = Box::new(crate::stages::ReservedAwareApproval::new(
             crate::stages::chain_over_mediator(self.mediator()),
         ));

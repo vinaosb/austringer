@@ -86,6 +86,60 @@ fn provider_from_env() -> Result<Option<harness_daemon::provider::ProviderSelect
     Ok(Some(selection))
 }
 
+/// The session-model mediation candidate (plan M10): the resolved
+/// provider plus its M7 catalog caps. An unknown model maps fail-closed
+/// to no caps — it never mediates; the utility route still may. The
+/// second `resolve` can only fail where `compose_factory`'s already did
+/// (startup exits there), so the miss is unreachable in practice.
+fn session_mediation(
+    provider: &harness_daemon::provider::ProviderSelection,
+) -> Option<harness_daemon::projection::ResolvedMediation> {
+    let resolved = provider.resolve().ok()?;
+    let caps = harness_intel::catalog::Catalog::seeded()
+        .capabilities(&provider.model)
+        .map_or_else(
+            |_| harness_core::media_delivery::DeliveryCapabilities::default(),
+            harness_daemon::projection::delivery_caps,
+        );
+    Some(harness_daemon::projection::ResolvedMediation {
+        resolved,
+        model_id: provider.model.clone(),
+        caps,
+        timeout: provider.inference_timeout,
+    })
+}
+
+/// The utility-route mediation candidate from the T42 routing table
+/// (`{data_dir}/routing.json`): the summarizer role's model on the same
+/// provider/credential seam as the session model. An absent file is
+/// silence (unconfigured is the default posture); a present but
+/// unusable one is loud and never fatal to inference.
+fn utility_mediation(
+    provider: &harness_daemon::provider::ProviderSelection,
+    data_dir: &std::path::Path,
+) -> Option<harness_daemon::projection::ResolvedMediation> {
+    let json = std::fs::read_to_string(data_dir.join("routing.json")).ok()?;
+    let route = match harness_daemon::projection::utility_route(
+        &json,
+        &harness_intel::catalog::Catalog::seeded(),
+    ) {
+        Ok(route) => route,
+        Err(failure) => {
+            eprintln!("harness-daemon: routing.json unusable for the projection utility route: {failure}");
+            return None;
+        }
+    };
+    let mut selection = provider.clone();
+    selection.model = route.model.clone();
+    let resolved = selection.resolve().ok()?;
+    Some(harness_daemon::projection::ResolvedMediation {
+        resolved,
+        model_id: route.model,
+        caps: route.caps,
+        timeout: selection.inference_timeout,
+    })
+}
+
 async fn run() -> Result<(), String> {
     let config = config_from_env_and_args()?;
     std::fs::create_dir_all(&config.data_dir)
@@ -100,10 +154,22 @@ async fn run() -> Result<(), String> {
         harness_providers::transport_reqwest::ReqwestTransport::new()
             .map_err(|e| format!("provider transport init: {e}"))?,
     );
-    let factory = harness_daemon::provider::compose_factory(config.provider.as_ref(), transport)
+    let factory = harness_daemon::provider::compose_factory(config.provider.as_ref(), transport.clone())
         .map_err(|e| format!("provider config: {e}"))?;
-    let state =
-        Arc::new(DaemonState::new(config, factory).map_err(|e| format!("token generation: {e}"))?);
+    // M10: submit-time projection mediation — the session model when
+    // its M7 caps cover the media, else the configured capable utility
+    // role via the T42 routing table. Computed before `config` moves
+    // into the daemon state.
+    let session = config.provider.as_ref().and_then(session_mediation);
+    let utility = config
+        .provider
+        .as_ref()
+        .and_then(|provider| utility_mediation(provider, &config.data_dir));
+    let mut state =
+        DaemonState::new(config, factory).map_err(|e| format!("token generation: {e}"))?;
+    state.projection_factory =
+        harness_daemon::projection::compose_intake_factory(transport, session, utility);
+    let state = Arc::new(state);
 
     // Reload successor mode: adopt the inherited listener instead of
     // binding (zero-downtime handoff — the socket never went down).

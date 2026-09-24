@@ -37,6 +37,11 @@ pub struct DaemonState {
     /// Inference factory for new sessions (scripted in tests, provider
     /// adapter in the binary).
     pub inference_factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>,
+    /// Submit-time projection intake factory for new sessions (M10):
+    /// composes each session's mediation candidates against its session
+    /// dir. The default keeps the submit path marker-only; the binary
+    /// wires the provider + T42 routing seam.
+    pub projection_factory: crate::projection::IntakeFactory,
     /// Session hosts by URL-addressable session id.
     pub hosts: Mutex<HashMap<String, Arc<SessionHost>>>,
     /// Engine session dirs root.
@@ -70,6 +75,7 @@ impl DaemonState {
             sessions_root: config.data_dir.join("sessions"),
             config,
             inference_factory,
+            projection_factory: crate::projection::disabled_factory(),
             hosts: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             drain,
@@ -119,16 +125,21 @@ impl DaemonState {
         );
         let session_dir = self.sessions_root.join(id);
         let _ = std::fs::create_dir_all(&session_dir);
+        // The projection intake must be set BEFORE the engine spawns:
+        // the steer stage captures its notice queue at stage construction.
+        let _ = host.media_dir.set(session_dir.clone());
+        if let Some(intake) = (self.projection_factory)(&session_dir) {
+            let _ = host.projection.set(intake);
+        }
         let executor =
             WorkerToolExecutor::new(Arc::clone(&self.worker_router), None, host.event_sink());
         let _ = host.spawn_engine_with_config(
-            session_dir.clone(),
+            session_dir,
             host.standard_stages(executor),
             (self.inference_factory)(),
             cmd_rx,
             loop_config,
         );
-        let _ = host.media_dir.set(session_dir);
         hosts.insert(id.to_owned(), Arc::clone(&host));
         host
     }

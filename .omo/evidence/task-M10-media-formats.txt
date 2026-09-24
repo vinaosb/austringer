@@ -157,3 +157,108 @@ KNOWN-GOOD HANDOFF FOR THE M9 MERGE (precise block)
 MSVC NOTE: cold builds needed the provided recipe (vcruntime.h missing) -
   INCLUDE='C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include;...'
   applied per-invocation; with it all builds/tests were deterministic.
+
+AMENDMENT 2026-09-24 — M10 verification residuals closed (post-cee88c4)
+=====================================================================================
+Verdict residuals from the M10 verification (core pipeline CONFIRMED at 5cd6bf4:
+94/94, prompt-bytes anti-fake, dedup counter-pins) triaged against HEAD:
+
+R1 (harness-daemon/Cargo.toml lacked the harness-media dep at 5cd6bf4; the daemon
+  test compiled only on M9's uncommitted tree) -> RESOLVED-BY-CEE88C4, MOOT.
+  cee88c4 committed harness-media as a REGULAR daemon dependency (features:
+  image,svg,pdf,audio,office,gltf,georaster,data,text — stronger than the
+  dev-dep the residual asked for; media.rs routes + intake need it at runtime)
+  and completed M10's omitted Cargo.lock regen. provider_projection_tests
+  compiles+passes at committed state (re-run in this amendment's verify).
+
+R2 (submit-time call site M9-blocked) -> RESOLVED-BY-THIS-COMMIT.
+  Exactly the KNOWN-GOOD HANDOFF block above, verbatim design:
+  - harness-daemon/src/projection.rs (NEW, 142 pure LOC): ProjectionIntake
+    (session dir + registry + owned session/utility MediatedProjection set +
+    notice queue) with enqueue_notices(blocks) = ProjectionResolver::resolve +
+    one queue entry per outcome.notice(); store-open failure is itself an
+    honest notice (a submit is never crashed by a projection). Plus
+    compose_intake_factory(transport, session, utility) building per-session
+    factories over ResolvedProvider::compose_projection_factory, and
+    disabled_factory() (the pre-M10 posture DaemonState defaults to).
+  - attach.rs SubmitMedia arm: intake.enqueue_notices(&blocks).await runs
+    BEFORE queue_blocks — projections land in the derived store before the
+    turn queues, so the M8 delivery cache inlines at request-build time.
+  - engine.rs SharedSteerer drains the intake's notice queue into
+    Event::System appends inside the live turn (LlmVisible: the model is told
+    what the marker stands for), after the block queue, before steer signals.
+  - server.rs DaemonState.projection_factory wired in session_with_config
+    BEFORE spawn_engine (the steer stage captures the notice queue at stage
+    construction — ordering pinned by projection_submit_tests going through
+    the real DaemonState factory path).
+
+R3 (T42 utility-route wiring; daemon did not depend on harness-intel) ->
+  RESOLVED-BY-THIS-COMMIT.
+  - harness-daemon -> harness-intel dependency added.
+  - projection::utility_route(json, catalog): RoutingTable::from_json ->
+    resolve(Role::Summarizer) (the cheap-pool summarization utility role;
+    scene descriptions/transcripts are summarization-class work) ->
+    table.catalog().capabilities(model) -> DeliveryCapabilities; typed
+    UtilityRouteError (Table/Unresolved/Unknown). The capability GATE stays
+    in the resolver (mediates): an incapable routed model answers typed
+    NoProjector, never a model call.
+  - binary: session candidate = ProviderSelection.resolve + M7 caps
+    (unknown model -> fail-closed all-false); utility candidate =
+    {data_dir}/routing.json Summarizer route on the same provider/credential
+    seam (model swapped); absent file = unconfigured silence, present-but-
+    invalid = loud eprintln, neither fatal (automations precedent).
+  - delivery_caps() maps M7 Capabilities -> M8 DeliveryCapabilities
+    (video_input dropped honestly — no delivery surface).
+
+SEMANTIC NOTE (pinned by test, not assumed): with submission caps sourced from
+  the session model's M7 flags (the handoff's stated design), a vision session
+  model + image submit plans NATIVE delivery — zero projections queued, zero
+  model calls (projection_submit_tests::submit_with_media_to_a_vision_session_
+  model_delivers_natively_no_projection_queued). The session-mediation arm of
+  the resolver therefore fires only under caps divergence; the daemon's LIVE
+  model-mediated path at HEAD is the utility route (utility-fallback test:
+  derived model:claude-opus-4-6:v1 + delivery alias, zero session-model calls).
+  OBSERVED FOLLOW-UP (out of this commit's scope, M8/M32 lane): the daemon's
+  compose_factory session adapter does not attach catalog caps or MediaDelivery
+  (text-only adapter posture), so a vision session model's native-image plan is
+  not yet reflected inside the composed session inference — the intake caps
+  follow the handoff (catalog) regardless; aligning compose_factory caps is the
+  M8 provider-wiring follow-up, not the submit path's.
+
+NEW ACCEPTANCE (harness-daemon/tests/projection_submit_tests.rs, 5 tests,
+  hermetic cassettes, through the REAL DaemonState factory):
+  - vision session + image submit -> native delivery: no notice, ZERO model
+    calls, nothing stored (never billed a projection it does not need);
+  - no mediation anywhere -> exactly ONE Event::System notice recorded in the
+    turn carrying "media projection unavailable" + the kind slug; image block
+    (marker) survives in the user event; derived store EMPTY (no fabrication);
+  - text-only session + capable utility route -> utility projects once,
+    derived model:{utility}:v1 + delivery alias, no notice;
+  - utility_route unit pair: summarizer route resolves from routing.json with
+    mapped caps; unconfigured role and off-cheap-pool routes are typed errors.
+
+VERIFY (this amendment, against THE COMMIT's tree via a temp git worktree —
+  isolating it from the concurrent M15 lane's uncommitted WIP; MSVC INCLUDE
+  recipe applied):
+  cargo nextest run -p harness-media -p harness-daemon --locked : 359 run,
+    359 passed, 3 skipped (pre-existing by-design skips) — includes the M10
+    acceptance quartet at committed state (provider_projection_tests 4/4,
+    prompt-bytes anti-fake green) + the 5 new submit-path tests.
+  cargo clippy -p harness-media -p harness-daemon --all-targets --locked
+    -D warnings : CLEAN (both crates, all targets, at the commit).
+  cargo check -p harness-daemon --all-targets --locked : CLEAN (lock/manifest
+    consistency of the committed tree proven).
+  (In the LIVE worktree the daemon's test-target clippy is intermittently
+  blocked by the M15 lane's uncommitted harness-test-support/src/mocktool.rs
+  — a foreign untracked file, not this change; the commit-worktree runs
+  above are the authoritative gates.)
+  Hygiene: zero unwrap/expect/panic/todo/unreachable in touched src files;
+  pure LOC: projection.rs 142, attach.rs 247, engine.rs 214, server.rs 215,
+  binary 241 (test file 254 — tests are not src).
+  Cargo.lock committed surgically: only the harness-daemon -> harness-intel
+  edge (the concurrent M15 lane's uncommitted manifest deltas — harness-media
+  tool deps + a getrandom flip — remain unstaged for their own commit);
+  validated by the --locked runs above inside the temp worktree of this
+  commit.
+
+Checkbox edits: NONE (M10's plan checkbox is M-lane state, not this commit's).

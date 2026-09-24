@@ -91,6 +91,10 @@ pub struct SessionHost {
     /// Session directory (media store root for submit resolution);
     /// set once by the session factory after construction.
     pub(crate) media_dir: std::sync::OnceLock<PathBuf>,
+    /// Submit-time projection intake (plan M10); set once by the
+    /// session factory BEFORE the engine spawns (the steer stage
+    /// captures its notice queue).
+    pub(crate) projection: std::sync::OnceLock<Arc<crate::projection::ProjectionIntake>>,
     pub(crate) turn_counter: AtomicU64,
     pub(crate) journal_root: Option<PathBuf>,
 }
@@ -129,6 +133,7 @@ impl SessionHost {
             event_sink_tx,
             steer_queue: Arc::clone(&steer_queue),
             media_dir: std::sync::OnceLock::new(),
+            projection: std::sync::OnceLock::new(),
             turn_counter: AtomicU64::new(0),
             journal_root,
         });
@@ -194,6 +199,12 @@ impl SessionHost {
             }
             HostCommand::SubmitMedia { text, media } => {
                 let blocks = self.resolve_media_blocks(text, media)?;
+                // Plan M10: needed projections resolve BEFORE the turn
+                // queues, so the delivery cache inlines at request-build
+                // time; unprojectable media queue Event::System notices.
+                if let Some(intake) = self.projection.get() {
+                    intake.enqueue_notices(&blocks).await;
+                }
                 self.queue_blocks(blocks, media);
             }
             HostCommand::Submit(_) | HostCommand::SubmitBlocks(_) | HostCommand::Cancel => {

@@ -16,6 +16,9 @@ dist = true
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
+# T42 routing table + M7 capability catalog for the submit-time
+# projection mediation (plan M10: the configured capable utility role).
+harness-intel = { path = "../harness-intel", version = "0.1.0" }
 # M2 probe registry for the media routes (upload sniff + GET mime). The
 # daemon enables the committed media-core feature set (everything but
 # the non-default avif/geovector opt-ins; today only `office` pulls a
