@@ -105,6 +105,31 @@ pub fn registry() -> FormatRegistry {
                 entry.ops.insert(op, OpSupport::Supported);
             }
         }
+        // M17 ffmpeg lane: opus/webm/mkv run through the opt-in ffmpeg
+        // subprocess adapter surface - the claims stay typed-Unsupported
+        // (the OpRequest kinds do not carry the staging contract) but the
+        // reasons name where the lane lives instead of a stale todo id.
+        if matches!(id, FormatId::Opus | FormatId::Webm | FormatId::Mkv) {
+            for (op, reason) in [
+                (
+                    Operation::Extract,
+                    "extract runs through the opt-in ffmpeg subprocess adapter (M17: \
+                     probe_av / extract_av over the enabled ffprobe + ffmpeg tools)",
+                ),
+                (
+                    Operation::Generate,
+                    "generate-class ops are TRANSCODE via the ffmpeg subprocess adapter \
+                     (M17: GREEN targets only - no from-nothing synthesis)",
+                ),
+                (
+                    Operation::Verify,
+                    "verify is the ffmpeg probe(before/after) diff (M17: verify_transcode, \
+                     lossy duration tolerance max(1 frame, 1%))",
+                ),
+            ] {
+                entry.ops.insert(op, OpSupport::Unsupported { reason: reason.into() });
+            }
+        }
         registry.register(entry);
     }
     registry

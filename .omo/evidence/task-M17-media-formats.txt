@@ -1,0 +1,139 @@
+# Task M17 - ffmpeg adapter (subprocess tier: probe/transcode/thumbnail)
+
+Plan: .omo/plans/media-formats-wave.md todo 17 (verbatim authority).
+HEAD at start: 2084142. Deps landed: M15 (adc2c2e) tool executor +
+manifests + mocktool goldens; M2 probe; M5 diff; M6 executor; M14
+audio (opus/mp3/vorbis encode redirects); M28 images (webp-lossy
+redirect).
+
+## What landed
+
+harness-media `ffmpeg` feature (dependency-free - all codec work in the
+opt-in external tool):
+
+- `src/adapter/ffmpeg/policy.rs` - the codec-clean licensing anchor
+  (constraint 7): typed `Target` vocabulary (GREEN-only, by
+  construction), RED_CODEC_NAMES table (h264/libx264/hevc/h265/
+  libx265/aac/libfdk_aac/theora), refused-target strings with named
+  reasons (H.264/H.265/AAC = RED; mp4 remux = deferred lane digest
+  section 6), TranscodeSpec {target, caps{max_width,max_fps,
+  max_audio_kbps}, trim{start_secs,end_secs}} parsed with
+  deny_unknown_fields (the injection guard: no spec string ever
+  reaches argv).
+- `src/adapter/ffmpeg/argv.rs` - the FIXED argv template set: typed
+  spec -> words; {input}/{output} staging tokens; every other word a
+  digest-section-4 literal or validated number. Test-pinned over every
+  target x cap x trim combination.
+- `src/adapter/ffmpeg/census.rs` - ffprobe `-show_format
+  -show_streams -of json` -> typed AvProbe (streams{codec_type,
+  codec_name, width/height, fps, duration, sample_rate, channels,
+  bitrate}, format/duration/bitrate) + canonical sorted-key tree +
+  bounded text projection. 64-stream parse cap -> typed
+  ExtractTooLarge.
+- `src/adapter/ffmpeg/ops.rs` - Adapter{tools, env} over the M15
+  ToolExecutor: probe_av / transcode (RED line enforced: stream-copy
+  remux of RED payloads = typed UnsupportedFeature; decode-away legal)
+  / thumbnail (first frame -> PNG; audio-only = honest Ok(None)) /
+  pcm_md5 (`-map 0:a -f md5 -`) / extract_av (census + thumbnail into
+  the caller's MediaStore, every artifact carrying ProducerInfo).
+  Staging: session-temp files named m17-{in,out}-<pid>-<n>.<ext>,
+  published to the child as HARNESS_MEDIA_STAGE_IN/OUT (mocktool
+  contract; real ffmpeg ignores), cleaned on success AND failure.
+- `src/adapter/ffmpeg/verify.rs` - verify_transcode: probe(before/
+  after) structural diff on DECLARED targets (codec identity from the
+  target's census table, stream census, unordered /streams), lossy
+  duration tolerance max(1 frame at the EFFECTIVE output fps, 1%).
+- `tests/ffmpeg_adapter.rs` (18 hermetic tests, mocktool lane) +
+  `tests/ffmpeg_real.rs` (#[ignore], FFMPEG_BIN env, never CI).
+
+Shared-file hunks (all mine, staged together):
+
+- Cargo.toml: `ffmpeg = []` feature + dev-dep feature list.
+- src/adapter.rs: `#[cfg(feature = "ffmpeg")] pub mod ffmpeg;`
+- src/tool/manifest.rs: ffprobe `probe-av` template; ffmpeg
+  `thumbnail` + `pcm-md5` templates (transcode argv is per-call from
+  the typed table - a static template cannot express codec lanes).
+- src/tool/executor.rs: `ToolCall::argv` per-call field + with_argv
+  builder (precedence: ToolOverride > per-call > manifest template) +
+  subprocess_refusal names the adapter::ffmpeg surface when ffmpeg is
+  enabled (the M16-M21 pending text stays for the other tools).
+- src/probe/registry.rs: opus/webm/mkv descriptor reasons now name the
+  M17 adapter surface (claims stay typed-Unsupported: the OpRequest
+  kinds do not carry the staging contract).
+- harness-test-support: mocktool `stagecopy` + `stagegolden` modes +
+  `dispatch_words` (per-tool child entries read
+  HARNESS_MOCKTOOL_FFMPEG_ARGV / HARNESS_MOCKTOOL_FFPROBE_ARGV);
+  capture.md rows for the five new goldens.
+
+Real captured goldens (capture commands verbatim in
+harness-test-support/golden/mocktool/capture.md; ffmpeg/ffprobe
+8.1.1-essentials on this machine 2026-09-25):
+
+- _input/tiny-vp9.webm (4329 B: vp9 64x48 @10fps + libopus 48 kHz,
+  0.208 s) and _input/tiny-h264.mp4 (2132 B: h264 64x48, 0.2 s -
+  dev-machine TEST-INPUT synthesis for the RED-input lanes; the
+  adapter itself never emits H.264/AAC).
+- ffprobe/probe-webm-json.golden, ffprobe/probe-h264-mp4-json.golden
+- ffmpeg/thumbnail-png.golden (1237 B real keyframe PNG),
+  ffmpeg/pcm-md5.golden (MD5=0e0344ab90750a8dbcb7b2274096a081)
+
+## TDD evidence
+
+RED (tests written first; module absent):
+
+    cargo nextest run -p harness-media --test ffmpeg_adapter --test ffmpeg_real
+    > error[E0432]: unresolved import `harness_media::adapter::ffmpeg`
+    > error[E0425]: cannot find function `dispatch_words` in module
+    >   `harness_test_support::mocktool`
+    error: could not compile `harness-media` (test "ffmpeg_adapter")
+
+GREEN (hermetic, isolated worktree at HEAD 2084142 + this change):
+
+    cargo nextest run -p harness-media
+    Summary [  30.493s] 324 tests run: 324 passed, 4 skipped
+
+(18 of the 324 are this todo's ffmpeg_adapter suite; 4 skipped =
+#[ignore] real-tool tiers incl. ffmpeg_real.)
+
+clippy: `cargo clippy -p harness-media -p harness-test-support
+--all-targets` -> zero warnings (workspace lints warnings=deny).
+cargo deny check -> clean (pre-existing duplicate-crate warnings only,
+no new deps - Cargo.lock unchanged).
+LOC: argv 62 / census 178 / mod 12 / ops 226 / policy 201 / verify 88
+- all <= 250 pure LOC. No unwrap/expect/panic in src.
+
+## Real-tool run at todo time (evidence-gated; no waiver needed)
+
+FFMPEG_BIN=C:\ProgramData\chocolatey\bin\ffmpeg.exe (ffprobe sibling),
+
+    cargo nextest run -p harness-media --test ffmpeg_real --run-ignored only
+    PASS harness-media::ffmpeg_real real_probe_transcode_decode_back (0.947s)
+
+The lane: real ffprobe census of tiny-h264.mp4 (red_codec == "h264");
+real transcode to webm/libvpx-vp9+libopus under caps (32px/5fps/24k);
+real probe-diff verify PASS; real decode-back PCM hash of the opus
+track; real keyframe thumbnail (PNG magic pinned). One fix this run
+surfaced: the fps cap legitimately rescales frame timing (2 frames at
+5 fps = 0.4 s), so the duration tolerance's "1 frame" is now computed
+at the EFFECTIVE output fps (input fps min spec cap) - pinned by the
+unit tolerance test.
+
+## Deviations / notes
+
+- Producer command disclosure in the MOCK lane shows the substitution
+  triple (the override argv replaces the real one by design), so the
+  codec-flag disclosure is pinned by the argv-word-universe test and
+  the real-tool tier instead.
+- The transcode target vocabulary includes OggVorbis + WebpLossy
+  (fixed quality 80, still-image) beyond the plan's container list:
+  both are digest-section-4 GREEN flags the M14/M28 redirects name
+  this lane for. libaom-av1 rides the allowlist as MkvAomAv1Opus.
+- OpRequest dispatch still refuses opus/webm/mkv extract/generate (the
+  request kinds carry no staging contract / MediaStore); the adapter
+  surface (probe_av/extract_av/transcode/pcm_md5) is the M31
+  engine-tool seam, and the refusal text + descriptor reasons now say
+  so.
+- M16 (blend) shares this checkout: its in-flight mocktool.rs /
+  executor.rs / adapter.rs / manifest.rs / capture.md edits were
+  excluded from this commit by staging HEAD+M17-only blobs
+  (worktree-preserved); its staged index was left untouched.

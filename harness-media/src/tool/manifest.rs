@@ -85,6 +85,38 @@ const FFPROBE_VERSION_CHECK: ToolOpTemplate = ToolOpTemplate {
     args: &["-version"],
 };
 
+// M17 ffmpeg lane: the FIXED invocations are manifest templates
+// (machine-readable JSON census, keyframe thumbnail, lossless decode
+// hash). The spec-driven transcode/encode/remux argv cannot be a
+// static template - codec lanes, caps and trim come from the typed
+// TranscodeSpec - so adapter::ffmpeg::policy builds those per call
+// from its closed word table (test-pinned there; the filter-injection
+// guard lives in the typed spec, never in free-form strings).
+const FFPROBE_OP_PROBE_AV: ToolOpTemplate = ToolOpTemplate {
+    op: "probe-av",
+    program: None,
+    args: &[
+        "-v", "error", "-show_format", "-show_streams", "-of", "json", "{input}",
+    ],
+};
+
+const FFMPEG_OP_THUMBNAIL: ToolOpTemplate = ToolOpTemplate {
+    op: "thumbnail",
+    program: None,
+    args: &[
+        "-y", "-hide_banner", "-loglevel", "error", "-ss", "0", "-i", "{input}", "-frames:v",
+        "1", "{output}",
+    ],
+};
+
+const FFMPEG_OP_PCM_MD5: ToolOpTemplate = ToolOpTemplate {
+    op: "pcm-md5",
+    program: None,
+    args: &[
+        "-hide_banner", "-loglevel", "error", "-i", "{input}", "-map", "0:a", "-f", "md5", "-",
+    ],
+};
+
 const GDALINFO_VERSION_CHECK: ToolOpTemplate = ToolOpTemplate {
     op: OP_VERSION_CHECK,
     program: Some("gdalinfo"),
@@ -114,9 +146,38 @@ fn spec(
     }
 }
 
-const BLENDER_OPS: &[ToolOpTemplate] = &[VERSION_CHECK];
-const FFMPEG_OPS: &[ToolOpTemplate] = &[VERSION_CHECK];
-const FFPROBE_OPS: &[ToolOpTemplate] = &[FFPROBE_VERSION_CHECK];
+// M16 blender lane: extract = headless scene-dump over the opened
+// .blend (--factory-startup always - user prefs are never read);
+// generate = builder script whose argv tail names the output path (the
+// `--` separator is blender's pass-through to sys.argv).
+const BLENDER_OP_SCENE_DUMP: ToolOpTemplate = ToolOpTemplate {
+    op: "scene-dump",
+    program: None,
+    args: &[
+        "--background",
+        "--factory-startup",
+        "{input}",
+        "--python",
+        "{script}",
+    ],
+};
+
+const BLENDER_OP_SCENE_BUILD: ToolOpTemplate = ToolOpTemplate {
+    op: "scene-build",
+    program: None,
+    args: &[
+        "--background",
+        "--factory-startup",
+        "--python",
+        "{script}",
+        "--",
+        "{output}",
+    ],
+};
+
+const BLENDER_OPS: &[ToolOpTemplate] = &[VERSION_CHECK, BLENDER_OP_SCENE_DUMP, BLENDER_OP_SCENE_BUILD];
+const FFMPEG_OPS: &[ToolOpTemplate] = &[VERSION_CHECK, FFMPEG_OP_THUMBNAIL, FFMPEG_OP_PCM_MD5];
+const FFPROBE_OPS: &[ToolOpTemplate] = &[FFPROBE_VERSION_CHECK, FFPROBE_OP_PROBE_AV];
 const WHISPER_OPS: &[ToolOpTemplate] = &[ToolOpTemplate {
     op: OP_VERSION_CHECK,
     program: None,

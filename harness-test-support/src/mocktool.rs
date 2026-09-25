@@ -14,6 +14,12 @@
 //! - `golden <name>` — print golden file `<name>.golden` from
 //!   `HARNESS_MOCKTOOL_GOLDEN_DIR` byte-for-byte. Golden files are real
 //!   captures (see `golden/mocktool/capture.md`); never hand-written.
+//! - `stagecopy` — copy the file at `HARNESS_MEDIA_STAGE_IN` to
+//!   `HARNESS_MEDIA_STAGE_OUT` (the M17 adapter's staging contract: the
+//!   adapter publishes its staged input/output paths in the child env;
+//!   real ffmpeg ignores them, the mock is the pass-through remux echo).
+//! - `stagegolden <name>` — write golden `<name>.golden` bytes to
+//!   `HARNESS_MEDIA_STAGE_OUT` (the M17 canned-thumbnail lane).
 //! - `exit <code> [msg...]` — write msg to stderr, exit with code.
 //! - `write <path> <text>` — write text to path (utf-8), exit 0.
 //! - `hang [children]` — spawn `children` (default 1) `sleep 60`
@@ -34,8 +40,16 @@ pub fn run_from_env() -> i32 {
         eprintln!("mocktool: HARNESS_MOCKTOOL_ARGV is unset");
         return 2;
     };
-    let words: Vec<String> = words.split_whitespace().map(String::from).collect();
-    let refs: Vec<&str> = words.iter().map(String::as_str).collect();
+    dispatch_words(&words)
+}
+
+/// Dispatch mode words from an arbitrary env-var string (the M17
+/// per-tool child entries read `HARNESS_MOCKTOOL_FFMPEG_ARGV` /
+/// `HARNESS_MOCKTOOL_FFPROBE_ARGV` so one adapter call can drive two
+/// distinct tool children).
+pub fn dispatch_words(words: &str) -> i32 {
+    let split: Vec<String> = words.split_whitespace().map(String::from).collect();
+    let refs: Vec<&str> = split.iter().map(String::as_str).collect();
     dispatch(&refs)
 }
 
@@ -54,12 +68,66 @@ fn dispatch(words: &[&str]) -> i32 {
     match *mode {
         "env" => env_mode(),
         "golden" => golden_mode(rest.first().copied()),
+        "stagecopy" => stagecopy_mode(),
+        "stagegolden" => stagegolden_mode(rest.first().copied()),
         "exit" => exit_mode(rest),
         "write" => write_mode(rest),
         "hang" => hang_mode(rest.first().and_then(|n| n.parse::<u32>().ok())),
         "sleep" => sleep_mode(rest.first().and_then(|s| s.parse::<u64>().ok())),
         other => {
             eprintln!("mocktool: unknown mode {other}");
+            2
+        }
+    }
+}
+
+fn stage_var(name: &str) -> Option<std::path::PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+fn stagecopy_mode() -> i32 {
+    let (Some(source), Some(target)) =
+        (stage_var("HARNESS_MEDIA_STAGE_IN"), stage_var("HARNESS_MEDIA_STAGE_OUT"))
+    else {
+        eprintln!("mocktool: stagecopy needs HARNESS_MEDIA_STAGE_IN/OUT");
+        return 2;
+    };
+    match std::fs::copy(&source, &target) {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!(
+                "mocktool: stagecopy {} -> {} failed: {e}",
+                source.display(),
+                target.display()
+            );
+            2
+        }
+    }
+}
+
+fn stagegolden_mode(name: Option<&str>) -> i32 {
+    let (Some(name), Some(target)) = (name, stage_var("HARNESS_MEDIA_STAGE_OUT")) else {
+        eprintln!("mocktool: stagegolden needs <name> and HARNESS_MEDIA_STAGE_OUT");
+        return 2;
+    };
+    let Some(dir) = std::env::var_os("HARNESS_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
+    else {
+        eprintln!("mocktool: HARNESS_MOCKTOOL_GOLDEN_DIR is unset");
+        return 2;
+    };
+    let path = std::path::Path::new(&dir).join(format!("{name}.golden"));
+    match std::fs::read(&path) {
+        Ok(bytes) => match std::fs::write(&target, &bytes) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("mocktool: stagegolden write {} failed: {e}", target.display());
+                2
+            }
+        },
+        Err(e) => {
+            eprintln!("mocktool: golden {name} unreadable: {e}");
             2
         }
     }

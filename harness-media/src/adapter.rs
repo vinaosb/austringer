@@ -45,3 +45,6 @@ pub mod text;
 
 #[cfg(feature = "image")]
 pub mod image;
+
+#[cfg(feature = "ffmpeg")]
+pub mod ffmpeg;

@@ -79,6 +79,12 @@ data = []
 # unnecessary for a census and tokenizer-only is the bounded untrusted-
 # input posture); csv for RFC 4180; toml for TOML 1.0. All pure Rust.
 text = ["dep:comrak", "dep:maud", "dep:html5gum", "dep:csv", "dep:toml"]
+# M17 ffmpeg lane: the subprocess A/V adapter (probe census, codec-clean
+# transcode policy, keyframe thumbnail, pcm-md5 decode hash). Carries NO
+# dependency - the codec work happens in the opt-in external tool through
+# the M15 executor; the feature keeps the family-per-module topology and
+# lets callers opt the lane into their build.
+ffmpeg = []
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
@@ -159,7 +165,7 @@ toml = { workspace = true, optional = true }
 # the integration tests with the landed adapter features on
 # (feature-unification across dev-deps); the library default stays
 # feature-empty. Append per-lane features as their todos land.
-harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "audio", "text", "image", "avif"] }
+harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "audio", "text", "image", "avif", "ffmpeg"] }
 # M10 pipeline tests: scripted Inference impls + async test runtime.
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

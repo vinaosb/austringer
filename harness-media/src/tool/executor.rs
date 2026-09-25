@@ -59,6 +59,13 @@ pub struct ToolCall<'a> {
     pub vars: BTreeMap<String, String>,
     /// Caller environment; redaction applies before the child sees it.
     pub env: Option<&'a BTreeMap<String, String>>,
+    /// Per-call argv from the calling adapter's typed table (M17+):
+    /// when non-empty it replaces the manifest template for THIS
+    /// invocation - the adapter owns the fixed word set (the
+    /// filter-injection guard lives in its typed spec). A configured
+    /// [`ToolOverride`] still substitutes the whole argv (the mock
+    /// lane wins).
+    pub argv: Vec<String>,
 }
 
 impl<'a> ToolCall<'a> {
@@ -70,6 +77,7 @@ impl<'a> ToolCall<'a> {
             op,
             vars: BTreeMap::new(),
             env: None,
+            argv: Vec::new(),
         }
     }
 
@@ -77,6 +85,14 @@ impl<'a> ToolCall<'a> {
     #[must_use]
     pub fn env(mut self, env: &'a BTreeMap<String, String>) -> Self {
         self.env = Some(env);
+        self
+    }
+
+    /// The per-call argv (see the field docs; overrides the manifest
+    /// template for this invocation only).
+    #[must_use]
+    pub fn with_argv(mut self, argv: Vec<String>) -> Self {
+        self.argv = argv;
         self
     }
 }
@@ -254,10 +270,18 @@ impl ToolExecutor {
             ToolAvailability::Available { .. } => MediaError::UnsupportedOperation {
                 format,
                 op,
-                reason: format!(
-                    "tool {tool} is enabled and installed; the {format} subprocess adapter \
-                     arrives with its wave todo (M16-M21)"
-                ),
+                reason: if tool == "ffmpeg" {
+                    format!(
+                        "ffmpeg is enabled and installed; run {op} through the \
+                         adapter::ffmpeg surface (probe_av / extract_av / transcode / \
+                         pcm_md5) - the OpRequest kinds do not carry the staging contract"
+                    )
+                } else {
+                    format!(
+                        "tool {tool} is enabled and installed; the {format} subprocess adapter \
+                         arrives with its wave todo (M16-M21)"
+                    )
+                },
             },
             ToolAvailability::Unavailable { install_hint } => {
                 let hint = if install_hint.starts_with("no manifest") {
@@ -304,6 +328,9 @@ impl ToolExecutor {
             && !r#override.args.is_empty()
         {
             return r#override.args.clone();
+        }
+        if !call.argv.is_empty() {
+            return call.argv.clone();
         }
         spec.op_template(call.op)
             .map(|template| render_args(template.args, &call.vars))
