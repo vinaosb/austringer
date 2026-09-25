@@ -96,6 +96,7 @@ fn main() -> ExitCode {
             return ExitCode::from(EXIT_CONFIG);
         }
     };
+    let regression_tolerance_pct = budgets.regression_tolerance_pct;
     let ctx = ScenarioContext {
         budgets,
         cli_bin: args.cli_bin.clone(),
@@ -156,7 +157,7 @@ fn main() -> ExitCode {
         &outcome,
         GATE_BASELINE_METRICS,
         baseline.as_ref(),
-        budgets.regression_tolerance_pct,
+        regression_tolerance_pct,
         &budgets_source,
     ) {
         Ok(report) => report,

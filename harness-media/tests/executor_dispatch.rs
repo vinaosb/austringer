@@ -26,22 +26,26 @@ fn dispatch_probe(
     format: FormatId,
     bytes: &[u8],
 ) -> Result<Produced, MediaError> {
-    registry.dispatch(format, OpRequest::Probe { bytes, name_hint: None })
+    registry.dispatch(
+        format,
+        OpRequest::Probe {
+            bytes,
+            name_hint: None,
+        },
+    )
 }
 
 #[test]
 fn probe_dispatch_returns_produced_with_full_producer_disclosure() {
     // Given: the day-one registry and PNG magic bytes.
     // When: probe is dispatched.
-    let produced = dispatch_probe(&registry(), FormatId::Png, PNG_MAGIC)
-        .expect("probe dispatch must succeed");
+    let produced =
+        dispatch_probe(&registry(), FormatId::Png, PNG_MAGIC).expect("probe dispatch must succeed");
     // Then: the output identifies png with Certain confidence...
     match produced.inner() {
         harness_media::executor::OpOutput::Probe(result) => {
             let harness_media::probe::ProbeResult::Identified {
-                format,
-                confidence,
-                ..
+                format, confidence, ..
             } = result
             else {
                 panic!("png magic must be Identified, got {result:?}");
@@ -76,23 +80,23 @@ fn dispatch_is_repeatable_and_leaves_no_stale_state() {
 
 #[test]
 fn generate_on_unwired_pure_format_is_typed_refusal_citing_the_lane() {
-    // Given: wav generation arrives with M14 (not yet landed; this pin
-    // moved off svg at M11 and off gltf at M12 - it always names a
-    // still-pending pure lane).
+    // Given: xlsx generation arrives with M18 (not yet landed; this pin
+    // moved off svg at M11, off gltf at M12, off pdf at M13, and off wav
+    // at M14 - it always names a still-pending pure lane).
     let spec = GenerationSpec {
-        format: FormatId::Wav,
+        format: FormatId::Xlsx,
         params: serde_json::json!({"tones": []}),
     };
     // When: generate is dispatched.
     let error = registry()
-        .dispatch(FormatId::Wav, OpRequest::Generate { spec: &spec })
-        .expect_err("generate must refuse until M14 lands");
+        .dispatch(FormatId::Xlsx, OpRequest::Generate { spec: &spec })
+        .expect_err("generate must refuse until M18 lands");
     // Then: typed UnsupportedOperation naming format, op, and the lane.
     match error {
         MediaError::UnsupportedOperation { format, op, reason } => {
-            assert_eq!(format, FormatId::Wav);
+            assert_eq!(format, FormatId::Xlsx);
             assert_eq!(op, harness_media::descriptor::Operation::Generate);
-            assert!(reason.contains("M14"), "reason cites the lane: {reason}");
+            assert!(reason.contains("M18"), "reason cites the lane: {reason}");
         }
         other => panic!("expected UnsupportedOperation, got {other:?}"),
     }
@@ -203,6 +207,9 @@ fn probe_disclosure_is_populated_across_every_probe_lane() {
         let producer = produced.producer();
         assert!(!producer.engine.is_empty(), "{format}: empty engine");
         assert!(!producer.version.is_empty(), "{format}: empty version");
-        assert_eq!(producer.command, None, "{format}: pure probe has no command");
+        assert_eq!(
+            producer.command, None,
+            "{format}: pure probe has no command"
+        );
     }
 }

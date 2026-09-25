@@ -30,7 +30,8 @@ fn extract(bytes: &[u8]) -> harness_media::extract::Extracted {
 
 /// (bytes, codec, sample_rate, channels, per-channel sample count,
 /// duration secs)
-const CORPUS: &[(&[u8], &str, u32, usize, u64, f64)] = &[
+type CorpusRow = (&'static [u8], &'static str, u32, usize, u64, f64);
+const CORPUS: &[CorpusRow] = &[
     (WAV, "pcm_s16le", 16_000, 1, 8_000, 0.5),
     (FLAC, "flac", 16_000, 1, 8_000, 0.5),
     (MP3, "mp3", 22_050, 1, 11_025, 0.5),
@@ -155,7 +156,10 @@ fn extract_budget_trip_is_the_typed_extract_too_large() {
     };
     // When/Then: the typed ExtractTooLarge, before any unbounded loop.
     let error = audio::extract(WAV, budgets).expect_err("cap must trip typed");
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
 }
 
 #[test]

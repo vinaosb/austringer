@@ -102,3 +102,75 @@ fn missing_field_is_a_typed_malformed_error_not_a_default() {
     let err = BudgetConfig::from_json_str(json).expect_err("missing fields must not default");
     assert!(matches!(err, BudgetConfigError::Malformed(_)), "got: {err}");
 }
+
+#[test]
+fn media_format_overrides_parse_and_round_trip() {
+    // Given: the committed budgets.json shape - avif carries its own
+    // encode timeout (plan M28: rav1e is tens-of-seconds slow by design
+    // and is excluded from the <=1s pure round-trip line).
+    let json = r#"{
+        "cold_start_ms": 50,
+        "idle_max_renders": 1,
+        "rss_mb": 80,
+        "p99_frame_ms": 16,
+        "binary_mb": 40,
+        "regression_tolerance_pct": 10,
+        "frame_budget_ms": 10,
+        "hang_threshold_ms": 100,
+        "media_format_overrides": {
+            "avif": {"encode_timeout_ms": 30000}
+        }
+    }"#;
+    // When: parsed and re-serialized.
+    let cfg = BudgetConfig::from_json_str(json).expect("override row parses");
+    // Then: the override is present with its timeout.
+    assert_eq!(
+        cfg.media_format_overrides
+            .get("avif")
+            .map(|row| row.encode_timeout_ms),
+        Some(30_000),
+        "avif encode timeout is the contract of record"
+    );
+    let round =
+        BudgetConfig::from_json_str(&cfg.to_json().expect("serialize")).expect("round-trip parses");
+    assert_eq!(round, cfg, "the override survives a round trip");
+}
+
+#[test]
+fn media_format_override_rows_are_strictly_typed() {
+    // Given: an override row with an unknown key.
+    let json = r#"{
+        "cold_start_ms": 50,
+        "idle_max_renders": 1,
+        "rss_mb": 80,
+        "p99_frame_ms": 16,
+        "binary_mb": 40,
+        "regression_tolerance_pct": 10,
+        "frame_budget_ms": 10,
+        "hang_threshold_ms": 100,
+        "media_format_overrides": {
+            "avif": {"encode_timeout_ms": 30000, "surprise": 1}
+        }
+    }"#;
+    // When/Then: strict parse rejects it typed, never silently drops it.
+    let err = BudgetConfig::from_json_str(json).expect_err("unknown override key");
+    assert!(matches!(err, BudgetConfigError::Malformed(_)), "got: {err}");
+}
+
+#[test]
+fn committed_budgets_json_parses_with_the_avif_override() {
+    // The file of record stays parseable under the strict schema.
+    let bytes = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "\\..\\harness-bench\\budgets.json"
+    ))
+    .or_else(|_| std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/budgets.json")))
+    .expect("budgets.json present");
+    let cfg = BudgetConfig::from_json_str(&bytes).expect("committed budgets parse");
+    assert_eq!(
+        cfg.media_format_overrides
+            .get("avif")
+            .map(|row| row.encode_timeout_ms),
+        Some(30_000)
+    );
+}

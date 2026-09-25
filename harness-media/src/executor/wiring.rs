@@ -50,8 +50,7 @@ const JXL_EXTRACT_ONLY_VERIFY: &str = "verify is a round-trip gate over a writer
      extract-only (generation gated on the digest adoption trigger), so there is no writer to \
      gate";
 
-const MP3_OGG_ENCODE_REDIRECT: &str =
-    "encode-redirect: the pure tier never claims mp3/vorbis encode; encoding routes to the \
+const MP3_OGG_ENCODE_REDIRECT: &str = "encode-redirect: the pure tier never claims mp3/vorbis encode; encoding routes to the \
      ffmpeg subprocess lane (M17)";
 
 const HDF5_DEFERRED: &str = "hdf5 is deferred by digest section 6 (single-vendor stewardship, \
@@ -155,7 +154,6 @@ fn gltf_verify_binding() -> OpBinding<VerifyHandler> {
     pending(FormatId::Gltf)
 }
 
-
 // M13 pdf lane: pure handlers bound under the `pdf` feature; without it
 // the honest pending placeholder stays.
 #[cfg(feature = "pdf")]
@@ -248,77 +246,249 @@ fn svg_verify_binding() -> OpBinding<VerifyHandler> {
     pending(FormatId::Svg)
 }
 
+// M14 audio lane: the symphonia decode handler serves the family's four
+// pure formats; generate/verify bind only where a writer exists (hound
+// wav, flacenc flac). mp3/ogg generate keep the typed encode-redirect
+// below; opus stays the ffmpeg subprocess lane. Without the feature the
+// honest pending placeholder stands (mirrors the svg/gltf/pdf lanes).
+#[cfg(feature = "audio")]
+fn audio_extract_binding() -> OpBinding<ExtractHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::audio::ENGINE.to_owned(),
+        handler: crate::adapter::audio::extract,
+    }
+}
+
+#[cfg(feature = "audio")]
+fn audio_generate_binding() -> OpBinding<GenerateHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::audio::SYNTH_ENGINE.to_owned(),
+        handler: crate::adapter::audio::generate,
+    }
+}
+
+#[cfg(feature = "audio")]
+fn audio_verify_binding() -> OpBinding<VerifyHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::audio::ENGINE.to_owned(),
+        handler: crate::adapter::audio::verify,
+    }
+}
+
 // M30 text substrate: pure handlers bound under the `text` feature;
 // without it the honest pending placeholder stays (mirrors the
 // svg/gltf/pdf/audio lanes).
 #[cfg(feature = "text")]
 fn text_extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
     let (engine, handler): (&str, ExtractHandler) = match id {
-        FormatId::Markdown => {
-            (crate::adapter::text::markdown::ENGINE, crate::adapter::text::markdown::extract)
-        }
-        FormatId::Html => {
-            (crate::adapter::text::html::ENGINE, crate::adapter::text::html::extract)
-        }
-        FormatId::Json => {
-            (crate::adapter::text::json::ENGINE, crate::adapter::text::json::extract)
-        }
-        FormatId::Csv => (crate::adapter::text::csv::ENGINE, crate::adapter::text::csv::extract),
-        FormatId::Toml => {
-            (crate::adapter::text::toml::ENGINE, crate::adapter::text::toml::extract)
-        }
+        FormatId::Markdown => (
+            crate::adapter::text::markdown::ENGINE,
+            crate::adapter::text::markdown::extract,
+        ),
+        FormatId::Html => (
+            crate::adapter::text::html::ENGINE,
+            crate::adapter::text::html::extract,
+        ),
+        FormatId::Json => (
+            crate::adapter::text::json::ENGINE,
+            crate::adapter::text::json::extract,
+        ),
+        FormatId::Csv => (
+            crate::adapter::text::csv::ENGINE,
+            crate::adapter::text::csv::extract,
+        ),
+        FormatId::Toml => (
+            crate::adapter::text::toml::ENGINE,
+            crate::adapter::text::toml::extract,
+        ),
         _ => return pending(id),
     };
-    OpBinding::Pure { engine: engine.to_owned(), handler }
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
 }
 
 #[cfg(feature = "text")]
 fn text_generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
     let (engine, handler): (&str, GenerateHandler) = match id {
-        FormatId::Markdown => {
-            (crate::adapter::text::markdown::ENGINE, crate::adapter::text::markdown::generate)
-        }
-        FormatId::Html => {
-            (crate::adapter::text::html::ENGINE, crate::adapter::text::html::generate)
-        }
-        FormatId::Json => {
-            (crate::adapter::text::json::ENGINE, crate::adapter::text::json::generate)
-        }
-        FormatId::Csv => (crate::adapter::text::csv::ENGINE, crate::adapter::text::csv::generate),
-        FormatId::Toml => {
-            (crate::adapter::text::toml::ENGINE, crate::adapter::text::toml::generate)
-        }
+        FormatId::Markdown => (
+            crate::adapter::text::markdown::ENGINE,
+            crate::adapter::text::markdown::generate,
+        ),
+        FormatId::Html => (
+            crate::adapter::text::html::ENGINE,
+            crate::adapter::text::html::generate,
+        ),
+        FormatId::Json => (
+            crate::adapter::text::json::ENGINE,
+            crate::adapter::text::json::generate,
+        ),
+        FormatId::Csv => (
+            crate::adapter::text::csv::ENGINE,
+            crate::adapter::text::csv::generate,
+        ),
+        FormatId::Toml => (
+            crate::adapter::text::toml::ENGINE,
+            crate::adapter::text::toml::generate,
+        ),
         _ => return pending(id),
     };
-    OpBinding::Pure { engine: engine.to_owned(), handler }
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
 }
 
 #[cfg(feature = "text")]
 fn text_verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
     let (engine, handler): (&str, VerifyHandler) = match id {
-        FormatId::Markdown => {
-            (crate::adapter::text::markdown::ENGINE, crate::adapter::text::markdown::verify)
-        }
-        FormatId::Html => {
-            (crate::adapter::text::html::ENGINE, crate::adapter::text::html::verify)
-        }
-        FormatId::Json => {
-            (crate::adapter::text::json::ENGINE, crate::adapter::text::json::verify)
-        }
-        FormatId::Csv => (crate::adapter::text::csv::ENGINE, crate::adapter::text::csv::verify),
-        FormatId::Toml => {
-            (crate::adapter::text::toml::ENGINE, crate::adapter::text::toml::verify)
-        }
+        FormatId::Markdown => (
+            crate::adapter::text::markdown::ENGINE,
+            crate::adapter::text::markdown::verify,
+        ),
+        FormatId::Html => (
+            crate::adapter::text::html::ENGINE,
+            crate::adapter::text::html::verify,
+        ),
+        FormatId::Json => (
+            crate::adapter::text::json::ENGINE,
+            crate::adapter::text::json::verify,
+        ),
+        FormatId::Csv => (
+            crate::adapter::text::csv::ENGINE,
+            crate::adapter::text::csv::verify,
+        ),
+        FormatId::Toml => (
+            crate::adapter::text::toml::ENGINE,
+            crate::adapter::text::toml::verify,
+        ),
         _ => return pending(id),
     };
-    OpBinding::Pure { engine: engine.to_owned(), handler }
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
+}
+
+// M28 image family: pure handlers bound under the `image` feature
+// (avif's three under `avif`, which implies image); without them the
+// honest pending placeholder stands (mirrors the svg/gltf/pdf/audio/
+// text lanes). gif keeps its permanent vision-only refusal; jxl
+// generate/verify keep the adoption-gated refusals above.
+#[cfg(feature = "image")]
+fn image_extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
+    let (engine, handler): (&str, ExtractHandler) = match id {
+        FormatId::Png => (
+            crate::adapter::image::png::ENGINE,
+            crate::adapter::image::png::extract,
+        ),
+        FormatId::Jpeg => (
+            crate::adapter::image::jpeg::ENGINE,
+            crate::adapter::image::jpeg::extract,
+        ),
+        FormatId::Webp => (
+            crate::adapter::image::webp::ENGINE,
+            crate::adapter::image::webp::extract,
+        ),
+        FormatId::Jxl => (
+            crate::adapter::image::jxl::ENGINE,
+            crate::adapter::image::jxl::extract,
+        ),
+        _ => return pending(id),
+    };
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
+}
+
+#[cfg(feature = "image")]
+fn image_generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
+    let (engine, handler): (&str, GenerateHandler) = match id {
+        FormatId::Png => (
+            crate::adapter::image::png::ENGINE,
+            crate::adapter::image::png::generate,
+        ),
+        FormatId::Jpeg => (
+            crate::adapter::image::jpeg::ENGINE,
+            crate::adapter::image::jpeg::generate,
+        ),
+        FormatId::Webp => (
+            crate::adapter::image::webp::ENGINE,
+            crate::adapter::image::webp::generate,
+        ),
+        _ => return pending(id),
+    };
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
+}
+
+#[cfg(feature = "image")]
+fn image_verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
+    let (engine, handler): (&str, VerifyHandler) = match id {
+        FormatId::Png => (
+            crate::adapter::image::png::ENGINE,
+            crate::adapter::image::png::verify,
+        ),
+        FormatId::Jpeg => (
+            crate::adapter::image::jpeg::ENGINE,
+            crate::adapter::image::jpeg::verify,
+        ),
+        FormatId::Webp => (
+            crate::adapter::image::webp::ENGINE,
+            crate::adapter::image::webp::verify,
+        ),
+        _ => return pending(id),
+    };
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
+}
+
+#[cfg(feature = "avif")]
+fn avif_extract_binding() -> OpBinding<ExtractHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::image::avif::ENGINE.to_owned(),
+        handler: crate::adapter::image::avif::extract,
+    }
+}
+
+#[cfg(feature = "avif")]
+fn avif_generate_binding() -> OpBinding<GenerateHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::image::avif::ENGINE.to_owned(),
+        handler: crate::adapter::image::avif::generate,
+    }
+}
+
+#[cfg(feature = "avif")]
+fn avif_verify_binding() -> OpBinding<VerifyHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::image::avif::ENGINE.to_owned(),
+        handler: crate::adapter::image::avif::verify,
+    }
 }
 
 fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
     match id {
+        FormatId::Svg => svg_extract_binding(),
+        FormatId::Gltf => gltf_extract_binding(),
         FormatId::Pdf => pdf_extract_binding(),
-        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv
-        | FormatId::Toml => {
+        FormatId::Wav | FormatId::Flac | FormatId::Mp3 | FormatId::Ogg => {
+            #[cfg(feature = "audio")]
+            {
+                audio_extract_binding()
+            }
+            #[cfg(not(feature = "audio"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv | FormatId::Toml => {
             #[cfg(feature = "text")]
             {
                 text_extract_binding(id)
@@ -328,8 +498,26 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
                 pending(id)
             }
         }
-        FormatId::Svg => svg_extract_binding(),
-        FormatId::Gltf => gltf_extract_binding(),
+        FormatId::Png | FormatId::Jpeg | FormatId::Webp | FormatId::Jxl => {
+            #[cfg(feature = "image")]
+            {
+                image_extract_binding(id)
+            }
+            #[cfg(not(feature = "image"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Avif => {
+            #[cfg(feature = "avif")]
+            {
+                avif_extract_binding()
+            }
+            #[cfg(not(feature = "avif"))]
+            {
+                pending(id)
+            }
+        }
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
         FormatId::Blend => tool_binding("blender"),
@@ -340,9 +528,20 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
 
 fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
     match id {
+        FormatId::Svg => svg_generate_binding(),
+        FormatId::Gltf => gltf_generate_binding(),
         FormatId::Pdf => pdf_generate_binding(),
-        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv
-        | FormatId::Toml => {
+        FormatId::Wav | FormatId::Flac => {
+            #[cfg(feature = "audio")]
+            {
+                audio_generate_binding()
+            }
+            #[cfg(not(feature = "audio"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv | FormatId::Toml => {
             #[cfg(feature = "text")]
             {
                 text_generate_binding(id)
@@ -352,8 +551,26 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
                 pending(id)
             }
         }
-        FormatId::Svg => svg_generate_binding(),
-        FormatId::Gltf => gltf_generate_binding(),
+        FormatId::Png | FormatId::Jpeg | FormatId::Webp => {
+            #[cfg(feature = "image")]
+            {
+                image_generate_binding(id)
+            }
+            #[cfg(not(feature = "image"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Avif => {
+            #[cfg(feature = "avif")]
+            {
+                avif_generate_binding()
+            }
+            #[cfg(not(feature = "avif"))]
+            {
+                pending(id)
+            }
+        }
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_ADOPTION),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
@@ -370,9 +587,20 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
 
 fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
     match id {
+        FormatId::Svg => svg_verify_binding(),
+        FormatId::Gltf => gltf_verify_binding(),
         FormatId::Pdf => pdf_verify_binding(),
-        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv
-        | FormatId::Toml => {
+        FormatId::Wav | FormatId::Flac => {
+            #[cfg(feature = "audio")]
+            {
+                audio_verify_binding()
+            }
+            #[cfg(not(feature = "audio"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv | FormatId::Toml => {
             #[cfg(feature = "text")]
             {
                 text_verify_binding(id)
@@ -382,8 +610,26 @@ fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
                 pending(id)
             }
         }
-        FormatId::Svg => svg_verify_binding(),
-        FormatId::Gltf => gltf_verify_binding(),
+        FormatId::Png | FormatId::Jpeg | FormatId::Webp => {
+            #[cfg(feature = "image")]
+            {
+                image_verify_binding(id)
+            }
+            #[cfg(not(feature = "image"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Avif => {
+            #[cfg(feature = "avif")]
+            {
+                avif_verify_binding()
+            }
+            #[cfg(not(feature = "avif"))]
+            {
+                pending(id)
+            }
+        }
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_EXTRACT_ONLY_VERIFY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),

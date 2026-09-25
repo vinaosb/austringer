@@ -6,5 +6,10 @@
   "binary_mb": 40,
   "regression_tolerance_pct": 10,
   "frame_budget_ms": 10,
-  "hang_threshold_ms": 100
+  "hang_threshold_ms": 100,
+  "media_format_overrides": {
+    "avif": {
+      "encode_timeout_ms": 30000
+    }
+  }
 }

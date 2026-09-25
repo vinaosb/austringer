@@ -7,7 +7,9 @@ use std::cmp::Ordering;
 
 use serde_json::{Map, Number, Value};
 
-use super::types::{Addition, Change, Removal, StructuralDiff, Tolerances, MAX_DIFF_DEPTH, MAX_DIFF_NODES};
+use super::types::{
+    Addition, Change, MAX_DIFF_DEPTH, MAX_DIFF_NODES, Removal, StructuralDiff, Tolerances,
+};
 use crate::error::MediaError;
 
 /// Traversal state: output, cap accounting, and the current pointer
@@ -56,7 +58,11 @@ fn node(walk: &mut Walk<'_>, expected: &Value, actual: &Value) -> Result<(), Med
             arrays(walk, expected_items, actual_items)
         }
         (Value::Number(expected_number), Value::Number(actual_number)) => {
-            if !numbers_equal(expected_number, actual_number, walk.tolerances.float_epsilon) {
+            if !numbers_equal(
+                expected_number,
+                actual_number,
+                walk.tolerances.float_epsilon,
+            ) {
                 changed(walk, expected, actual);
             }
             Ok(())
@@ -105,20 +111,27 @@ fn objects(
             walk.path.truncate(mark);
         } else {
             let mark = push_child(walk, key);
-            walk.out.removed.push(Removal {
-                path: walk.path.clone(),
-                expected: expected_value.clone(),
-            });
+            // A key present only on the expected side still honors
+            // ignored_at: an ignored pointer's subtree is skipped
+            // entirely, whichever side carries it.
+            if !walk.tolerances.ignored_at.contains(walk.path.as_str()) {
+                walk.out.removed.push(Removal {
+                    path: walk.path.clone(),
+                    expected: expected_value.clone(),
+                });
+            }
             walk.path.truncate(mark);
         }
     }
     for (key, actual_value) in actual_map {
         if !expected_map.contains_key(key) {
             let mark = push_child(walk, key);
-            walk.out.added.push(Addition {
-                path: walk.path.clone(),
-                actual: actual_value.clone(),
-            });
+            if !walk.tolerances.ignored_at.contains(walk.path.as_str()) {
+                walk.out.added.push(Addition {
+                    path: walk.path.clone(),
+                    actual: actual_value.clone(),
+                });
+            }
             walk.path.truncate(mark);
         }
     }
@@ -141,18 +154,22 @@ fn arrays(
     let common = expected_items.len().min(actual_items.len());
     for (index, expected_value) in expected_items.iter().enumerate().skip(common) {
         let mark = push_child(walk, &index.to_string());
-        walk.out.removed.push(Removal {
-            path: walk.path.clone(),
-            expected: expected_value.clone(),
-        });
+        if !walk.tolerances.ignored_at.contains(walk.path.as_str()) {
+            walk.out.removed.push(Removal {
+                path: walk.path.clone(),
+                expected: expected_value.clone(),
+            });
+        }
         walk.path.truncate(mark);
     }
     for (index, actual_value) in actual_items.iter().enumerate().skip(common) {
         let mark = push_child(walk, &index.to_string());
-        walk.out.added.push(Addition {
-            path: walk.path.clone(),
-            actual: actual_value.clone(),
-        });
+        if !walk.tolerances.ignored_at.contains(walk.path.as_str()) {
+            walk.out.added.push(Addition {
+                path: walk.path.clone(),
+                actual: actual_value.clone(),
+            });
+        }
         walk.path.truncate(mark);
     }
     Ok(())

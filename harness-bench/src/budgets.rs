@@ -1,6 +1,8 @@
 //! Perf budgets of record (todo 43). Parsing is strict: malformed config
 //! is a typed error, never a silent default.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -17,7 +19,7 @@ pub enum BudgetConfigError {
 }
 
 /// Absolute budgets enforced by the gate. All are lower-is-better.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BudgetConfig {
     /// Process spawn-to-exit wall budget (min-of-N), plan §Verification.
@@ -38,6 +40,21 @@ pub struct BudgetConfig {
     pub frame_budget_ms: u64,
     /// Frames above this are hangs (separate classification).
     pub hang_threshold_ms: u64,
+    /// Per-format media budget overrides (plan M28+): format key
+    /// (FormatId snake_case) -> override table. Absent entries mean the
+    /// generic budgets apply (incl. the <=1s pure round-trip line);
+    /// today only avif encode carries one (rav1e is tens-of-seconds
+    /// slow by design and is excluded from that line).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub media_format_overrides: BTreeMap<String, MediaFormatOverride>,
+}
+
+/// One format's media budget override.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaFormatOverride {
+    /// Encode wall-clock timeout in milliseconds.
+    pub encode_timeout_ms: u64,
 }
 
 impl BudgetConfig {
@@ -54,6 +71,7 @@ impl BudgetConfig {
             regression_tolerance_pct: 10,
             frame_budget_ms: 10,
             hang_threshold_ms: 100,
+            media_format_overrides: BTreeMap::new(),
         }
     }
 
