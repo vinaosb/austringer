@@ -51,6 +51,10 @@ pub mod image;
 #[cfg(feature = "office")]
 pub mod office;
 
+// M22 columnar data lane: parquet + arrow-ipc (pure tier).
+#[cfg(feature = "data")]
+pub mod data;
+
 // M16 blend lane: subprocess tier (headless Blender via the M15 tool
 // executor) - no codec dependency, so it is not feature-gated.
 pub mod blend;

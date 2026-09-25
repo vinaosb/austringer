@@ -81,6 +81,11 @@ fn registry_covers_all_34_formats_with_probe_supported() {
             if cfg!(feature = "avif") && *id == FormatId::Avif {
                 continue;
             }
+            // M22: the data adapters (parquet + arrow-ipc) flip their
+            // claims to Supported (same feature-paired pattern).
+            if cfg!(feature = "data") && matches!(id, FormatId::Parquet | FormatId::Arrow) {
+                continue;
+            }
             // M16: the blend adapter flips its claims to Supported
             // unconditionally (subprocess lane - no codec feature).
             if *id == FormatId::Blend {

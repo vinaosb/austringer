@@ -105,6 +105,13 @@ pub fn registry() -> FormatRegistry {
                 entry.ops.insert(op, OpSupport::Supported);
             }
         }
+        // M22 columnar data lane: parquet + arrow-ipc round-trip (pure
+        // tier, arrow-rs).
+        if cfg!(feature = "data") && matches!(id, FormatId::Parquet | FormatId::Arrow) {
+            for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+                entry.ops.insert(op, OpSupport::Supported);
+            }
+        }
         // M18 office read lane: docx/xlsx/pptx extract is pure
         // zip+quick-xml under the `office` feature; the writers are
         // M19 (pptx generation is the pandoc subprocess), so

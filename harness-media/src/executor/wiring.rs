@@ -479,6 +479,56 @@ fn avif_verify_binding() -> OpBinding<VerifyHandler> {
     }
 }
 
+// M22 data lane: pure handlers bound under the `data` feature; without
+// it the honest pending placeholder stays (mirrors the sibling lanes).
+#[cfg(feature = "data")]
+fn data_extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
+    let (engine, handler): (&str, ExtractHandler) = match id {
+        FormatId::Parquet => (
+            crate::adapter::data::parquet::ENGINE,
+            crate::adapter::data::parquet::extract,
+        ),
+        FormatId::Arrow => (
+            crate::adapter::data::arrow::ENGINE,
+            crate::adapter::data::arrow::extract,
+        ),
+        _ => return pending(id),
+    };
+    OpBinding::Pure { engine: engine.to_owned(), handler }
+}
+
+#[cfg(feature = "data")]
+fn data_generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
+    let (engine, handler): (&str, GenerateHandler) = match id {
+        FormatId::Parquet => (
+            crate::adapter::data::parquet::ENGINE,
+            crate::adapter::data::parquet::generate,
+        ),
+        FormatId::Arrow => (
+            crate::adapter::data::arrow::ENGINE,
+            crate::adapter::data::arrow::generate,
+        ),
+        _ => return pending(id),
+    };
+    OpBinding::Pure { engine: engine.to_owned(), handler }
+}
+
+#[cfg(feature = "data")]
+fn data_verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
+    let (engine, handler): (&str, VerifyHandler) = match id {
+        FormatId::Parquet => (
+            crate::adapter::data::parquet::ENGINE,
+            crate::adapter::data::parquet::verify,
+        ),
+        FormatId::Arrow => (
+            crate::adapter::data::arrow::ENGINE,
+            crate::adapter::data::arrow::verify,
+        ),
+        _ => return pending(id),
+    };
+    OpBinding::Pure { engine: engine.to_owned(), handler }
+}
+
 // M18 office read lane: pure zip+quick-xml extract bound under the
 // `office` feature; generate/verify arrive with the M19 write lane
 // (pptx generation is the pandoc subprocess arm below). Without the
@@ -547,6 +597,16 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
                 pending(id)
             }
         }
+        FormatId::Parquet | FormatId::Arrow => {
+            #[cfg(feature = "data")]
+            {
+                data_extract_binding(id)
+            }
+            #[cfg(not(feature = "data"))]
+            {
+                pending(id)
+            }
+        }
         FormatId::Docx | FormatId::Xlsx | FormatId::Pptx => office_extract_binding(id),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
@@ -597,6 +657,16 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
                 avif_generate_binding()
             }
             #[cfg(not(feature = "avif"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Parquet | FormatId::Arrow => {
+            #[cfg(feature = "data")]
+            {
+                data_generate_binding(id)
+            }
+            #[cfg(not(feature = "data"))]
             {
                 pending(id)
             }
@@ -657,6 +727,16 @@ fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
                 avif_verify_binding()
             }
             #[cfg(not(feature = "avif"))]
+            {
+                pending(id)
+            }
+        }
+        FormatId::Parquet | FormatId::Arrow => {
+            #[cfg(feature = "data")]
+            {
+                data_verify_binding(id)
+            }
+            #[cfg(not(feature = "data"))]
             {
                 pending(id)
             }

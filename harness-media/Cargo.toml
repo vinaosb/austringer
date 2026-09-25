@@ -72,7 +72,13 @@ office = ["dep:zip", "dep:quick-xml"]
 avif = ["image", "dep:ravif"]
 georaster = []
 geovector = []
-data = []
+# M22 columnar data lane: Apache Parquet + Arrow IPC via arrow-rs (the
+# reference implementation - shipped in lockstep with the Java/C++
+# lines; digest 3.5 GREEN). Only the PURE-RUST codecs are compiled in
+# (snap/brotli/flate2 rust backend); lz4/zstd stay C-backed-off and a
+# file declaring them refuses typed at the metadata stage (the M12
+# compressed-primitive law, applied to codecs).
+data = ["dep:arrow", "dep:parquet", "dep:bytes"]
 # M30 text-substrate lane: comrak (CommonMark 0.31.2 + GFM) for markdown
 # parse/render; maud for self-contained single-file HTML5 generation
 # (compile-time templates, escaping built in); html5gum for the html5
@@ -160,13 +166,26 @@ html5gum = { version = "0.8", default-features = false, optional = true }
 csv = { version = "1.4", optional = true }
 # M30: TOML 1.0 parse/display (workspace-pinned).
 toml = { workspace = true, optional = true }
+# M22: Apache Arrow facade (arrow-rs, Apache-2.0). default-features off:
+# the ipc file-format reader/writer (magic ARROW1) is this lane's only
+# arrow surface - no csv/json/prettyprint trees come along.
+arrow = { version = "60", default-features = false, features = ["ipc"], optional = true }
+# M22: Apache Parquet (arrow-rs, Apache-2.0). default-features off drops
+# the C-backed codecs: lz4/zstd are deliberately absent (a file that
+# declares them refuses typed - UnsupportedFeature at the metadata
+# stage); snap/brotli/flate2 (rust backend) cover the pure-Rust codec
+# set, `arrow` enables the RecordBatch read/write path.
+parquet = { version = "60", default-features = false, features = ["arrow", "snap", "brotli", "flate2-rust_backend"], optional = true }
+# M22: the parquet RecordBatch reader constructor takes a `Bytes`
+# chunk-reader (workspace-pinned).
+bytes = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Self-reference so a bare `cargo nextest run -p harness-media` compiles
 # the integration tests with the landed adapter features on
 # (feature-unification across dev-deps); the library default stays
 # feature-empty. Append per-lane features as their todos land.
-harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "audio", "text", "image", "avif", "ffmpeg"] }
+harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "audio", "text", "image", "avif", "ffmpeg", "data"] }
 # M10 pipeline tests: scripted Inference impls + async test runtime.
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

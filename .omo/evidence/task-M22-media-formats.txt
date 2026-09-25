@@ -1,0 +1,179 @@
+task-M22-media-formats.txt - Parquet + Arrow IPC adapter (columnar data lane, pure tier)
+=======================================================================================
+Completed: 2026-09-25. Plan section: '- [ ] 22. M22' (read verbatim, authority; plan
+L255-261). Base HEAD at start: 8a37b8d (briefing named 0c1b013; a verify-flip commit
+8a37b8d had landed on top - M16+M17 pattern references unchanged).
+
+PLAN FACTS (verified against the plan text):
+- parquet via arrow-rs `parquet` crate (digest: reference-grade, lockstep with
+  Java/C++; alternate parquet2 - executor records the pick); C-backed codec
+  features OFF either way.
+- extract {schema (columns/types/logical), row-group count + per-column stats
+  (min/max/nulls where present), bounded head-N rows sample}; text_projection =
+  schema + stats summary; generate: spec {columns[name, type], rows[[values]]} ->
+  parquet (1 row group, statistics, sorted-key metadata); verify: FULL structural
+  diff (schema exact, rows ordered-exact for spec-driven single-row-group writes;
+  external-file extracts verify head-sample only) + duckdb/polars read-back hook
+  in the #[ignore] real-tool tier AND M25's scheduled sweep.
+- Arrow IPC via the same crate's ipc module: extract (Schema + record-batch
+  census), generate (record batches from spec), magic ARROW1 + 0xFF continuation,
+  MIME application/vnd.apache.arrow.stream; verify: re-read, Schema::eq + batch
+  lengths. Fully hermetic.
+- Must NOT half-decode C-codec-compressed files (typed UnsupportedCompression).
+- Acceptance: committed tiny fixture extracts pinned; generate->extract->diff
+  empty on tabular corpus; C-codec-compressed fixture -> typed refusal; arrow
+  round-trip Schema::eq + batch lengths pinned.
+- Commit line: feat(media): parquet + arrow-ipc adapters.
+
+DEP PICK (recorded): arrow 60.0.0 + parquet 60.0.0 (arrow-rs, Apache-2.0, pure
+Rust, cargo-deny verified). parquet default-features OFF - enabled exactly
+["arrow", "snap", "brotli", "flate2-rust_backend"]: snappy/brotli/gzip(rust
+miniz_oxide backend) are the compiled-in pure-Rust codecs; lz4/zstd (C builds)
+are deliberately absent - a file whose column chunks DECLARE them refuses typed
+at the metadata stage (see deviation note 2 for the error-variant mapping).
+arrow default-features OFF - ["ipc"] only (the file-format reader/writer is this
+lane's only arrow surface). bytes (workspace-pinned) feeds the parquet
+RecordBatch reader constructor.
+
+WHAT LANDED
+-----------
+harness-media/src/adapter/data/ (new, behind the `data` feature):
+- mod.rs        family docs + honesty rows (codec surface, type surface, head
+                sample, determinism) + the shared tabular->arrow bridge
+                (arrow_schema / record_batch / typed_array / cell_value) +
+                truncate/tolerances/budget helpers + DataProjector +
+                register_projections (M10 seam; ARROW1-magic dispatch).
+- spec.rs       TabularSpec {columns[name,type], rows[[values]]}: strict
+                validation (exactly the two keys; unique non-empty names;
+                MAX_COLUMNS=64, MAX_ROWS=1000 - the row cap doubles as the
+                extract head-sample bound so verify compares whole writes);
+                the INDEPENDENT spec->tree projections: schema_json,
+                rows_json, column_stats (min/max/nulls computed from the
+                spec's own values - M5 provenance rule; exact i64 ordering,
+                UTF-8 byte ordering for strings = parquet's ByteArray law).
+- parquet.rs    extract (footer via ParquetRecordBatchReaderBuilder -> codec
+                gate -> arrow-schema type gate -> row-group/stats census ->
+                bounded head sample under budgets), generate (ONE row group,
+                UNCOMPRESSED, EnabledStatistics::Chunk, writer v1.0,
+                max_row_group_row_count=MAX_ROWS+1, skip_arrow_metadata=true =
+                a canonical parquet file; no clock field exists in FileMetaData
+                so the M1 determinism contract holds trivially), verify
+                (extract + M5 diff, eps 1e-9, no unordered/ignored pointers).
+- parquet_census.rs  census tree assembly + stats_json (Boolean/Int32/Int64/
+                Double/ByteArray variants via min_opt/max_opt/null_count_opt)
+                + bounded projection text. (Split from parquet.rs for the
+                250-LOC ceiling.)
+- arrow.rs      extract (FileReader over Cursor: Schema + per-batch rows/
+                columns census + bounded head sample), generate (one
+                RecordBatch through the ipc FileWriter, default options),
+                verify (re-read; arrow Schema::eq folded into the verdict as
+                a changed /schema node + the full M5 structural diff).
+
+Executor/probe integration (shared files, minimal hunks, all under
+cfg(feature = "data") so descriptor/binding sync + the pending-guard tests
+stay honest without the feature):
+- adapter.rs: `pub mod data;` decl.
+- executor/wiring.rs: data_{extract,generate,verify}_binding + the three
+  dispatch match arms (Parquet | Arrow), mirroring the text/office lane
+  pattern.
+- probe/registry.rs: parquet/arrow claims flipped Supported (E/G/V).
+- tests/probe_registry.rs: the M22 exemption in the pending-guard test
+  (same per-lane pattern as M11-M16/M28/M30).
+- Cargo.toml: data feature + arrow/parquet/bytes deps with rationale
+  comments; dev-dep self-reference features += "data". Cargo.lock resolved.
+
+Fixtures committed (harness-media/fixtures/data/):
+- parquet-doc.parquet (754 B) + arrow-doc.arrow (1626 B): written ONCE by this
+  adapter's own generate() from the mixed-basic corpus spec (arrow-rs is the
+  reference implementation - the reference-grade lineage; cross-engine
+  read-back validity is the M25 scheduled real-tool sweep's job, duckdb/polars).
+- parquet-zstd.parquet (446 B): written once by a THROWAWAY scratch cargo
+  project (m22gen, temp dir, since removed from the tree) that enabled
+  parquet's zstd feature purely to produce the committed refusal fixture -
+  the shipped tree keeps zstd out (never half-decoded; the refusal fires at
+  the metadata stage before any page decode).
+
+RED EVIDENCE (TDD failing-first)
+--------------------------------
+Tests written first (tests/data_parquet.rs, tests/data_arrow.rs), then:
+  cargo nextest run -p harness-media --test data_parquet --test data_arrow
+=> could not compile harness-media (test data_parquet / data_arrow):
+  error[E0432]/[E0433]: unresolved import `harness_media::adapter::data` /
+  could not find `data` in `adapter` (multiple uses, incl. TabularSpec and
+  register_projections)
+Failures are for the right reason: the module did not exist. (First RED run
+also surfaced the known MSVC cold flake compiling rusqlite's bundled sqlite3.c
+via harness-core - fixed with the house INCLUDE recipe prepending
+'C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include'.)
+
+GREEN EVIDENCE (isolated worktree = HEAD + my hunks only; see protocol below)
+----------------------------------------------------------------------------
+  cargo nextest run -p harness-media --no-fail-fast
+=> Summary: 358 tests run: 358 passed, 5 skipped   (23 of them the two new
+   data suites: corpus round-trips incl. executor-dispatch path, pinned
+   fixture extracts, zstd typed refusal, truncated footer/file ParseFailure,
+   byte-determinism x2, magic x2, budget trips, InvalidSpec tables, projectors)
+  cargo clippy -p harness-media --all-targets
+=> Finished, zero warnings (6 initial clippy errors fixed: collapsible ifs,
+   map_or_identity -> unwrap_or, unnecessary_map_or -> is_none_or).
+  cargo deny --workspace check
+=> advisories ok, bans ok, licenses ok, sources ok (arrow-rs chain is
+   Apache-2.0; snap BSD-3; brotli MIT; flate2/miniz_oxide MIT OR Apache-2.0 -
+   all inside deny.toml's allow list).
+  Pure LOC: mod.rs 134, spec.rs 201, parquet.rs 147, parquet_census.rs 126,
+  arrow.rs 140 - every file <= 250. No unwrap/expect/panic in src.
+  SIZE_CANARY (heavy-dep todo duty, M6 ledger): daemon=6.21 MiB
+  baseline=5.97 delta=+0.24MiB(+4.1%) budget=40.00 verdict=OK. The shipped
+  daemon does not compile harness-media yet (media wiring arrives M9/M32), so
+  this is the ambient pre-media daemon - arrow/parquet's true size cost lands
+  on the M27 gate once the daemon opts in; recorded per the canary law.
+
+SHARED-FILE PROTOCOL (the M14 lesson) - EXECUTION RECORD
+--------------------------------------------------------
+A concurrent M18 (office) executor was editing this same working tree
+throughout (its untracked src/adapter/office/, tests/office_read.rs, and
+in-flight office hunks in adapter.rs / Cargo.toml / wiring.rs / probe/registry.rs
+landed mid-task; its module did not compile at times, breaking the shared
+tree). Verification therefore ran in an ISOLATED worktree
+(%TEMP%\opencode\m22wt) = base HEAD 8a37b8d + ONLY my hunks (mixed shared
+files reconstructed as HEAD+mine; sibling office hunks excluded). MID-TASK
+REBASE: the M18 lane then committed 73ca5b8 (office) onto main while my
+staging was in flight - the staged mixed-file blobs (built on 8a37b8d) would
+have REVERTED their office hunks; staging was rebuilt from the new HEAD
+(working tree = 73ca5b8 + only-my-hunks by then; `git diff HEAD` audited
+office-free before `git add`). Their commit swept none of my hunks (verified
+against 73ca5b8's tree); my commit lands on top of it.
+
+DEVIATION NOTES
+---------------
+1. Arrow MIME: the plan names application/vnd.apache.arrow.stream; the landed
+   M2 registry row (authority for descriptors) registers Arrow as
+   application/x-arrow-ipc (the file-format MIME - matching the ARROW1 magic
+   lane this adapter implements). Descriptor left untouched.
+2. "typed UnsupportedCompression" (plan letter) is implemented as the EXISTING
+   MediaError::UnsupportedFeature { feature: "compression:ZSTD" } - the M12
+   compressed-primitive refusal the same plan section cites as the pattern
+   (References: "codec honesty mirrors M12"); avoids a shared error.rs hunk
+   and keeps one honesty vocabulary.
+3. Arrow verify "Schema::eq + batch byte lengths": Schema::eq is folded into
+   the verdict (mismatch -> changed /schema node); "batch byte lengths" is
+   implemented as the per-batch {rows, columns} census in the diffed tree +
+   re-read - the arrow-ipc reader API does not expose per-message IPC body
+   byte lengths, and row/schema equivalence is the semantic contract.
+4. Local rustfmt (1.9.0-stable, 88d9e12ae1) disagrees wholesale with the
+   committed corpus (it also flags audio.rs/json.rs at HEAD - pre-existing,
+   env-specific): my files follow the corpus conventions (version-sort import
+   ordering, short struct literals inline) as committed; CI's formatter is
+   authoritative.
+5. Type surface honesty: extract refuses columns outside
+   bool/int32/int64/double/utf8 typed (UnsupportedFeature column-type:<T>) -
+   v0.2's deliberate bounded surface, disclosed in the module honesty rows.
+
+POST-COMMIT VERIFICATION (isolated worktree at the final commit hash)
+---------------------------------------------------------------------
+Pre-commit isolated worktree (base + my hunks): 358 passed, 5 skipped.
+Post-commit: `git worktree add --detach <m22verify> <this commit>` ->
+  cargo nextest run -p harness-media --no-fail-fast
+=> Summary: 374 tests run: 374 passed, 5 skipped
+(374 = the 358 above + the M18 office suites that entered ancestry via
+73ca5b8 - green together with my lane; the 23-test data pair among them).
