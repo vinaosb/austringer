@@ -105,6 +105,30 @@ pub fn registry() -> FormatRegistry {
                 entry.ops.insert(op, OpSupport::Supported);
             }
         }
+        // M18 office read lane: docx/xlsx/pptx extract is pure
+        // zip+quick-xml under the `office` feature; the writers are
+        // M19 (pptx generation is the pandoc subprocess), so
+        // generate/verify stay typed-Unsupported with reasons naming
+        // that lane (mirrors the ffmpeg row convention).
+        if matches!(id, FormatId::Docx | FormatId::Xlsx | FormatId::Pptx) {
+            if cfg!(feature = "office") {
+                entry.ops.insert(Operation::Extract, OpSupport::Supported);
+            }
+            for (op, reason) in [
+                (
+                    Operation::Generate,
+                    "generation arrives with the M19 office write lane (xlsx/docx pure \
+                     writers; pptx via the pandoc subprocess)",
+                ),
+                (
+                    Operation::Verify,
+                    "round-trip verification arrives with the M19 office write lane \
+                     (M18 extract + the M5 structural diff)",
+                ),
+            ] {
+                entry.ops.insert(op, OpSupport::Unsupported { reason: reason.into() });
+            }
+        }
         // M16 blend: all three ops are decided and dispatched through
         // the blender subprocess lane (typed ToolUnavailable until the
         // tool is opted in; no codec feature - no cfg gate).

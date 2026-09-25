@@ -46,6 +46,11 @@ pub mod text;
 #[cfg(feature = "image")]
 pub mod image;
 
+// M18 office read lane: pure zip+quick-xml OOXML extract under the
+// `office` feature (the M2 probe lane already carries the zip half).
+#[cfg(feature = "office")]
+pub mod office;
+
 // M16 blend lane: subprocess tier (headless Blender via the M15 tool
 // executor) - no codec dependency, so it is not feature-gated.
 pub mod blend;

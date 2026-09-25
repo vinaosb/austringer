@@ -80,9 +80,10 @@ fn dispatch_is_repeatable_and_leaves_no_stale_state() {
 
 #[test]
 fn generate_on_unwired_pure_format_is_typed_refusal_citing_the_lane() {
-    // Given: xlsx generation arrives with M18 (not yet landed; this pin
-    // moved off svg at M11, off gltf at M12, off pdf at M13, and off wav
-    // at M14 - it always names a still-pending pure lane).
+    // Given: xlsx generation arrives with M19 (not yet landed; this pin
+    // moved off svg at M11, off gltf at M12, off pdf at M13, off wav
+    // at M14, and off the M18 read citation at M18 - the office WRITE
+    // lane, M19, is the next still-pending pure generate lane).
     let spec = GenerationSpec {
         format: FormatId::Xlsx,
         params: serde_json::json!({"tones": []}),
@@ -90,13 +91,13 @@ fn generate_on_unwired_pure_format_is_typed_refusal_citing_the_lane() {
     // When: generate is dispatched.
     let error = registry()
         .dispatch(FormatId::Xlsx, OpRequest::Generate { spec: &spec })
-        .expect_err("generate must refuse until M18 lands");
+        .expect_err("generate must refuse until M19 lands");
     // Then: typed UnsupportedOperation naming format, op, and the lane.
     match error {
         MediaError::UnsupportedOperation { format, op, reason } => {
             assert_eq!(format, FormatId::Xlsx);
             assert_eq!(op, harness_media::descriptor::Operation::Generate);
-            assert!(reason.contains("M18"), "reason cites the lane: {reason}");
+            assert!(reason.contains("M19"), "reason cites the lane: {reason}");
         }
         other => panic!("expected UnsupportedOperation, got {other:?}"),
     }

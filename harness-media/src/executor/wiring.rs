@@ -60,6 +60,12 @@ const HDF5_DEFERRED: &str = "hdf5 is deferred by digest section 6 (single-vendor
 const SQLITE_NO_GENERATION: &str =
     "sqlite has no generation lane: it is registered for probe + census extract only (M29)";
 
+const OFFICE_WRITE_PENDING: &str = "arrives with the M19 (office write) adapter todo - xlsx/docx \
+     pure writers; pptx generation is the pandoc subprocess lane";
+
+const OFFICE_VERIFY_PENDING: &str = "arrives with the M19 (office write) adapter todo: round-trip \
+     = the M18 extract + the M5 structural diff over those writers";
+
 fn unsupported<H>(reason: &str) -> OpBinding<H> {
     OpBinding::Unsupported {
         reason: reason.to_owned(),
@@ -473,6 +479,29 @@ fn avif_verify_binding() -> OpBinding<VerifyHandler> {
     }
 }
 
+// M18 office read lane: pure zip+quick-xml extract bound under the
+// `office` feature; generate/verify arrive with the M19 write lane
+// (pptx generation is the pandoc subprocess arm below). Without the
+// feature the honest pending placeholder stands.
+#[cfg(feature = "office")]
+fn office_extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
+    let handler: ExtractHandler = match id {
+        FormatId::Docx => crate::adapter::office::docx::extract,
+        FormatId::Xlsx => crate::adapter::office::xlsx::extract,
+        FormatId::Pptx => crate::adapter::office::pptx::extract,
+        _ => return pending(id),
+    };
+    OpBinding::Pure {
+        engine: crate::adapter::office::ENGINE.to_owned(),
+        handler,
+    }
+}
+
+#[cfg(not(feature = "office"))]
+fn office_extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
+    pending(id)
+}
+
 fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
     match id {
         FormatId::Svg => svg_extract_binding(),
@@ -518,6 +547,7 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
                 pending(id)
             }
         }
+        FormatId::Docx | FormatId::Xlsx | FormatId::Pptx => office_extract_binding(id),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
         FormatId::Blend => tool_binding("blender"),
@@ -575,6 +605,7 @@ fn generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
         FormatId::Jxl => unsupported(JXL_ADOPTION),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
         FormatId::Sqlite => unsupported(SQLITE_NO_GENERATION),
+        FormatId::Docx | FormatId::Xlsx => unsupported(OFFICE_WRITE_PENDING),
         FormatId::Mp3 | FormatId::Ogg => unsupported(MP3_OGG_ENCODE_REDIRECT),
         FormatId::Blend => tool_binding("blender"),
         FormatId::Pptx => tool_binding("pandoc"),
@@ -633,6 +664,7 @@ fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_EXTRACT_ONLY_VERIFY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
+        FormatId::Docx | FormatId::Xlsx | FormatId::Pptx => unsupported(OFFICE_VERIFY_PENDING),
         // M16: blend verify is the blender-backed extract + diff, so it
         // rides the same subprocess lane.
         FormatId::Blend => tool_binding("blender"),

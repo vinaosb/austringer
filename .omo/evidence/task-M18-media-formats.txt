@@ -1,0 +1,160 @@
+# Task M18 - office read adapters (pure tier: OOXML extract)
+
+Plan: .omo/plans/media-formats-wave.md todo 18 (verbatim authority).
+HEAD at start: 8a37b8d (M16+M17 landed; briefing named 0c1b013 + the
+verify-flip commit on top). Deps landed: M2 probe (office zip lane),
+M5 diff, M6 executor.
+
+## What landed
+
+harness-media `office` feature (zip + quick-xml; both deps already in
+the tree via the M2 office probe lane and the M11 svg lane - no new
+dependencies, Cargo.lock unchanged by this todo):
+
+- `src/adapter/office/mod.rs` - module contract + honesty rows +
+  ENGINE ("harness-media::office") + the 1200-CHAR projection bound +
+  OfficeProjector (thin wrap over per-format extract) +
+  register_projections for docx/xlsx/pptx. Records the xlsx-fast-path
+  PICK: calamine 0.36.1 was the plan's candidate;
+  zip+quick-xml picked instead because the M18 tree needs the raw part
+  layer calamine does not expose (styles.xml census, vbaProject.bin
+  disclosure, external rels listing), cell reading is bounded under
+  caller budgets (calamine materializes whole sheet ranges), and one
+  stack keeps budget/ParseFailure semantics uniform across the family.
+- `src/adapter/office/parts.rs` - Package (zip central directory;
+  per-part 8 MiB cap; required/optional utf-8 XML part reads), the
+  Ledger (deadline + cumulative materialized-bytes; trips typed
+  ExtractTooLarge, checked per parsed event), next_event, the five
+  predefined entity references + numeric refs (custom entities never
+  expand - the svg lane's XXE posture), attribute/prefixed_attribute
+  (r:id vs id disambiguation by full raw key), parse_rels (bounded
+  Relationship entries), collapse/truncate_chars.
+- `src/adapter/office/docx.rs` - paragraphs w/ styles + headings +
+  list membership (outside tables), table census (rows x cols, first
+  row's cell count), embedded image refs resolved through document
+  rels, external rels listed, defined-styles census (styles.xml
+  styleIds - the M19 round-trip guard: a writer with broken style
+  definitions must fail the diff), macros = word/vbaProject.bin
+  presence. Projection: markdown-ish bounded text (Heading1 -> "#",
+  bullets -> "- ", "table: R rows x C cols").
+- `src/adapter/office/xlsx.rs` - workbook sheet order (r:id -> rels
+  target), sharedStrings resolved (rich-text runs concatenated), named
+  cellStyle census, macros presence, per-sheet schema + stats
+  projection. Delegates worksheet walking to xlsx_sheet.rs (the 250
+  pure-LOC ceiling split).
+- `src/adapter/office/xlsx_sheet.rs` - the worksheet walker: dimension
+  from the declared range, bounded used-range head cells (t="s"/
+  inlineStr/str -> string, t="b" -> bool, t="e" -> error, default ->
+  number), formulas listed AS TEXT with "=" prefix and NEVER evaluated
+  (cached <v> shown for value cells only; shared-string index OOB =
+  typed ParseFailure).
+- `src/adapter/office/pptx.rs` - slide count in presentation order,
+  per-slide shape census (sp/pic/graphicFrame) + text runs
+  (a:t); slide-master/layout inheritance deliberately NOT interpreted
+  (the digest's "where naive parsers fail" note). Macros =
+  ppt/vbaProject.bin presence.
+- Fixtures (hand-committed, generator one-shot in temp): fixtures/
+  office/{docx.docx, xlsx.xlsx, pptx.pptx, docx-macro.docx,
+  docx-no-document.docx}. docx exercises headings + an undefined
+  applied style ("Quirky") + a bullet list + a 2x2 table + an embedded
+  image + one external rel; xlsx carries 2 sheets, shared strings, a
+  =SUM formula with cached value, named styles; docx-macro adds a
+  word/vbaProject.bin part (never executed, never extracted).
+- `tests/office_read.rs` - 16 hermetic tests: pinned trees per format,
+  formula-as-text, macro disclosure line verbatim ("macros present: 1,
+  not executed"), undefined-style visibility (census vs applied),
+  corrupt zip + missing document part -> typed ParseFailure, budget
+  trips -> typed ExtractTooLarge, executor dispatch w/ pure producer
+  disclosure (pptx extract discloses Pure even though its GENERATION
+  is the pandoc subprocess lane), generate/verify refusals citing M19,
+  projector thin-wrap equality.
+
+Shared-file hunks (all mine, staged together; M22's in-flight hunks in
+the same files were NOT staged - verified via the staged diff):
+
+- Cargo.toml: office = ["dep:zip", "dep:quick-xml"].
+- src/adapter.rs: office module gate.
+- src/probe/registry.rs: office Extract -> Supported under the
+  feature; generate/verify reasons name the M19 write lane (mirrors
+  the M17 ffmpeg row convention).
+- src/executor/wiring.rs: office_extract_binding (feature-gated pure
+  handlers), extract arm for Docx|Xlsx|Pptx, generate/verify arms
+  citing OFFICE_WRITE_PENDING / OFFICE_VERIFY_PENDING (M19).
+- tests/executor_dispatch.rs: the unwired-pure-format pin moved off
+  the M18 read citation - xlsx generate now cites M19 (the office
+  WRITE lane is the next still-pending pure generate lane).
+- tests/executor_registry.rs: builder-test base swapped docx -> gif
+  (docx claims now flip under the dev feature set; gif is a permanent
+  typed-unsupported row, so its claims never shift).
+- tests/probe_registry.rs: the M18 claims-flip skip (extract only).
+
+## TDD evidence
+
+RED (tests written first; module absent; isolated worktree at HEAD
+8a37b8d + the test file only):
+
+    cargo nextest run -p harness-media --test office_read
+    > error[E0432]: unresolved import `harness_media::adapter::office`
+    error: could not compile `harness-media` (test "office_read")
+
+(First RED attempt in the shared checkout was blocked by the parallel
+M22 lane's in-flight parquet feature breakage + the known MSVC
+libsqlite3-sys cold flake; both are recorded below. All verification
+therefore ran in isolated worktrees at HEAD + this change only.)
+
+GREEN (hermetic, isolated worktree at HEAD 8a37b8d + this change):
+
+    cargo nextest run -p harness-media
+    Summary [   8.895s] 351 tests run: 351 passed, 5 skipped
+
+(16 of the 351 are this todo's office_read suite; 5 skipped = the
+pre-existing #[ignore] real-tool tiers. Final re-verification ran in a
+fresh worktree AT THE COMMIT - see below.)
+
+clippy: `cargo clippy -p harness-media --all-targets` -> exit 0
+(workspace lints warnings=deny). cargo deny check -> advisories ok,
+bans ok, licenses ok, sources ok (no new deps: zip + quick-xml were
+already in the tree; Cargo.lock untouched by this todo).
+LOC (code lines, comments/blank excluded): mod 45 / parts 149 /
+docx 245 / xlsx 170 / xlsx_sheet 174 / pptx 152 - all <= 250. No
+unwrap/expect/panic in office src (grep-pinned).
+
+## MSVC flake recipe (applied to every cargo invocation)
+
+prepend 'C:\Program Files\Microsoft Visual Studio\18\Insiders\
+SDK\ScopeCppSDK\vc15\VC\include' to INCLUDE (libsqlite3-sys stdarg.h
+cold-build failure; the briefing's sanctioned recipe - resolved the
+build immediately).
+
+## Deviations / notes
+
+- "ParseFailure with part name" (plan QA line): the shared
+  MediaError::ParseFailure is a unit variant (the M11 svg lane
+  shipped the same shape for "line/col"), so the failing part name
+  does not ride the error value. The refusal is typed either way;
+  per-part behavior is pinned by the dedicated fixtures (missing
+  document part, corrupt zip). Recorded in office/mod.rs docs.
+- The executor_dispatch.rs unwired-format pin STAYS on Xlsx but its
+  cited lane moved M18 -> M19: the office write lane (xlsx/docx pure
+  writers) IS the next still-pending pure generate lane, so the pin's
+  invariant ("always names a still-pending pure lane") holds without
+  skipping over M19/M20/M21 (step generate is the freecadcmd
+  subprocess; geotiff generate is the gdal subprocess).
+- Binary-size canary: not re-measured for this todo - office adds no
+  new dependency (zip + quick-xml already ship via the M2/M11 lanes);
+  the M27 gate re-measures. No new heavy-dep rows.
+- pptx extract runs PURE (zip+quick-xml) while the pptx ENTRY tier
+  stays Subprocess (its generation lane is pandoc) - dispatch derives
+  ProducerInfo.tier from the binding, so pptx extract artifacts
+  disclose Pure (test-pinned).
+- docx.rs sits at 245 code lines (warning band): the M19 write lane
+  lands as separate files (xlsx/docx writer modules), so no growth is
+  planned for this file.
+- finish() continuation fns carry 5/4 params (under the clippy
+  threshold; grouping would create one-off structs - the
+  workaround-smell). Conscious call, recorded here.
+- M22 (columnar) shares this checkout: its in-flight edits (Cargo.toml
+  data feature, wiring data bindings, adapter data module, tests,
+  Cargo.lock, fixtures/data) were left untouched and unstaged; this
+  commit stages HEAD+M18-only blobs for the shared files (verified by
+  reviewing the staged diff hunk-by-hunk).

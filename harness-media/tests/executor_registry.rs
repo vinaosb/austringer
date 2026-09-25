@@ -36,11 +36,12 @@ fn probe_adapter(bytes: &[u8], name_hint: Option<&str>) -> harness_media::probe:
     probe::probe(bytes, name_hint)
 }
 
-/// The docx descriptor from the M2 table (builder-test base; docx stays a
-/// typed-unsupported placeholder until M18, so its claims do not shift
-/// under the dev feature set).
-fn docx_descriptor() -> FormatDescriptor {
-    probe::registry().lookup(&FormatId::Docx).expect("docx descriptor").clone()
+/// The gif descriptor from the M2 table (builder-test base; gif is a
+/// PERMANENT typed-unsupported placeholder - the vision-only honesty
+/// row - so its claims never shift under the dev feature set. The
+/// former docx base retired when M18 flipped its extract claim).
+fn stable_descriptor() -> FormatDescriptor {
+    probe::registry().lookup(&FormatId::Gif).expect("gif descriptor").clone()
 }
 
 #[test]
@@ -124,27 +125,27 @@ fn descriptor_claims_stay_synced_with_bindings_on_day_one() {
 
 #[test]
 fn builder_rejects_an_entry_without_a_bound_probe() {
-    // Given: an svg entry whose probe is a typed refusal.
+    // Given: a gif entry whose probe is a typed refusal.
     let mut ops = pure_probe_ops();
     ops.probe = OpBinding::Unsupported { reason: "no sniffer".into() };
     // When: registered.
     let error = ExecutorRegistryBuilder::new()
         .register(harness_media::executor::AdapterEntry {
-            descriptor: docx_descriptor(),
+            descriptor: stable_descriptor(),
             tier: AdapterTier::Pure,
             ops,
         })
         .expect_err("probe-less entry must be rejected");
     // Then: the typed wiring error (the plan's MUST-NOT is constructor-
     // enforced, not convention).
-    assert!(matches!(error, ExecutorWiringError::ProbeNotBound { format } if format == FormatId::Docx));
+    assert!(matches!(error, ExecutorWiringError::ProbeNotBound { format } if format == FormatId::Gif));
 }
 
 #[test]
 fn builder_rejects_duplicate_and_drifted_entries() {
     // Duplicate: two adapters claiming one format is a wiring bug.
     let first = ExecutorRegistryBuilder::new().register(harness_media::executor::AdapterEntry {
-        descriptor: docx_descriptor(),
+        descriptor: stable_descriptor(),
         tier: AdapterTier::Pure,
         ops: pure_probe_ops(),
     });
@@ -152,25 +153,25 @@ fn builder_rejects_duplicate_and_drifted_entries() {
     let mut builder = ExecutorRegistryBuilder::new();
     builder
         .register(harness_media::executor::AdapterEntry {
-            descriptor: docx_descriptor(),
+            descriptor: stable_descriptor(),
             tier: AdapterTier::Pure,
             ops: pure_probe_ops(),
         })
         .expect("first registers");
     let duplicate = builder
         .register(harness_media::executor::AdapterEntry {
-            descriptor: docx_descriptor(),
+            descriptor: stable_descriptor(),
             tier: AdapterTier::Pure,
             ops: pure_probe_ops(),
         })
         .expect_err("duplicate must be rejected");
     assert!(
-        matches!(duplicate, ExecutorWiringError::DuplicateAdapter { format } if format == FormatId::Docx)
+        matches!(duplicate, ExecutorWiringError::DuplicateAdapter { format } if format == FormatId::Gif)
     );
 
     // Drift: a descriptor claiming Supported extract while the binding is
     // a typed refusal (README-ahead-of-code is unrepresentable).
-    let mut ahead = docx_descriptor();
+    let mut ahead = stable_descriptor();
     ahead.ops.insert(Operation::Extract, OpSupport::Supported);
     let drifted = ExecutorRegistryBuilder::new().register(harness_media::executor::AdapterEntry {
         descriptor: ahead,
@@ -180,21 +181,21 @@ fn builder_rejects_duplicate_and_drifted_entries() {
     assert!(matches!(
         drifted,
         Err(ExecutorWiringError::SupportedWithoutDispatch { format, op })
-            if format == FormatId::Docx && op == Operation::Extract
+            if format == FormatId::Gif && op == Operation::Extract
     ));
 }
 
 #[test]
 fn unknown_format_dispatch_fails_typed_unsupported_format() {
-    // Given: a registry that registered only svg.
+    // Given: a registry that registered only gif.
     let mut builder = ExecutorRegistryBuilder::new();
     builder
         .register(harness_media::executor::AdapterEntry {
-            descriptor: docx_descriptor(),
+            descriptor: stable_descriptor(),
             tier: AdapterTier::Pure,
             ops: pure_probe_ops(),
         })
-        .expect("svg entry registers");
+        .expect("gif entry registers");
     let partial = builder.build();
     // When: png (unregistered) is dispatched.
     let error = partial

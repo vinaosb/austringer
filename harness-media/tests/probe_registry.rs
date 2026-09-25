@@ -86,6 +86,15 @@ fn registry_covers_all_34_formats_with_probe_supported() {
             if *id == FormatId::Blend {
                 continue;
             }
+            // M18: the office read adapters flip extract to Supported
+            // under the `office` feature (generate/verify stay
+            // Unsupported naming the M19 write lane).
+            if cfg!(feature = "office")
+                && matches!(id, FormatId::Docx | FormatId::Xlsx | FormatId::Pptx)
+                && op == Operation::Extract
+            {
+                continue;
+            }
             match descriptor.ops.get(&op) {
                 Some(OpSupport::Unsupported { reason }) => {
                     assert!(!reason.is_empty(), "{id} {op}: empty reason");

@@ -62,8 +62,9 @@ audio = [
 ]
 # M2: the OOXML zip lane reads the central directory via the zip crate
 # (pure-Rust deflate backend); without this feature a zip is honestly
-# Unknown with a note naming it.
-office = ["dep:zip"]
+# Unknown with a note naming it. M18 adds quick-xml for the office
+# extract walk (the same parser the svg lane uses).
+office = ["dep:zip", "dep:quick-xml"]
 # M28: ravif encode is pure Rust but SLOW (rav1e); non-default per M1
 # feature topology (10-25 MB binary cost, its own budgets.json encode
 # timeout). default-features=false keeps the tree off rav1e's nasm/asm
