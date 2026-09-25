@@ -175,7 +175,7 @@ fn subprocess_dispatch_routes_through_the_m15_tool_executor() {
         .dispatch(
             FormatId::Blend,
             OpRequest::Extract {
-                bytes: b"BLENDER",
+                bytes: b"BLENDER_v305",
                 budgets: Default::default(),
             },
         )

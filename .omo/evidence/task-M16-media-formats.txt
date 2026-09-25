@@ -1,0 +1,213 @@
+task-M16-media-formats.txt - .blend adapter (flagship 3D lane, subprocess tier)
+===============================================================================
+Completed: 2026-09-25. Plan section: '- [ ] 16. M16' (read verbatim, authority).
+Base HEAD at start: 2084142; a concurrent M17 lane committed 3da74b6 mid-flight
+(this commit rebases on top of it - see Shared-file protocol below).
+
+PLAN FACTS (verified against .omo/plans/media-formats-wave.md L207-213):
+- probe = magic ONLY (DNA parsing NOT attempted in Rust - honest; the M2 sniffer
+  already carries the 12-byte header lane).
+- extract: headless blender --background --factory-startup <file> --python
+  <dump-script>, script = in-crate versioned template -> stdout JSON {scenes,
+  objects[name, type, parent, 4x4 world transform, mesh stats (verts/edges/
+  faces), modifiers, material slots], collections depth-capped, action count,
+  world} (bounded stdout; stderr captured); text_projection = scene outline.
+- generate: spec {objects[primitive: cube|sphere|plane|cylinder|icosphere|cone,
+  name, transform, material{base color, metallic, roughness}], world bg,
+  collection layout} -> builder script (bpy.data + mesh.from_pydata +
+  mesh.validate(); bpy.ops reserved for I/O) -> .blend.
+- verify: extract(generate) diff (unordered-by-name objects, eps 1e-5).
+- HERMETIC: mocktool "blender" mode (canned scene JSON; accepts the builder
+  script text, writes a magic-fixture .blend); real-Blender smoke #[ignore] +
+  documented env var, NEVER in CI.
+- Blender absent (default) -> typed ToolUnavailable{install_hint}; probe still
+  works (dispatch Probe never touches the tool lane).
+- Hermetic hardening: the mock runs the emitted builder script through python
+  validation (broken script fails hermetically); the dump-script stdout JSON
+  contract is pinned by a versioned schema test (mock-drift law); blender major
+  pinned in the manifest (pin honestly "pending-first-real-run").
+- Acceptance: spec corpus >=8 -> generate->(mock).blend->extract->empty diff;
+  default-config extract -> typed ToolUnavailable; producer disclosure carries
+  blender version when real; #[ignore] smoke documented.
+- Must NOT: run user prefs (--factory-startup always); claim untested blender
+  versions; block probe on subprocess.
+- Commit message: feat(media): blender subprocess adapter with mock-child suite
+  (house style followed; subject kept conventional).
+
+WAIVER LINE (the plan's only sanctioned alternative to the at-todo-time
+real-Blender run):
+WAIVED: real-Blender run at todo time - Blender is NOT installed on this dev
+machine (no blender on PATH; no C:\Program Files\Blender Foundation; not in
+chocolatey/scoop/localappdata; verified 2026-09-25). Substitute: the committed
+#[ignore] real_blender_smoke_round_trips_the_primitive_corpus test (BLENDER_BIN
+env, documented invocation) + the hermetic parameterized-mock suite below.
+First real capture owner: F3 / M25 scheduled tier per
+harness-test-support/golden/mocktool/capture.md (blender row updated).
+
+WHAT LANDED
+-----------
+harness-media/src/adapter/blend/ (new, unconditional - subprocess lane, no
+codec dependency, so no feature gate):
+- mod.rs     module docs + honesty rows + TOOL/DUMP_SCHEMA/BUILD_SCHEMA consts
+             + BlendProjector + register_projections (M10 seam; typed-refusing
+             without a Blender-enabled executor - never a fabricated outline).
+- spec.rs    BlendSpec/Primitive/Transform/MaterialSpec/ObjectSpec + strict
+             from_generation (InvalidSpec on format mismatch, unknown variant,
+             non-finite floats, out-of-range factors, oversize/duplicate
+             names, >MAX_OBJECTS=256).
+- tree.rs    the INDEPENDENT spec->tree projection (M5 provenance rule):
+             pinned primitive topology table + TRS compose T*Rz*Ry*Rx*S.
+- script.rs  include_str! versioned templates + deterministic builder_script()
+             (spec embedded as a single-line JSON literal).
+- build_script.py / dump_script.py  the committed python templates (reviewable
+             as python; dump prints between HARNESS_BLEND_DUMP markers so
+             blender startup chatter cannot corrupt extraction).
+- extract.rs magic guard -> size cap -> availability gate (typed refusal BEFORE
+             any staging) -> staged in.blend + dump.py -> ToolCall scene-dump
+             -> marker-bounded stdout -> schema guard -> tree + bounded outline.
+- generate.rs from_generation -> staged build.py -> ToolCall scene-build
+             (--factory-startup always; `--` passes the output path to
+             sys.argv) -> out.blend read ONLY after a zero-exit run.
+- verify.rs  profile (eps 1e-5, unordered_at /objects) + extract+diff verdict.
+
+Executor integration (shared files, minimal hunks):
+- executor/binding.rs: SubHandler enum (variant-level PartialEq - fn addresses
+  are not unique across codegen units).
+- executor/registry.rs: (format, op) -> SubHandler map + builder
+  subprocess_handler() + dispatch executes a registered handler through the
+  bound ToolExecutor; handler-less Subprocess bindings keep the honest
+  pending-adapter refusal.
+- executor/wiring.rs: blend verify -> blender tool lane; registry() registers
+  blend extract/generate/verify handlers.
+- probe/registry.rs: blend claims flipped Supported (unconditional).
+- tool/manifest.rs: blender scene-dump / scene-build op templates
+  (--factory-startup pinned in argv).
+- tool/executor.rs: ToolConfig.env base environment (redaction applies at
+  spawn; per-call ToolCall::env wins) - the channel the daemon and the hermetic
+  mock lane drive; without it a dispatched subprocess child would see an empty
+  env and the mock modes could not be selected per executor.
+- adapter.rs: pub mod blend.
+
+Hermetic lane (harness-test-support, mocktool):
+- mocktool/python.rs: tokenizer-level python validation (all quote forms incl.
+  triple + raw, escapes, bracket stack with line numbers, control-byte guard).
+  HONEST BOUND: a lexer pass, not a full AST parse - python is not guaranteed
+  on CI machines and a parser dep is unsanctioned weight for a test mock; the
+  realistic breakage classes of a Rust-templated script (unterminated strings,
+  unbalanced/crossed delimiters, truncation) are caught; the true py_compile
+  equivalence is exercised by the #[ignore] real tier.
+- mocktool/blend.rs: blendbuild / blenddump modes - the PARAMETERIZED blender
+  stand-in (cwd = executor session temp; blend-build/build.py -> validates
+  python -> parses SPEC -> derives census -> writes magic-fixture .blend;
+  blend-dump/in.blend -> prints census between dump markers). Three-way
+  triangulation: python template, this Rust blender model, and the adapter's
+  independent spec->tree projection - the round-trip cross-checks all three.
+- mocktool.rs: mode dispatch + validate_python re-export.
+
+SHARED-FILE PROTOCOL (the M14 lesson) - EXECUTION RECORD
+--------------------------------------------------------
+A concurrent M17 lane was editing this same working tree throughout (its commit
+3da74b6 landed mid-task). Staging was therefore surgical, never `git add -A`:
+- Mixed files (adapter.rs, tool/executor.rs, tool/manifest.rs, mocktool.rs,
+  capture.md) were staged as HEAD+my-hunks-only blobs (hash-object +
+  update-index), then re-audited after 3da74b6 landed: diff --cached confirms
+  every shared-file index entry is exactly new-HEAD + my deltas.
+- tool/manifest.rs: my blender op templates were swept into 3da74b6 by the M17
+  lane's staging of the shared working file - the content is landed (in their
+  commit), nothing left for mine; deviation noted below.
+- tests/ffmpeg_adapter.rs + tests/ffmpeg_real.rs: transitive one-line hunks
+  (env: BTreeMap::new() at four ToolConfig literals) - required by my
+  ToolConfig.env field, else their committed suite breaks (verified in the
+  isolated export before committing).
+- tests/tool_executor.rs: env fields + the pending-adapter routing test
+  retargeted Blend->Webm/ffmpeg (blend now dispatches for real; webm keeps the
+  honest pending path until M17's wiring, which landed in 3da74b6 for probe).
+- tests/probe_registry.rs + tests/executor_dispatch.rs: guard updates for the
+  blend claim flips and live dispatch (12-byte blend header in the dispatch
+  fixture so the typed ToolUnavailable - not ParseFailure - is the asserted
+  refusal).
+- .omo files, M17 goldens, M17 evidence: never touched.
+
+RED EVIDENCE (TDD failing-first)
+--------------------------------
+cargo nextest run -p harness-media --test blend_adapter
+=> could not compile harness-media (test blend_adapter) due to 6 errors:
+error[E0432]: unresolved import `harness_media::adapter::blend` (x2 uses)
+error[E0425]: cannot find function `validate_python` in mocktool (x2)
+error[E0560]: struct `ToolConfig` has no field named `env` (x3 ... all 5 sites)
+The suite was written first against the planned API; the full failure log is
+in the transcript. Failures are for the right reason: the API did not exist.
+
+GREEN EVIDENCE (isolated index export - C:\...\m16verify via git
+checkout-index, i.e. exactly what this commit contains, free of the concurrent
+lane's uncommitted edits; INCLUDE fix for the known MSVC cold flake applied)
+-----------------------------------------------------------------------------
+cargo nextest run -p harness-media -p harness-test-support
+=> Summary: 373 tests run: 373 passed, 5 skipped
+(skips: blend real-tool tier, ffmpeg real-tool tiers, gltf validator, size
+canary - all #[ignore] by design; hermetic, zero network, zero real tools)
+- blend_adapter: 11 tests: spec corpus of 10 specs (>=8 per acceptance: all
+  six primitives, materials, transforms incl. rotations, world backgrounds,
+  custom collection, empty scene, reversed-order twin, kitchen sink) ->
+  generate -> (mock) .blend magic -> probe Certain -> extract -> EMPTY diff;
+  default-config dispatch -> typed ToolUnavailable while probe still answers;
+  dispatch generate producer disclosure (engine=blender, Subprocess tier,
+  manifest pin, real argv template pinned at the manifest level);
+  NonZeroExit typed with stderr head, no partial artifact; versioned dump
+  schema key-set pin; bounded scene-outline projection; broken-python
+  builder script fails hermetically; generated scripts parse as python
+  (validator, with a negative control); fixture-without-census -> typed
+  refusal; InvalidSpec table.
+- tool_executor / executor_dispatch / probe_registry guard suites: green
+  with the blend-integrated expectations.
+
+cargo clippy -p harness-media -p harness-test-support --all-targets --
+  -D warnings => Finished, zero warnings
+cargo deny check => advisories ok, bans ok, licenses ok, sources ok
+LOC audit (pure, non-blank non-comment): blend mod 44 / spec 114 / tree 92 /
+script 39 / extract 108 / generate 33 / verify 33; mocktool blend 204 /
+python 146 - all <= 250. No unwrap/expect/panic in src (grep clean).
+
+DEVATIONS / DECISIONS (recorded)
+--------------------------------
+1. WAIVER: no real-Blender run at todo time (machine lacks Blender) - plan-
+   sanctioned waiver line above; first real contact moves to F3/M25.
+2. Plan-wording conflict resolved in the PLAN's favor: the task briefing
+   described a "pure .blend DNA parsing tier (blend crate or block walker)"
+   and "render/obj/ply/stl export" - the plan (authority, verbatim) says
+   "DNA parsing NOT attempted in Rust, honest" and scopes M16 to probe/
+   extract/generate/verify only. No DNA parser, no render/export ops landed;
+   the cross-format factory note in the plan references is Blender-session
+   capability, not an M16 deliverable.
+3. Python validation is a Rust tokenizer pass, not py_compile/AST (CI machines
+   are not guaranteed python; no parser dep sanctioned) - honest bound
+   documented in mocktool/python.rs; real-tier py_compile equivalence rides
+   the #[ignore] smoke.
+4. Mock blend modes are parameterized (census derived from the parsed spec),
+   not fixed golden bytes: the plan's acceptance (>=8 distinct specs ->
+  empty diff) is impossible with one canned capture; capture.md's blender row
+   documents the parameterized-mock status and keeps the content capture
+   PENDING per the mock-drift law (versioned schema test pins the contract).
+5. tool/manifest.rs blender ops landed inside the concurrent M17 commit
+   (3da74b6) via shared-working-file staging; content verified identical to
+   my authored hunks.
+6. Producer.version for the mock lane reads the manifest pin
+   ("pending-first-real-run") - honest pending until a real run flips it.
+
+POST-COMMIT VERIFICATION (per task brief)
+-----------------------------------------
+git show --stat <commit> audited (every touched shared file present);
+git worktree add <tmp> <sha> + cargo nextest run -p harness-media green -
+logged below after the commit lands.
+POST-COMMIT VERIFICATION (executed)
+-----------------------------------
+git show --stat 8c6faa4: audited - all 27 files, every touched shared file
+present (adapter.rs, executor/{binding,mod,registry,wiring}.rs,
+probe/registry.rs, tool/executor.rs, 6 test files incl. the transitive ffmpeg
+env hunks, mocktool.rs, capture.md, evidence, 11 new files).
+tool/manifest.rs: intentionally absent - my blender op hunks had already landed
+inside the concurrent M17 commit 3da74b6 (verified identical content).
+git worktree add <tmp> 8c6faa4 + cargo nextest run -p harness-media:
+=> Summary: 335 tests run: 335 passed, 5 skipped (hermetic, zero network).
+(amended this evidence file post-verification; code content unchanged - the
+amended sha re-verified below.)

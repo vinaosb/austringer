@@ -105,6 +105,14 @@ pub fn registry() -> FormatRegistry {
                 entry.ops.insert(op, OpSupport::Supported);
             }
         }
+        // M16 blend: all three ops are decided and dispatched through
+        // the blender subprocess lane (typed ToolUnavailable until the
+        // tool is opted in; no codec feature - no cfg gate).
+        if id == FormatId::Blend {
+            for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+                entry.ops.insert(op, OpSupport::Supported);
+            }
+        }
         // M17 ffmpeg lane: opus/webm/mkv run through the opt-in ffmpeg
         // subprocess adapter surface - the claims stay typed-Unsupported
         // (the OpRequest kinds do not carry the staging contract) but the

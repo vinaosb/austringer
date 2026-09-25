@@ -633,6 +633,9 @@ fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Jxl => unsupported(JXL_EXTRACT_ONLY_VERIFY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
+        // M16: blend verify is the blender-backed extract + diff, so it
+        // rides the same subprocess lane.
+        FormatId::Blend => tool_binding("blender"),
         _ => pending(id),
     }
 }
@@ -661,5 +664,24 @@ pub fn registry() -> ExecutorRegistry {
     for (id, descriptor) in probe::registry().iter() {
         let _ = builder.register(entry(id, descriptor.clone()));
     }
+    // M16 blend lane: the subprocess adapter fns behind the blend
+    // bindings (dispatch refuses typed until the blender tool is
+    // genuinely opted in and installed).
+    builder
+        .subprocess_handler(
+            FormatId::Blend,
+            crate::descriptor::Operation::Extract,
+            super::binding::SubHandler::Extract(crate::adapter::blend::extract),
+        )
+        .subprocess_handler(
+            FormatId::Blend,
+            crate::descriptor::Operation::Generate,
+            super::binding::SubHandler::Generate(crate::adapter::blend::generate),
+        )
+        .subprocess_handler(
+            FormatId::Blend,
+            crate::descriptor::Operation::Verify,
+            super::binding::SubHandler::Verify(crate::adapter::blend::verify),
+        );
     builder.build()
 }

@@ -11,6 +11,7 @@ use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
 use crate::generate::GenerationSpec;
 use crate::probe::ProbeResult;
+use crate::tool::ToolExecutor;
 use serde_json::Value;
 
 /// Probe handler: typed identification, never a panic, never a guess.
@@ -25,6 +26,41 @@ pub type GenerateHandler = fn(&GenerationSpec) -> Result<Vec<u8>, MediaError>;
 /// Verify handler: independent expected tree + produced bytes, typed
 /// failures (never a silent pass).
 pub type VerifyHandler = fn(&Value, &[u8]) -> Result<RoundTripVerdict, MediaError>;
+
+/// One subprocess-lane adapter fn (M16+): the registry dispatches it
+/// only for a `(format, op)` whose binding is
+/// [`OpBinding::Subprocess`]; the handler's own
+/// [`ToolExecutor::run`](crate::tool::ToolExecutor::run) enforces that
+/// the manifest tool is genuinely enabled and installed (typed
+/// `ToolUnavailable` otherwise), and the artifact it returns carries
+/// the tool-run producer disclosure.
+#[derive(Debug, Clone, Copy)]
+pub enum SubHandler {
+    /// Structural extract through the tool lane.
+    Extract(
+        fn(&ToolExecutor, &[u8], ExtractBudgets) -> Result<super::types::Produced, MediaError>,
+    ),
+    /// Spec-driven generation through the tool lane.
+    Generate(fn(&ToolExecutor, &GenerationSpec) -> Result<super::types::Produced, MediaError>),
+    /// Round-trip verification through the tool lane.
+    Verify(fn(&ToolExecutor, &Value, &[u8]) -> Result<super::types::Produced, MediaError>),
+}
+
+// Variant-level equality only: fn-pointer addresses are not unique
+// across codegen units (the fn_ptr_comparisons law), and the wiring
+// only ever asks WHICH lane a handler is, never which address.
+impl PartialEq for SubHandler {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Extract(_), Self::Extract(_))
+                | (Self::Generate(_), Self::Generate(_))
+                | (Self::Verify(_), Self::Verify(_))
+        )
+    }
+}
+
+impl Eq for SubHandler {}
 
 /// One operation's dispatch state: a bound pure handler, a decided
 /// subprocess lane, or a typed-unsupported refusal with the honest

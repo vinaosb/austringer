@@ -20,6 +20,11 @@
 //!   real ffmpeg ignores them, the mock is the pass-through remux echo).
 //! - `stagegolden <name>` — write golden `<name>.golden` bytes to
 //!   `HARNESS_MEDIA_STAGE_OUT` (the M17 canned-thumbnail lane).
+//! - `blendbuild` / `blenddump` — the M16 parameterized blender
+//!   stand-in: derive the scene census from the builder script's
+//!   embedded spec / emit a fixture's census between the dump markers
+//!   (see `mocktool/blend.rs` for the python-validation gate and the
+//!   cwd staging contract).
 //! - `exit <code> [msg...]` — write msg to stderr, exit with code.
 //! - `write <path> <text>` — write text to path (utf-8), exit 0.
 //! - `hang [children]` — spawn `children` (default 1) `sleep 60`
@@ -32,6 +37,11 @@
 
 use std::io::Write;
 use std::process::Command;
+
+mod blend;
+mod python;
+
+pub use python::validate_python;
 
 /// Re-exec entry: mode words come from `HARNESS_MOCKTOOL_ARGV`
 /// (whitespace-split, e.g. `"golden ffprobe/probe-av-json"`).
@@ -70,6 +80,8 @@ fn dispatch(words: &[&str]) -> i32 {
         "golden" => golden_mode(rest.first().copied()),
         "stagecopy" => stagecopy_mode(),
         "stagegolden" => stagegolden_mode(rest.first().copied()),
+        "blendbuild" => blend::build_mode(),
+        "blenddump" => blend::dump_mode(),
         "exit" => exit_mode(rest),
         "write" => write_mode(rest),
         "hang" => hang_mode(rest.first().and_then(|n| n.parse::<u32>().ok())),
@@ -88,8 +100,7 @@ fn stage_var(name: &str) -> Option<std::path::PathBuf> {
 }
 
 fn stagecopy_mode() -> i32 {
-    let (Some(source), Some(target)) =
-        (stage_var("HARNESS_MEDIA_STAGE_IN"), stage_var("HARNESS_MEDIA_STAGE_OUT"))
+    let (Some(source), Some(target)) = (stage_var("HARNESS_MEDIA_STAGE_IN"), stage_var("HARNESS_MEDIA_STAGE_OUT"))
     else {
         eprintln!("mocktool: stagecopy needs HARNESS_MEDIA_STAGE_IN/OUT");
         return 2;
@@ -97,11 +108,7 @@ fn stagecopy_mode() -> i32 {
     match std::fs::copy(&source, &target) {
         Ok(_) => 0,
         Err(e) => {
-            eprintln!(
-                "mocktool: stagecopy {} -> {} failed: {e}",
-                source.display(),
-                target.display()
-            );
+            eprintln!("mocktool: stagecopy {} -> {} failed: {e}", source.display(), target.display());
             2
         }
     }
@@ -112,8 +119,7 @@ fn stagegolden_mode(name: Option<&str>) -> i32 {
         eprintln!("mocktool: stagegolden needs <name> and HARNESS_MEDIA_STAGE_OUT");
         return 2;
     };
-    let Some(dir) = std::env::var_os("HARNESS_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
-    else {
+    let Some(dir) = std::env::var_os("HARNESS_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty()) else {
         eprintln!("mocktool: HARNESS_MOCKTOOL_GOLDEN_DIR is unset");
         return 2;
     };

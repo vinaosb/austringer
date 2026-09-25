@@ -22,7 +22,7 @@
 
 use std::collections::BTreeMap;
 
-use super::binding::{AdapterEntry, OpBinding, ProbeHandler};
+use super::binding::{AdapterEntry, OpBinding, ProbeHandler, SubHandler};
 use super::types::{AdapterTier, OpOutput, OpRequest, Produced, ProducerInfo};
 use crate::descriptor::{Operation, OpSupport};
 use crate::error::MediaError;
@@ -73,6 +73,7 @@ pub enum ExecutorWiringError {
 pub struct ExecutorRegistryBuilder {
     entries: BTreeMap<FormatId, AdapterEntry>,
     tools: ToolExecutor,
+    subprocess: BTreeMap<(FormatId, Operation), SubHandler>,
 }
 
 impl ExecutorRegistryBuilder {
@@ -88,6 +89,20 @@ impl ExecutorRegistryBuilder {
     /// in here.
     pub fn tools(&mut self, executor: ToolExecutor) -> &mut Self {
         self.tools = executor;
+        self
+    }
+
+    /// Registers one subprocess-lane adapter fn (M16+): dispatched when
+    /// this `(format, op)`'s binding is [`OpBinding::Subprocess`] and
+    /// the manifest tool is genuinely available; a Subprocess binding
+    /// without a handler keeps its honest pending refusal.
+    pub fn subprocess_handler(
+        &mut self,
+        format: FormatId,
+        op: Operation,
+        handler: SubHandler,
+    ) -> &mut Self {
+        self.subprocess.insert((format, op), handler);
         self
     }
 
@@ -138,6 +153,7 @@ impl ExecutorRegistryBuilder {
         ExecutorRegistry {
             entries: self.entries,
             tools: self.tools,
+            subprocess: self.subprocess,
         }
     }
 }
@@ -147,6 +163,7 @@ impl ExecutorRegistryBuilder {
 pub struct ExecutorRegistry {
     entries: BTreeMap<FormatId, AdapterEntry>,
     tools: ToolExecutor,
+    subprocess: BTreeMap<(FormatId, Operation), SubHandler>,
 }
 
 impl ExecutorRegistry {
@@ -177,6 +194,7 @@ impl ExecutorRegistry {
         Self {
             entries: self.entries.clone(),
             tools,
+            subprocess: self.subprocess.clone(),
         }
     }
 
@@ -202,7 +220,10 @@ impl ExecutorRegistry {
     /// Dispatch one operation. Every success is a [`Produced`] - artifact
     /// plus producer disclosure, type-enforced. Every refusal is typed:
     /// unregistered format, unsupported op (verbatim reason), or the
-    /// subprocess seam routed through the M15 tool executor.
+    /// subprocess seam - a registered [`SubHandler`] runs through the
+    /// M15 tool executor (its own typed `ToolUnavailable` when the tool
+    /// is not enabled/installed), and a handler-less Subprocess binding
+    /// keeps its honest pending-adapter refusal.
     pub fn dispatch(
         &self,
         format: FormatId,
@@ -223,6 +244,10 @@ impl ExecutorRegistry {
                     OpOutput::Extract(handler(bytes, budgets)?),
                     pure_producer(engine),
                 )),
+                OpBinding::Subprocess { .. } => match self.subprocess.get(&(format, op)) {
+                    Some(SubHandler::Extract(handler)) => handler(&self.tools, bytes, budgets),
+                    _ => Err(self.refuse_binding(&entry.ops.extract, format, op)),
+                },
                 other => Err(self.refuse_binding(other, format, op)),
             },
             OpRequest::Generate { spec } => match &entry.ops.generate {
@@ -230,6 +255,10 @@ impl ExecutorRegistry {
                     OpOutput::Generate(handler(spec)?),
                     pure_producer(engine),
                 )),
+                OpBinding::Subprocess { .. } => match self.subprocess.get(&(format, op)) {
+                    Some(SubHandler::Generate(handler)) => handler(&self.tools, spec),
+                    _ => Err(self.refuse_binding(&entry.ops.generate, format, op)),
+                },
                 other => Err(self.refuse_binding(other, format, op)),
             },
             OpRequest::Verify { expected, bytes } => match &entry.ops.verify {
@@ -237,6 +266,10 @@ impl ExecutorRegistry {
                     OpOutput::Verify(handler(expected, bytes)?),
                     pure_producer(engine),
                 )),
+                OpBinding::Subprocess { .. } => match self.subprocess.get(&(format, op)) {
+                    Some(SubHandler::Verify(handler)) => handler(&self.tools, expected, bytes),
+                    _ => Err(self.refuse_binding(&entry.ops.verify, format, op)),
+                },
                 other => Err(self.refuse_binding(other, format, op)),
             },
         }

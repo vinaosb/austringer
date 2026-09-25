@@ -60,6 +60,7 @@ fn executor_with(tool: &str, r#override: ToolOverride, session_temp: PathBuf) ->
         enabled: [(tool.to_owned(), r#override)].into(),
         install_enabled: false,
         session_temp,
+        env: BTreeMap::new(),
     })
 }
 
@@ -284,6 +285,7 @@ fn wrong_sha_asset_fails_closed_nothing_executed() {
         enabled: BTreeMap::new(),
         install_enabled: true,
         session_temp: temp.path().to_path_buf(),
+        env: BTreeMap::new(),
     });
     let pin = harness_safety::supply::ReleaseAsset {
         url: "https://example.invalid/pandoc.zip".into(),
@@ -340,6 +342,7 @@ fn install_requires_the_explicit_opt_in_flag() {
         enabled: BTreeMap::new(),
         install_enabled: false,
         session_temp: temp.path().to_path_buf(),
+        env: BTreeMap::new(),
     });
     let pin = harness_safety::supply::ReleaseAsset {
         url: "https://example.invalid/x".into(),
@@ -361,6 +364,7 @@ fn sandbox_violation_is_typed_denial_with_audit() {
         enabled: [("blender".to_owned(), mocktool_override(None))].into(),
         install_enabled: false,
         session_temp: PathBuf::from("relative/not/absolute"),
+        env: BTreeMap::new(),
     });
     let error = executor
         .run(&ToolCall::new("blender", OP_VERSION_CHECK).env(&env_map(&[])))
@@ -386,7 +390,7 @@ fn registry_routes_subprocess_bindings_through_the_tool_executor() {
         .dispatch(
             FormatId::Blend,
             OpRequest::Extract {
-                bytes: b"BLENDER",
+                bytes: b"BLENDER_v305",
                 budgets: Default::default(),
             },
         )
@@ -402,23 +406,24 @@ fn registry_routes_subprocess_bindings_through_the_tool_executor() {
     let temp = tempfile::tempdir().expect("tempdir");
     let enabled_registry = harness_media::executor::registry().with_tools(ToolExecutor::new(
         ToolConfig {
-            enabled: [("blender".to_owned(), mocktool_override(None))].into(),
+            enabled: [("ffmpeg".to_owned(), mocktool_override(None))].into(),
             install_enabled: false,
             session_temp: temp.path().to_path_buf(),
+            env: BTreeMap::new(),
         },
     ));
     let error = enabled_registry
         .dispatch(
-            FormatId::Blend,
+            FormatId::Webm,
             OpRequest::Extract {
-                bytes: b"BLENDER",
+                bytes: b"\x1A\x45\xDF\xA3",
                 budgets: Default::default(),
             },
         )
         .expect_err("tool enabled, adapter pending");
     match error {
         MediaError::UnsupportedOperation { format, op, reason } => {
-            assert_eq!(format, FormatId::Blend);
+            assert_eq!(format, FormatId::Webm);
             assert_eq!(op, Operation::Extract);
             assert!(
                 reason.to_lowercase().contains("adapter"),

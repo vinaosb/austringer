@@ -41,6 +41,7 @@ fn real_executor() -> Option<ToolExecutor> {
         .into(),
         install_enabled: false,
         session_temp,
+        env: BTreeMap::new(),
     }))
 }
 
@@ -52,6 +53,7 @@ fn real_ffprobe_absent_is_typed_unavailable() {
         enabled: BTreeMap::new(),
         install_enabled: false,
         session_temp: temp.path().to_path_buf(),
+        env: BTreeMap::new(),
     });
     let adapter = ffmpeg::Adapter::new(&tools);
     assert!(matches!(

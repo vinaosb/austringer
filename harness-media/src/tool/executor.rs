@@ -34,6 +34,11 @@ pub struct ToolConfig {
     pub install_enabled: bool,
     /// The session media temp dir: the only writable scope a tool gets.
     pub session_temp: PathBuf,
+    /// Base environment handed to every tool child (redaction applies
+    /// at spawn; a per-call `ToolCall::env` takes precedence). The
+    /// daemon fills it from its process env; hermetic tests drive the
+    /// mocktool mode vars through it.
+    pub env: BTreeMap<String, String>,
 }
 
 /// Program/argv substitution for one tool - the mocktool hermetic lane
@@ -175,7 +180,7 @@ impl ToolExecutor {
         self.sandbox_gate(call.tool)?;
         let argv = self.argv(spec, call);
         let command_line = argv_line(&program, &argv);
-        let child_env = redacted_child_env(spec, call.env);
+        let child_env = redacted_child_env(spec, call.env.or(Some(&self.config.env)));
         std::fs::create_dir_all(&self.config.session_temp).map_err(|detail| {
             ToolError::Spawn {
                 tool: call.tool.to_owned(),
@@ -276,6 +281,7 @@ impl ToolExecutor {
                          adapter::ffmpeg surface (probe_av / extract_av / transcode / \
                          pcm_md5) - the OpRequest kinds do not carry the staging contract"
                     )
+                    .to_owned()
                 } else {
                     format!(
                         "tool {tool} is enabled and installed; the {format} subprocess adapter \

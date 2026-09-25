@@ -46,5 +46,9 @@ pub mod text;
 #[cfg(feature = "image")]
 pub mod image;
 
+// M16 blend lane: subprocess tier (headless Blender via the M15 tool
+// executor) - no codec dependency, so it is not feature-gated.
+pub mod blend;
+
 #[cfg(feature = "ffmpeg")]
 pub mod ffmpeg;

@@ -75,6 +75,7 @@ fn lane(ffmpeg_mode: &str, ffprobe_mode: &str) -> Lane {
         .into(),
         install_enabled: false,
         session_temp: session_temp.clone(),
+        env: BTreeMap::new(),
     });
     let mut env = BTreeMap::new();
     env.insert("HARNESS_MOCKTOOL_FFMPEG_ARGV".to_owned(), ffmpeg_mode.to_owned());
@@ -385,6 +386,7 @@ fn absent_ffprobe_is_typed_unavailable_with_hint() {
         enabled: BTreeMap::new(),
         install_enabled: false,
         session_temp: temp.path().to_path_buf(),
+        env: BTreeMap::new(),
     });
     let adapter = ffmpeg::Adapter::new(&tools);
     match adapter.probe_av(b"RIFF....WEBM") {

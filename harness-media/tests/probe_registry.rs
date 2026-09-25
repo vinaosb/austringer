@@ -81,6 +81,11 @@ fn registry_covers_all_34_formats_with_probe_supported() {
             if cfg!(feature = "avif") && *id == FormatId::Avif {
                 continue;
             }
+            // M16: the blend adapter flips its claims to Supported
+            // unconditionally (subprocess lane - no codec feature).
+            if *id == FormatId::Blend {
+                continue;
+            }
             match descriptor.ops.get(&op) {
                 Some(OpSupport::Unsupported { reason }) => {
                     assert!(!reason.is_empty(), "{id} {op}: empty reason");

@@ -32,7 +32,7 @@ All commands run from the repository root.
 
 | Tool | Golden | Status | First capture owner |
 | --- | --- | --- | --- |
-| blender | scene-dump JSON, builder artifacts | PENDING (blender not installed) | M16 evidence (real-Blender run is an M16 requirement) |
+| blender | scene-dump JSON, builder artifacts | PENDING (blender not installed). M16 landed the PARAMETERIZED structural mock instead (`blendbuild`/`blenddump` modes deriving the census from the builder script's embedded spec - three-way triangulation with the python template and the independent spec->tree projection); the real-run waiver line is in `.omo/evidence/task-M16-media-formats.txt` | F3 / M25 scheduled tier (first real capture flips the manifest pin off `pending-first-real-run`) |
 | whisper-cpp | transcript JSON | PENDING (whisper-cli not installed) | M14/M25 scheduled tier |
 | libreoffice (soffice) | `--version` output | PENDING (soffice not installed) | M18/M19 round-trip hooks |
 | freecadcmd | `--version` output | PENDING (FreeCAD not installed) | M20 |
