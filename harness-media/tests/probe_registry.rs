@@ -86,6 +86,12 @@ fn registry_covers_all_34_formats_with_probe_supported() {
             if cfg!(feature = "data") && matches!(id, FormatId::Parquet | FormatId::Arrow) {
                 continue;
             }
+            // M21: the georaster adapter flips its claims to Supported
+            // under the `georaster` feature (pure extract + the gdal
+            // subprocess generate/verify lane).
+            if cfg!(feature = "georaster") && *id == FormatId::Geotiff {
+                continue;
+            }
             // M16: the blend adapter flips its claims to Supported
             // unconditionally (subprocess lane - no codec feature).
             if *id == FormatId::Blend {

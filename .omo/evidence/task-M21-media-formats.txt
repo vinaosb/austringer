@@ -1,0 +1,162 @@
+# task-M21 media-formats evidence (GeoTIFF/COG adapter: read pure, write via GDAL)
+
+Date: 2026-09-25. HEAD at start: 454e18c. Branch: main.
+
+## Plan section (verbatim anchor)
+
+"- [ ] 21. M21: GeoTIFF/COG adapter (read pure; write via GDAL subprocess)"
+(plan .omo/plans/media-formats-wave.md line 247). Acceptance: committed tiny
+GeoTIFF fixture extracts EPSG + bounds pinned; hermetic mocktool gdal mode ->
+COG write -> mock gdalinfo assert; plain TIFF without geo keys -> typed "no
+geo keys" note, not mislabeled GeoTIFF. QA: gdal absent -> generate typed
+ToolUnavailable + install hint.
+
+## RED (failing first)
+
+`cargo nextest run -p harness-media --test georaster_adapter` (before any
+implementation) failed compilation with:
+
+    error[E0432]: unresolved import `harness_media::adapter::georaster`
+      --> harness-media\tests\georaster_adapter.rs:12:29
+    error[E0433]: cannot find module or crate `tiff`
+    error: could not compile `harness-media` (test "georaster_adapter") due to 3 previous errors
+
+0 tests ran. The full test file was written BEFORE any adapter/mock/wiring
+code existed.
+
+## Implementation
+
+- harness-media/Cargo.toml: `georaster = ["dep:tiff"]`; tiff 0.11.3
+  (image-rs, MIT, pure Rust) with default-features=false + deflate/lzw only
+  (the two pure-Rust codecs GDAL-written GeoTIFFs carry; fax/jpeg-in-tiff
+  stay out - a raster under them reports structure with the head sample
+  honestly absent). Dev-dep self-reference features += "georaster".
+- src/adapter/georaster/{mod,extract,spec,generate,verify}.rs:
+  - extract (PURE, tiff crate): IFD walk (main = largest raster, IFD cap 64
+    -> ExtractTooLarge), GeoKey directory interpretation (34735 keys: model
+    type 1024, GeographicType 2048 / ProjectedCSType 3072 with the 32767
+    undefined sentinel refused, citation 2049 fallback via 34737 ascii
+    params), pixel scale 33550 + tiepoint 33922 -> affine bounds IN THE
+    FILE'S CRS (no reprojection - PROJ axis-order caveat disclosed),
+    bands/dtype/dims, bounded <=4x4 u8 head sample, COG profile facts
+    (tiled/overview_count/ifd_order) reported not re-written; plain TIFF ->
+    geo null + "no GeoKey directory" note. Budgets: byte cap, wall-clock
+    deadline, projection-length cap.
+  - generate (SUBPROCESS, op "translate", per-call argv per the M17
+    pattern): pure-rust baseline tiff (Gray8, uncompressed) + staged
+    gdal-gen/spec.json contract; argv `-q -a_srs EPSG:<n> -a_ullr <minx>
+    <maxy> <maxx> <miny> -ot Byte -b 1 [-of COG] <in> <out>`; default
+    config -> typed ToolUnavailable{tool: gdal, install_hint} before any
+    staging.
+  - verify (SUBPROCESS, op "info" = manifest-fixed `gdalinfo -json
+    {input}`): tolerant first-JSON-value parse of stdout (re-exec libtest
+    chatter), asserts size/band-type/geoTransform(eps 1e-9)/LAYOUT=COG
+    against the expected tree + M5 structural diff of the pure re-extract
+    vs the independent canonical tree; failures are typed Fail verdict
+    entries under /gdalinfo/*.
+  - spec: GeoRasterSpec {width,height,pixels 1-band u8, geotransform
+    {origin, positive pixel_size}, epsg (1..32766 - GeoKey 16-bit
+    storage), cog} with typed InvalidSpec validation (dims <=4096,
+    <=16MiB pixels, exact pixel count, finite transforms, positive pixel
+    size); canonical_tree() = the independent spec->tree projection
+    (M5 provenance rule).
+  - GeoRasterProjector (pure, no tool) + register_projections.
+- Wiring (shared files, my hunks only): adapter.rs (mod georaster under
+  feature), executor/wiring.rs (pure extract binding under feature +
+  Geotiff extract arm + verify arm tool_binding("gdal") + subprocess
+  registrations for Generate/Verify), probe/registry.rs (descriptor claims
+  flip under feature), tool/manifest.rs (GDAL_OP_INFO template;
+  gdal_translate argv stays adapter-built per call), tests/
+  probe_registry.rs (M21 feature-paired skip guard).
+- harness-test-support mocktool gdal modes (parameterized structural
+  mock, M16 precedent): gdal/{mod,write,read}.rs - a hand-rolled
+  little-endian classic TIFF writer (IFD chain with smallest-overview-
+  leading COG order, per-512-tile chunked storage with zero-padded edge
+  tiles, GeoKey directory + pixel scale + tiepoint on the main IFD, COG
+  ghost area) and reader (IFD walk, multi-strip arrays, geo tags, ghost
+  COG detection); `gdaltranslate` (spec.json + in.tif -> out.tif) and
+  `gdalinfo` (gdalinfo-shaped -json census). Documented mock stand-ins:
+  CRS model type = EPSG 4000..=4999 heuristic (GDAL consults PROJ),
+  LAYOUT=COG via the ghost area, overviews halve until <=512 block.
+- Fixture harness-media/fixtures/geotiff-geo.tif (278 bytes): captured
+  from the committed mock writer (spec 4x4 u8, EPSG:4326, origin 10/50,
+  pixel 0.5/0.25); regenerable deterministically (capture.md row
+  documents the procedure).
+- capture.md: gdal pending row updated (parameterized mock + fixture
+  provenance + waiver pointer).
+
+## Deviations / waivers (explicit)
+
+1. REAL-TOOL WAIVER (plan-sanctioned): "EVIDENCE MUST INCLUDE one real
+   gdal_translate + gdalinfo run on the dev machine AT TODO TIME (waiver
+   line otherwise)". WAIVER: no GDAL installation exists on this machine
+   (verified 2026-09-25: where.exe gdalinfo / gdal_translate -> not found;
+   python osgeo -> absent; nothing under Program Files/OSGeo4W). The M16
+   parameterized-mock precedent was applied instead (three-way
+   triangulation: hand-rolled mock writer/reader, the adapter's tiff-crate
+   extractor, the independent spec->tree projection). The #[ignore] real
+   tier ships with GDAL_TRANSLATE_BIN/GDALINFO_BIN env plumbing for the
+   M25 scheduled sweep; the manifest pin stays `pending-first-real-run`.
+2. Fixture provenance: the plan's "GDAL-built once, committed" fixture is
+   instead captured from the committed deterministic mock writer (same
+   waiver root cause). The fixture is a real GeoTIFF per OGC 19-075 (tiff
+   crate + independent mock parser both read it); GDAL cross-validation
+   deferred to the first real run.
+3. COG layout details encoded by the mock (overviews-leading IFD order,
+   512 block rule, ghost-area COG disclosure) follow the documented COG
+   rules; byte-exact GDAL structural-metadata formatting is NOT replicated
+   (the mock's ghost area is same-intent, documented in the module docs).
+   The authoritative cloud-optimized claim stays the gdalinfo LAYOUT
+   assert (real tier / M25), not the mock's inference.
+
+## Shared-file protocol (M20 sibling concurrency)
+
+The M20 sibling had uncommitted in-flight work (adapter/step/, tests/
+step_adapter.rs, fixtures/step/, their evidence) and landed their shared-
+file hunks (adapter.rs `pub mod step;`, wiring.rs step bindings, probe/
+registry.rs step claims, manifest.rs FREECAD ops, mocktool.rs step modes)
+INTO the working tree mid-task; their step/spec.rs was momentarily
+syntax-broken, blocking shared-tree lib builds. Per protocol: my ONE
+commit was constructed in an isolated worktree at HEAD + exactly my
+hunks (their untracked files absent, their shared-file hunks excluded);
+verification ran there. Their hunks remain uncommitted in the main
+working tree for their own commit. No sibling-authored hunk was dropped
+or altered.
+
+## Verification (isolated worktree at my commit content = HEAD + my hunks)
+
+- cargo nextest run -p harness-media -p harness-test-support:
+  421 tests run: 421 passed, 6 skipped (skips = the #[ignore] real-tool
+  tiers incl. this lane's real_gdal_translate_and_info_round_trip).
+- Georaster suite detail: 9 passed + 1 skipped (real tier): fixture
+  EPSG/bounds pinned (4326, [10,49,12,50]), plain-tiff no-geokeys note,
+  spec corpus round-trip (plain + COG 1024 with overviews-leading tiled
+  layout + webmercator + negative-origin + small-cog-no-overviews)
+  through mock gdaltranslate -> gdalinfo assert + re-extract diff = Pass,
+  default-config typed ToolUnavailable + pure extract/probe, producer
+  disclosure (engine gdal, tier Subprocess, command line + manifest
+  info-op shape), typed InvalidSpec table, NonZeroExit surfacing,
+  garbage-bytes ParseFailure, budget-trip ExtractTooLarge.
+- cargo clippy -p harness-media -p harness-test-support --all-targets --
+  -D warnings: clean.
+- cargo deny check: advisories ok, bans ok, licenses ok, sources ok.
+- Pure LOC: georaster mod 44 / extract 245 / spec 109 / generate 85 /
+  verify 133; mocktool gdal mod 112 / write 176 / read 153. All <= 250.
+- MSVC note: the libsqlite3-sys cold flake hit once; resolved with the
+  briefed INCLUDE prepend (ScopeCppSDK vc15).
+
+## Commit
+
+One commit per the plan's line: feat(media): geotiff/cog adapter (read
+pure, write gdal). No plan checkboxes edited.
+
+## Landing mechanics (final)
+
+The M20 sibling's commit (7330af3, step lane) landed while this todo was
+in verification; the first CAS update-ref correctly refused (main had
+moved off 454e18c). This commit was then rebased onto 7330af3 - the four
+conflicted shared files (executor/wiring.rs, tool/manifest.rs,
+mocktool.rs, capture.md) resolved as the UNION of both lanes (their
+step/freecadcmd hunks kept verbatim alongside the georaster/gdal ones) -
+and CAS-landed on top. Verification below ran at exactly this commit's
+content in the isolated worktree.

@@ -25,10 +25,14 @@
 //!   embedded spec / emit a fixture's census between the dump markers
 //!   (see `mocktool/blend.rs` for the python-validation gate and the
 //!   cwd staging contract).
-//! - `stepbuild` / `stepdump` — the M20 parameterized freecadcmd
+//! - `stepbuild` / `stepdump` - the M20 parameterized freecadcmd
 //!   stand-in: derive the topology census from the builder script's
 //!   embedded spec, writing the AP214-flavored .step / emit the census
 //!   between the dump markers (see `mocktool/step.rs`).
+//! - `gdaltranslate` / `gdalinfo` - the M21 parameterized GDAL
+//!   stand-in: georeferenced (optionally COG) GeoTIFF writer over the
+//!   staged baseline + spec contract / gdalinfo-shaped `-json` census
+//!   parsed back out of the staged raster (see `mocktool/gdal`).
 //! - `exit <code> [msg...]` — write msg to stderr, exit with code.
 //! - `write <path> <text>` — write text to path (utf-8), exit 0.
 //! - `hang [children]` — spawn `children` (default 1) `sleep 60`
@@ -43,6 +47,7 @@ use std::io::Write;
 use std::process::Command;
 
 mod blend;
+mod gdal;
 mod python;
 mod step;
 
@@ -89,6 +94,8 @@ fn dispatch(words: &[&str]) -> i32 {
         "blenddump" => blend::dump_mode(),
         "stepbuild" => step::build_mode(),
         "stepdump" => step::dump_mode(),
+        "gdaltranslate" => gdal::translate_mode(),
+        "gdalinfo" => gdal::info_mode(),
         "exit" => exit_mode(rest),
         "write" => write_mode(rest),
         "hang" => hang_mode(rest.first().and_then(|n| n.parse::<u32>().ok())),

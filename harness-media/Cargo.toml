@@ -70,7 +70,13 @@ office = ["dep:zip", "dep:quick-xml"]
 # timeout). default-features=false keeps the tree off rav1e's nasm/asm
 # lane (MSVC-safe, deterministic single-thread) and rayon.
 avif = ["image", "dep:ravif"]
-georaster = []
+# M21 georaster lane: GeoTIFF extract via the image-rs tiff crate (pure
+# Rust). default-features off: exactly deflate + lzw - the two pure-Rust
+# codecs a GDAL-written GeoTIFF/COG carries by default - come along
+# (fax/jpeg-in-tiff stay out; a raster under them reports its structure
+# with the head sample honestly omitted). Generation routes through the
+# gdal subprocess lane (no codec dep here).
+georaster = ["dep:tiff"]
 geovector = []
 # M22 columnar data lane: Apache Parquet + Arrow IPC via arrow-rs (the
 # reference implementation - shipped in lockstep with the Java/C++
@@ -179,13 +185,18 @@ parquet = { version = "60", default-features = false, features = ["arrow", "snap
 # M22: the parquet RecordBatch reader constructor takes a `Bytes`
 # chunk-reader (workspace-pinned).
 bytes = { workspace = true, optional = true }
+# M21: image-rs TIFF codec (MIT; pure Rust, MSVC-safe) - IFD/GeoKey tag
+# walk + the u8 head-pixel sample + the gdal_translate baseline raster
+# writer. deflate rides flate2's rust backend (same crate the parquet
+# lane pins); lzw via weezl. zstd/lz4 stay out (C-backed-off).
+tiff = { version = "0.11", default-features = false, features = ["deflate", "lzw"], optional = true }
 
 [dev-dependencies]
 # Self-reference so a bare `cargo nextest run -p harness-media` compiles
 # the integration tests with the landed adapter features on
 # (feature-unification across dev-deps); the library default stays
 # feature-empty. Append per-lane features as their todos land.
-harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "audio", "text", "image", "avif", "ffmpeg", "data"] }
+harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "audio", "text", "image", "avif", "ffmpeg", "data", "georaster"] }
 # M10 pipeline tests: scripted Inference impls + async test runtime.
 async-trait.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

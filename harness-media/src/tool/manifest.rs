@@ -143,6 +143,18 @@ const FREECAD_OP_TOPOLOGY_DUMP: ToolOpTemplate = ToolOpTemplate {
 const FREECAD_OPS: &[ToolOpTemplate] =
     &[VERSION_CHECK, FREECAD_OP_STEP_BUILD, FREECAD_OP_TOPOLOGY_DUMP];
 
+// M21 georaster lane: the FIXED machine-readable census op is a
+// manifest template. The spec-driven gdal_translate argv (EPSG,
+// -a_ullr extent, COG flag) cannot be a static template - those words
+// come from the typed GeoRasterSpec - so adapter::georaster::generate
+// builds it per call from its closed word table (the M17 transcode
+// pattern).
+const GDAL_OP_INFO: ToolOpTemplate = ToolOpTemplate {
+    op: "info",
+    program: Some("gdalinfo"),
+    args: &["-json", "{input}"],
+};
+
 const PENDING_PIN: &str = "pending-first-real-run";
 
 fn spec(
@@ -204,7 +216,7 @@ const WHISPER_OPS: &[ToolOpTemplate] = &[ToolOpTemplate {
     args: &["--help"],
 }];
 const PANDOC_OPS: &[ToolOpTemplate] = &[VERSION_CHECK];
-const GDAL_OPS: &[ToolOpTemplate] = &[GDALINFO_VERSION_CHECK];
+const GDAL_OPS: &[ToolOpTemplate] = &[GDALINFO_VERSION_CHECK, GDAL_OP_INFO];
 
 /// The committed manifest table (all eight tools: ffmpeg and ffprobe
 /// are distinct programs). No manifest carries a release asset yet - a

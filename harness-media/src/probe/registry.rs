@@ -112,6 +112,15 @@ pub fn registry() -> FormatRegistry {
                 entry.ops.insert(op, OpSupport::Supported);
             }
         }
+        // M21 georaster lane: extract is pure (tiff crate) under the
+        // `georaster` feature; generate + verify are decided subprocess
+        // ops on the gdal tool lane (typed ToolUnavailable until the
+        // tool is opted in).
+        if cfg!(feature = "georaster") && id == FormatId::Geotiff {
+            for op in [Operation::Extract, Operation::Generate, Operation::Verify] {
+                entry.ops.insert(op, OpSupport::Supported);
+            }
+        }
         // M18 office read lane: docx/xlsx/pptx extract is pure
         // zip+quick-xml under the `office` feature; the writers are
         // M19 (pptx generation is the pandoc subprocess), so

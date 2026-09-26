@@ -529,6 +529,24 @@ fn data_verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
     OpBinding::Pure { engine: engine.to_owned(), handler }
 }
 
+// M21 georaster lane: the pure extract handler bound under the
+// `georaster` feature (tiff crate); without it the honest pending
+// placeholder stays. Generate + verify are decided subprocess ops on
+// the gdal tool lane (bound in the match arms below + the
+// subprocess_handler registrations).
+#[cfg(feature = "georaster")]
+fn georaster_extract_binding() -> OpBinding<ExtractHandler> {
+    OpBinding::Pure {
+        engine: crate::adapter::georaster::ENGINE.to_owned(),
+        handler: crate::adapter::georaster::extract,
+    }
+}
+
+#[cfg(not(feature = "georaster"))]
+fn georaster_extract_binding() -> OpBinding<ExtractHandler> {
+    pending(FormatId::Geotiff)
+}
+
 // M18 office read lane: pure zip+quick-xml extract bound under the
 // `office` feature; generate/verify arrive with the M19 write lane
 // (pptx generation is the pandoc subprocess arm below). Without the
@@ -614,6 +632,7 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
             engine: crate::adapter::step::ENGINE.to_owned(),
             handler: crate::adapter::step::extract,
         },
+        FormatId::Geotiff => georaster_extract_binding(),
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
         FormatId::Blend => tool_binding("blender"),
@@ -758,6 +777,9 @@ fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
         // diff (FILE_NAME never enters the census), so it rides the
         // subprocess lane.
         FormatId::Step => tool_binding("freecadcmd"),
+        // M21: geotiff verify is the gdalinfo assert + pure re-extract
+        // diff - the gdalinfo half rides the subprocess lane.
+        FormatId::Geotiff => tool_binding("gdal"),
         _ => pending(id),
     }
 }
@@ -819,6 +841,21 @@ pub fn registry() -> ExecutorRegistry {
             FormatId::Step,
             crate::descriptor::Operation::Verify,
             super::binding::SubHandler::Verify(crate::adapter::step::verify),
+        );
+    // M21 georaster lane: the subprocess adapter fns behind the
+    // geotiff generate/verify bindings (dispatch refuses typed until
+    // the gdal tool is genuinely opted in and installed).
+    #[cfg(feature = "georaster")]
+    builder
+        .subprocess_handler(
+            FormatId::Geotiff,
+            crate::descriptor::Operation::Generate,
+            super::binding::SubHandler::Generate(crate::adapter::georaster::generate),
+        )
+        .subprocess_handler(
+            FormatId::Geotiff,
+            crate::descriptor::Operation::Verify,
+            super::binding::SubHandler::Verify(crate::adapter::georaster::verify),
         );
     builder.build()
 }

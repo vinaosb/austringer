@@ -3246,6 +3246,7 @@ dependencies = [
  "symphonia",
  "tempfile",
  "thiserror 2.0.20",
+ "tiff",
  "tokio",
  "toml",
  "usvg",
@@ -7344,6 +7345,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "tiff"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63feaf3343d35b6ca4d50483f94843803b0f51634937cc2ec519fc32232bc52"
+dependencies = [
+ "flate2",
+ "half",
+ "quick-error",
+ "weezl",
 ]
 
 [[package]]

@@ -55,6 +55,12 @@ pub mod office;
 #[cfg(feature = "data")]
 pub mod data;
 
+// M21 georaster lane: GeoTIFF extract is pure (tiff crate); COG/
+// geotiff generation + verify run through the opt-in gdal subprocess
+// (M15 tool executor).
+#[cfg(feature = "georaster")]
+pub mod georaster;
+
 // M16 blend lane: subprocess tier (headless Blender via the M15 tool
 // executor) - no codec dependency, so it is not feature-gated.
 pub mod blend;
