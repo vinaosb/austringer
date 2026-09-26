@@ -25,6 +25,10 @@
 //!   embedded spec / emit a fixture's census between the dump markers
 //!   (see `mocktool/blend.rs` for the python-validation gate and the
 //!   cwd staging contract).
+//! - `stepbuild` / `stepdump` — the M20 parameterized freecadcmd
+//!   stand-in: derive the topology census from the builder script's
+//!   embedded spec, writing the AP214-flavored .step / emit the census
+//!   between the dump markers (see `mocktool/step.rs`).
 //! - `exit <code> [msg...]` — write msg to stderr, exit with code.
 //! - `write <path> <text>` — write text to path (utf-8), exit 0.
 //! - `hang [children]` — spawn `children` (default 1) `sleep 60`
@@ -40,6 +44,7 @@ use std::process::Command;
 
 mod blend;
 mod python;
+mod step;
 
 pub use python::validate_python;
 
@@ -82,6 +87,8 @@ fn dispatch(words: &[&str]) -> i32 {
         "stagegolden" => stagegolden_mode(rest.first().copied()),
         "blendbuild" => blend::build_mode(),
         "blenddump" => blend::dump_mode(),
+        "stepbuild" => step::build_mode(),
+        "stepdump" => step::dump_mode(),
         "exit" => exit_mode(rest),
         "write" => write_mode(rest),
         "hang" => hang_mode(rest.first().and_then(|n| n.parse::<u32>().ok())),

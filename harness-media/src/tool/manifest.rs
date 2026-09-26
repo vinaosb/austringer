@@ -123,6 +123,26 @@ const GDALINFO_VERSION_CHECK: ToolOpTemplate = ToolOpTemplate {
     args: &["--version"],
 };
 
+// M20 step lane: freecadcmd runs the in-crate python templates - the
+// builder script (argv tail = the output path; the post-export pass
+// pins FILE_NAME to the determinism epoch) and the topology-dump
+// script (argv tail = the input path; the census prints between the
+// dump markers).
+const FREECAD_OP_STEP_BUILD: ToolOpTemplate = ToolOpTemplate {
+    op: "step-build",
+    program: None,
+    args: &["{script}", "{output}"],
+};
+
+const FREECAD_OP_TOPOLOGY_DUMP: ToolOpTemplate = ToolOpTemplate {
+    op: "topology-dump",
+    program: None,
+    args: &["{script}", "{input}"],
+};
+
+const FREECAD_OPS: &[ToolOpTemplate] =
+    &[VERSION_CHECK, FREECAD_OP_STEP_BUILD, FREECAD_OP_TOPOLOGY_DUMP];
+
 const PENDING_PIN: &str = "pending-first-real-run";
 
 fn spec(
@@ -204,7 +224,7 @@ pub fn manifests() -> &'static BTreeMap<String, ExternalToolSpec> {
                 spec("libreoffice", "soffice", PENDING_PIN, 120_000, PANDOC_OPS),
                 // pandoc 3.9.0.2 exercised on the dev machine 2026-09-24.
                 spec("pandoc", "pandoc", "3.9.0.2", 60_000, PANDOC_OPS),
-                spec("freecadcmd", "freecadcmd", PENDING_PIN, 180_000, PANDOC_OPS),
+                spec("freecadcmd", "freecadcmd", PENDING_PIN, 180_000, FREECAD_OPS),
                 spec("gdal", "gdal_translate", PENDING_PIN, 180_000, GDAL_OPS),
             ] {
                 table.insert(entry.name.to_owned(), entry);

@@ -35,7 +35,7 @@ All commands run from the repository root.
 | blender | scene-dump JSON, builder artifacts | PENDING (blender not installed). M16 landed the PARAMETERIZED structural mock instead (`blendbuild`/`blenddump` modes deriving the census from the builder script's embedded spec - three-way triangulation with the python template and the independent spec->tree projection); the real-run waiver line is in `.omo/evidence/task-M16-media-formats.txt` | F3 / M25 scheduled tier (first real capture flips the manifest pin off `pending-first-real-run`) |
 | whisper-cpp | transcript JSON | PENDING (whisper-cli not installed) | M14/M25 scheduled tier |
 | libreoffice (soffice) | `--version` output | PENDING (soffice not installed) | M18/M19 round-trip hooks |
-| freecadcmd | `--version` output | PENDING (FreeCAD not installed) | M20 |
+| freecadcmd | `--version` output, topology-dump census JSON | PENDING (FreeCAD not installed). M20 landed the PARAMETERIZED structural mock instead (`stepbuild`/`stepdump` modes deriving the topology census from the builder script's embedded spec - three-way triangulation with the python template and the independent spec->tree projection; the pinned per-primitive face/edge/vertex table is corrected by the first real capture); the real-run waiver line is in `.omo/evidence/task-M20-media-formats.txt` | F3 / M25 scheduled tier (first real capture flips the manifest pin off `pending-first-real-run`) |
 | gdal | `gdalinfo --version` output | PENDING (gdal not installed) | M21 |
 
 A pending row means exactly this: no golden file is committed, none is

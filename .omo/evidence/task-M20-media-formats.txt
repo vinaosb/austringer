@@ -1,0 +1,238 @@
+task-M20-media-formats.txt - STEP adapter (pure extract + freecadcmd generation; subprocess tier)
+=================================================================================================
+Completed: 2026-09-25. Plan section: '- [ ] 20. M20' (read verbatim, authority;
+.omo/plans/media-formats-wave.md L239-245). Base HEAD at start: 454e18c.
+
+PLAN FACTS (verified against the plan section):
+- extract via hand-rolled ISO-10303-21 tokenizer (digest lists fresh pure-Rust
+  parsers step-p21/stepperoni as candidates - executor records the pick):
+  header (file_description, file_schema - names the AP), data-section entity
+  census by TYPE, PRODUCT/PRODUCT_DEFINITION_FORMATION/PRODUCT_DEFINITION
+  chain -> assembly hierarchy skeleton, units, CARTESIAN_POINT min/max ->
+  bbox where present; depth/size caps typed; text_projection = structure
+  summary.
+- generate via freecadcmd SUBPROCESS (digest verdict: general-purpose
+  PMI-complete STEP generation is subprocess-only; pure-Rust write exists
+  solely kernel-scoped (truck-stepio; brepkit-io is AGPL = banned) and
+  ruststep is deserialize-only/dormant): spec {solids[primitive:
+  box|cylinder|sphere + transform]} -> `import Part;
+  Part.makeBox(...).exportStep(path)` builder script (in-crate versioned
+  template, M15 manifest; FreeCAD 1.0.x OCCT-backed; writes AP214-flavored by
+  default, reads AP242 solid); default (tool absent) -> typed
+  ToolUnavailable; probe still works pure.
+- verify: freecadcmd re-read -> topology census diff (solids/faces/edges/
+  vertices, volume/bbox to tolerance) with the FILE_NAME header timestamp
+  stripped (OCCT stamps wall-clock - byte-identical diffs impossible by
+  design).
+- Hermetic: mocktool freecadcmd mode (canned topology JSON). Mocktool
+  freecadcmd outputs = golden files captured from one real freecadcmd run;
+  EVIDENCE MUST INCLUDE one real freecadcmd run on the dev machine AT TODO
+  TIME (primitive corpus generate + re-read; waiver line otherwise).
+- STEP FILE_NAME timestamp additionally pinned to the M1 fixed epoch for
+  byte-determinism (the diff strips it regardless).
+- Must NOT claim BREP/PMI fidelity beyond the primitive spec; Must NOT link
+  AGPL kernels.
+- Acceptance: hand-committed minimal .step fixture extracts pinned tree;
+  hermetic mock freecadcmd round-trip on primitive corpus; default config ->
+  generate typed ToolUnavailable; malformed entity -> ParseFailure with
+  entity id.
+- Commit message: feat(media): step adapter w/ freecadcmd generation
+
+PARSER PICK (recorded, as the plan requires): HAND-ROLLED tokenizer over the
+step-p21/stepperoni candidates. Why: the needed surface is a bounded census
+(header + entity types + the PRODUCT chain + the CARTESIAN_POINT bbox), not a
+full EXPRESS schema binding; both candidates are young crates whose API
+surface exceeds and does not cleanly subset this need, while the Part 21
+clear-text grammar for this census is small (records, strings with ''-
+escapes, two remark forms, enum tokens). Zero new dependencies; MSVC-safe;
+cargo-deny unaffected. AGPL kernels (brepkit-io) never considered beyond the
+plan's ban note; ruststep is deserialize-only/dormant (digest).
+
+REAL-RUN WAIVER (the plan's sanctioned alternative to the at-todo-time real
+freecadcmd run):
+WAIVED: real freecadcmd run at todo time - FreeCAD is NOT installed on this
+dev machine (no freecadcmd/freecad on PATH; no C:\Program Files\FreeCAD*;
+verified 2026-09-25). Substitute: the committed #[ignore]
+real_freecadcmd_smoke_round_trips_the_primitive_corpus test (FREECAD_BIN
+env, documented invocation) + the hermetic parameterized-mock suite below.
+First real capture owner: F3 / M25 scheduled tier per
+harness-test-support/golden/mocktool/capture.md (freecadcmd row updated).
+The pinned per-primitive face/edge/vertex table (box 6/12/8, cylinder 3/3/2,
+sphere 1/1/2 - Euler-consistent textbook pins) is corrected by that first
+real capture (OCCT seam/degenerate-edge bookkeeping may differ); the verify
+profile's float epsilon (1e-4) may be recalibrated against real OCCT volume
+integration + BoundBox gap at the same moment.
+
+RED EVIDENCE (TDD failing-first)
+--------------------------------
+cargo nextest run -p harness-media --test step_adapter
+=> could not compile harness-media (test step_adapter): 1 error:
+error[E0432]: unresolved import `harness_media::adapter::step`
+(The suite + fixtures were written first against the planned API; three
+test-code-only compile bugs were fixed before capturing this RED so the
+failure is exactly the missing module - M16 RED class.)
+
+WHAT LANDED
+-----------
+harness-media/src/adapter/step/ (new, unconditional - no codec dependency,
+no feature gate; mirrors the blend lane):
+- mod.rs      module docs + honesty rows + ENGINE/TOOL/EXTRACT_SCHEMA/
+              DUMP_SCHEMA/BUILD_SCHEMA consts + StepProjector +
+              register_projections (M10 seam - pure, no tool needed).
+- spec.rs     StepSpec/SolidShape(box|cylinder|sphere)/SolidSpec/Transform
+              + strict from_generation (InvalidSpec on format mismatch,
+              non-finite floats, non-positive/oversize dimensions >1e6,
+              duplicate/oversize/non-printable names, >MAX_SOLIDS=128).
+              serde rename_all lowercase: the wire/spec/python/mock key
+              form is "box"/"cylinder"/"sphere" per the plan.
+- tokenizer.rs  the scanner: record-oriented pass (strings with '' escapes,
+              /* */ block + -- line remarks skipped, #refs/.ENUM./numbers
+              as words, ';'-terminated records); caps: 1M records, 4 KiB
+              per string capture, caller budgets (input size + wall clock)
+              -> typed ExtractTooLarge; missing END marker / unterminated
+              string or remark / malformed #-record -> ParseFailure.
+- interpret.rs  the census interpretation: entity-type counting (complex
+              instances count every constituent), PRODUCT chain links,
+              SI_UNIT enum joins ("MILLI/METRE") + CONVERSION_BASED_UNIT
+              names, CARTESIAN_POINT numeric-tuple bbox accumulation;
+              caps 4096 types / 1024 products -> ExtractTooLarge.
+- extract.rs  the M6 ExtractHandler signature: magic gate -> scan ->
+              canonical sorted-key tree {schema, header{file_description,
+              file_schema}, entity_count, entity_census, products[{id,
+              name, formations, definitions}], units[], bbox} + the
+              bounded structure-summary projection (<=2000 chars).
+              FILE_NAME never enters the tree (wall-clock stamps are not
+              structural facts).
+- tree.rs     the INDEPENDENT spec->tree projection (M5 provenance rule):
+              topology_tree (per-solid faces/edges/vertices from the
+              pinned table, analytic volume, EXACT analytic world bbox -
+              box = rotated corners; sphere = rotation-invariant interval;
+              cylinder = per-basis support function with axis a = R*z).
+- script.rs   include_str! versioned templates + deterministic
+              builder_script() (single-line embedded JSON, placeholder
+              __SPEC_JSON__).
+- build_script.py  the freecadcmd builder: Part.makeBox/makeCylinder/
+              makeSphere + App.Placement (euler XYZ radians, composed
+              Rz*Ry*Rx via axis-angle multiply), single compound
+              exportStep (AP214-flavored), then a post-export regex pass
+              pinning the FILE_NAME clock to the embedded epoch (M1
+              determinism contract).
+- dump_script.py   the freecadcmd topology re-read: Part.Shape().read,
+              per-solid Faces/Edges/Vertexes/Volume/BoundBox census JSON
+              between HARNESS_STEP_DUMP markers (tolerant of startup
+              chatter).
+- generate.rs spec -> builder script -> ToolCall(freecadcmd, step-build,
+              {script},{output}) -> bytes; availability gate BEFORE
+              staging (typed ToolUnavailable when freecadcmd is not opted
+              in/installed); output read only after a zero-exit run.
+- verify.rs   stage -> ToolCall(freecadcmd, topology-dump, {script},
+              {input}) -> census between markers + versioned schema guard
+              -> structural_diff(expected, census, profile) -> verdict;
+              profile: float_epsilon 1e-4, NO unordered paths (spec-driven
+              solids are ordered-exact - the M5 rule), FILE_NAME never in
+              the census (the plan's strip-by-design). read_topology_census
+              is the public seam the schema-pin test uses.
+
+harness-test-support/src/mocktool/step.rs (new; the parameterized
+freecadcmd stand-in while the golden stays pending - M16 blend
+precedent): `stepbuild` reads step-build/build.py, validates it as
+python, parses the `SPEC = <json>` line (schema harness-step-build/1),
+derives the topology census with its OWN copy of the analytic model, and
+writes step-build/out.step - an AP214-flavored clear-text document
+(FILE_NAME clock = spec epoch; census in a /* block remark */ the pure
+tokenizer skips; PRODUCT/PDF/PD chain per solid). `stepdump` reads
+step-dump/in.step, finds the census remark, schema-checks it, prints it
+between the dump markers. Everything else (wrong magic, missing census,
+broken python, unknown schema) = non-zero exit + stderr reason ->
+adapter surfaces typed NonZeroExit.
+
+Shared files (minimal hunks, fresh re-read before each; the concurrent
+M21 georaster lane's uncommitted hunks left untouched and EXCLUDED from
+this commit via a detached-worktree private staging - see GREEN):
+- adapter.rs: `pub mod step;` lane block.
+- executor/wiring.rs: lane() label; extract -> OpBinding::Pure
+  (harness-media::step tokenizer); verify -> tool_binding(freecadcmd);
+  registry() registers the step Generate/Verify SubHandlers (extract
+  stays pure-bound).
+- probe/registry.rs: step descriptor claims flipped to Supported for
+  extract/generate/verify (unconditional, no cfg - mirrors blend).
+- tool/manifest.rs: freecadcmd ops step-build {script},{output} +
+  topology-dump {script},{input} (freecadcmd was a version-check-only
+  PANDOC_OPS placeholder before).
+- tests/probe_registry.rs: the M20 skip row (same pattern as blend's).
+- mocktool.rs: stepbuild/stepdump dispatch arms + mod + doc line.
+- golden/mocktool/capture.md: freecadcmd pending row updated to name the
+  parameterized mock, the pending topology table, and the waiver path.
+
+Fixture: fixtures/step/minimal.step (hand-committed): 14 data entities -
+2 PRODUCTs, 2 PDFs, 2 PDs, context chain, 2 SI_UNITs, 3 CARTESIAN_POINTs
+(incl. a negative coord and a 1.E+003 exponent form), 1
+MANIFOLD_SOLID_BREP, plus a multi-line /* block remark */ carrying
+pseudo-types that must NOT census. The pre-existing header-only
+fixtures/step.stp stays the empty-skeleton pin (null bbox, no AP name).
+
+GREEN EVIDENCE (isolated worktree - C:\Users\vsbb1\AppData\Local\Temp\
+opencode\m20wt, a detached git worktree at HEAD 454e18c containing
+EXACTLY this commit's tree: my files + my shared-file hunks only; the
+concurrent M21 lane's uncommitted working-tree edits - georaster module,
+gdal mock, Cargo.toml/lock, mocktool gdal hunks - are excluded, so this
+verification is free of their in-flight breakage; INCLUDE env fix for
+the known MSVC cold flake applied)
+-----------------------------------------------------------------------
+cargo nextest run -p harness-media
+=> Summary: 391 tests run: 391 passed, 6 skipped
+(skips: blend/ffmpeg/step real-tool #[ignore] tiers, gltf validator,
+size canary - never CI; hermetic, zero network, zero real tools)
+- step_adapter: 15 tests: hand-committed fixture extracts the PINNED tree
+  (census counts, header AP string, product chain with formations/
+  definitions, units, bbox incl. negative + exponent forms, block-remark
+  skip); header-only stub -> honest empty skeleton (null bbox, null
+  schema); malformed table (binary garbage, missing magic, unterminated
+  string, unterminated remark, '# =' record) -> typed ParseFailure;
+  spec corpus of 11 (>=8 per acceptance: all three primitives,
+  translations, rotations incl. FRAC_PI_2 axis flips, five-solid stack,
+  reordered twin, kitchen sink, 1e-3 and 1e2-scale spheres) ->
+  generate -> mock .step magic + END marker -> probe Certain -> topology
+  re-read diff vs the INDEPENDENT projection -> EMPTY diff; pure extract
+  reads generated bytes (AP214 schema + ordered PRODUCT names);
+  byte-determinism (repeat generation byte-identical; FILE_NAME carries
+  '2026-01-01T00:00:00Z'); default-config dispatch generate -> typed
+  ToolUnavailable{freecadcmd} while extract + probe answer PURE (tier
+  Pure, no staging); dispatch generate producer disclosure
+  (engine=freecadcmd, Subprocess tier, mock argv in command, manifest
+  templates pinned: step-build {script},{output} / topology-dump
+  {script},{input}); NonZeroExit typed with stderr head, no partial
+  artifact; topology census key-set + schema version pin; bounded
+  structure-summary projection; broken-python builder script fails
+  hermetically (mock validates python); generated scripts parse as
+  python (validator + negative control); fixture-without-census ->
+  typed refusal, never a fake census; InvalidSpec table (wrong format,
+  unknown shape, NaN dims, zero radius, duplicate names, control-char
+  name, >MAX_SOLIDS); oversize input -> typed ExtractTooLarge.
+- probe_registry / executor_dispatch / executor_registry guard suites:
+  green with the step-integrated expectations (M20 skip row added).
+cargo nextest run -p harness-test-support
+=> Summary: 38 tests run: 38 passed, 0 skipped
+cargo clippy -p harness-media -p harness-test-support --all-targets --
+  -D warnings => Finished, zero warnings
+cargo deny check => advisories ok, bans ok, licenses ok, sources ok
+LOC audit (pure, non-blank non-comment): step mod 39 / spec 97 /
+tokenizer 171 / interpret 164 / extract 120 / tree 114 / script 40 /
+generate 44 / verify 61; mocktool step 230 - all <= 250. Zero
+unwrap/expect/panic in src (scanned).
+
+DEVIATIONS (recorded, honest)
+-----------------------------
+1. "malformed entity -> ParseFailure with entity id": the shared M1
+   MediaError::ParseFailure is a unit variant (no payload field) - the
+   exact M13 precedent ("with page hint" - task-M13 evidence). Widening
+   the shared enum is outside this todo's shared-file protocol. The
+   typed refusal itself is pinned (5 malformed classes).
+2. Topology table + verify tolerance are pending-real-run pins (see the
+   WAIVER block): the hermetic lane triangulates three internal
+   derivations (python template / mock analytic model / independent
+   projection) and is exact; OCCT's real counts and numeric gaps
+   recalibrate the table + eps at the first real capture.
+3. The manifest's freecadcmd version pin stays `pending-first-real-run`
+   (no real run on this machine - the honesty rule; FREECAD_OPS replaces
+   the placeholder PANDOC_OPS reference it previously shared).

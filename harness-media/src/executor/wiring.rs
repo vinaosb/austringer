@@ -106,7 +106,7 @@ fn lane(id: FormatId) -> &'static str {
         FormatId::Markdown | FormatId::Html | FormatId::Json | FormatId::Csv | FormatId::Toml => {
             "M30 (text substrate)"
         }
-        FormatId::Step => "M20 (step extract, pure tier)",
+        FormatId::Step => "M20 (step: pure tokenizer extract + freecadcmd generate)",
         FormatId::Geotiff => "M21 (geotiff read, pure tier)",
         FormatId::Geopackage | FormatId::Geojson | FormatId::Kml | FormatId::Sqlite => {
             "M29 (geovector + sqlite)"
@@ -608,6 +608,12 @@ fn extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
             }
         }
         FormatId::Docx | FormatId::Xlsx | FormatId::Pptx => office_extract_binding(id),
+        // M20: the step census extract is the pure hand-rolled
+        // tokenizer - it never touches the freecadcmd lane.
+        FormatId::Step => OpBinding::Pure {
+            engine: crate::adapter::step::ENGINE.to_owned(),
+            handler: crate::adapter::step::extract,
+        },
         FormatId::Gif => unsupported(GIF_VISION_ONLY),
         FormatId::Hdf5 => unsupported(HDF5_DEFERRED),
         FormatId::Blend => tool_binding("blender"),
@@ -748,6 +754,10 @@ fn verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
         // M16: blend verify is the blender-backed extract + diff, so it
         // rides the same subprocess lane.
         FormatId::Blend => tool_binding("blender"),
+        // M20: step verify is the freecadcmd topology re-read + census
+        // diff (FILE_NAME never enters the census), so it rides the
+        // subprocess lane.
+        FormatId::Step => tool_binding("freecadcmd"),
         _ => pending(id),
     }
 }
@@ -794,6 +804,21 @@ pub fn registry() -> ExecutorRegistry {
             FormatId::Blend,
             crate::descriptor::Operation::Verify,
             super::binding::SubHandler::Verify(crate::adapter::blend::verify),
+        );
+    // M20 step lane: the subprocess adapter fns behind the step
+    // generate/verify bindings (dispatch refuses typed until the
+    // freecadcmd tool is genuinely opted in and installed; extract is
+    // the pure tokenizer bound above).
+    builder
+        .subprocess_handler(
+            FormatId::Step,
+            crate::descriptor::Operation::Generate,
+            super::binding::SubHandler::Generate(crate::adapter::step::generate),
+        )
+        .subprocess_handler(
+            FormatId::Step,
+            crate::descriptor::Operation::Verify,
+            super::binding::SubHandler::Verify(crate::adapter::step::verify),
         );
     builder.build()
 }

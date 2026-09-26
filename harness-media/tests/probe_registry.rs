@@ -91,6 +91,12 @@ fn registry_covers_all_34_formats_with_probe_supported() {
             if *id == FormatId::Blend {
                 continue;
             }
+            // M20: the step adapter flips its claims to Supported
+            // unconditionally (pure tokenizer extract + the freecadcmd
+            // subprocess lane - no codec feature).
+            if *id == FormatId::Step {
+                continue;
+            }
             // M18: the office read adapters flip extract to Supported
             // under the `office` feature (generate/verify stay
             // Unsupported naming the M19 write lane).

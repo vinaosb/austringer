@@ -59,5 +59,9 @@ pub mod data;
 // executor) - no codec dependency, so it is not feature-gated.
 pub mod blend;
 
+// M20 step lane: pure tokenizer extract + freecadcmd generation via the
+// M15 tool executor - no codec dependency, so it is not feature-gated.
+pub mod step;
+
 #[cfg(feature = "ffmpeg")]
 pub mod ffmpeg;
