@@ -21,9 +21,9 @@ use serde::Deserialize;
 use crate::attach::SessionHost;
 use crate::auth::{self, AuthVerdict};
 use crate::config::DaemonConfig;
-use crate::usage::{ComposedInference, InferenceFactory, IntoSessionFactory};
-
 use crate::stages::WorkerToolExecutor;
+use crate::tools::ExecutorFactory;
+use crate::usage::{ComposedInference, InferenceFactory, IntoSessionFactory};
 
 use crate::worker::WorkerRouter;
 
@@ -42,6 +42,11 @@ pub struct DaemonState {
     /// dir. The default keeps the submit path marker-only; the binary
     /// wires the provider + T42 routing seam.
     pub projection_factory: crate::projection::IntakeFactory,
+    /// Tool-execution stage factory for new sessions (todo 3,
+    /// ecosystem alignment). The default keeps the split-brain worker
+    /// executor (out-of-process execution, worker protocol preserved);
+    /// the binary injects the in-process CORE_TOOLS registry factory.
+    pub executor_factory: ExecutorFactory,
     /// Session hosts by URL-addressable session id.
     pub hosts: Mutex<HashMap<String, Arc<SessionHost>>>,
     /// Engine session dirs root.
@@ -71,6 +76,16 @@ impl DaemonState {
         };
         let worker_router = Arc::new(WorkerRouter::new(config.worker_call_timeout));
         let (drain, _) = tokio::sync::watch::channel(false);
+        let executor_factory: ExecutorFactory = Arc::new({
+            let worker_router = Arc::clone(&worker_router);
+            move |_session_dir, event_sink| {
+                Box::new(WorkerToolExecutor::new(
+                    Arc::clone(&worker_router),
+                    None,
+                    event_sink,
+                ))
+            }
+        });
         Ok(Self {
             token,
             worker_router,
@@ -78,6 +93,7 @@ impl DaemonState {
             config,
             inference_factory: inference_factory.into_factory(),
             projection_factory: crate::projection::disabled_factory(),
+            executor_factory,
             hosts: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             drain,
@@ -133,8 +149,7 @@ impl DaemonState {
         if let Some(intake) = (self.projection_factory)(&session_dir) {
             let _ = host.projection.set(intake);
         }
-        let executor =
-            WorkerToolExecutor::new(Arc::clone(&self.worker_router), None, host.event_sink());
+        let executor = (self.executor_factory)(&session_dir, host.event_sink());
         let ComposedInference { inference, identity } = (self.inference_factory)();
         // Identity-bearing stacks (the shipped provider composition)
         // emit one Usage frame per assistant turn; identity-less

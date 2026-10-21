@@ -169,6 +169,14 @@ async fn run() -> Result<(), String> {
         DaemonState::new(config, factory).map_err(|e| format!("token generation: {e}"))?;
     state.projection_factory =
         harness_daemon::projection::compose_intake_factory(transport, session, utility);
+    // Todo 3 (ecosystem alignment): CORE_TOOLS served in-process. The
+    // executor bundle is constructed once here — one PTY runner and one
+    // LSP router per daemon (language servers spawn lazily) — and every
+    // session's registry binds it at open; the worker protocol stays
+    // available for future out-of-process execution.
+    let core_executors = Arc::new(harness_daemon::tools::CoreExecutors::in_process());
+    core_executors.start_lsp_guard();
+    state.executor_factory = core_executors.executor_factory();
     let state = Arc::new(state);
 
     // Reload successor mode: adopt the inherited listener instead of

@@ -248,7 +248,7 @@ async fn two_clients_see_identical_streams_and_shared_permission() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )
@@ -323,7 +323,7 @@ async fn denied_permission_produces_typed_tool_result_for_all_clients() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )
@@ -381,7 +381,7 @@ async fn steer_mid_turn_is_absorbed_into_the_live_turn() {
     // pipeline iterations).
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(SteerAbsorbingInference {
             queue: host.steer_queue(),
             marker: "while running".into(),
@@ -467,7 +467,7 @@ async fn journal_records_the_turn_workflow() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )
@@ -523,7 +523,7 @@ async fn worker_activities_are_journaled_content_addressed() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )

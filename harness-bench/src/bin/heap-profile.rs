@@ -60,6 +60,7 @@ fn main() -> ExitCode {
             return ExitCode::from(EXIT_CONFIG);
         }
     };
+    let regression_tolerance_pct = budgets.regression_tolerance_pct;
     let ctx = ScenarioContext {
         budgets,
         wall_runs: 1,
@@ -100,7 +101,7 @@ fn main() -> ExitCode {
             &outcome,
             HEAP_BASELINE_METRICS,
             Some(&baseline),
-            budgets.regression_tolerance_pct,
+            regression_tolerance_pct,
             &budgets_source,
         ) {
             Ok(report) => {

@@ -16,9 +16,16 @@ dist = true
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
+# Todo 3 (ecosystem alignment): in-process CORE_TOOLS executors.
+# execute_command rides harness-exec's PTY pipeline (screen-delta model,
+# kill trees, bounded windowed output).
+harness-exec = { path = "../harness-exec", version = "0.1.0" }
 # T42 routing table + M7 capability catalog for the submit-time
 # projection mediation (plan M10: the configured capable utility role).
 harness-intel = { path = "../harness-intel", version = "0.1.0" }
+# lsp_query rides harness-lsp's multi-server router (lazy spawn per
+# language, bridge priority, RSS guard).
+harness-lsp = { path = "../harness-lsp", version = "0.1.0" }
 # M2 probe registry for the media routes (upload sniff + GET mime). The
 # daemon enables the committed media-core feature set (everything but
 # the non-default avif/geovector opt-ins; today only `office` pulls a
@@ -28,6 +35,9 @@ harness-media = { path = "../harness-media", version = "0.1.0", features = [
 ] }
 harness-providers = { path = "../harness-providers", version = "0.1.0" }
 harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
+# view_window/edit_lines ride harness-tools' bounded reader and anchored
+# edits (syntax gate, fringe-only results).
+harness-tools = { path = "../harness-tools", version = "0.1.0" }
 harness-web = { path = "../harness-web", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true

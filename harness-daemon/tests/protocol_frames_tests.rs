@@ -122,7 +122,7 @@ async fn host_with_engine(
         host.event_sink(),
     );
     let inference = make(&host);
-    host.spawn_engine(session_dir, host.standard_stages(executor), inference, cmd_rx)
+    host.spawn_engine(session_dir, host.standard_stages(Box::new(executor)), inference, cmd_rx)
         .ok();
     (host, dir)
 }

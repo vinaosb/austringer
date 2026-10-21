@@ -1,9 +1,10 @@
 //! The engine driver: a REAL harness-core `AgentLoop` per session —
 //! approval through the T7 inspector chain routed to the mediated ask
 //! policy (reserved `task_completed` exempted), execution through the
-//! split-brain worker stage, mid-run steering through a shared queue
-//! the loop's Steer stage drains, and durable turn-workflow journals
-//! when a journal root is configured.
+//! daemon's injectable executor factory (worker-backed or
+//! registry-backed), mid-run steering through a shared queue the
+//! loop's Steer stage drains, and durable turn-workflow journals when
+//! a journal root is configured.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use std::sync::atomic::Ordering;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use harness_core::agent_loop::stages::{Flow, StageCtx, StageError, Steer};
+use harness_core::agent_loop::stages::{Flow, StageCtx, StageError, Steer, ToolExecutor};
 use harness_core::agent_loop::{
     AgentLoop, CancelHandle, Inference, LoopConfig, RunOutcome, StageSet,
 };
@@ -20,7 +21,6 @@ use harness_core::event::{ContentBlock, Event, RecordedEvent};
 
 use crate::attach::{HostCommand, SessionHost, SteerQueue};
 use crate::notify::{Notification, NotificationKind, NotificationSink, NotifyError};
-use crate::stages::WorkerToolExecutor;
 
 /// Pops one drained signal or notice from a shared queue (poison-safe).
 fn pop_queued(queue: &SteerQueue) -> Option<String> {
@@ -252,9 +252,11 @@ impl SessionHost {
             .map_or_else(SteerQueue::default, |intake| intake.notice_queue())
     }
 
-    /// Build the daemon's standard stage set over a worker executor.
+    /// Build the daemon's standard stage set over a tool-execution
+    /// stage (worker-backed or registry-backed; the session factory's
+    /// injected executor decides).
     #[must_use]
-    pub fn standard_stages(&self, executor: WorkerToolExecutor) -> StageSet {
+    pub fn standard_stages(&self, executor: Box<dyn ToolExecutor>) -> StageSet {
         let mut stages = StageSet::default();
         stages.steer = Box::new(SharedSteerer::new(
             self.steer_queue(),
@@ -263,7 +265,7 @@ impl SessionHost {
         stages.approval = Box::new(crate::stages::ReservedAwareApproval::new(
             crate::stages::chain_over_mediator(self.mediator()),
         ));
-        stages.execution = Box::new(executor);
+        stages.execution = executor;
         stages
     }
 }

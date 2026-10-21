@@ -49,6 +49,6 @@ pub use provider::{
     ProviderError, RegistryError, ToolDispatchError, ToolProvider, ToolResult, ToolSearchError,
 };
 pub use registry::ToolRegistry;
-pub use schema::{CORE_TOOLS, TASK_COMPLETED, TOOL_SEARCH, ToolSchema};
+pub use schema::{CORE_TOOLS, TASK_COMPLETED, TOOL_SEARCH, ToolSchema, core_schema};
 pub use spill::{IoCap, SpillOutcome, SpillPointer, SpillStore};
 pub use version::{DeprecationNotice, Lifecycle, PinnedToolSet, ToolVersion, VersionedBehavior};

@@ -42,6 +42,7 @@ pub mod runner;
 pub mod scheduler;
 pub mod server;
 pub mod stages;
+pub mod tools;
 pub mod transport;
 pub mod usage;
 pub mod web;
