@@ -19,6 +19,7 @@
 //! | gemini-2-5-pro, gemini-3-pro, gemini-3-1-pro | true | true | true | ai.google.dev Gemini input docs: Pro models accept image, audio, AND video input (SS33.8; M8 Google inline_data) |
 //! | grok-4-6 | true | false | false | docs.x.ai documents grok-4 image input; M8 xAI native wire = image_url only; no audio/video input documented |
 //! | deepseek-reasoner | false | false | false | DeepSeek API is text-only (no image input endpoint); `.omo/research/model-profiles.md` SS3 "DeepSeek" row is a text-editing profile |
+//! | gpt-6-sol, gpt-6-1-sol, gpt-6-luna, gemini-4-argon, grok-4-7, claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5 | false | false | false | 2026-10 wave (todo 10): no cited row yet — the SS33.8 fetches (2026-09-12) predate these models (Sol/Luna Sept 22, 6.1 Sol Sept 29, Grok 4.7 Sept 21, Argon Oct 19, 5.5 family Sept–Oct); conservative false + TODO markers in the entries until a verified row documents them |
 
 use super::catalog::{
     Capabilities, CatalogEntry, EffortValue as E, Family, Feature, ThinkingLevel,
@@ -121,6 +122,54 @@ pub fn entries() -> Vec<CatalogEntry> {
                 video_input: false,
             },
         },
+        // Opus 5.5 (2026-10 wave: Zed BYOK v1.21.0 Sept 23; Amp ran it
+        // at effort `medium` Sept 28; Antigravity v1.3.6 Oct 15): the
+        // family ladder stands (SS33.1) and `medium` is a documented
+        // legal rung. TODO(todo-10 wave): per-model traps, effort
+        // beta, and media flags are UNVERIFIED (SS33.8 predates the
+        // 5.5 line) — beta documented for Fable 5.1/Mythos 5.1/Opus 5
+        // only; no 5.5 trap row exists, so none are carried.
+        CatalogEntry {
+            model: "claude-opus-5-5".into(),
+            family: Family::Anthropic,
+            dialect: ProtocolDialect::Anthropic,
+            supported_efforts: vec![E::Low, E::Medium, E::High, E::Xhigh, E::Max],
+            default_effort: E::High,
+            thinking_floor: None,
+            per_message_effort_beta: false,
+            traps: vec![],
+            capabilities: Capabilities::default(),
+        },
+        // Sonnet 5.5 (Antigravity v1.3.6, Oct 15): same family
+        // posture as Opus 5.5. TODO(todo-10 wave): per-model default,
+        // traps, and media flags unverified — family ladder + family
+        // default stand.
+        CatalogEntry {
+            model: "claude-sonnet-5-5".into(),
+            family: Family::Anthropic,
+            dialect: ProtocolDialect::Anthropic,
+            supported_efforts: vec![E::Low, E::Medium, E::High, E::Xhigh, E::Max],
+            default_effort: E::High,
+            thinking_floor: None,
+            per_message_effort_beta: false,
+            traps: vec![],
+            capabilities: Capabilities::default(),
+        },
+        // Haiku 5.5 (Junie Oct 12; Copilot Oct 9-week; Devin Fusion
+        // sidekick Oct 7): the cheap-tier 5.5. TODO(todo-10 wave):
+        // per-model default, traps, and media flags unverified —
+        // family ladder + family default stand.
+        CatalogEntry {
+            model: "claude-haiku-5-5".into(),
+            family: Family::Anthropic,
+            dialect: ProtocolDialect::Anthropic,
+            supported_efforts: vec![E::Low, E::Medium, E::High, E::Xhigh, E::Max],
+            default_effort: E::High,
+            thinking_floor: None,
+            per_message_effort_beta: false,
+            traps: vec![],
+            capabilities: Capabilities::default(),
+        },
         // GPT-5.5: none..xhigh (no max), default medium; verbosity is the
         // length knob, orthogonal to effort (SS33.1).
         CatalogEntry {
@@ -160,6 +209,53 @@ pub fn entries() -> Vec<CatalogEntry> {
                 audio_input: false,
                 video_input: false,
             },
+        },
+        // GPT-6 Sol (in Codex Sept 22; Zed BYOK v1.21.0 Sept 23; goose
+        // v1.52.0 Sept 23): R2 keys the adapter on the GPT-6
+        // generation, whose only SS33.1-documented member is Astra —
+        // no `none`, tops out at xhigh. TODO(todo-10 wave): the
+        // Sol-specific grid is UNVERIFIED (SS33.1 predates Sept 22);
+        // Astra's sampling/effort-none traps are Astra-named and do
+        // NOT transfer; the per-message effort beta is Astra-only.
+        CatalogEntry {
+            model: "gpt-6-sol".into(),
+            family: Family::OpenAi,
+            dialect: ProtocolDialect::OpenAiResponses,
+            supported_efforts: vec![E::Low, E::Medium, E::High, E::Xhigh],
+            default_effort: E::Medium,
+            thinking_floor: None,
+            per_message_effort_beta: false,
+            traps: vec![],
+            capabilities: Capabilities::default(),
+        },
+        // GPT-6.1 Sol (in Codex Sept 29; Zed BYOK v1.22.0 Sept 30;
+        // Copilot successor for GPT-5.5 on Oct 19): same GPT-6
+        // generation posture as Sol. TODO(todo-10 wave): per-model
+        // grid unverified.
+        CatalogEntry {
+            model: "gpt-6-1-sol".into(),
+            family: Family::OpenAi,
+            dialect: ProtocolDialect::OpenAiResponses,
+            supported_efforts: vec![E::Low, E::Medium, E::High, E::Xhigh],
+            default_effort: E::Medium,
+            thinking_floor: None,
+            per_message_effort_beta: false,
+            traps: vec![],
+            capabilities: Capabilities::default(),
+        },
+        // GPT-6 Luna (dropped with Sol in Codex Sept 22; Copilot
+        // successor Oct 19): same GPT-6 generation posture.
+        // TODO(todo-10 wave): per-model grid unverified.
+        CatalogEntry {
+            model: "gpt-6-luna".into(),
+            family: Family::OpenAi,
+            dialect: ProtocolDialect::OpenAiResponses,
+            supported_efforts: vec![E::Low, E::Medium, E::High, E::Xhigh],
+            default_effort: E::Medium,
+            thinking_floor: None,
+            per_message_effort_beta: false,
+            traps: vec![],
+            capabilities: Capabilities::default(),
         },
         // Gemini 2.5 Pro: thinking_budget 128..=32768 (0 invalid);
         // budget+level together 400; cannot disable thinking (SS33.1).
@@ -216,6 +312,23 @@ pub fn entries() -> Vec<CatalogEntry> {
                 video_input: true,
             },
         },
+        // Gemini 4 Argon (Zed v1.24.3 Oct 19; Junie Oct 16): R2 — the
+        // thinking_level parameter generation (3+) is the last
+        // documented Google contract, so 4 conservatively keeps it:
+        // level only, never alongside budget, Pro-style low floor.
+        // TODO(todo-10 wave): Argon's tier, media flags, and grid are
+        // UNVERIFIED (SS33.1 predates Oct 19).
+        CatalogEntry {
+            model: "gemini-4-argon".into(),
+            family: Family::Google,
+            dialect: ProtocolDialect::GoogleGenAi,
+            supported_efforts: vec![E::Low, E::Medium, E::High],
+            default_effort: E::High,
+            thinking_floor: Some(ThinkingLevel::Low),
+            per_message_effort_beta: false,
+            traps: vec![Feature::ThinkingBudgetWithLevel],
+            capabilities: Capabilities::default(),
+        },
         // Grok: always-on reasoning at default high — the most expensive
         // default of the four families; penalties/stop error on reasoning
         // models (SS33.1).
@@ -235,6 +348,22 @@ pub fn entries() -> Vec<CatalogEntry> {
                 audio_input: false,
                 video_input: false,
             },
+        },
+        // Grok 4.7 (Cursor + Grok Build + Copilot all SKUs, Sept 21):
+        // same grok-4 generation as 4.6 (R2) — the reasoning-model
+        // parameter traps carry over and the family ladder (docs.x.ai,
+        // SS33.1) stands. TODO(todo-10 wave): 4.7-specific media flags
+        // and grid are UNVERIFIED (SS33.8 predates Sept 21).
+        CatalogEntry {
+            model: "grok-4-7".into(),
+            family: Family::Xai,
+            dialect: ProtocolDialect::Xai,
+            supported_efforts: vec![E::Low, E::Medium, E::High, E::Xhigh],
+            default_effort: E::High,
+            thinking_floor: None,
+            per_message_effort_beta: false,
+            traps: vec![Feature::Penalties, Feature::StopSequences],
+            capabilities: Capabilities::default(),
         },
         // DeepSeek reasoner: strongest architect-mode editor; wire usage
         // is cache-hit-inclusive (research SS6 DeepSeek pattern).

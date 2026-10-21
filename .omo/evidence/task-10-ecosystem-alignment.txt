@@ -1,0 +1,194 @@
+TASK 10 EVIDENCE — Model catalog refresh (verified 2026 wave)
+Plan: .omo/plans/ecosystem-alignment.md todo 10 (Wave R)
+Session: opencode:ses_ea774e945ffe45I9Wp629UGOW1 (delegated task, ses_ea1b5633affeSpuorkql74wLLx)
+Date: 2026-10-21
+Worker: Sisyphus-jior (category: unspecified-high)
+Machine note: every cargo invocation via `cmd /c %TEMP%\opencode\cargo-env.cmd <cmd>` (MSVC
+14.44.35207 pin, CARGO_TARGET_DIR=C:\ct); tests prefixed `set CARGO_BUILD_JOBS=3&&` (LNK1102
+guard). No commit made (task contract: no git commit/stage).
+
+================================================================================
+0. TREE-STATE VERIFICATION (start of task)
+================================================================================
+> git status --short
+ M .omo/boulder.json
+ M .omo/run-continuation/ses_f7099d0b3ffexpt0mQ6ynsSNAP.json
+ M .omo/start-work/ledger.jsonl
+?? .omo/drafts/ecosystem-alignment.md
+?? .omo/notepads/
+?? .omo/plans/ecosystem-alignment.md
+
+Only .omo/ orchestrator bookkeeping — no unexpected source paths. (Mid-task, the todo-9
+worker's harness-daemon edits appeared as expected: bin/harness-daemon.rs, lib.rs, server.rs,
++ new routing.rs, dispatcher_live_tests.rs, .omo/evidence/task-9-red-raw.txt — all within
+daemon+intel as the task brief permits.)
+
+================================================================================
+1. DATED WAVE RECEIPTS (in-repo only; nothing invented)
+================================================================================
+Source of record: ecosystem sweep tool-output (tool_158a2e576001N7DLPJHyUvzgZG,
+2026-10-20) + OpenCode V2 report (tool_158a2e56e001t2dc0NWd3dGsU1), cited by
+.omo/research/harness-research.md SS34-SS35 (§35.8 "In-repo" sources block) and the
+wave synthesis message (session ses_ea774e945ffe45I9Wp629UGOW1, msg_158a2e93d001Ot240IJvneUzPO,
+2026-10-20T09:27Z — the plan's "m0024-era" receipts).
+
+  gpt-6-sol     : in Codex Sept 22 (sweep L376/L632/L734 "GPT-6 Sol+Luna in Codex Sept 22");
+                  Zed v1.21.0 BYOK "GPT-6 Astra/Sol/Luna" Sept 23 (L770); goose v1.52.0
+                  "Opus 5.5/GPT-6-sol/luna support" Sept 23 (L738).
+  gpt-6-1-sol   : in Codex Sept 29 (model drop, L265/L632); Zed v1.22.0 BYOK GPT-6.1 Sol
+                  Sept 30 (L771); Copilot successor for GPT-5.5 Oct 19 (L797).
+  gpt-6-luna    : dropped with Sol in Codex Sept 22 (L376/L632); Zed v1.21.0 BYOK Sept 23
+                  (L770); Copilot successor Oct 19 (L797).
+  gemini-4-argon: Zed v1.24.x Oct 14-19, GitHub v1.24.3 Oct 19 (sweep L772; harness-research
+                  L3061); Junie Oct 16 (L775).
+  grok-4-7      : Cursor + Grok Build + Copilot (all SKUs) Sept 21 (L751, L795, L384);
+                  500k context (L766 — not a catalog field; CostTable is provider territory).
+  claude-opus-5-5    : Zed BYOK v1.21.0 Sept 23 (L770; harness-research L3059); Amp "Opus 5.5
+                      powers medium" Sept 28 (L744 — documents `medium` as a legal rung);
+                      Antigravity v1.3.6 Oct 15 (L758).
+  claude-sonnet-5-5  : Antigravity v1.3.6 "Claude Opus/Sonnet 5.5 via ADC" Oct 15 (L758).
+  claude-haiku-5-5   : Junie Oct 12 release 26.10.5 (L648/L775); Copilot Oct-5-week published
+                      Oct 9 (L796); Devin Fusion sidekick Oct 7 (L789).
+
+Axis discipline applied: .omo/research/model-profiles.md R2 (vendor adapter keyed on
+model-name generation) and R5 (parameter legality); control matrix harness-research SS33.1
+(fetched 2026-09-12 — predates every wave model above; that boundary drives every
+conservative default below).
+
+================================================================================
+2. PER-MODEL DESIGN (grid / traps / flags actually seeded)
+================================================================================
+All 8 entries: media capabilities = all-false + TODO (no cited row documents media input for
+any wave model — SS33.8 fetches predate them; the seed.rs doc-table carries a new citation
+row stating this). per_message_effort_beta = false everywhere (SS33.1 documents the beta for
+Fable 5.1/Mythos 5.1/Opus 5 only; Astra's configuration_update is "Astra only").
+
+  gpt-6-sol / gpt-6-1-sol / gpt-6-luna  (OpenAi, OpenAiResponses)
+    grid: low/medium/high/xhigh   default: medium   traps: []   floor: none
+    Why: R2 keys the adapter on the GPT-6 generation; Astra is that generation's only
+    SS33.1-documented member (no `none`, no `max`, floor low). `none` omitted -> validate()
+    names Feature::EffortNone (OpenAI family); `max` omitted -> Feature::EffortUnsupported.
+    Astra's Sampling trap is Astra-NAMED in SS33.1 and does not transfer. TODO(todo-10 wave)
+    markers in seed.rs: per-model grids unverified.
+
+  gemini-4-argon  (Google, GoogleGenAi)
+    grid: low/medium/high   default: high   traps: [ThinkingBudgetWithLevel]   floor: Some(Low)
+    Why: R2 — thinking_level is the last documented Google parameter generation (3+);
+    Gemini 4 unverified, so the 3+ contract is kept conservatively (level never alongside
+    budget; Pro-style low floor rejects Minimal = ThinkingBelowFloor). TODO: tier/media/grid
+    unverified.
+
+  grok-4-7  (Xai, Xai)
+    grid: low/medium/high/xhigh   default: high   traps: [Penalties, StopSequences]   floor: none
+    Why: same grok-4 generation as 4.6 (R2) — the reasoning-model parameter traps
+    (penalties/stop error, SS33.1 xAI row) carry over and the family ladder stands
+    (docs.x.ai). TODO: 4.7-specific media/grid unverified.
+
+  claude-opus-5-5 / claude-sonnet-5-5 / claude-haiku-5-5  (Anthropic, Anthropic)
+    grid: low/medium/high/xhigh/max   default: high   traps: []   floor: none
+    Why: Anthropic family ladder low->max with family default high (SS33.1); Amp's Sept-28
+    receipt documents `medium` legal on Opus 5.5. No 5.5-generation trap row exists
+    (mirroring the seeded Opus 5 posture, which carries no budget/prefill traps), and the
+    effort beta is not documented for 5.5. TODO: per-model defaults/traps/media unverified.
+
+================================================================================
+3. RED PHASE (failing-first, captured)
+================================================================================
+New test file: harness-intel/tests/catalog_wave.rs (8 tests). Written BEFORE any seed edit.
+
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-intel --test catalog_wave"
+  (Nextest run ID 1fff9b5d-833b-46cc-bb07-2f02967e7fc0)
+  Summary --- 8 tests run: 1 passed, 7 failed, 0 skipped
+    FAIL wave_entries_are_seeded_with_cited_grids
+         panic: gpt-6-sol must be seeded after todo 10: unknown model "gpt-6-sol": not in
+         the catalog — add it before routing requests
+    FAIL claude_5_5_family_carries_the_full_ladder      (claude-opus-5-5 must accept low)
+    FAIL gpt6_wave_rejects_none_and_max_fail_closed    (expected EffortNone, got UnknownModel)
+    FAIL daemon_catalog_seam_resolves_every_wave_model (gpt-6-sol must resolve ... caps seam)
+    FAIL grok_4_7_extends_the_grok4_dialect            (expected penalties trap, got UnknownModel)
+    FAIL wave_media_capabilities_stay_fail_closed      (left: Err(UnknownModel gpt-6-sol))
+    FAIL gemini_4_argon_keeps_the_level_generation_dialect (budget+level -> UnknownModel)
+    PASS legacy_twelve_entries_are_untouched_by_the_wave   <- drift guard: green BEFORE and
+                                                              AFTER by design
+All 7 failures fail for the RIGHT reason (typed UnknownModel — entries missing), not
+compile/import errors.
+
+================================================================================
+4. GREEN PHASE
+================================================================================
+Edits:
+  harness-intel/src/seed.rs                  8 new entries + 1 doc-table citation row
+                                             (git diff --stat: 129 insertions, 0 deletions —
+                                             PURELY ADDITIVE; existing 12 byte-identical,
+                                             proven again by legacy_twelve... test)
+  harness-intel/tests/capabilities.rs        SNAPSHOT consciously extended to 20 models
+                                             (all-false rows for the wave; the test's own
+                                             documented protocol: "any seeded-flag change
+                                             must consciously update it here")
+  harness-intel/tests/routing_surface.rs     catalog-search counts consciously updated:
+                                             opus 3->4 ids incl. claude-opus-5-5; gemini
+                                             3->4; grok 1->2; grok render 1->2 lines incl.
+                                             grok-4-7 (MATCH_LIMIT=5 still not hit)
+  harness-intel/tests/catalog_wave.rs        new (the 8 tests)
+
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-intel"
+  (Nextest run ID ca05070e-cbca-4f83-9c29-1f7c0f1691bb)
+  Summary --- 91 tests run: 91 passed, 0 skipped
+  (includes all 8 catalog_wave tests: grids seeded, gpt-6 none/max fail-closed with named
+  traps, grok-4-7 penalties/stop traps + legal xhigh, gemini-4-argon budget+level trap +
+  below-floor trap, claude-5.5 full ladder + medium legal + budget legal + beta false,
+  wave media fail-closed, daemon caps seam resolves all 8, legacy 12 untouched)
+
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy -p harness-intel --all-targets"
+  Finished `dev` profile — zero warnings (one round: clippy::type_complexity on the 9-field
+  pin tuple fixed with a documented EntryPin type alias)
+
+Downstream seeded-catalog consumers (regression check):
+> cargo nextest run -p harness-orchestration
+  Summary --- 42 tests run: 42 passed, 0 skipped
+  (includes model_bracket_grammar — the `model[effort=xhigh]` parser whose resolve_knobs
+  validates against the catalog grids; orchestration's resolve path is model-agnostic and
+  needed no changes — the wave enters it through the grid checks proven in catalog_wave)
+> cargo nextest run -p harness-daemon projection
+  Summary --- 4 tests run: 4 passed, 0 skipped (241 skipped by filter)
+
+================================================================================
+5. DOCTOR CHECK (hermetic fallback clause invoked — see note)
+================================================================================
+Attempted per task brief:
+> cmd /c "%TEMP%\opencode\cargo-env.cmd cargo run -q -p harness-cli -- doctor"
+Result: BUILD FAILURE — PRE-EXISTING at HEAD, unrelated to this task:
+  error[E0004]: non-exhaustive patterns: `&SessionEvent::CostWarning { .. }` and
+  `&SessionEvent::CostStop { .. }` not covered --> harness-cli/src/render.rs:88
+Analysis (verified read-only): commit 2947ed4 "feat(daemon): session cost ledger wiring"
+added SessionEvent::CostWarning/CostStop (harness-daemon/src/events.rs +21) WITHOUT the
+sibling match arms in harness-cli/src/render.rs; that commit's verification ran only
+`-p harness-core -p harness-daemon`, leaving harness-cli unbuildable at HEAD. render.rs is
+clean in git status (untouched by this task and by the todo-9 worker). Two mid-task retries
+after 75s/120s waits hit the concurrent todo-9 worker's transient daemon edits (server.rs
+missing `routing` field — resolved itself), then the same pre-existing render.rs E0004.
+Fixing render.rs is outside this task's file scope (seed.rs + intel tests only) — reported
+to .omo/notepads/ecosystem-alignment/issues.md instead.
+
+Hermetic fallback (per plan clause "otherwise assert via the catalog API the doctor reads"):
+1. The doctor's probe set (harness-cli/src/doctor_probes.rs) is daemon/network/provider/
+   env/sandbox/mcp/sessions/skills — there is NO catalog/model probe and NO unknown-model
+   warning surface in doctor output; the plan's "reports the expanded catalog" clause has
+   no doctor-side surface to read today.
+2. The catalog API the DAEMON reads at startup (bin/harness-daemon.rs:105
+   `Catalog::seeded().capabilities(&provider.model)` — the seam an unknown model would
+   silently downgrade at) is asserted green for all 8 wave models by
+   catalog_wave::daemon_catalog_seam_resolves_every_wave_model (91/91 run above).
+3. Wave visibility through a model-facing surface is asserted by routing_surface's
+   catalog_search tests (grok render now 2 lines incl. grok-4-7; opus ids incl.
+   claude-opus-5-5; gemini count 4).
+
+================================================================================
+6. STOPPING CONDITION STATUS
+================================================================================
+  [x] 8 entries validated in (91/91 green incl. 8 new catalog_wave tests)
+  [x] existing 12 untouched (git diff 129+/0-; legacy pin test green before AND after)
+  [x] doctor-clean — via fallback clause (doctor binary pre-existing-red at HEAD for
+      unrelated render.rs reasons; catalog seam + search surface asserted instead; issue
+      filed)
+  [x] no commit / no staging (git status verified; .omo/plans untouched)

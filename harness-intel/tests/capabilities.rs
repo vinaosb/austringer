@@ -21,6 +21,11 @@ const SNAPSHOT: &str = r#"{
     "audio_input": false,
     "video_input": false
   },
+  "claude-haiku-5-5": {
+    "vision": false,
+    "audio_input": false,
+    "video_input": false
+  },
   "claude-opus-4-6": {
     "vision": true,
     "audio_input": false,
@@ -36,8 +41,18 @@ const SNAPSHOT: &str = r#"{
     "audio_input": false,
     "video_input": false
   },
+  "claude-opus-5-5": {
+    "vision": false,
+    "audio_input": false,
+    "video_input": false
+  },
   "claude-sonnet-4-6": {
     "vision": true,
+    "audio_input": false,
+    "video_input": false
+  },
+  "claude-sonnet-5-5": {
+    "vision": false,
     "audio_input": false,
     "video_input": false
   },
@@ -61,8 +76,18 @@ const SNAPSHOT: &str = r#"{
     "audio_input": true,
     "video_input": true
   },
+  "gemini-4-argon": {
+    "vision": false,
+    "audio_input": false,
+    "video_input": false
+  },
   "gpt-5-5": {
     "vision": true,
+    "audio_input": false,
+    "video_input": false
+  },
+  "gpt-6-1-sol": {
+    "vision": false,
     "audio_input": false,
     "video_input": false
   },
@@ -71,8 +96,23 @@ const SNAPSHOT: &str = r#"{
     "audio_input": false,
     "video_input": false
   },
+  "gpt-6-luna": {
+    "vision": false,
+    "audio_input": false,
+    "video_input": false
+  },
+  "gpt-6-sol": {
+    "vision": false,
+    "audio_input": false,
+    "video_input": false
+  },
   "grok-4-6": {
     "vision": true,
+    "audio_input": false,
+    "video_input": false
+  },
+  "grok-4-7": {
+    "vision": false,
     "audio_input": false,
     "video_input": false
   }
