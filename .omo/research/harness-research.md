@@ -487,7 +487,7 @@ coupled core (vscode-shim hack; CLI broke on Windows); telemetry default-on;
 ~daily releases w/o stability gates; cloud-Router monetization coupled to free
 OSS; in-process TS tools; policy-only safety (11 CVEs).
 
-## 11. Iteration 4 findings — Kilo Code (fork→rebuild→acquisition; SHA 3d04228, 2026-09-11)
+## 36. Iteration 4 findings — Kilo Code (fork→rebuild→acquisition; SHA 3d04228, 2026-09-11)
 
 **Identity corrections:** repo = Kilo-Org/kilocode (created 2025-03-10, 27.2k★,
 31,054 commits, MIT). Fork of Roo March 2025 (not Aug). ".roomodes/.roo/rules
@@ -570,7 +570,7 @@ user-count metric drift (trust).
 **WATCH:** Anaconda stewardship effect on OSS pace; gastownhall beads-protocol
 adoption; OpenCode v2 migration outcome; ZooCode trajectory.
 
-## 12. Iteration 5 findings — Mentat death autopsy (combined agent; SHA 3a01f0a, archived)
+## 37. Iteration 5 findings — Mentat death autopsy (combined agent; SHA 3a01f0a, archived)
 
 **DEAD TWICE:** repo renamed AbanteAI/**archive-old-cli-mentat** + archived
 (2,544★, Python, Apache-2.0, created 2023-07-25, 560 commits). Active dev Jul
@@ -626,7 +626,7 @@ grouped hunks. **AVOID:** context-architecture thrash; parallel edit formats
 the OSS asset; unversioned spinout-lib coupling. **WATCH:** insertion-conflict
 ordering UI (niche); mentat.ai domain (dead shell).
 
-## 13. Iteration 6 findings — Plandex death autopsy (combined agent; HEAD e2d7720, dormant)
+## 38. Iteration 6 findings — Plandex death autopsy (combined agent; HEAD e2d7720, dormant)
 
 **DEAD as company, OSS dormant-but-unarchived:** solo founder Dane Schneider
 (danenania; 1,301/1,483 commits) joined Promptfoo Oct 2025 (Promptfoo itself
@@ -680,12 +680,12 @@ reliably produce. **WATCH:** fast-apply fine-tuned models (closed cloud).
 
 ## 8. Iteration 1 source record — DeepSeek Harness (architecture agent's full findings w/ 35 pinned permalinks)
 
-## 6. Iteration 1 findings — DeepSeek Harness (`dsh`)
+## 39. Iteration 1 findings — DeepSeek Harness (`dsh`)
 
 Research date 2026-09-11. Repo pinned at master SHA `c291e7961a515f6d7af9304e7fd1d257929aef26`
 (clone in temp). Per-claim URLs; UNVERIFIED flags where noted.
 
-### 6.1 Identity (VERIFIED unless flagged)
+### 39.1 Identity (VERIFIED unless flagged)
 
 - **What**: official DeepSeek AI open-source agent harness, repo
   [`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness),
@@ -730,7 +730,7 @@ Research date 2026-09-11. Repo pinned at master SHA `c291e7961a515f6d7af9304e7fd
   ([README L7](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/README.md#L7)).
   Cordis is a *pre-existing* framework dsh adopted, not dsh-original.
 
-### 6.2 Architecture (primary sources = in-repo docs @ pinned SHA)
+### 39.2 Architecture (primary sources = in-repo docs @ pinned SHA)
 
 **Kernel — service-locator, not middleware stack.** Cordis: plugins contribute
 services (claim stable `ctx.<key>`), typed events, and reversible effects
@@ -854,7 +854,7 @@ board + mailbox over continuable subagents (`spawn_teammate`, `wait_agent`, ...)
 Hook-protocol compatibility packages for Claude Code & Codex hooks
 (`hooks-claude-code`, `hooks-codex`).
 
-### 6.3 Notable concepts (unique/unusual vs Claude Code/Codex/goose/OpenHands)
+### 39.3 Notable concepts (unique/unusual vs Claude Code/Codex/goose/OpenHands)
 
 1. **The loop is a config row.** Only harness in the field where the agent loop
    itself is swapped via profile/patch (sdk-minimal even ships a different
@@ -913,7 +913,7 @@ Hook-protocol compatibility packages for Claude Code & Codex hooks
     ([wire-extensions L41-72](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/deepseek-llm-api-wire-extensions.md#L41-L72)) —
     conflicts with our AVOID "telemetry default-on" (§3); keep ours default-off.
 
-### 6.4 Memory / performance characteristics
+### 39.4 Memory / performance characteristics
 
 - **Context economics**: append-only derivation + in-history prompt appends keep
   provider prefix caches valid; compaction+pruner + spill keep surfaces small;
@@ -936,7 +936,7 @@ Hook-protocol compatibility packages for Claude Code & Codex hooks
   "because it is interesting, and we would not put a client's release process
   behind it yet"; README caps-locked breaking-changes warning).
 
-### 6.5 Candidate ADOPT/AVOID for OUR Rust harness (evidence above)
+### 39.5 Candidate ADOPT/AVOID for OUR Rust harness (evidence above)
 
 **ADOPT candidates**: "model-visible ⇒ logged" invariant + projection seam;
 versioned session-format generations w/ immutable paths + exclusive publication;
@@ -956,7 +956,7 @@ JS plugins — we prefer process/WASM boundaries; consistent with §3 AVOID
 topic as de-facto plugin standards; whether `dsh_session_log` upload becomes an
 industry pattern (server-side session memory).
 
-### 6.6 Sources
+### 39.6 Sources
 
 Primary (pinned SHA c291e79): README, docs/architecture.md, docs/cordis-primer.md,
 docs/tool-catalog.md, docs/subsystems/{compaction,spill,token-meter,sandbox}.md,
@@ -979,13 +979,13 @@ Secondary: [Winder.AI](https://winder.ai/ai-agent-harness-comparison/) (2026-08-
 
 
 
-## 10. Iteration 3 findings — Roo Code (mode-scoped origin; SHA b867ec9, 2026-09-11)
+## 40. Iteration 3 findings — Roo Code (mode-scoped origin; SHA b867ec9, 2026-09-11)
 
 Research date 2026-09-11. Repo pinned at FINAL main SHA
 `b867ec9145750d0ae1ff7f02d35406e9bf2a0b16` (archived; clone in temp). Repo
 URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
 
-### 10.1 Identity + lifecycle (VERIFIED unless flagged)
+### 40.1 Identity + lifecycle (VERIFIED unless flagged)
 
 - **What**: Roo Code — VS Code agentic-coding extension, Apache-2.0,
   RooCodeInc/Roo-Code, "a whole dev team of AI agents in your code editor".
@@ -1047,7 +1047,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
   positioning is real (see 10.2 auto-approval), but "pioneer" is a vendor
   claim; Cline shipped early auto-approve too (iteration 2).
 
-### 10.2 Architecture (primary = pinned source + docs)
+### 40.2 Architecture (primary = pinned source + docs)
 
 **Modes system — the divergence from Cline.**
 - `DEFAULT_MODES` ordered array: architect / code / ask / debug /
@@ -1174,7 +1174,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
 - Worktrees feature (v3.44.0, credit "thanks Cline!" — upstream
   convergence); core.worktree canonicalization fix (Windows paths).
 
-### 10.3 Notable concepts (unique/unusual vs Cline/Claude Code/goose)
+### 40.3 Notable concepts (unique/unusual vs Cline/Claude Code/goose)
 
 1. **Mode-scoped tool masking** (per-mode tool groups + fileRegex + per-mode
    model) — Roo is the ORIGIN (v3.1.0 Jan 2025, pre-dating Cline plan/act);
@@ -1205,7 +1205,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
 12. **Portable persona bundles** — mode export = YAML w/ inline rulesFiles +
     slug-rename handling (persona+rules as shareable artifact).
 
-### 10.4 Roo vs upstream Cline — better / worse
+### 40.4 Roo vs upstream Cline — better / worse
 
 **BETTER:**
 - Tool-masking + role specialization vs Cline's 2-state plan/act — HN:
@@ -1248,7 +1248,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
   harnesses "burn tokens faster" — per-mode cheap models + lean reads were
   Roo's real economics (aicoderscope). UNVERIFIED.
 
-### 10.5 Candidate ADOPT/AVOID deltas for OUR plan (ledger §3 updated)
+### 40.5 Candidate ADOPT/AVOID deltas for OUR plan (ledger §3 updated)
 
 ADOPT: mode-scoped tool masking + fileRegex (core of plan — provenance
 pinned); per-mode model profiles + sticky binding (todo 42 validated);
@@ -1268,7 +1268,7 @@ Roomote source-available cloud-agent model; Kilo's flat-subagent outcomes
 vs orchestrator; whether Cline absorbs custom-modes (they already adopted
 skills + checkpoints patterns).
 
-### 10.6 Sources
+### 40.6 Sources
 
 Primary (pinned b867ec9145750d0ae1ff7f02d35406e9bf2a0b16):
 packages/types/src/mode.ts · packages/types/src/tool.ts ·
