@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use harness_core::event::{ContentBlock, Event};
 use harness_daemon::protocol::{Frame, ServerMsg, SessionEvent};
+use harness_daemon::team::TeamStatus;
 
 /// One transcript row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +57,9 @@ pub struct DiffEntry {
 
 /// Live child-session state (feeds the team grid); the state string
 /// is the todo-8 team contract vocabulary (`running`, `collision`,
-/// `escalation`, `file_touched`, `success`, `failed`, `quarantined`).
+/// `escalation`, `file_touched`, `blocked`, `success`, `failed`,
+/// `quarantined`) and `detail` carries the latest phase context (the
+/// collision glob, the surfaced ask, the finish summary).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChildCell {
     /// Child session id (`{launch}-child-{task}`).
@@ -65,6 +68,22 @@ pub struct ChildCell {
     pub task: String,
     /// Latest phase/state.
     pub state: String,
+    /// Latest phase detail (collision glob, ask summary, outcome).
+    pub detail: String,
+}
+
+/// Latest delegation-budget view (the `TeamBudget` event payload;
+/// todo 15's budget surfacing).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamBudgetView {
+    /// Task children spawned this session.
+    pub spawned: u32,
+    /// Tokens spent across those children.
+    pub tokens_spent: u64,
+    /// The effective fan-out cap.
+    pub fan_out_cap: u32,
+    /// The per-parent token budget.
+    pub token_budget: u64,
 }
 
 /// Reduced view of everything the UI shows for one session.
@@ -80,6 +99,7 @@ pub struct SessionView {
     turns: Vec<TurnState>,
     diffs: Vec<DiffEntry>,
     children: HashMap<String, ChildCell>,
+    team_budget: Option<TeamBudgetView>,
     notes: Vec<String>,
 }
 
@@ -150,12 +170,14 @@ impl SessionView {
                         child: child.clone(),
                         task: task.clone(),
                         state: "running".to_owned(),
+                        detail: String::new(),
                     },
                 );
             }
-            SessionEvent::ChildProgress { child, phase, .. } => {
+            SessionEvent::ChildProgress { child, phase, detail } => {
                 if let Some(cell) = self.children.get_mut(child) {
                     cell.state = phase.clone();
+                    cell.detail = detail.clone();
                 } else {
                     self.children.insert(
                         child.clone(),
@@ -163,14 +185,34 @@ impl SessionView {
                             child: child.clone(),
                             task: String::new(),
                             state: phase.clone(),
+                            detail: detail.clone(),
                         },
                     );
                 }
             }
-            SessionEvent::ChildFinished { child, state, .. } => {
+            SessionEvent::ChildFinished { child, state, detail, .. } => {
                 if let Some(cell) = self.children.get_mut(child) {
                     cell.state = state.clone();
+                    cell.detail = detail.clone();
                 }
+            }
+            SessionEvent::TeamBudget {
+                spawned,
+                tokens_spent,
+                fan_out_cap,
+                token_budget,
+            } => {
+                self.team_budget = Some(TeamBudgetView {
+                    spawned: *spawned,
+                    tokens_spent: *tokens_spent,
+                    fan_out_cap: *fan_out_cap,
+                    token_budget: *token_budget,
+                });
+            }
+            SessionEvent::TeamBudgetExhausted { spent, budget } => {
+                self.entries.push(Entry::Notice(format!(
+                    "team budget exhausted: {spent} of {budget} tokens; further task spawns refused"
+                )));
             }
             SessionEvent::CostWarning { consumed_micros, cap_micros } => {
                 self.entries.push(Entry::Notice(format!(
@@ -241,6 +283,7 @@ impl SessionView {
         self.turns.clear();
         self.diffs.clear();
         self.children.clear();
+        self.team_budget = None;
         self.last_event_id = 0;
         for frame in frames {
             self.apply_frame(frame);
@@ -276,6 +319,21 @@ impl SessionView {
     #[must_use]
     pub fn children(&self) -> Vec<&ChildCell> {
         self.children.values().collect()
+    }
+
+    /// The Warp-precedence aggregate over child states (todo 15;
+    /// never terminal while any child is in-progress).
+    #[must_use]
+    pub fn team_status(&self) -> TeamStatus {
+        harness_daemon::team::aggregate_of_states(
+            self.children.values().map(|cell| cell.state.as_str()),
+        )
+    }
+
+    /// Latest delegation-budget view (None before any spawn).
+    #[must_use]
+    pub fn team_budget(&self) -> Option<TeamBudgetView> {
+        self.team_budget.clone()
     }
 
     /// Total transcript characters (HUD context estimate input).
@@ -438,6 +496,7 @@ mod tests {
             },
         });
         assert_eq!(view.children()[0].state, "collision");
+        assert_eq!(view.children()[0].detail, "src/** overlaps");
         view.apply_frame(&Frame {
             id: 3,
             event: SessionEvent::ChildFinished {
@@ -448,6 +507,106 @@ mod tests {
             },
         });
         assert_eq!(view.children()[0].state, "quarantined");
+    }
+
+    #[test]
+    fn team_aggregate_never_flips_terminal_while_a_child_runs() {
+        // Given: the todo-15 fixture — one child in-progress, one
+        // blocked on an ask, one succeeded.
+        let mut view = SessionView::new();
+        for (child, task) in [("c-run", "build"), ("c-block", "scan"), ("c-done", "docs")] {
+            view.apply_frame(&Frame {
+                id: 1,
+                event: SessionEvent::ChildStarted {
+                    child: child.into(),
+                    task: task.into(),
+                    role: "worker".into(),
+                    model: "gpt-5-5".into(),
+                },
+            });
+        }
+        view.apply_frame(&Frame {
+            id: 2,
+            event: SessionEvent::ChildProgress {
+                child: "c-block".into(),
+                phase: "blocked".into(),
+                detail: "permission: edit_lines src/lib.rs".into(),
+            },
+        });
+        view.apply_frame(&Frame {
+            id: 3,
+            event: SessionEvent::ChildFinished {
+                child: "c-done".into(),
+                task: "docs".into(),
+                state: "success".into(),
+                detail: "done".into(),
+            },
+        });
+        // Then: the Warp-precedence aggregate is InProgress — the
+        // running child holds the team open past the terminal sibling.
+        assert_eq!(view.team_status(), TeamStatus::InProgress);
+        // And: the blocked child's ask detail rides its cell.
+        let blocked = view
+            .children()
+            .into_iter()
+            .find(|cell| cell.child == "c-block")
+            .expect("blocked cell");
+        assert_eq!(blocked.state, "blocked");
+        assert_eq!(blocked.detail, "permission: edit_lines src/lib.rs");
+    }
+
+    #[test]
+    fn team_budget_frames_surface_and_empty_team_waits() {
+        // Given: a fresh view — no child has reported state.
+        let mut view = SessionView::new();
+        assert_eq!(view.team_status(), TeamStatus::WaitingForEvents);
+        assert_eq!(view.team_budget(), None);
+        // When: budget frames arrive (spawn authorization, then the
+        // recorded spend), then the typed exhaustion halt.
+        view.apply_frame(&Frame {
+            id: 1,
+            event: SessionEvent::TeamBudget {
+                spawned: 1,
+                tokens_spent: 0,
+                fan_out_cap: 4,
+                token_budget: 1000,
+            },
+        });
+        view.apply_frame(&Frame {
+            id: 2,
+            event: SessionEvent::TeamBudget {
+                spawned: 1,
+                tokens_spent: 25,
+                fan_out_cap: 4,
+                token_budget: 1000,
+            },
+        });
+        view.apply_frame(&Frame {
+            id: 3,
+            event: SessionEvent::TeamBudgetExhausted {
+                spent: 1000,
+                budget: 1000,
+            },
+        });
+        // Then: the panel input is the LATEST budget snapshot…
+        assert_eq!(
+            view.team_budget(),
+            Some(TeamBudgetView {
+                spawned: 1,
+                tokens_spent: 25,
+                fan_out_cap: 4,
+                token_budget: 1000,
+            })
+        );
+        // …and the halt stays visible even with the team accordion
+        // closed (it is a transcript notice, not only panel state).
+        assert!(
+            view.entries()
+                .iter()
+                .any(|entry| matches!(entry, Entry::Notice(text) if text.contains("team budget exhausted"))),
+            "exhaustion notice: {:?}",
+            view.entries()
+        );
     }
 
     #[test]

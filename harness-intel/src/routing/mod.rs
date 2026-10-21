@@ -66,6 +66,14 @@ pub enum Role {
     Summary,
     /// Zed utility: compaction condensation on cheap models.
     Compaction,
+    /// Utility: curated read-only codebase-search agent (todo 14).
+    /// Cheap pool only — the table's utility validation enforces it
+    /// fail-closed at build.
+    Explore,
+    /// Utility: curated read-only docs/OSS-search agent (todo 14).
+    /// Cheap pool only — the table's utility validation enforces it
+    /// fail-closed at build.
+    Librarian,
 }
 
 impl Role {
@@ -87,6 +95,8 @@ impl Role {
             "dedup-folding" => Self::DedupFolding,
             "summary" => Self::Summary,
             "compaction" => Self::Compaction,
+            "explore" => Self::Explore,
+            "librarian" => Self::Librarian,
             _ => return None,
         })
     }
@@ -109,6 +119,8 @@ impl Role {
             Self::DedupFolding => "dedup-folding",
             Self::Summary => "summary",
             Self::Compaction => "compaction",
+            Self::Explore => "explore",
+            Self::Librarian => "librarian",
         }
     }
 
@@ -124,7 +136,9 @@ impl Role {
             | Self::AutoContinue
             | Self::DedupFolding
             | Self::Summary
-            | Self::Compaction => RoleClass::Utility,
+            | Self::Compaction
+            | Self::Explore
+            | Self::Librarian => RoleClass::Utility,
             _ => RoleClass::Lead,
         }
     }

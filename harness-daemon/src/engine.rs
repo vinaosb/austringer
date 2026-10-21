@@ -268,6 +268,36 @@ impl SessionHost {
         stages.execution = executor;
         stages
     }
+
+    /// The todo-14 variant for curated read-only agent children:
+    /// steer and execution identical to [`Self::standard_stages`];
+    /// the approval chain is wrapped in
+    /// [`crate::task::ReadOnlyApproval`] so every out-of-allowlist
+    /// call is refused before any ask fires and logged on the child
+    /// stream.
+    #[must_use]
+    pub fn readonly_stages(
+        self: &Arc<Self>,
+        executor: Box<dyn ToolExecutor>,
+        agent: &str,
+        allowlist: Vec<String>,
+    ) -> StageSet {
+        let mut stages = StageSet::default();
+        stages.steer = Box::new(SharedSteerer::new(
+            self.steer_queue(),
+            self.projection_notice_queue(),
+        ));
+        stages.approval = Box::new(crate::task::ReadOnlyApproval::new(
+            Box::new(crate::stages::ReservedAwareApproval::new(
+                crate::stages::chain_over_mediator(self.mediator()),
+            )),
+            Arc::clone(self),
+            agent,
+            allowlist,
+        ));
+        stages.execution = executor;
+        stages
+    }
 }
 
 /// Resolves a session id to its live host (read-only; never creates).

@@ -62,6 +62,8 @@ function emptyState() {
     diffs: [],
     notifications: [],
     workers: [],
+    budget: null,
+    budgetExhausted: false,
     serverErrors: [],
   };
 }
@@ -173,6 +175,58 @@ function applyFrame(state, frame) {
       return {
         ...next,
         notifications: [...next.notifications, { kind: ev.kind, message: ev.message }],
+      };
+    // Team frames (todo 15): Child* events build the workers panel,
+    // TeamBudget carries the delegation aggregate, and the typed
+    // exhaustion halt mirrors the v1 downgrade's notification.
+    case "child_started":
+      return {
+        ...next,
+        workers: [
+          ...next.workers.filter((w) => w.child !== ev.child),
+          { child: ev.child, task: ev.task || "", state: "running", detail: "" },
+        ],
+      };
+    case "child_progress":
+      return {
+        ...next,
+        workers: next.workers.some((w) => w.child === ev.child)
+          ? next.workers.map((w) =>
+              w.child === ev.child ? { ...w, state: ev.phase, detail: ev.detail || "" } : w,
+            )
+          : [
+              ...next.workers,
+              { child: ev.child, task: "", state: ev.phase, detail: ev.detail || "" },
+            ],
+      };
+    case "child_finished":
+      return {
+        ...next,
+        workers: next.workers.map((w) =>
+          w.child === ev.child ? { ...w, state: ev.state, detail: ev.detail || "" } : w,
+        ),
+      };
+    case "team_budget":
+      return {
+        ...next,
+        budget: {
+          spawned: ev.spawned,
+          tokensSpent: ev.tokens_spent,
+          fanOutCap: ev.fan_out_cap,
+          tokenBudget: ev.token_budget,
+        },
+      };
+    case "team_budget_exhausted":
+      return {
+        ...next,
+        budgetExhausted: true,
+        notifications: [
+          ...next.notifications,
+          {
+            kind: "team_budget_exhausted",
+            message: `delegation budget exhausted: ${ev.spent} of ${ev.budget} tokens; further task spawns refused`,
+          },
+        ],
       };
     case "worker_claimed":
     case "worker_healed":

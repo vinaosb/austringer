@@ -234,6 +234,19 @@ fn v1_shaped_enum_errors_decoding_child_events() {
             state: "success".into(),
             detail: "completed".into(),
         },
+        // The todo-15 budget variants ride the same gate: a v1 client
+        // cannot decode them, so the Notification downgrade is
+        // mandatory on v1 wires.
+        SessionEvent::TeamBudget {
+            spawned: 1,
+            tokens_spent: 25,
+            fan_out_cap: 4,
+            token_budget: 1000,
+        },
+        SessionEvent::TeamBudgetExhausted {
+            spent: 1000,
+            budget: 1000,
+        },
     ];
     for event in events {
         let encoded = serde_json::to_string(&event).unwrap_or_default();

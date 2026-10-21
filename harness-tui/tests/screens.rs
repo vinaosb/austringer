@@ -92,6 +92,7 @@ fn expanded_transcript_tools_and_team_render() {
     assert!(rendered.contains("you: ship the fix"), "{rendered}");
     assert!(rendered.contains("Plan"), "{rendered}");
     assert!(rendered.contains("build"), "{rendered}");
+    assert!(rendered.contains("status: in_progress"), "{rendered}");
     assert!(rendered.contains("cache: 72.5%"), "{rendered}");
     insta::assert_snapshot!(rendered);
 }

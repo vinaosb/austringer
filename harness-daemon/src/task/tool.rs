@@ -13,7 +13,7 @@ use serde_json::Value;
 use harness_core::tools::{ProviderError, ToolSchema};
 use harness_orchestration::telemetry::clamp_summary;
 
-use super::{TaskRefusal, TaskRequest, TaskServices, session_id_of, summary_budget};
+use super::{TaskRefusal, TaskRequest, TaskServices, session_id_of, summary_budget_for};
 
 /// The model-facing delegation tool (one per session registry).
 pub struct TaskTool {
@@ -81,12 +81,15 @@ impl TaskTool {
             })?;
         let label = format!("[task child {} category={category}]", outcome.child_id);
         if outcome.succeeded() {
-            Ok(format!("{label} {}", clamp_summary(&outcome.summary, summary_budget())))
+            Ok(format!(
+                "{label} {}",
+                clamp_summary(&outcome.summary, summary_budget_for(category))
+            ))
         } else {
             Ok(format!(
                 "{label} child failed: {} {}",
-                clamp_summary(&outcome.outcome, summary_budget()),
-                clamp_summary(&outcome.summary, summary_budget())
+                clamp_summary(&outcome.outcome, summary_budget_for(category)),
+                clamp_summary(&outcome.summary, summary_budget_for(category))
             ))
         }
     }
@@ -99,8 +102,13 @@ impl harness_core::tools::ToolProvider for TaskTool {
             name: "task".into(),
             description: "Delegate one bounded subtask to a child session on a configured \
                           delegation category (routing.json categories[]: each pins the model + \
-                          effort). Returns the child's summary, clamped and labeled as child \
-                          output. Fan-out is capped per session (default 4); pass \
+                          effort). Two curated agents ride the same vocabulary as reserved \
+                          names — explore (fast read-only codebase search) and librarian \
+                          (read-only docs/OSS search) — which dispatch on their routing.json \
+                          ROLES entries, are pinned to the cheap pool by the utility-role \
+                          validation, and run under read-only tool allowlists; user categories \
+                          cannot shadow them. Returns the child's summary, clamped and labeled \
+                          as child output. Fan-out is capped per session (default 4); pass \
                           escalate_fan_out=true only when the cap genuinely blocks the work. \
                           Children may not delegate further."
                 .into(),

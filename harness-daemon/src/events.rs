@@ -65,15 +65,18 @@ pub enum SessionEvent {
         model: String,
     },
     /// A launcher child's phase changed (file touches, escalations,
-    /// collisions). Payload fields feed a status aggregator: child id
-    /// plus a stable phase name plus context.
+    /// collisions, an ask blocking the child, resumption). Payload
+    /// fields feed a status aggregator: child id plus a stable phase
+    /// name plus context.
     ChildProgress {
         /// Child session id.
         child: String,
         /// Stable phase name (`file_touched`, `collision`,
-        /// `escalation`).
+        /// `escalation`, `blocked` on a surfaced ask, back to
+        /// `running` when it resolves).
         phase: String,
-        /// Phase context (touched path, contested path, decision).
+        /// Phase context (touched path, contested path, the ask
+        /// summary, decision).
         detail: String,
     },
     /// A launcher child finished (or was quarantined before launch).
@@ -108,6 +111,29 @@ pub enum SessionEvent {
         consumed_micros: u128,
         /// The session cost cap, micro-USD.
         cap_micros: u128,
+    },
+    /// The per-parent delegation budget after a spawn authorization or
+    /// a recorded spend (todo 15 team surfacing; the
+    /// [`crate::task::DelegationSnapshot`] fields). v1 wires receive
+    /// the downgraded `team_budget` notification.
+    TeamBudget {
+        /// Task children spawned this session.
+        spawned: u32,
+        /// Tokens spent across those children.
+        tokens_spent: u64,
+        /// The effective fan-out cap.
+        fan_out_cap: u32,
+        /// The per-parent token budget.
+        token_budget: u64,
+    },
+    /// The per-parent token budget is exhausted: further task spawns
+    /// are refused (todo 15; the typed halt event alongside the
+    /// [`crate::task::TaskRefusal::Tokens`] refusal).
+    TeamBudgetExhausted {
+        /// Tokens spent (at or over the budget).
+        spent: u64,
+        /// The exhausted budget.
+        budget: u64,
     },
 }
 

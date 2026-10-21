@@ -106,6 +106,25 @@ fn downgrade_frame(frame: Frame) -> Option<Frame> {
                  further turns refused"
             ),
         },
+        SessionEvent::TeamBudget {
+            spawned,
+            tokens_spent,
+            fan_out_cap,
+            token_budget,
+        } => SessionEvent::Notification {
+            kind: "team_budget".to_owned(),
+            message: format!(
+                "delegation budget: {spawned}/{fan_out_cap} children, \
+                 {tokens_spent}/{token_budget} tokens"
+            ),
+        },
+        SessionEvent::TeamBudgetExhausted { spent, budget } => SessionEvent::Notification {
+            kind: "team_budget_exhausted".to_owned(),
+            message: format!(
+                "delegation budget exhausted: {spent} of {budget} tokens; \
+                 further task spawns refused"
+            ),
+        },
     };
     Some(Frame { id, event })
 }

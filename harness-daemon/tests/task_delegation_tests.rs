@@ -911,6 +911,134 @@ async fn task_tool_result_is_labeled_child_output_clamped_at_summary_budget() {
 }
 
 // ------------------------------------------------------------------
+// todo 15: budget exhaustion halts further spawns with a typed event
+// ------------------------------------------------------------------
+
+#[tokio::test]
+async fn budget_exhaustion_halts_further_spawns_with_typed_event() {
+    // Given: a 25-token budget and one-turn children spending exactly
+    // 25 tokens each (usage_turn reports 20 input + 5 output).
+    let kit = task_kit(
+        Duration::from_secs(30),
+        vec![(
+            "claude-sonnet-4-6",
+            vec![Step::Turn(usage_turn("one")), Step::Turn(usage_turn("never"))],
+        )],
+        false,
+    );
+    kit.services.set_token_budget(25);
+    let parent = kit.state.session("parent-budget");
+    // When: the first child spends the whole budget.
+    kit.services
+        .run_child(&parent, quick_request("1"))
+        .await
+        .expect("first spends 25");
+    // Then: the parent hub carries the budget surfacing — one event
+    // for the spawn authorization, one after the spend records.
+    let budget_events = hub_events(&parent)
+        .iter()
+        .filter(|event| matches!(event, SessionEvent::TeamBudget { .. }))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(budget_events.len(), 2, "spawn + spend budget events: {budget_events:?}");
+    match &budget_events[1] {
+        SessionEvent::TeamBudget { spawned, tokens_spent, fan_out_cap, token_budget } => {
+            assert_eq!((*spawned, *tokens_spent, *fan_out_cap, *token_budget), (1, 25, 4, 25));
+        }
+        other => panic!("expected TeamBudget, got {other:?}"),
+    }
+    // And: the NEXT spawn on this parent refuses with the typed
+    // exhaustion EVENT on the hub (visible to every attached client).
+    let refused = expect_refusal(kit.services.run_child(&parent, quick_request("2")).await);
+    match &refused {
+        TaskRefusal::Tokens(BudgetBreach::TokensExhausted { spent, budget }) => {
+            assert_eq!((*spent, *budget), (25, 25));
+        }
+        other => panic!("expected TokensExhausted, got {other:?}"),
+    }
+    let exhausted = hub_events(&parent).iter().any(
+        |event| matches!(event, SessionEvent::TeamBudgetExhausted { spent: 25, budget: 25 }),
+    );
+    assert!(
+        exhausted,
+        "typed exhaustion event on the hub: {:?}",
+        hub_events(&parent)
+    );
+    // And: the halt is real — exactly one child ever started.
+    let started = hub_events(&parent)
+        .iter()
+        .filter(|event| matches!(event, SessionEvent::ChildStarted { .. }))
+        .count();
+    assert_eq!(started, 1, "budget exhaustion halts further spawns");
+}
+
+// ------------------------------------------------------------------
+// todo 15: a blocked child surfaces its ask on the parent stream
+// ------------------------------------------------------------------
+
+#[tokio::test]
+async fn blocked_child_surfaces_its_ask_on_the_parent_stream() {
+    // Given: a child whose model calls edit_lines mid-turn with NOBODY
+    // answering the child's ask (150ms timeout), then completes.
+    let kit = task_kit(
+        Duration::from_millis(150),
+        vec![(
+            "claude-sonnet-4-6",
+            vec![
+                Step::Turn(AssistantTurn {
+                    blocks: Vec::new(),
+                    tool_calls: vec![PendingCall {
+                        call_id: "e1".into(),
+                        tool: "edit_lines".into(),
+                        arguments: serde_json::json!({"path": "src/lib.rs"}),
+                    }],
+                    usage: None,
+                }),
+                Step::Turn(usage_turn("resumed after the ask")),
+            ],
+        )],
+        true,
+    );
+    let parent = kit.state.session("parent-blocked");
+    // When: the child runs and its permission ask fires unanswered.
+    let outcome = kit
+        .services
+        .run_child(&parent, quick_request("edit something"))
+        .await
+        .expect("child runs; the ask outcome is not a spawn failure");
+    // Then: the parent stream surfaced the ask as a `blocked`
+    // ChildProgress naming the tool — the aggregation vocabulary a
+    // team panel renders.
+    let events = hub_events(&parent);
+    let blocked = events.iter().any(
+        |event| matches!(
+            event,
+            SessionEvent::ChildProgress { phase, detail, .. }
+                if phase == "blocked" && detail.contains("edit_lines")
+        ),
+    );
+    assert!(blocked, "blocked ask on the parent stream: {events:?}");
+    // And: the resolution surfaced too (the child resumed)…
+    let resumed = events.iter().any(
+        |event| matches!(
+            event,
+            SessionEvent::ChildProgress { phase, .. } if phase == "running"
+        ),
+    );
+    assert!(resumed, "ask resolution surfaces: {events:?}");
+    // …the child finished successfully after the denial, and the
+    // fresh-grant contract still holds (nobody answered, nothing ran).
+    assert_eq!(outcome.summary, "resumed after the ask");
+    assert!(kit.edits_fired.lock().expect("fired").is_empty());
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, SessionEvent::ChildFinished { state, .. } if state == "success")),
+        "child finished: {events:?}"
+    );
+}
+
+// ------------------------------------------------------------------
 // e2e: the parent transcript receives the child summary as a tool result
 // ------------------------------------------------------------------
 

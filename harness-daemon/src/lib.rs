@@ -49,6 +49,7 @@ pub mod server;
 pub mod skills;
 pub mod stages;
 pub mod task;
+pub mod team;
 pub mod tools;
 pub mod transport;
 pub mod usage;

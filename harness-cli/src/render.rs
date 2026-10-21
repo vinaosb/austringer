@@ -115,6 +115,17 @@ fn human_event(event: &SessionEvent) -> Option<String> {
         SessionEvent::CostStop { consumed_micros, cap_micros } => Some(format!(
             "cost stop: session cap reached ({consumed_micros} of {cap_micros} micro-USD) — further turns refused"
         )),
+        SessionEvent::TeamBudget {
+            spawned,
+            tokens_spent,
+            fan_out_cap,
+            token_budget,
+        } => Some(format!(
+            "team budget: {spawned}/{fan_out_cap} children, {tokens_spent}/{token_budget} tokens"
+        )),
+        SessionEvent::TeamBudgetExhausted { spent, budget } => Some(format!(
+            "team budget exhausted: {spent} of {budget} tokens — further task spawns refused"
+        )),
     }
 }
 
@@ -221,6 +232,26 @@ mod tests {
         assert_eq!(bad["ok"], serde_json::json!(false));
         assert!(!outcome_ok("cancelled@4"));
         assert!(outcome_ok("turn_complete"));
+    }
+
+    #[test]
+    fn human_lines_render_team_budget_events() {
+        let budget = human_event(&SessionEvent::TeamBudget {
+            spawned: 2,
+            tokens_spent: 50,
+            fan_out_cap: 4,
+            token_budget: 1000,
+        })
+        .unwrap_or_default();
+        assert!(budget.contains("2/4"), "{budget}");
+        assert!(budget.contains("50/1000"), "{budget}");
+        let exhausted = human_event(&SessionEvent::TeamBudgetExhausted {
+            spent: 1000,
+            budget: 1000,
+        })
+        .unwrap_or_default();
+        assert!(exhausted.contains("exhausted"), "{exhausted}");
+        assert!(exhausted.contains("spawns"), "{exhausted}");
     }
 
     #[test]

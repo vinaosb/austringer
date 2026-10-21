@@ -75,8 +75,37 @@ fn team_rows(app: &App) -> Vec<Line<'static>> {
     children.sort_by_key(|c| (c.task.clone(), c.child.clone()));
     children
         .iter()
-        .map(|c| Line::from(format!("{:<16} {:<10} {}", c.task, c.child, c.state)))
+        .map(|c| {
+            if c.detail.is_empty() {
+                Line::from(format!("{:<16} {:<10} {}", c.task, c.child, c.state))
+            } else {
+                Line::from(format!(
+                    "{:<16} {:<10} {} {}",
+                    c.task, c.child, c.state, c.detail
+                ))
+            }
+        })
         .collect()
+}
+
+/// The team accordion body: the Warp-precedence aggregate, the
+/// delegation budget, then one row per child (todo 15).
+fn team_panel(app: &App) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::styled(
+        format!("status: {}", app.view.team_status().as_str()),
+        Style::default().fg(Color::Cyan),
+    )];
+    if let Some(budget) = app.view.team_budget() {
+        lines.push(Line::styled(
+            format!(
+                "budget: {}/{} children | {}/{} tokens",
+                budget.spawned, budget.fan_out_cap, budget.tokens_spent, budget.token_budget
+            ),
+            dim(),
+        ));
+    }
+    lines.extend(team_rows(app));
+    lines
 }
 
 fn body_lines(app: &App, height: u16) -> Vec<Line<'static>> {
@@ -107,7 +136,7 @@ fn body_lines(app: &App, height: u16) -> Vec<Line<'static>> {
         "team",
         app.panels.team,
         app.view.children().len(),
-        || team_rows(app),
+        || team_panel(app),
     ));
     for note in app.view.notes() {
         lines.push(Line::styled(format!("* {note}"), dim()));

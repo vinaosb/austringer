@@ -1,0 +1,165 @@
+Task 15 — Team surfacing: children, budgets, status precedence
+==============================================================
+Plan: .omo/plans/ecosystem-alignment.md todo 15 (Wave D)
+Date: 2026-10-21
+Tree: uncommitted on top of c588434 (todo-14 curated agents landed
+concurrently in the same window; gates below ran against the merged
+tree).
+
+WHAT SHIPPED
+------------
+1. Warp status-precedence aggregate (receipt: Warp PR#11367/#12084,
+   plan draft C9 "status precedence algorithm
+   InProgress>Blocked>Error>Cancelled>Success + WaitingForEvents"):
+   NEW harness-daemon/src/team.rs — TeamStatus enum, child_status()
+   mapping of the Child* state vocabulary (running/file_touched/
+   escalation -> InProgress; blocked/collision -> Blocked; failed ->
+   Error; quarantined -> Cancelled; success -> Success; unmapped ->
+   InProgress, never terminal), aggregate_of_states() = max
+   precedence, empty team -> WaitingForEvents. The never-flip-
+   terminal-while-a-child-runs invariant is structural: InProgress
+   outranks every terminal status.
+2. Two NEW SessionEvent variants (events.rs):
+   - TeamBudget { spawned, tokens_spent, fan_out_cap, token_budget }
+     (mirrors task::DelegationSnapshot; published after each spawn
+     authorization and after each spend record in run_child)
+   - TeamBudgetExhausted { spent, budget } (the typed halt event,
+     published when authorize() refuses TokensExhausted — alongside
+     the TaskRefusal::Tokens the tool result carries, so every
+     ATTACHED client sees the halt, not just the model)
+3. Blocked-child ask surfacing (task/child.rs): await_child_turn now
+   also selects over the child's mediation control bus; each
+   PermissionAsk/FallbackAsk publishes ChildProgress{phase:"blocked",
+   detail: ask summary} on the PARENT hub, each resolution publishes
+   phase:"running". The control subscription is taken BEFORE the
+   prompt submit (no missed-ask race). ChildProgress doc vocabulary
+   extended (blocked/running).
+4. TUI: transcript.rs — ChildCell gains `detail` (collision glob /
+   ask summary / outcome), TeamBudgetView + SessionView::team_budget()
+   + team_status() (delegates to daemon team::aggregate_of_states);
+   TeamBudgetExhausted also renders a transcript Notice (visible with
+   the accordion closed). render.rs team panel upgraded: aggregate
+   status line + budget line + child rows with inline detail.
+5. CLI: render.rs human() sibling arms for both new variants (the
+   t33 lesson — exhaustive match, workspace clippy gate).
+6. Web: store.js reduces child_started/child_progress/child_finished
+   into state.workers (previously those frames counted as ANOMALIES —
+   the only workers reducer keyed off the dead worker_claimed frames)
+   and team_budget/team_budget_exhausted into state.budget +
+   budgetExhausted; ui.js renders the team panel (aggregate via the
+   JS port of the same precedence algorithm, budget line, exhaustion
+   marker, per-child rows with detail) in the session view.
+7. compat.rs: both new variants downgrade_for_v1 to Notifications
+   (kinds team_budget / team_budget_exhausted, frame id preserved) —
+   the t8 gate extended; team_events_tests' v1-shaped decode-ERROR
+   test now covers the two new payloads too.
+
+RED (captured before production changes)
+----------------------------------------
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon -p harness-tui -p harness-cli"
+Result (compile-red, the intended failing state):
+  error[E0422]: cannot find struct, variant or union type `TeamBudgetView` in this scope
+  error[E0609]: no field `detail` on type `&ChildCell`
+  error[E0599]: no method named `team_status` found for struct `transcript::SessionView`
+  error[E0433]: cannot find type `TeamStatus` in this scope
+  error[E0599]: no variant named `TeamBudget` found for enum `SessionEvent` (x2)
+  error[E0599]: no variant named `TeamBudgetExhausted` found for enum `SessionEvent`
+  error[E0599]: no method named `team_budget` found for struct `transcript::SessionView` (x3)
+  error: could not compile `harness-tui` (lib test) due to 12 previous errors
+JS RED: node --test tests/js -> 1 fail ("store: team frames build
+workers, budget, and exhaustion state" — child_* frames hit the
+anomaly default; workers stayed empty).
+
+GREEN — gates (final, merged tree incl. todo-14's concurrent work)
+------------------------------------------------------------------
+1. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run --no-fail-fast -p harness-daemon -p harness-tui -p harness-cli"
+   Summary: 420 tests run: 420 passed, 1 skipped (pre-existing skip)
+2. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+   -> Finished, zero warnings/errors (WORKSPACE gate: mandatory, two
+   new SessionEvent variants; sibling arms present in harness-cli
+   render.rs AND harness-tui transcript.rs AND compat.rs)
+3. node --test harness-web/tests/js/store.test.mjs harness-web/tests/js/share.test.mjs
+   -> pass 15 / fail 0
+
+GREEN — named acceptance filters
+--------------------------------
+cmd /c "... cargo nextest run -p harness-daemon -p harness-tui -p harness-cli team budget aggregate blocked waiting"
+  Summary: 24 tests run: 24 passed. Highlights:
+  - three_child_fixture_aggregates_in_progress_not_terminal (daemon + TUI twin)
+  - aggregate_terminal_settles_on_highest_terminal_and_empty_waits
+  - compat_downgrades_team_budget_events_to_v1_notifications
+  - v1_shaped_enum_errors_decoding_child_events (extended w/ the 2 new payloads)
+  - budget_exhaustion_halts_further_spawns_with_typed_event
+  - blocked_child_surfaces_its_ask_on_the_parent_stream
+  - team_aggregate_never_flips_terminal_while_a_child_runs (TUI view)
+  - team_budget_frames_surface_and_empty_team_waits (TUI view)
+  - human_lines_render_team_budget_events (CLI)
+  - expanded_transcript_tools_and_team_render (TUI insta snapshot,
+    regenerated + gained a "status: in_progress" content assertion)
+  - team_events_visible_over_sse_v2_typed_and_v1_downgraded (t8 e2e,
+    still green — the new events ride the same lanes)
+
+QA SCENARIOS
+------------
+HAPPY (team panel shows children + aggregate): the TUI snapshot
+  harness-tui/tests/snapshots/screens__expanded_transcript_tools_and_team_render.snap
+  now renders
+    v team (1)
+    status: in_progress
+    build            l-child-build running
+  Budget line renders when a TeamBudget frame arrived (no event -> no
+  line, honest absence); blocked/collision children render their
+  detail inline ("permission: edit_lines src/lib.rs" /
+  "src/** overlaps"). Web session view renders the same panel
+  (data-testid="team", team-status, team-budget, per-child rows).
+FAILURE (budget-exceeded spawn refused + visible):
+  budget_exhaustion_halts_further_spawns_with_typed_event — 25-token
+  budget, first child spends 25: TWO TeamBudget events surface
+  (spawn + spend, fields pinned (1, 25, 4, 25)), the next run_child
+  refuses TaskRefusal::Tokens(BudgetBreach::TokensExhausted{25,25}),
+  TeamBudgetExhausted{25,25} lands on the hub, and ChildStarted count
+  stays 1 (the halt is real). TUI renders "team budget exhausted:
+  ... further task spawns refused" as a transcript notice; web sets
+  budgetExhausted + appends the mirrored notification; v1 wires get
+  kind "team_budget_exhausted".
+
+WARP RECEIPTS
+-------------
+- Warp PR#11367: status precedence algorithm
+  InProgress > Blocked > Error > Cancelled > Success (+ the
+  WaitingForEvents state); adopted as harness-daemon/src/team.rs with
+  the never-terminal-while-a-child-runs invariant encoded by rank
+  order (source: plan draft C9 convergence row; task statement
+  receipt pair PR#11367/#12084).
+- Warp PR#12084: same algorithm family, team/status aggregation
+  receipts carried by the plan (draft C9); no additional mechanism
+  taken beyond the precedence order.
+
+NOTES / DEVIATIONS
+------------------
+- ChildStarted/ChildProgress/ChildFinished already existed from t8
+  (commit 6897f41) with compat arms and TUI/CLI sibling arms — the
+  task text's "ChildProgress/ChildFinished variants to add" was
+  stale; what was actually added are TeamBudget/TeamBudgetExhausted
+  (same compat + sibling discipline applied).
+- Web store.js previously keyed state.workers off worker_claimed/
+  worker_healed — frames that are never emitted since t8 — and
+  counted the LIVE child_* frames as anomalies. Those dead cases are
+  kept (harmless, v1-decodable shapes) and the live reduction added.
+- Launch-path (/launch) children do NOT surface blocked asks yet —
+  only the task-tool path (the delegation surface todo 15 names; the
+  t13 handoff note pointed here). Launch children still publish
+  collision/quarantine Child* events as before.
+- task/mod.rs crossed the 250 pure-LOC ceiling in this window
+  (HEAD 233 -> 293): my budget publications (+~32) plus todo-14's
+  concurrent curated-agent additions in the same file. Split NOT done
+  here because the file now carries a sibling task's UNCOMMITTED
+  work (stay-in-your-lane rule); the natural split (run_child +
+  spawn_and_run + publish_budget + ChildSpawn -> task/runner.rs) is
+  flagged in issues.md for the orchestrator.
+- Snapshot update (insta) for the TUI team panel is an intended
+  behavioral-surface change, reviewed line-by-line; a content
+  assertion for the new aggregate line was added in the same test.
+
+Stopping condition met: gates green + evidence written. NOT committed
+(orchestrator commits).

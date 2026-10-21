@@ -2,7 +2,9 @@
 //! named agents with a capability tier, a default model bracket, a tool
 //! allowlist, a summary budget, and a command-execution policy. Custom
 //! roles extend the builtin three-role split (Droid): explorer = read-only
-//! light tier, worker = read-write medium tier, plus our deep tier.
+//! light tier, worker = read-write medium tier, plus our deep tier — and
+//! the registry also carries the curated cheap-pool read-only agents
+//! (todo 14: explore, librarian).
 
 use crate::authorize::CommandExecutionPolicy;
 
@@ -95,7 +97,34 @@ impl RoleDef {
             },
         }
     }
+
+    /// The curated cheap-pool read-only agent by reserved name (todo
+    /// 14), if `name` is one of [`CURATED_AGENTS`]. Tool names are the
+    /// daemon registry surface the agent's child sessions serve:
+    /// read/query/search only — never `edit_lines`,
+    /// `execute_command`, or the delegation `task` tool.
+    pub fn curated(name: &str) -> Option<Self> {
+        let tools: &[&str] = match name {
+            "explore" => &["view_window", "lsp_query", "search_sessions", "tool_search"],
+            "librarian" => &["view_window", "search_sessions", "tool_search"],
+            _ => return None,
+        };
+        Some(Self {
+            name: name.to_owned(),
+            tier: Tier::Explorer,
+            model: Some("claude-haiku-5-5".into()),
+            tools: tools.iter().map(|tool| (*tool).to_owned()).collect(),
+            summary_budget: 1024,
+            policy: CommandExecutionPolicy::Off,
+        })
+    }
 }
+
+/// The curated cheap-pool read-only agents (todo 14): reserved
+/// delegation names riding the task-tool path. Their models are
+/// pinned by the routing table's utility-role cheap-pool validation
+/// (fail-closed at build); their tools by the read-only allowlist.
+pub const CURATED_AGENTS: &[&str] = &["explore", "librarian"];
 
 /// Duplicate role registration.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -147,11 +176,14 @@ impl Default for RoleRegistry {
 }
 
 impl RoleRegistry {
-    /// The builtin three-role split.
+    /// The builtin three-role split plus the curated pair (todo 14).
     pub fn builtin() -> Self {
         let mut roles = std::collections::BTreeMap::new();
         for tier in [Tier::Explorer, Tier::Worker, Tier::Deep] {
             let def = RoleDef::builtin(tier);
+            roles.insert(def.name.clone(), def);
+        }
+        for def in CURATED_AGENTS.iter().filter_map(|name| RoleDef::curated(name)) {
             roles.insert(def.name.clone(), def);
         }
         Self { roles }

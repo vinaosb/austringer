@@ -165,6 +165,71 @@ test("store: image blocks render as their typed text marker", () => {
   );
 });
 
+test("store: team frames build workers, budget, and exhaustion state", () => {
+  // Given a v2 stream carrying the todo-15 team frames (typed Child*
+  // events plus the delegation budget events).
+  const s = createStore();
+  feed(s, frame(1, {
+    type: "child_started",
+    child: "p-child-task1",
+    task: "quick",
+    role: "worker",
+    model: "claude-sonnet-4-6",
+  }));
+  feed(s, frame(2, {
+    type: "child_progress",
+    child: "p-child-task1",
+    phase: "blocked",
+    detail: "permission: edit_lines src/lib.rs",
+  }));
+  feed(s, frame(3, {
+    type: "team_budget",
+    spawned: 1,
+    tokens_spent: 0,
+    fan_out_cap: 4,
+    token_budget: 1000,
+  }));
+  feed(s, frame(4, {
+    type: "child_started",
+    child: "p-child-task2",
+    task: "deep",
+    role: "worker",
+    model: "claude-opus-4-7",
+  }));
+  feed(s, frame(5, {
+    type: "child_finished",
+    child: "p-child-task2",
+    task: "deep",
+    state: "success",
+    detail: "ok",
+  }));
+  feed(s, frame(6, {
+    type: "team_budget",
+    spawned: 2,
+    tokens_spent: 30,
+    fan_out_cap: 4,
+    token_budget: 1000,
+  }));
+  feed(s, frame(7, {
+    type: "team_budget_exhausted",
+    spent: 1000,
+    budget: 1000,
+  }));
+
+  // Then the workers panel input is exactly the reduced team state.
+  const st = s.getState();
+  assert.equal(st.workers.length, 2);
+  assert.equal(st.workers[0].state, "blocked");
+  assert.equal(st.workers[0].detail, "permission: edit_lines src/lib.rs");
+  assert.equal(st.workers[1].state, "success");
+  assert.equal(st.budget.spawned, 2);
+  assert.equal(st.budget.tokensSpent, 30);
+  assert.equal(st.budget.fanOutCap, 4);
+  assert.equal(st.budget.tokenBudget, 1000);
+  assert.equal(st.budgetExhausted, true);
+  assert.equal(st.hud.anomalies, 0, "team frames are known shapes, not anomalies");
+});
+
 test("proto: decode is total — garbage in, typed failure out", () => {
   assert.equal(decode("not json").ok, false);
   assert.equal(decode('{"type":42}').ok, false);

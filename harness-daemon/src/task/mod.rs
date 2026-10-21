@@ -7,7 +7,12 @@
 //! [`crate::routing::SessionRouter`] under
 //! [`RouteRequest::Category`], so the category's model + effort (and
 //! the ask-first fallback contract) follow the child exactly as roles
-//! follow a session.
+//! follow a session. The curated cheap-pool read-only agents (todo
+//! 14: `explore`, `librarian`) ride the same path as RESERVED
+//! category names — they dispatch under their
+//! [`harness_intel::routing::Role`] utility routes (cheap-pool
+//! validated fail-closed at table build; user categories cannot
+//! shadow them) and run under [`ReadOnlyApproval`] narrowing.
 //!
 //! Storm guards (T10/A6, model-profiles.md: hard caps plus explicit
 //! escalation criteria): the fan-out cap (default 4, escalation is a
@@ -23,6 +28,7 @@
 
 mod budget;
 mod child;
+mod readonly;
 mod tool;
 
 use std::collections::HashMap;
@@ -47,6 +53,7 @@ pub use budget::{
     FanOutExceeded,
 };
 pub use child::{ChildObserved, await_child_turn};
+pub use readonly::ReadOnlyApproval;
 pub use tool::TaskTool;
 
 /// Default per-parent token budget across task() calls: the absolute
@@ -76,6 +83,40 @@ fn summary_budget() -> usize {
         })
 }
 
+/// The clamp ceiling for one task() dispatch: the curated agent's own
+/// budget (todo 14) or the worker-role default.
+fn summary_budget_for(category: &str) -> usize {
+    harness_orchestration::role::RoleDef::curated(category)
+        .map_or_else(summary_budget, |def| def.summary_budget)
+}
+
+/// One curated cheap-pool read-only agent dispatch (todo 14): the
+/// reserved task-tool name, the utility role its turns route under
+/// (cheap-pool validated fail-closed at routing-table build), and the
+/// read-only tool allowlist enforced at the child's approval stage.
+struct CuratedAgent {
+    /// Curated name (also the ChildStarted role label).
+    name: String,
+    /// The utility role the child's turns dispatch under.
+    role: harness_intel::routing::Role,
+    /// Read-only tool allowlist.
+    tools: Vec<String>,
+}
+
+/// Resolves the curated agent for a task() category, if the name is
+/// one of the reserved curated keys. Curated names take precedence
+/// over user categories of the same name — the cheap-pool and
+/// read-only guarantees are the point of the curated agents, and a
+/// category must not smuggle one onto a frontier model.
+fn curated(category: &str) -> Option<CuratedAgent> {
+    let def = harness_orchestration::role::RoleDef::curated(category)?;
+    Some(CuratedAgent {
+        name: def.name.clone(),
+        role: harness_intel::routing::Role::from_key(category)?,
+        tools: def.tools.clone(),
+    })
+}
+
 /// Every way a task spawn is refused before a child exists.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TaskRefusal {
@@ -88,7 +129,9 @@ pub enum TaskRefusal {
     /// The per-parent token budget is exhausted.
     #[error(transparent)]
     Tokens(#[from] BudgetBreach),
-    /// The category has no route (the error lists the valid ones).
+    /// The dispatch (category or curated role route) has no route —
+    /// category errors list the valid ones; curated agents name the
+    /// missing role route.
     #[error(transparent)]
     Category(#[from] harness_intel::routing::ResolutionError),
     /// The parent session host is no longer resolvable.
@@ -230,18 +273,34 @@ impl TaskServices {
     ) -> Result<TaskChildOutcome, TaskRefusal> {
         DepthGuard::default()
             .check(depth_of(parent.session_id()) + 1)?;
-        let resolution = self
-            .intake
-            .table
-            .resolve(RouteRequest::Category(request.category.clone()))?;
+        let curated = curated(&request.category);
+        let resolution = self.intake.table.resolve(match &curated {
+            Some(agent) => RouteRequest::Role(agent.role),
+            None => RouteRequest::Category(request.category.clone()),
+        })?;
         let ledger = self.ledger_for(parent.session_id());
-        let ordinal = ledger
+        let authorized = ledger
             .lock()
             .map_err(|_| TaskRefusal::ParentGone)?
-            .authorize(request.escalate_fan_out)?;
+            .authorize(request.escalate_fan_out);
+        let ordinal = match authorized {
+            Ok(ordinal) => ordinal,
+            // The typed halt event (todo 15): every attached client
+            // sees WHY spawns stopped, not just the refusing tool
+            // result.
+            Err(TaskRefusal::Tokens(BudgetBreach::TokensExhausted { spent, budget })) => {
+                parent.publish(SessionEvent::TeamBudgetExhausted { spent, budget });
+                return Err(BudgetBreach::TokensExhausted { spent, budget }.into());
+            }
+            Err(other) => return Err(other),
+        };
+        if let Ok(budget) = ledger.lock() {
+            publish_budget(parent, &budget);
+        }
         let spawn = ChildSpawn {
             child_id: format!("{}-child-task{ordinal}", parent.session_id()),
             model: resolution.model.model,
+            curated,
         };
         let spawned = self.spawn_and_run(parent, &request, &spawn).await;
         let finished = match &spawned {
@@ -261,6 +320,7 @@ impl TaskServices {
             Ok((observed, child)) => {
                 if let Ok(mut budget) = ledger.lock() {
                     let _ = budget.record_spend(observed.tokens);
+                    publish_budget(parent, &budget);
                 }
                 Ok(TaskChildOutcome {
                     child_id: spawn.child_id,
@@ -276,9 +336,10 @@ impl TaskServices {
     }
 
     /// The task-8 child-session spawn: fresh host, per-child registry,
-    /// category-routed inference (the child's spend books into the
-    /// PARENT ledger — the todo-33 aggregation contract), submit, and
-    /// the bounded turn await.
+    /// category- or curated-role-routed inference (the child's spend
+    /// books into the PARENT ledger — the todo-33 aggregation
+    /// contract), submit, and the bounded turn await. Curated agents
+    /// (todo 14) run under the read-only approval narrowing.
     async fn spawn_and_run(
         &self,
         parent: &Arc<SessionHost>,
@@ -299,6 +360,10 @@ impl TaskServices {
         );
         let executor = (self.launch.executor_factory)(&session_dir, child.event_sink());
         let ComposedInference { inference, identity } = (self.launch.inference_factory)();
+        let route = match &spawn.curated {
+            Some(agent) => RouteRequest::Role(agent.role),
+            None => RouteRequest::Category(request.category.clone()),
+        };
         let inference = match (identity, parent.cost_ledger()) {
             (Some(identity), Some(ledger)) => {
                 Box::new(
@@ -309,40 +374,72 @@ impl TaskServices {
                         ledger,
                         identity,
                     )
-                    .under_request(RouteRequest::Category(request.category.clone())),
+                    .under_request(route),
                 ) as Box<dyn harness_core::agent_loop::Inference>
             }
             // Identity-less factories (scripted stacks) or unledgered
             // parents run the factory stack unrouted — honest absence.
             _ => inference,
         };
+        let stages = match &spawn.curated {
+            Some(agent) => child.readonly_stages(executor, &agent.name, agent.tools.clone()),
+            None => child.standard_stages(executor),
+        };
         child
-            .spawn_engine(session_dir, child.standard_stages(executor), inference, cmd_rx)
+            .spawn_engine(session_dir, stages, inference, cmd_rx)
             .map_err(|e| TaskRefusal::Spawn(format!("engine spawn: {e}")))?;
         parent.publish(SessionEvent::ChildStarted {
             child: spawn.child_id.clone(),
             task: request.category.clone(),
-            role: TASK_ROLE.to_owned(),
+            role: spawn.curated.as_ref().map_or_else(
+                || TASK_ROLE.to_owned(),
+                |agent| agent.name.clone(),
+            ),
             model: spawn.model.clone(),
         });
         let mut live = child.hub_subscribe();
+        // Subscribed BEFORE the submit so no mid-turn ask can slip
+        // between the submit and the await (todo 15's blocked-child
+        // surfacing reads this lane).
+        let mut control = child.mediator().subscribe();
         child
             .commands()
             .send(HostCommand::Submit(request.prompt.clone()))
             .await
             .map_err(|e| TaskRefusal::Spawn(format!("prompt submit: {e}")))?;
-        let observed = await_child_turn(&child, &mut live, CHILD_TURN_TIMEOUT).await;
+        let observed = await_child_turn(parent, &child, &mut live, &mut control, CHILD_TURN_TIMEOUT).await;
         observed.map(|observed| (observed, child))
     }
 }
 
+/// Publishes the current delegation-budget snapshot as a team event
+/// (the `DelegationSnapshot` fields; todo 15's budget surfacing).
+fn publish_budget(parent: &Arc<SessionHost>, budget: &DelegationBudget) {
+    let DelegationSnapshot {
+        spawned,
+        tokens_spent,
+        fan_out_cap,
+        token_budget,
+    } = budget.snapshot();
+    parent.publish(SessionEvent::TeamBudget {
+        spawned,
+        tokens_spent,
+        fan_out_cap,
+        token_budget,
+    });
+}
+
 /// One authorized child placement (the spawn plan `run_child` hands the
-/// spawn path).
+/// spawn path): identity plus, for curated agents (todo 14), the
+/// read-only dispatch.
 struct ChildSpawn {
     /// Child session id (`{parent}-child-task{ordinal}`).
     child_id: String,
-    /// The category's resolved model (rides the ChildStarted event).
+    /// The resolved model (rides the ChildStarted event).
     model: String,
+    /// The curated-agent dispatch, when the task() name was a reserved
+    /// curated key (None = a plain user category).
+    curated: Option<CuratedAgent>,
 }
 
 /// A session's delegation depth: ids in the `-child-` namespace are
