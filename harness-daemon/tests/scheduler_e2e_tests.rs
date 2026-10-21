@@ -220,7 +220,7 @@ async fn restart_between_fire_and_completion_fails_closed() -> Result<(), Box<dy
     }
     let memory2 = Arc::new(MemorySink::new());
     let restarted_sink = sink_in(dir.path(), Arc::clone(&memory2));
-    restarted_sink.on_turn_finished("auto-nightly-1", 1, "task_completed");
+    restarted_sink.on_turn_finished("auto-nightly-1", 1, "task_completed", Vec::new());
     let rows = restarted_sink.history().for_automation("nightly")?;
     let last = rows.last().cloned().unwrap_or_else(|| panic!("no rows"));
     assert_eq!(

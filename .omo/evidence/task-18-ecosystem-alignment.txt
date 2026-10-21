@@ -1,0 +1,166 @@
+Task 18 — Test evidence -> completion gate integration (ecosystem-alignment plan, todo 18)
+====================================================================================================
+
+Scope: gate criteria accept "tests: suite X green" bindings over task-17 TestReports;
+verdict evidence cites test-run event ids; REFUTED cites failing test ids; missing run
+=> INCONCLUSIVE (never CONFIRMED without bound evidence).
+
+Files: harness-daemon/src/gate.rs (TestRunEvidence + CriteriaGate binding extension),
+harness-daemon/src/bridge.rs (watcher collects run_tests observations, verdict sink binds
+them into the evidence bundle + refutation citation in the TurnComplete notification),
+harness-daemon/src/tools/run_tests/report.rs consumed READ-ONLY (untouched).
+
+----------------------------------------------------------------------------------------------------
+1. RED PHASE (tests written first; fail for the right reason: API absent)
+----------------------------------------------------------------------------------------------------
+
+Command:
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon bound_green_suite bound_red_suite missing_test_run latest_bound_run suite_binding suite_keyword mixed_test_and_plain test_run_evidence green_suite_run red_suite_run"
+
+Output (compile-fail = the new acceptance tests cannot pass against unextended gate):
+
+   Compiling harness-daemon v0.1.0 (C:\Users\vsbb1\source\repos\harness\harness-daemon)
+  error[E0425]: cannot find type `TestRunEvidence` in this scope
+      --> harness-daemon\src\gate.rs:131:24
+  error[E0425]: cannot find type `TestRunEvidence` in this scope
+      --> harness-daemon\src\gate.rs:146:10
+  error[E0422]: cannot find struct, variant or union type `TestRunEvidence` in this scope
+      --> harness-daemon\src\gate.rs:161:9
+  error[E0560]: struct `gate::EvidenceBundle` has no field named `test_runs`
+      --> harness-daemon\src\gate.rs:137:13
+  error[E0433]: cannot find type `TestRunEvidence` in this scope
+      --> harness-daemon\src\gate.rs:397:22
+  error[E0433]: cannot find type `TestRunEvidence` in this scope
+      --> harness-daemon\src\gate.rs:404:17
+  error: could not compile `harness-daemon` (lib test) due to 6 previous errors
+
+New tests (8 gate-level + 3 bridge-level acceptance):
+  gate.rs: bound_green_suite_confirms_with_structured_run,
+           bound_red_suite_refutes_citing_failing_test_ids,
+           missing_test_run_is_inconclusive_despite_verbatim_claim,
+           latest_bound_run_decides_the_suite_state,
+           suite_binding_must_match_the_run_suite,
+           suite_keyword_form_binds_the_named_suite,
+           mixed_test_and_plain_criteria_confirm_together,
+           test_run_evidence_parses_only_the_first_observation_line
+  bridge.rs: green_suite_run_confirms_and_verdict_cites_test_run_event,
+             red_suite_run_refutes_citing_failing_test_ids,
+             missing_test_run_stays_inconclusive_never_confirmed
+
+----------------------------------------------------------------------------------------------------
+2. IMPLEMENTATION (2026-10-21T23:33Z)
+----------------------------------------------------------------------------------------------------
+
+harness-daemon/src/gate.rs:
+  - NEW pub struct TestRunEvidence { event_id: u64, suite: String, report: TestReport }
+    with TestRunEvidence::from_observation(event_id, &[ContentBlock]) -> Option<Self>:
+    parses the FIRST line of the first text block of a run_tests tool observation as the
+    TestReport JSON (line 2 is the [safety] suffix — todo-17 handoff honored: parse by
+    line, not by prefix). suite = report.framework (cargo-nextest / cargo-libtest /
+    override) — the identifier a tests: criterion binds.
+  - EvidenceBundle gains pub test_runs: Vec<TestRunEvidence> (derives drop Eq -> PartialEq
+    because TestReport is not Eq).
+  - CriteriaGate::review extended: parse_test_criterion() recognizes "tests: <suite> green"
+    and "tests: suite <suite> green". A tests: criterion is covered ONLY by the LATEST
+    TestRunEvidence with a matching suite whose summary.failed == 0 (todo-17 handoff:
+    suite-green keys on summary.failed == 0, NOT entry-count arithmetic — nextest-ignored
+    tests appear only in summary counts). Verbatim link claims NEVER cover a tests:
+    criterion (missing_test_run_is_inconclusive_despite_verbatim_claim pins this — a
+    prose "done" claim can never confirm a suite binding). A red latest run REFUTES via
+    refute_run(), which cites every failing test NAME (entry ids) and falls back to the
+    summary count when a hand-authored report lists no failed entries. Plain criteria and
+    empty-criteria semantics are byte-identical to task-41 (all task-41 gate tests pass
+    unchanged). No SessionEvent/ServerMsg variants added; no compat.rs change.
+
+harness-daemon/src/bridge.rs:
+  - watch_turn collects structured test evidence while it collects event ids: a recorded
+    Event::ToolCall{tool: "run_tests"} registers its call_id; the matching
+    Event::ToolResult{call_id} is parsed via TestRunEvidence::from_observation(frame.id)
+    — the ToolResult frame id IS the test-run event id. Call ids are consumed on their
+    result (one result per call).
+  - on_turn_finished(session_id, turn, outcome, test_runs) binds the collected runs into
+    the EvidenceBundle: one EvidenceLink per observed test run, label
+    "test-run:{event_id} suite:{suite}" (verdict-evidence drilldown), a green run claims
+    its suite criterion, a red run claims nothing (it contradicts, not covers). The
+    existing all-frames Verdict evidence is unchanged (task-41 semantics preserved) and
+    therefore includes the test-run event ids by construction.
+  - The TurnComplete notification message now carries the refutation reason for REFUTED
+    verdicts: "(gate: refuted: tests: cargo-nextest green — 2 failing test(s): a, b)" —
+    the human-facing surface where failing test ids are observable e2e.
+
+harness-daemon/tests/scheduler_e2e_tests.rs: 1-line 4th-arg update at the one external
+on_turn_finished call site (restart path, Vec::new()).
+
+Read-only consumption verified: harness-daemon/src/tools/run_tests/report.rs NOT modified
+(git status clean for the file).
+
+----------------------------------------------------------------------------------------------------
+3. GREEN PHASE + OBSERVABLES
+----------------------------------------------------------------------------------------------------
+
+Command (new tests only):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon bound_green_suite bound_red_suite missing_test_run latest_bound_run suite_binding suite_keyword mixed_test_and_plain test_run_evidence green_suite_run red_suite_run"
+
+Output:
+  Starting 11 tests across 31 binaries (327 tests skipped)
+      PASS gate::tests::test_run_evidence_parses_only_the_first_observation_line
+      PASS gate::tests::suite_binding_must_match_the_run_suite
+      PASS gate::tests::bound_red_suite_refutes_citing_failing_test_ids
+      PASS bridge::tests::missing_test_run_stays_inconclusive_never_confirmed
+      PASS gate::tests::mixed_test_and_plain_criteria_confirm_together
+      PASS gate::tests::bound_green_suite_confirms_with_structured_run
+      PASS gate::tests::latest_bound_run_decides_the_suite_state
+      PASS bridge::tests::green_suite_run_confirms_and_verdict_cites_test_run_event
+      PASS gate::tests::missing_test_run_is_inconclusive_despite_verbatim_claim
+      PASS gate::tests::suite_keyword_form_binds_the_named_suite
+      PASS bridge::tests::red_suite_run_refutes_citing_failing_test_ids
+  Summary [   0.276s] 11 tests run: 11 passed, 327 skipped
+
+Full crate (acceptance gate):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --no-fail-fast"
+  Summary [  22.928s] 337 tests run: 337 passed, 1 skipped
+  (includes all task-41 gate tests, task-1 verdict_frame_carries_non_empty_evidence,
+  v1 replay corpus byte-identity, compat withholding, scheduler e2e restart-fails-closed)
+
+Workspace clippy (t33 discipline; no SessionEvent variants changed, sibling arms untouched):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+  -> Finished `dev` profile ... 0 warnings/errors
+
+Known machine-local flake re-confirmed during verification (documented todo-6/todo-17):
+  provider_binary_tests::unconfigured_daemon_fails_typed_over_the_wire failed ONCE under
+  full-suite contention, PASSED in isolation immediately after AND in the final
+  --no-fail-fast full run above. Pre-existing, not a repo defect.
+
+----------------------------------------------------------------------------------------------------
+4. QA SCENARIOS
+----------------------------------------------------------------------------------------------------
+
+HAPPY — "verdict evidence drilldown reaches test cases" (pinned by
+bridge::tests::green_suite_run_confirms_and_verdict_cites_test_run_event):
+  Given a scheduled run (automation criteria ["tests: cargo-nextest green"]) whose session
+  publishes a recorded run_tests ToolCall + a recorded ToolResult whose first line is a
+  green TestReport JSON (2 passed entries) + TurnFinished:
+  - history rows record verdict "confirmed";
+  - the broadcast ServerMsg::Verdict frame is Confirmed and its evidence id list CONTAINS
+    the ToolResult frame id (the test-run event id);
+  - drilldown: the frame at that id in the hub ring is the Recorded ToolResult and its
+    first line parses back into the TestReport with the per-test entries
+    ["rtfx_a passes", "rtfx_b passes"] — verdict -> event id -> test cases, three hops,
+    all asserted.
+
+FAILURE — "missing test run yields INCONCLUSIVE" (pinned by
+bridge::tests::missing_test_run_stays_inconclusive_never_confirmed):
+  Given the same scheduled binding but a turn that runs a NON-test tool (view_window) and
+  completes: history verdict is "inconclusive" and the wire Verdict kind is Inconclusive —
+  never CONFIRMED without bound evidence. The gate-level twin
+  (missing_test_run_is_inconclusive_despite_verbatim_claim) proves the stronger property:
+  even a link claiming the criterion text VERBATIM cannot confirm a tests: binding.
+
+RED suite path (pinned by bridge::tests::red_suite_run_refutes_citing_failing_test_ids):
+  Given a red report (1 passed, "rtfx_a fails"/"rtfx_b fails"): history verdict "refuted",
+  wire Verdict kind Refuted, and the TurnComplete notification cites both failing test ids.
+
+Post-write review measurements (pure-prod LOC, tests excluded):
+  gate.rs 141 (healthy) | bridge.rs 260 (over the 250 ceiling — pre-existing ~225 +
+  task-mandated additions; flagged in issues.md, natural split named there) |
+  scheduler_e2e_tests.rs is a test file (N/A).
