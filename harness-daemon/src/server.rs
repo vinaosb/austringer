@@ -168,6 +168,16 @@ impl DaemonState {
         }
     }
 
+    /// Look up a live session host WITHOUT creating one (read-only
+    /// routes and notification resolvers; unknown ids stay unknown).
+    #[must_use]
+    pub fn try_session(&self, id: &str) -> Option<Arc<SessionHost>> {
+        match self.hosts.lock() {
+            Ok(guard) => guard.get(id).cloned(),
+            Err(poisoned) => poisoned.into_inner().get(id).cloned(),
+        }
+    }
+
     /// Register the bound listener for reload handoff.
     pub fn register_listener(&self, listener: std::net::TcpListener) {
         match self.listener.lock() {
@@ -281,9 +291,11 @@ pub fn build_router(state: Arc<DaemonState>) -> Router {
         .route("/s/{sid}", get(crate::handlers::session_page))
         .route("/s/{sid}/attach", get(crate::handlers::attach_ws))
         .route("/s/{sid}/events", get(crate::handlers::sse_events))
+        .route("/s/{sid}/history", get(crate::handlers::session_history))
         .route("/s/{sid}/cmd", post(crate::handlers::post_command))
         .route("/s/{sid}/media", post(crate::media::upload_media))
         .route("/s/{sid}/media/{hash}", get(crate::media::get_media))
+        .route("/automations", get(crate::handlers::list_automations))
         .route("/worker", get(crate::ws::worker_ws))
         .route("/admin/reload", post(crate::handlers::reload_endpoint))
         .layer(middleware::from_fn_with_state(Arc::clone(&state), auth_mw))

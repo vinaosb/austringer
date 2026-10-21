@@ -1,0 +1,126 @@
+# Task 2 evidence — History, automations, and team HTTP/WS surfaces (Wave F, plan todo 2)
+
+Session: opencode:ses_ea774e945ffe45I9Wp629UGOW1
+Date: 2026-10-20/21 (local)
+Machine note: all cargo invocations go through `cmd /c %TEMP%\opencode\cargo-env.cmd <cmd>`
+(C:\BuildTools MSVC 14.44 pin; see task-1 evidence). CARGO_BUILD_JOBS=3 on test runs (LNK1102
+link OOM above 3 jobs). CARGO_TARGET_DIR=C:\ct is machine-global; an in-flight concurrent
+worker (todo 7, harness-cli) briefly held the build lock — the first run waited, then proceeded.
+
+Tests (new file harness-daemon/tests/history_automations_tests.rs):
+- history_route_returns_runs_with_verdict        (happy: JSON array + verdict field)
+- history_route_unknown_sid_is_typed_404         (failure: typed 404, never 500)
+- automations_route_lists_fixture_with_next_fire (happy: fixture automation + next-fire + last verdict)
+- sched_notification_surfaces_to_sse_client      (scheduled fixture run -> sched + verdict kinds on SSE)
+Plus new unit test in src/engine.rs: event_stream_sink_maps_only_sched_and_verdict.
+
+## Scenario 1 — RED (failing-first: tests written BEFORE implementation)
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test history_automations_tests"
+Exit: 101 (compile failure — the new tests cannot compile against the unextended surface;
+same convention as task-1's accepted compile-red for missing API)
+Decisive output:
+    error[E0432]: unresolved import `harness_daemon::engine::EventStreamSink`
+       --> harness-daemon\tests\history_automations_tests.rs:17:5
+    error[E0599]: no method named `try_session` found for struct `Arc<DaemonState>`
+       --> harness-daemon\tests\history_automations_tests.rs:224:32
+       help: there is a method `session` with a similar name
+    error: could not compile `harness-daemon` (test "history_automations_tests") due to 2 previous errors
+(The route-only tests would additionally fail at runtime with 404 — /s/{sid}/history and
+/automations do not exist yet — but the binary cannot build until the sink API exists.)
+Full log preserved at: .omo/evidence/task-2-red-run.log
+
+## Implementation (files touched; frozen files protocol.rs/compat.rs/mediation.rs/usage.rs NOT touched)
+
+- harness-daemon/src/engine.rs: `HostResolver` + `EventStreamSink` (a NotificationSink mapping
+  NotificationKind::ScheduledFired -> event-stream kind "sched", TurnComplete -> "verdict";
+  ApprovalNeeded/WorkerLost keep their existing lanes and are NOT published) + unit test
+  `event_stream_sink_maps_only_sched_and_verdict`. The engine's existing "steer" publish path
+  is untouched; the new kinds ride beside it on the same SessionEvent::Notification variant.
+- harness-daemon/src/server.rs: `DaemonState::try_session` (read-only lookup, never creates) +
+  routes `GET /s/{sid}/history` and `GET /automations` (both behind the existing auth layer;
+  no admin/reload semantics exposed).
+- harness-daemon/src/handlers.rs: `session_history` (RunHistory::list filtered by session;
+  typed 404 `unknown_session` when the sid is neither live nor has rows — media.rs
+  typed_error convention) + `list_automations` (AutomationStore re-read from disk + validated,
+  CronExpr::next_after for next_fire_minute — null while disabled — and last verdict from
+  RunHistory rows) + the SSE fix below.
+- harness-daemon/src/bin/harness-daemon.rs: production wiring — EventStreamSink registered in
+  the RunSink notifier beside TracingSink and the OSC stdout sink.
+- harness-daemon/tests/history_automations_tests.rs: the four acceptance tests.
+
+## Scenario 1.5 — pre-existing SSE bug FOUND by the new test (root-cause fix in-scope)
+
+First green attempt failed: the SSE stream ENDED right after hello_ack:
+    FAIL sched_notification_surfaces_to_sse_client
+    sse kinds: "stream ended before both kinds: data: {\"type\":\"hello_ack\",\"version\":2,\"last_event_id\":0}\n\n"
+Root cause (pre-existing): handlers.rs `sse_events` built a throwaway inbound channel whose
+sender dropped instantly; pump_client's select! arm then read closed-inbound as ClientGone and
+terminated the connection immediately after replay + hello_ack — every /s/{sid}/events client
+was cut off from live events. Never observed before because the only prior SSE consumer
+(examples/qa_transcript.rs) reads the first 3 lines and disconnects.
+Fix (handlers.rs): the pump task holds the inbound sender for the connection's lifetime
+(`let _read_only = inbound_tx;` inside the spawned task), delivering the documented intent
+("SSE is read-only: no inbound, no idle eviction"). pump_client/transport.rs untouched.
+In-scope justification: the acceptance criterion ("a scheduled fixture run surfaces a sched
+Notification to an attached SSE client") is untestable against a stream that dies post-ack.
+
+## Scenario 2 — GREEN: new tests only
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test history_automations_tests"
+Exit: 0
+    Summary [   0.122s] 4 tests run: 4 passed, 0 skipped
+      PASS history_route_unknown_sid_is_typed_404
+      PASS history_route_returns_runs_with_verdict
+      PASS automations_route_lists_fixture_with_next_fire
+      PASS sched_notification_surfaces_to_sse_client
+
+## Scenario 3 — GREEN: full daemon suite (acceptance command)
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon"
+Exit: 0
+    Summary [  12.271s] 209 tests run: 209 passed, 1 skipped
+Includes todo-1's protocol_frames_tests (usage/fallback/verdict frames) and the v1 corpus
+byte-identical replays — the "steer" path and v1 wires are unbroken by the new kinds.
+
+## Scenario 4 — GREEN: plan QA happy filters (verbatim)
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon history_route automations_route"
+Exit: 0
+    Summary [   0.256s] 3 tests run: 3 passed, 207 skipped
+      PASS automations_route_lists_fixture_with_next_fire
+      PASS history_route_returns_runs_with_verdict
+      PASS history_route_unknown_sid_is_typed_404   <- failure scenario: typed 404, not 500
+      (asserts status != 500 AND error.code == "unknown_session")
+
+## Scenario 5 — GREEN: sched/verdict event-stream surface + clippy
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon sched_notification event_stream_sink"
+Exit: 0
+    Summary [   0.086s] 2 tests run: 2 passed, 208 skipped
+      PASS engine::tests::event_stream_sink_maps_only_sched_and_verdict
+      PASS history_automations_tests::sched_notification_surfaces_to_sse_client
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy -p harness-daemon --all-targets -- -D warnings"
+Exit: 0 (Finished dev profile — zero warnings; rust-analyzer LSP declined on this machine,
+clippy --all-targets -D warnings is the equivalent+stronger check)
+
+## Notes
+
+- No commit made (orchestrator commits after verification). harness-cli churn visible in
+  git status belongs to the concurrent todo-7 worker; untouched here.
+- Response shapes for todos 20/22 consumers:
+    GET /s/{sid}/history -> [ {automation_id, session_id, fired_at_minute, outcome, verdict, network} ]
+    GET /automations     -> { "automations": [ {id, name, cron, pack, enabled,
+                                                 next_fire_minute (epoch-minute UTC | null),
+                                                 last_verdict (string | null)} ] }
+- LOC after change (pure, blank/comment stripped): handlers.rs 240 (<=250), server.rs 234
+  (<=250), engine.rs 295 (over the 250 ceiling — pre-existing ~230-pure module + the mandated
+  sink and its unit test; flagged to the orchestrator rather than refactoring the engine
+  driver mid-wave), tests/history_automations_tests.rs 262 (integration fixtures, 4 scenarios).
+

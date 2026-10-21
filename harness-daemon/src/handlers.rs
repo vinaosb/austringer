@@ -1,6 +1,7 @@
 //! HTTP handlers (root, SPA deep-link, SSE stream, JSON commands,
-//! session list, reload) extracted from `server` for the size budget.
-//! Every handler runs BEHIND the auth middleware.
+//! session list, run history, automations, reload) extracted from
+//! `server` for the size budget. Every handler runs BEHIND the auth
+//! middleware.
 
 use std::sync::Arc;
 
@@ -11,11 +12,24 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 use crate::attach::HostCommand;
+use crate::automations::{AutomationStore, FilePackGate};
 use crate::protocol::{ClientMsg, ServerMsg, SessionCommand, encode_server};
 use crate::reload;
+use crate::run_history::RunHistory;
+use crate::scheduler::CronExpr;
 use crate::server::DaemonState;
 use crate::transport::{PumpParams, pump_client};
 use crate::web;
+
+fn typed_error(status: StatusCode, code: &str, extra: serde_json::Value) -> Response {
+    let mut error = serde_json::json!({ "code": code });
+    if let serde_json::Value::Object(fields) = extra {
+        for (key, value) in fields {
+            error[key] = value;
+        }
+    }
+    (status, Json(serde_json::json!({ "error": error }))).into_response()
+}
 pub(crate) async fn root() -> Response {
     web::serve("/")
 }
@@ -50,12 +64,16 @@ pub(crate) async fn sse_events(
         .filter(|version| crate::protocol::version_compatible(*version))
         .unwrap_or(1);
     let (outbound_tx, outbound_rx) = tokio::sync::mpsc::channel::<ServerMsg>(64);
+    // SSE is read-only: no inbound, no idle eviction (the
+    // client-server heartbeat is SSE's own keep-alive). The empty
+    // inbound channel's sender is held by the pump task for the
+    // connection's lifetime — a dropped sender reads as client-gone
+    // and would cut live subscribers off right after the hello ack.
+    let (inbound_tx, inbound_rx) = tokio::sync::mpsc::channel::<ClientMsg>(1);
     tokio::spawn({
         let host = Arc::clone(&host);
         async move {
-            // SSE is read-only: no inbound, no idle eviction (the
-            // client-server heartbeat is SSE's own keep-alive).
-            let (_, inbound_rx) = tokio::sync::mpsc::channel::<ClientMsg>(1);
+            let _read_only = inbound_tx;
             let _ = pump_client(
                 &host,
                 "sse-readonly",
@@ -139,6 +157,90 @@ pub(crate) async fn post_command(
 
 pub(crate) async fn list_sessions(State(state): State<Arc<DaemonState>>) -> Response {
     Json(serde_json::json!({ "sessions": state.session_ids() })).into_response()
+}
+
+/// `GET /s/{sid}/history` — the session's scheduled-run lifecycle rows
+/// (`{data}/runs.jsonl`): a bare JSON array of run records (started +
+/// completion rows, each carrying its `verdict` field). A session is
+/// known when it is live OR has history rows; anything else is a typed
+/// 404, never a 500.
+pub(crate) async fn session_history(
+    State(state): State<Arc<DaemonState>>,
+    Path(sid): Path<String>,
+) -> Response {
+    let rows = RunHistory::open(&state.config.data_dir)
+        .and_then(|history| history.list())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| row.session_id == sid)
+        .collect::<Vec<_>>();
+    if rows.is_empty() && state.try_session(&sid).is_none() {
+        return typed_error(
+            StatusCode::NOT_FOUND,
+            "unknown_session",
+            serde_json::json!({ "session": sid }),
+        );
+    }
+    Json(rows).into_response()
+}
+
+/// `GET /automations` — the declarative automation set read from disk
+/// (`automations.json` under the data dir, revalidated like every
+/// load): name, cron, pack, enabled, next fire (epoch minute, UTC;
+/// null while disabled), and the last gate verdict from run history.
+pub(crate) async fn list_automations(State(state): State<Arc<DaemonState>>) -> Response {
+    let data_dir = &state.config.data_dir;
+    let gate = match FilePackGate::open(&data_dir.join("pack-tiers.json")) {
+        Ok(gate) => gate,
+        Err(e) => {
+            return typed_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "pack_tiers_unreadable",
+                serde_json::json!({ "detail": e.to_string() }),
+            );
+        }
+    };
+    let defs = match AutomationStore::load(data_dir, &gate) {
+        Ok(store) => store.defs().to_vec(),
+        Err(e) => {
+            return typed_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "automations_invalid",
+                serde_json::json!({ "detail": e.to_string() }),
+            );
+        }
+    };
+    let history = RunHistory::open(data_dir).ok();
+    let now_minute = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() / 60)
+        .unwrap_or(0);
+    let automations = defs
+        .iter()
+        .map(|def| {
+            let next_fire_minute = if def.enabled {
+                CronExpr::parse(&def.cron)
+                    .ok()
+                    .and_then(|cron| cron.next_after(now_minute))
+            } else {
+                None
+            };
+            let last_verdict = history
+                .as_ref()
+                .and_then(|h| h.for_automation(&def.id).ok())
+                .and_then(|rows| rows.into_iter().rev().find_map(|row| row.verdict));
+            serde_json::json!({
+                "id": def.id,
+                "name": def.name,
+                "cron": def.cron,
+                "pack": def.pack,
+                "enabled": def.enabled,
+                "next_fire_minute": next_fire_minute,
+                "last_verdict": last_verdict,
+            })
+        })
+        .collect::<Vec<_>>();
+    Json(serde_json::json!({ "automations": automations })).into_response()
 }
 
 pub(crate) async fn reload_endpoint(State(state): State<Arc<DaemonState>>) -> Response {

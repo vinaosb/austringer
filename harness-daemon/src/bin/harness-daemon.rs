@@ -245,6 +245,12 @@ async fn run() -> Result<(), String> {
     let mut notifier = harness_daemon::notify::Notifier::new();
     notifier.add(Arc::new(harness_daemon::notify::TracingSink));
     notifier.add(Arc::new(harness_daemon::osc::stdout_sink("harness")));
+    // Scheduled-run notifications mirror onto the owning session's
+    // event stream (kinds sched/verdict) so attached clients see them.
+    notifier.add(Arc::new(harness_daemon::engine::EventStreamSink::new(Arc::new({
+        let state = Arc::clone(&state);
+        move |sid: &str| state.try_session(sid)
+    }))));
     let run_sink = match harness_daemon::bridge::RunSink::open(
         &data_dir,
         Arc::new(harness_daemon::gate::CriteriaGate),
