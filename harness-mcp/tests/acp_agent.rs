@@ -8,7 +8,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use harness_mcp::acp::types::{AcpContentBlock, PROTOCOL_VERSION, StopReason};
+use harness_mcp::acp::types::{
+    AcpContentBlock, PermissionOption, PermissionOptionKind, PermissionOutcome,
+    PROTOCOL_VERSION, StopReason,
+};
 use harness_mcp::acp::{
     AcpAgent, AcpEngine, AcpError, AcpPrompt, AcpWire, IdeChannel, SessionUpdate,
 };
@@ -312,4 +315,86 @@ async fn malformed_lines_and_unknown_methods_are_typed_errors() {
         }
     };
     assert!(second.contains("method not found"), "{second}");
+}
+
+/// An engine whose turn asks the IDE for permission before ending.
+struct AskingEngine {
+    outcome_seen: Arc<std::sync::Mutex<Option<PermissionOutcome>>>,
+}
+
+#[async_trait]
+impl AcpEngine for AskingEngine {
+    async fn on_prompt(
+        &self,
+        prompt: AcpPrompt,
+        ide: &dyn IdeChannel,
+    ) -> Result<StopReason, AcpError> {
+        let _ = prompt;
+        let options = vec![
+            PermissionOption::from_kind(PermissionOptionKind::AllowOnce),
+            PermissionOption::from_kind(PermissionOptionKind::RejectOnce),
+        ];
+        let outcome = ide
+            .request_permission(options, std::time::Duration::from_secs(5))
+            .await?;
+        if let Ok(mut seen) = self.outcome_seen.lock() {
+            *seen = Some(outcome);
+        }
+        Ok(StopReason::EndTurn)
+    }
+}
+
+#[tokio::test]
+async fn permission_request_round_trips_through_the_channel() {
+    let (to_ide_tx, mut to_ide_rx) = tokio::sync::mpsc::channel(16);
+    let outcome_seen: Arc<std::sync::Mutex<Option<PermissionOutcome>>> = Arc::default();
+    let agent = Arc::new(AcpAgent::new(Arc::new(AskingEngine {
+        outcome_seen: Arc::clone(&outcome_seen),
+    })));
+    let wire: Arc<dyn AcpWire> = Arc::new(MpscWire { to_ide: to_ide_tx });
+    agent
+        .handle_line(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":null}}"#,
+            &wire,
+        )
+        .await
+        .expect("init");
+    agent
+        .handle_line(
+            r#"{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"s-1","prompt":[{"type":"text","text":"go"}]}}"#,
+            &wire,
+        )
+        .await
+        .expect("prompt");
+    let mut stop_reason = None;
+    while let Some(line) = to_ide_rx.recv().await {
+        let parsed: serde_json::Value = serde_json::from_str(&line).expect("json");
+        if parsed["method"] == "session/request_permission" {
+            assert_eq!(parsed["params"]["sessionId"], "s-1");
+            assert_eq!(parsed["params"]["options"][0]["optionId"], "allow_once");
+            assert_eq!(parsed["params"]["options"][1]["kind"], "reject_once");
+            let agent = Arc::clone(&agent);
+            let wire = Arc::clone(&wire);
+            let answer = format!(
+                r#"{{"jsonrpc":"2.0","id":{},"result":{{"outcome":{{"outcome":"selected","optionId":"reject_once"}}}}}}"#,
+                parsed["id"]
+            );
+            agent
+                .handle_line(&answer, &wire)
+                .await
+                .expect("answer delivered");
+            continue;
+        }
+        if let Some(reason) = parsed["result"]["stopReason"].as_str() {
+            stop_reason = Some(reason.to_owned());
+            break;
+        }
+    }
+    assert_eq!(stop_reason.as_deref(), Some("end_turn"));
+    assert_eq!(
+        outcome_seen.lock().ok().and_then(|guard| guard.clone()),
+        Some(PermissionOutcome::Selected {
+            option_id: "reject_once".to_owned()
+        })
+    );
 }

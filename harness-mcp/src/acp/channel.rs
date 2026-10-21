@@ -1,6 +1,7 @@
 //! The IDE-facing channel one ACP prompt run sees: `session/update`
 //! notifications out, `fs/read_text_file` requests back to the IDE
-//! (bounded), and cooperative cancellation.
+//! (bounded), `session/request_permission` requests (bounded by the
+//! caller), and cooperative cancellation.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,7 +10,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::agent::{AcpError, AcpWire, AgentState, IdeChannel};
-use super::types::SessionUpdate;
+use super::types::{PermissionOption, PermissionOutcome, SessionUpdate};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -20,11 +21,14 @@ pub(super) struct ChannelImpl {
 }
 
 impl ChannelImpl {
-    async fn read_text_file_inner(&self, path: &str) -> Result<String, AcpError> {
-        let request_id = self
-            .state
+    fn next_request_id(&self) -> i64 {
+        self.state
             .next_request_id
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    async fn read_text_file_inner(&self, path: &str) -> Result<String, AcpError> {
+        let request_id = self.next_request_id();
         let (tx, rx) = tokio::sync::oneshot::channel();
         {
             let Ok(mut pending) = self.state.pending_reads.lock() else {
@@ -47,6 +51,38 @@ impl ChannelImpl {
                     pending.remove(&request_id);
                 }
                 Err(AcpError::ReadTimeout(path.to_owned()))
+            }
+        }
+    }
+
+    async fn request_permission_inner(
+        &self,
+        options: Vec<PermissionOption>,
+        timeout: Duration,
+    ) -> Result<PermissionOutcome, AcpError> {
+        let request_id = self.next_request_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let Ok(mut pending) = self.state.pending_permissions.lock() else {
+                return Err(AcpError::Transport("permission registry poisoned".to_owned()));
+            };
+            pending.insert(request_id, tx);
+        }
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "session/request_permission",
+            "params": { "sessionId": self.session_id, "options": options }
+        });
+        self.wire.send(&request.to_string())?;
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(outcome)) => Ok(outcome),
+            Ok(Err(_)) => Err(AcpError::Transport("permission channel closed".to_owned())),
+            Err(_) => {
+                if let Ok(mut pending) = self.state.pending_permissions.lock() {
+                    pending.remove(&request_id);
+                }
+                Err(AcpError::PermissionTimeout)
             }
         }
     }
@@ -75,5 +111,17 @@ impl IdeChannel for ChannelImpl {
             .lock()
             .map(|cancels| cancels.contains(&self.session_id))
             .unwrap_or(false)
+    }
+
+    fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    async fn request_permission(
+        &self,
+        options: Vec<PermissionOption>,
+        timeout: Duration,
+    ) -> Result<PermissionOutcome, AcpError> {
+        self.request_permission_inner(options, timeout).await
     }
 }

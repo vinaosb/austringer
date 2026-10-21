@@ -183,12 +183,12 @@ fn routing_intake(
     Some(Arc::new(harness_daemon::routing::RoutingIntake { table, models }))
 }
 
-async fn run() -> Result<(), String> {
-    let config = config_from_env_and_args()?;
+/// Builds the shared daemon state (provider composition, projection
+/// mediation, dispatcher intake, in-process executors) — the seam both
+/// serving modes start from.
+async fn build_state(config: DaemonConfig) -> Result<Arc<DaemonState>, String> {
     std::fs::create_dir_all(&config.data_dir)
         .map_err(|e| format!("data dir {}: {e}", config.data_dir.display()))?;
-    let ipc_name = config.ipc_name.clone();
-
     // M32: config-driven provider composition over the production
     // reqwest transport (the same seam cassette tests swap for in-memory
     // transports). An unset key variable fails HERE — at startup, typed
@@ -203,8 +203,7 @@ async fn run() -> Result<(), String> {
     // its M7 caps cover the media, else the configured capable utility
     // role via the T42 routing table. Computed before `config` moves
     // into the daemon state.
-    let routing_json =
-        std::fs::read_to_string(config.data_dir.join("routing.json")).ok();
+    let routing_json = std::fs::read_to_string(config.data_dir.join("routing.json")).ok();
     let session = config.provider.as_ref().and_then(session_mediation);
     let utility = config.provider.as_ref().and_then(|provider| {
         routing_json
@@ -230,7 +229,21 @@ async fn run() -> Result<(), String> {
     let core_executors = Arc::new(harness_daemon::tools::CoreExecutors::in_process());
     core_executors.start_lsp_guard();
     state.executor_factory = core_executors.executor_factory();
-    let state = Arc::new(state);
+    Ok(Arc::new(state))
+}
+
+async fn run() -> Result<(), String> {
+    // Todo 12: the ACP stdio agent mode — stdio is the process's only
+    // surface (no listener, no scheduler); sessions persist to the
+    // same store root and mediation runs through the same queues.
+    let acp_stdio = std::env::args().skip(1).any(|arg| arg == "--acp");
+    let config = config_from_env_and_args()?;
+    let state = build_state(config).await?;
+    if acp_stdio {
+        return harness_daemon::acp::run_acp_stdio(state).await;
+    }
+    let state = Arc::clone(&state);
+    let ipc_name = state.config.ipc_name.clone();
 
     // Reload successor mode: adopt the inherited listener instead of
     // binding (zero-downtime handoff — the socket never went down).

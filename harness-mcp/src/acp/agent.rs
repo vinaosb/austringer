@@ -22,7 +22,10 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use super::channel::ChannelImpl;
-use super::types::{AcpContentBlock, PROTOCOL_VERSION, SessionUpdate, StopReason};
+use super::types::{
+    AcpContentBlock, PermissionOption, PermissionOutcome, PROTOCOL_VERSION, SessionUpdate,
+    StopReason,
+};
 
 /// Why the agent core failed one message.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -36,6 +39,10 @@ pub enum AcpError {
     /// An fs/read_text_file request the IDE never answered in time.
     #[error("acp read_text_file timed out for {0}")]
     ReadTimeout(String),
+    /// A session/request_permission request the IDE never answered
+    /// in time.
+    #[error("acp request_permission timed out")]
+    PermissionTimeout,
 }
 
 /// Outbound line sink (daemon adapts stdio; tests adapt mpsc).
@@ -53,6 +60,17 @@ pub trait IdeChannel: Send + Sync {
     async fn read_text_file(&self, path: &str) -> Result<String, AcpError>;
     /// Whether `session/cancel` arrived for this session.
     fn is_cancelled(&self) -> bool;
+    /// The session this channel serves (the engine routes daemon
+    /// work by it).
+    fn session_id(&self) -> &str;
+    /// Asks the IDE to resolve a permission (`session/request_permission`),
+    /// bounded by `timeout` (a leak bound only — the caller's own
+    /// deadline governs fail-closed resolution).
+    async fn request_permission(
+        &self,
+        options: Vec<PermissionOption>,
+        timeout: std::time::Duration,
+    ) -> Result<PermissionOutcome, AcpError>;
 }
 
 /// The engine behind the ACP surface (the daemon wires the real loop).
@@ -78,6 +96,8 @@ pub(super) struct AgentState {
     pub(super) initialized: AtomicBool,
     pub(super) cancels: Mutex<HashSet<String>>,
     pub(super) pending_reads: Mutex<HashMap<i64, tokio::sync::oneshot::Sender<String>>>,
+    pub(super) pending_permissions:
+        Mutex<HashMap<i64, tokio::sync::oneshot::Sender<PermissionOutcome>>>,
     pub(super) next_request_id: AtomicI64,
     pub(super) next_session: AtomicU64,
 }
@@ -98,6 +118,7 @@ impl AcpAgent {
                 initialized: AtomicBool::new(false),
                 cancels: Mutex::new(HashSet::new()),
                 pending_reads: Mutex::new(HashMap::new()),
+                pending_permissions: Mutex::new(HashMap::new()),
                 next_request_id: AtomicI64::new(1),
                 next_session: AtomicU64::new(0),
             }),
@@ -257,20 +278,42 @@ impl AcpAgent {
 
     fn on_response(&self, message: &Value) -> Result<(), AcpError> {
         let id = message.get("id").and_then(Value::as_i64);
+        let Some(id) = id else { return Ok(()) };
+        // Permission responses carry the outcome union; read
+        // responses carry a plain content string. Route by shape.
+        if let Some(outcome) = message
+            .get("result")
+            .cloned()
+            .and_then(|result| serde_json::from_value::<PermissionOutcomeWrapper>(result).ok())
+            .map(|wrapper| wrapper.outcome)
+        {
+            if let Ok(mut pending) = self.state.pending_permissions.lock()
+                && let Some(sender) = pending.remove(&id)
+            {
+                sender.send(outcome).ok();
+            }
+            return Ok(());
+        }
         let content = message
             .get("result")
             .and_then(|result| result.get("content"))
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        if let Some(id) = id
-            && let Ok(mut pending) = self.state.pending_reads.lock()
+        if let Ok(mut pending) = self.state.pending_reads.lock()
             && let Some(sender) = pending.remove(&id)
         {
             sender.send(content).ok();
         }
         Ok(())
     }
+}
+
+/// Decode helper: the permission response's `result` is the outcome
+/// union under a single `outcome` key.
+#[derive(serde::Deserialize)]
+struct PermissionOutcomeWrapper {
+    outcome: PermissionOutcome,
 }
 
 fn ok_response(id: Value, result: Value) -> String {

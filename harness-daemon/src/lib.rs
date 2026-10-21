@@ -8,6 +8,7 @@
 //! remote-worker split-brain tool execution with claim-based
 //! reconciliation; zero-downtime reload; and optional OTel export.
 
+pub mod acp;
 pub mod activity;
 pub mod ask;
 pub mod attach;
