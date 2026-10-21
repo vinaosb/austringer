@@ -229,7 +229,21 @@ async fn build_state(config: DaemonConfig) -> Result<Arc<DaemonState>, String> {
     let core_executors = Arc::new(harness_daemon::tools::CoreExecutors::in_process());
     core_executors.start_lsp_guard();
     state.executor_factory = core_executors.executor_factory();
-    Ok(Arc::new(state))
+    let state = Arc::new(state);
+    // Todo 13: the task(category) delegation tool rides the same
+    // registries whenever the dispatcher intake is bound (routing.json
+    // carries the categories). Bound AFTER the state exists (the parent
+    // resolver reads it) and BEFORE any session opens — construction
+    // order is the whole contract.
+    if let Some(intake) = state.routing.clone() {
+        let resolver_state = Arc::clone(&state);
+        core_executors.bind_task_services(Arc::new(harness_daemon::task::TaskServices::new(
+            intake,
+            Arc::clone(&state.launch_services),
+            Arc::new(move |sid: &str| resolver_state.try_session(sid)),
+        )));
+    }
+    Ok(state)
 }
 
 async fn run() -> Result<(), String> {

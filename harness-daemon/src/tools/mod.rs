@@ -40,6 +40,10 @@ pub struct CoreExecutors {
     edit_lines: Arc<dyn ToolProvider>,
     execute_command: Arc<dyn ToolProvider>,
     lsp: LspQueryTool,
+    /// The delegation services (todo 13); set once by the binary AFTER
+    /// DaemonState exists — sessions open later, so every registry sees
+    /// the bound services. Unbound = the `task` tool is absent.
+    task: std::sync::OnceLock<Arc<crate::task::TaskServices>>,
 }
 
 impl CoreExecutors {
@@ -58,7 +62,14 @@ impl CoreExecutors {
                 router: harness_lsp::LspRouter::new(harness_lsp::LspConfig::new(root.clone())),
                 root,
             },
+            task: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Binds the task-delegation services; every registry opened
+    /// afterwards serves the `task` tool.
+    pub fn bind_task_services(&self, services: Arc<crate::task::TaskServices>) {
+        let _ = self.task.set(services);
     }
 
     /// Starts the RSS-sampled LSP server guard (must run inside a
@@ -93,6 +104,11 @@ impl CoreExecutors {
         registry
             .register(Arc::new(crate::search::SearchSessionsTool::new(session_dir)))
             .map_err(|error| io::Error::other(error.to_string()))?;
+        if let Some(services) = self.task.get() {
+            registry
+                .register(Arc::new(crate::task::TaskTool::new(session_dir, Arc::clone(services))))
+                .map_err(|error| io::Error::other(error.to_string()))?;
+        }
         Ok(registry)
     }
 

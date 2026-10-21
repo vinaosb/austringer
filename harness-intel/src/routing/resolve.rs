@@ -27,6 +27,15 @@ pub enum ResolutionError {
         /// The unconfigured tier.
         tier: Tier,
     },
+    /// The category has no route in the config; the valid category keys
+    /// ride the error so callers can steer the model toward them.
+    #[error("category {category:?} has no route configured — valid categories: {valid:?}")]
+    UnconfiguredCategory {
+        /// The offending key.
+        category: String,
+        /// Every configured category key (sorted).
+        valid: Vec<String>,
+    },
     /// Benchmark routing found no proven model at the tier's floor.
     #[error(
         "no benchmark-proven model meets the {tier:?} score floor — refusing to route to an unproven model"
@@ -47,6 +56,8 @@ pub enum ResolutionSource {
     Role(Role),
     /// A complexity-tier default.
     Tier(Tier),
+    /// A delegation-category route (todo 13).
+    Category(String),
     /// Benchmark-driven live routing: cheapest proven model at the tier's
     /// floor, at the tier's effort.
     Benchmark {
@@ -118,6 +129,21 @@ pub fn resolve(
                     price_per_mtok: winner.price_per_mtok,
                 },
                 true,
+            )
+        }
+        RouteRequest::Category(key) => {
+            let Some(route) = table.categories.get(&key) else {
+                return Err(ResolutionError::UnconfiguredCategory {
+                    valid: table.categories.keys().cloned().collect(),
+                    category: key,
+                });
+            };
+            to_resolution(
+                table,
+                &route.model,
+                route.effort,
+                ResolutionSource::Category(key),
+                false,
             )
         }
     }

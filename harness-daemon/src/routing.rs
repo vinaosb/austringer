@@ -118,6 +118,10 @@ pub struct SessionRouter {
     /// routing table has no entry for the session role.
     configured: ModelIdentity,
     dispatcher: Dispatcher,
+    /// The request every turn dispatches under (the session role by
+    /// default; task-tool children dispatch under their delegation
+    /// category, todo 13).
+    request: RouteRequest,
     /// The live per-model stack, rebuilt only when the dispatched
     /// identity (or effort) changes.
     stack: Option<(ModelIdentity, Option<String>, Box<dyn Inference>)>,
@@ -145,19 +149,34 @@ impl SessionRouter {
             host,
             ledger,
             configured,
+            request: SESSION_ROLE,
             stack: None,
         }
     }
 
+    /// Dispatches every turn under `request` instead of the session
+    /// role (the `task(category)` child path; the request is pinned for
+    /// the router's lifetime, so stickiness keys on it from the first
+    /// dispatch).
+    #[must_use]
+    pub fn under_request(mut self, request: RouteRequest) -> Self {
+        self.request = request;
+        self
+    }
+
     /// Resolves this turn's dispatch: the pinned (or hop-overridden)
-    /// route under the session role, or the session's configured model
-    /// when the role is unrouted (explicit fallback, never a hop).
+    /// route under the session's request, or the session's configured
+    /// model when the request is unrouted (explicit fallback, never a
+    /// hop).
     fn resolve_dispatch(&mut self) -> Result<ActiveDispatch, InferenceError> {
-        match self.dispatcher.dispatch_turn(&self.task, SESSION_ROLE) {
+        match self.dispatcher.dispatch_turn(&self.task, self.request.clone()) {
             Ok(dispatch) => Ok(ActiveDispatch::Routed(Box::new(dispatch))),
             Err(ResolutionError::UnconfiguredRole { .. }) => {
                 Ok(ActiveDispatch::Configured(self.configured.clone()))
             }
+            Err(ResolutionError::UnconfiguredCategory { .. }) => Err(InferenceError::Failure(
+                "routing: task category unrouted mid-session — refusing to guess".to_owned(),
+            )),
             Err(other) => Err(InferenceError::Failure(format!(
                 "route resolution failed: {other}"
             ))),

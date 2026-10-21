@@ -176,8 +176,8 @@ impl Tier {
 
 /// What the caller asks the router for. `Tier`/`Benchmarked` requests are
 /// AUTO-ROUTED (router's choice — priced with the routing discount);
-/// `Role` requests follow the user's own config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `Role`/`Category` requests follow the user's own config.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RouteRequest {
     /// Resolve one role's configured route.
     Role(Role),
@@ -186,12 +186,17 @@ pub enum RouteRequest {
     /// Benchmark-driven live routing: the cheapest benchmark-proven
     /// model meeting the tier's score floor, at the tier's effort.
     Benchmarked(Tier),
+    /// Resolve a delegation category's configured route (todo 13): the
+    /// model-facing `task(category)` tool dispatches child sessions
+    /// under this request. Category keys are user-authored config, so
+    /// the variant carries the key.
+    Category(String),
 }
 
 impl RouteRequest {
     /// True when the router (not the user's config) picked the model.
     #[must_use]
-    pub fn auto_routed(self) -> bool {
+    pub fn auto_routed(&self) -> bool {
         matches!(self, Self::Tier(_) | Self::Benchmarked(_))
     }
 }

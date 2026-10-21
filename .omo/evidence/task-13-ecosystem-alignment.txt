@@ -1,0 +1,218 @@
+# Task 13 — task(category) delegation tool + RoutingSpec categories
+# Plan: .omo/plans/ecosystem-alignment.md (Wave D, todo 13)
+# Date: 2026-10-21. Executor: Sisyphus-junior (deep-logical-reasoning category).
+# NOT COMMITTED — orchestrator commits.
+
+## 1. Scope delivered
+
+- harness-intel: `Category` variant on `RouteRequest` (routing/mod.rs; enum drops
+  `Copy` — the variant carries the user-authored category key), `categories[]`
+  on `RoutingSpec` (`CategoryRouteSpec`: category + model + effort + score_floor,
+  like tiers; score_floor REQUIRED like tiers), build-time validation in
+  `RoutingTable::build` (unknown model, effort-grid trap, `DuplicateCategory`
+  typed error), `ResolutionError::UnconfiguredCategory { category, valid }`
+  (the error LISTS the valid category keys, sorted), and
+  `ResolutionSource::Category(key)` (auto_routed=false — the user's config owns
+  the pick, like roles).
+- harness-daemon `src/task/` (new module, split under the 250-LOC ceiling):
+  - `mod.rs` (233 pure LOC): `TaskServices` (routing intake + LaunchServices +
+    parent-host resolver + lazily-created per-parent ledgers), `TaskRequest`,
+    `TaskChildOutcome` (child host rides along for todo-15 surfacing),
+    `TaskRefusal` (Depth / FanOut / Tokens / Category / ParentGone / Spawn),
+    `run_child` guard chain: DepthGuard -> category resolve -> budget authorize
+    -> spawn; ChildStarted/ChildFinished on the PARENT hub; token spend folded
+    into the parent's aggregate after the turn.
+  - `budget.rs` (73): `DelegationBudget` / `DelegationSnapshot` /
+    `FanOutExceeded` + `DEFAULT_FAN_OUT_CAP=4`, `ESCALATED_FAN_OUT_CAP=
+    ABSOLUTE_MAX_CHILDREN(32)`, `DEFAULT_TASK_TOKEN_BUDGET=ABSOLUTE_MAX_TOKENS
+    (20M)` — the nameable per-parent aggregate todo 15 consumes (BudgetGuard
+    stays per-launch; this is the explicit cross-call aggregate).
+  - `child.rs` (101): bounded TurnFinished await accumulating the last
+    assistant text (summary source) + Usage frames (token aggregate +
+    (provider, model, effort) proof of what served); lag recovery via hub
+    snapshot.
+  - `tool.rs` (111): the model-facing `task` provider (category + prompt +
+    escalate_fan_out), registered per-session through the task-3 registry
+    pattern. Depth is checked BEFORE the parent resolves (a child invoking
+    task sees fork.rs's DepthExceeded vocabulary). Success result =
+    `[task child {id} category={cat}] {clamp_summary(summary, worker.summary_budget=2048)}`
+    — labeled child output, marker'd clamp, never a bare truncation. Refusals
+    are typed tool text; the session continues.
+- SessionRouter (daemon routing.rs): per-instance dispatch request
+  (`under_request(RouteRequest)` builder); task children dispatch under
+  `RouteRequest::Category`, so stickiness pins per child and EVERY model change
+  flows through `SessionHost::mediate_fallback` (the todo-9 ask-first
+  machinery, unchanged). Unrouted-category-mid-session is a typed refusal,
+  never a guess.
+- CoreExecutors (tools/mod.rs): `task: OnceLock<Arc<TaskServices>>` +
+  `bind_task_services`; `open_registry` registers the TaskTool when bound
+  (unbound = tool absent — routing.json without categories has no task
+  surface, consistent with todo 9's absent-document posture).
+- bin/harness-daemon.rs: `build_state` binds TaskServices after DaemonState
+  exists (parent resolver over `try_session`) and before any session opens;
+  binary-size/budget note: no new dependency; perf-gate re-measurement belongs
+  to the wave gate (todo-12 precedent).
+- Fresh grant state: children are constructed via `SessionHost::new` +
+  `standard_stages` — a fresh mediator, a fresh approval chain (fresh grant
+  store), a fresh registry. Nothing session-scoped crosses the spawn boundary;
+  pinned by test (below), not by convention.
+
+## 2. RED capture (before implementation)
+
+Command: `cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-intel -p harness-daemon routing_categories task_"`
+
+harness-intel (test "routing_categories"): 8 compile errors —
+`no variant ... named Category found for enum RouteRequest` (x3),
+`no variant ... Category found for enum ResolutionSource`,
+`no variant named UnconfiguredCategory found for enum ResolutionError` (x2),
+`no variant named DuplicateCategory found for enum RoutingConfigError`.
+`error: could not compile harness-intel (test "routing_categories") due to 8 previous errors`.
+
+harness-daemon (test "task_delegation_tests"):
+`error[E0432]: unresolved import harness_daemon::task  --> harness-daemon\tests\task_delegation_tests.rs:32:21 could not find task in harness_daemon`
+`error: could not compile harness-daemon (test "task_delegation_tests") due to 5 previous errors`
+(exit 101 both). RED is compile-level: the tested surface did not exist.
+
+## 3. GREEN — plan acceptance command
+
+`cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-intel -p harness-daemon -p harness-orchestration --no-fail-fast"`
+=> `Summary [ 11.657s] 412 tests run: 412 passed, 1 skipped` (the 1 skip is
+pre-existing, unchanged).
+
+New tests (14):
+- harness-intel::routing_categories (5): category_request_resolves_the_configured_model_and_effort;
+  unknown_category_fails_closed_listing_valid_categories;
+  duplicate_category_keys_are_typed_build_errors;
+  category_effort_off_the_grid_fails_closed;
+  absent_categories_field_keeps_existing_documents_parsing.
+- harness-daemon::task_delegation_tests (9):
+  (a) task_child_routes_to_category_model_and_returns_labeled_summary
+      (lookups==[claude-sonnet-4-6]; Usage cites ("anthropic","claude-sonnet-4-6",Some("low"));
+       ChildStarted{child:"parent-a-child-task1", task:"quick", role:"worker", model:"claude-sonnet-4-6"};
+       ChildFinished success; prompt recorded in child transcript).
+  -   task_two_parallel_category_children_both_return_summaries (tokio::join! two
+      category children; both summaries; 2x ChildStarted on the parent hub).
+  -   task_unknown_category_is_typed_error_listing_valid_categories (services-level
+      UnconfiguredCategory{valid:["deep","quick"]}; tool-level typed text lists them;
+      zero spawns).
+  (b) delegation_budget_default_cap_is_four_with_typed_escalation_refusal
+      (DEFAULT_FAN_OUT_CAP==4; ordinals 1..=4; 5th => FanOutExceeded{spawned:4,cap:4}
+      whose message names `escalate_fan_out`; authorize(true) => ordinal 5) and
+      task_fan_out_cap_aggregates_across_calls_and_needs_escalation (cap 2: two
+      spawns OK, third refused typed, SAME call with escalate_fan_out=true spawns
+      and returns its summary — aggregate is per parent session, across calls).
+  (c) task_child_session_invoking_task_is_refused_depth_exceeded (tool bound in a
+      `-child-` namespace session dir; execute => typed text
+      "subagent depth 2 exceeds max 1" (fork.rs DepthGuard default max 1);
+      zero lookups/spawns).
+  (d) task_children_spawn_with_fresh_grant_state (parent mediator holds an
+      AllowSession answer for edit_lines; child calls edit_lines on the same
+      shape; NOBODY answers the child's ask (150ms child ask timeout) => the
+      recording executor NEVER fires, the child transcript carries
+      "denied by approval stage", and the child turn still completes —
+      inherited AllowSession/GrantAlways(Session) grants would have let it run).
+  (e) task_token_budget_aggregates_per_parent_session_across_calls (budget 35,
+      25 tokens/child: call1 25, call2 25 (breach recorded, spend counts), call3
+      => TaskRefusal::Tokens(BudgetBreach::TokensExhausted{spent:50,budget:35});
+      a DIFFERENT parent session still spawns — per-parent keying, not global).
+  -   task_chain_hop_mid_task_surfaces_fallback_ask_never_substitutes (category
+      model hard-fails; verbatim chain proposes gpt-5-5; child-ask unacknowledged
+      twice => child-semester notifications "model fallback proposed:
+      claude-sonnet-4-6 -> gpt-5-5" + "retrying same model" (DEGRADED notice),
+      lookups==[sonnet] only — the hop NEVER composed; ChildFinished failed).
+  -   task_tool_result_is_labeled_child_output_clamped_at_summary_budget (3000-char
+      child summary => result starts with the [task child ... category=quick]
+      label, ends with " [truncated]", <=2048 bytes past the label — the worker
+      role's summary_budget through clamp_summary).
+  -   task_tool_e2e_child_summary_reaches_parent_transcript (DaemonState session
+      whose registry serves the task tool; parent model (routed on the default
+      role) calls task mid-turn; aux-tool permission ask answered allow-once;
+      parent transcript's ToolResult contains the labeled child summary;
+      lookups==[claude-opus-4-7 (parent role), claude-sonnet-4-6 (child category)]).
+
+Filtered confirmation run (the QA-named filters):
+`cargo nextest run -p harness-intel -p harness-daemon routing_categories task_ delegation_budget`
+=> `Summary [ 0.529s] 14 tests run: 14 passed`.
+
+## 4. QA scenarios (plan-mandated observables)
+
+- happy — two parallel category tasks return summaries:
+  task_two_parallel_category_children_both_return_summaries PASS.
+- failure — unknown category typed error LISTING the valid ones:
+  task_unknown_category_is_typed_error_listing_valid_categories PASS (valid list
+  ["deep","quick"] rides both the typed refusal and the model-facing tool text).
+- chain hop mid-task triggers FallbackAsk, never silent substitution:
+  task_chain_hop_mid_task_surfaces_fallback_ask_never_substitutes PASS (ask
+  surfaced via the child's notification pair + zero hop composition; the
+  acknowledged-hop variant of the same machinery is dispatcher_live_tests'
+  dispatcher_live_acknowledged_hop_revalidates_effort_grid, still green).
+
+## 5. Gates
+
+- nextest three-crate: 412/412 passed (above).
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean
+  (`Finished dev profile ... in 48.73s`, zero diagnostics).
+- No SessionEvent/ServerMsg variants added (no compat.rs or frontend
+  sibling-arm changes needed; t33 lesson checked).
+- Pure-LOC ceilings (awk-equivalent count): task/mod.rs 233, task/budget.rs 73,
+  task/child.rs 101, task/tool.rs 111, routing/mod.rs 125, routing/config.rs 105,
+  routing/table.rs 218, routing/resolve.rs 243, routing/dispatch.rs 148,
+  daemon routing.rs 238, tools/mod.rs 156. Pre-existing over-ceiling file touched
+  surgically: bin/harness-daemon.rs 304 pure LOC (+16 for the task binding;
+  flagged since todo 9 at 288 — the run()/build_state split stays an
+  orchestrator-level refactor, per the todo-9/todo-11 precedent).
+
+## 6. Receipts
+
+- OmO categories — `task(category)` as the delegation vocabulary with
+  user-authored category keys (research synthesis §35 / harness-research.md
+  L3720: "Task categories as the delegation vocabulary (plan todo 13:
+  task(category) grafted onto RouteRequest): adopted with OmO's category
+  mapping as prior art").
+- Claude Code fork-subagents default-on (2.1.30x window; changelog aggregators
+  releasebot/gradually, 2026-10) — same receipt row.
+- Cursor Projects (2026-09-10), Qwen managed-agent lead-mailbox (v0.25.x,
+  2026-10-09->19), Amp Pucks (ampcode.com/news, 2026-10-06) — same row.
+- model-profiles.md T10 (A6 subagent-spawn overdrive; Grok Build 50-subagent
+  storms, sec 15): "hard caps plus explicit escalation criteria for subagent
+  fan-out" — implemented as DEFAULT_FAN_OUT_CAP=4 + per-call explicit
+  escalate_fan_out + hard ceiling ABSOLUTE_MAX_CHILDREN; the typed refusal
+  NAMES the escalation criteria.
+- Qwen cache-preserving forks (SS18, sec 18 ADOPT row) — the `-child-`
+  namespace id contract (is_child_session) reused for depth derivation.
+- NOTE (research honesty flag, harness-research.md L3755): Claude Code
+  fork-subagents default-on is aggregator-sourced (UNVERIFIED-flagged); the
+  mechanism is adopted on the strength of the row's co-receipts.
+
+## 7. Files changed (task scope only)
+
+Modified: harness-intel/src/routing/{mod,config,table,resolve,dispatch}.rs;
+harness-daemon/src/{routing.rs, lib.rs, tools/mod.rs, bin/harness-daemon.rs}.
+New: harness-daemon/src/task/{mod,budget,child,tool}.rs;
+harness-daemon/tests/task_delegation_tests.rs;
+harness-intel/tests/routing_categories.rs.
+
+## 8. Deviations / decisions recorded
+
+- "The task-8 launch path" is reused as the CHILD-SESSION PATTERN (fresh
+  SessionHost per child in the hidden namespace, executor/inference factories,
+  bounded TurnFinished await, Child* events on the parent hub, parent-ledger
+  cost booking) — NOT the spec-driven Launcher itself: the Launcher's resolve()
+  builds models from the RoleRegistry/catalog and cannot express
+  RoutingSpec-category routing, and its BudgetGuard is per-launch by design.
+  The per-parent aggregate the plan demands is a different lifecycle, so it is
+  its own nameable type (DelegationBudget in task/budget.rs).
+- Child ids are `{parent}-child-task{ordinal}` — inside the crate's
+  `-child-` namespace so `is_child_session` (journal.rs) drives depth.
+- Summary clamp budget = the delegation role's (orchestration builtin
+  `worker`, summary_budget 2048); categories themselves carry model + effort +
+  score_floor only, per the plan's "like tiers" mandate.
+- Escalation is a per-call explicit model-visible argument
+  (escalate_fan_out=true) surfaced in events + refusal text — T10's "explicit
+  escalation criteria" reading; the hard ceiling stays absolute.
+- Token aggregate counts child Usage-frame tokens (input+output+cache) as
+  reported; a lagged receiver undercounts (documented in child.rs), never
+  overcounts.
+- Untracked `.harness-daemon/.harness/skills-lock.json` observed in the worktree
+  (created 16:23, before this task's first build at ~17:05 — pre-existing test
+  leftover from a sibling task; untouched).
