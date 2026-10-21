@@ -56,6 +56,13 @@ pub struct DaemonConfig {
     /// (`HARNESS_SESSION_COST_CAP_USD`, parsed by
     /// [`parse_session_cost_cap_usd`]); no repo-local override.
     pub session_cost_cap_micros: u128,
+    /// The user-global test-command override for the `run_tests` tool
+    /// (todo 17): replaces framework detection (cargo nextest / cargo
+    /// test) with a custom command line. Read ONLY from daemon-owned
+    /// user-global config (`HARNESS_TEST_COMMAND`, parsed by the
+    /// binary) — a repo-local override file is refused with a typed
+    /// error by the tool itself.
+    pub test_command: Option<String>,
 }
 
 impl Default for DaemonConfig {
@@ -76,6 +83,7 @@ impl Default for DaemonConfig {
             media_upload_cap_bytes: 512 * 1024 * 1024,
             provider: None,
             session_cost_cap_micros: crate::cost_ledger::DEFAULT_SESSION_COST_CAP_MICROS,
+            test_command: None,
         }
     }
 }

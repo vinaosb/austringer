@@ -84,6 +84,9 @@ reqwest.workspace = true
 # inheritable before spawning the successor (workspace features already
 # cover Win32_Foundation).
 windows-sys.workspace = true
+# Todo 17 (run_tests): Job Object (KILL_ON_JOB_CLOSE) kill-tree domain
+# for the headless test-runner spawn lane (the media-lane thin copy).
+win32job.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 # Reload handoff: clearing CLOEXEC on the listener fd before exec(2).

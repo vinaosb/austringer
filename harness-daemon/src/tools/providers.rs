@@ -122,7 +122,7 @@ pub(crate) struct ExecuteCommandTool {
     pub(crate) runner: Arc<harness_exec::PtyRunner>,
 }
 
-fn shell_argv(command: &str) -> Result<(String, Vec<String>), ProviderError> {
+pub(crate) fn shell_argv(command: &str) -> Result<(String, Vec<String>), ProviderError> {
     #[cfg(windows)]
     {
         use harness_exec::shell::{PathFinder, ShellKind, resolve_default_shell};

@@ -149,6 +149,19 @@ pub(crate) async fn post_command(
             "fallback answers require a connection identity; answer over WS/IPC",
         )
             .into_response(),
+        // Plan answers carry the same identity contract, plus the
+        // todo-16 receipt: no surface may auto-approve a plan
+        // (Antigravity v1.3.2 skip-permissions). Mode flips (PlanMode)
+        // are not decisions and stay open on this route.
+        ClientMsg::PlanAnswer { .. } => (
+            StatusCode::BAD_REQUEST,
+            "plan answers require a connection identity; answer over WS/IPC",
+        )
+            .into_response(),
+        ClientMsg::PlanMode { on } => {
+            crate::plan::set_plan_mode(&host, on);
+            (StatusCode::ACCEPTED, "accepted").into_response()
+        }
         ClientMsg::Rewind { steps } => {
             match crate::rewind::run_rewind(std::sync::Arc::clone(&host), steps).await {
                 Ok(()) => (StatusCode::OK, "restored").into_response(),

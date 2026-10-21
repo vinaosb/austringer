@@ -34,6 +34,7 @@ pub mod mediation;
 pub mod notify;
 pub mod osc;
 pub mod otel;
+pub mod plan;
 pub mod protocol;
 pub mod provider;
 pub mod projection;

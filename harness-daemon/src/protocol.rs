@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use harness_core::event::MediaRef;
 use harness_providers::identity::ModelIdentity;
 
-pub use crate::ask::{Answer, AskPayload, FallbackAskPayload, Resolution};
+pub use crate::ask::{
+    Answer, AskPayload, FallbackAskPayload, PlanAskPayload, PlanDecision, PlanOutcome, Resolution,
+};
 pub use crate::errors::{ErrorCode, ProtocolError};
 
 /// Wire protocol version. Bump on breaking change; servers refuse
@@ -117,6 +119,25 @@ pub enum ClientMsg {
     Rewind {
         /// Restore points to walk back (1 = latest snapshot).
         steps: u64,
+    },
+    /// Enter or exit interactive plan mode (todo 16). Plan mode is OFF
+    /// by default; entering it gates every write tool behind the
+    /// pending plan's approval until [`ClientMsg::PlanAnswer`]
+    /// resolves it (or this message exits the mode).
+    PlanMode {
+        /// `true` = enter plan mode, `false` = exit.
+        on: bool,
+    },
+    /// Answer a broadcast plan-approval ask. The answering identity is
+    /// the SERVER-ASSIGNED per-connection id at the transport pump
+    /// (the mediation-policy contract; the HTTP command route refuses
+    /// this message typed). Approval NEVER happens without an explicit
+    /// answer here — timeout and skip-surfaces resolve deny-side.
+    PlanAnswer {
+        /// Ask being answered.
+        ask: u64,
+        /// The decision.
+        decision: PlanDecision,
     },
     /// Liveness ping.
     Ping,
@@ -232,6 +253,27 @@ pub enum ServerMsg {
         verdict: VerdictKind,
         /// Session event ids backing the verdict.
         evidence: Vec<u64>,
+    },
+    /// A plan-approval ask broadcast to all attached clients (protocol
+    /// v2 only; withheld from v1 wires, which receive the v1-decodable
+    /// `plan_blocked`/`plan_*` notification downgrades instead — a v1
+    /// client can observe a pending plan but never answer one).
+    /// Resolved through the permission mediator under the session's
+    /// mediation policy exactly like permission and fallback asks.
+    PlanAsk {
+        /// The ask.
+        ask: PlanAskPayload,
+    },
+    /// Exactly-one resolution of a plan ask (protocol v2 only;
+    /// withheld from v1 wires). `Timeout` keeps the plan pending and
+    /// writes gated — nothing ever auto-approves a plan.
+    PlanResolved {
+        /// Ask correlation id.
+        ask_id: u64,
+        /// The plan the ask belonged to.
+        plan_id: u64,
+        /// The resolution.
+        outcome: PlanOutcome,
     },
     /// Response to [`ClientMsg::Ping`].
     Pong,
@@ -354,6 +396,11 @@ pub fn validate_client(msg: &ClientMsg) -> Result<(), ProtocolError> {
         // `steps` is a count, not free text; an oversized count simply
         // exceeds the available snapshots and rewinds typed-refuses.
         ClientMsg::Rewind { .. } => Ok(()),
+        ClientMsg::PlanMode { .. } => Ok(()),
+        ClientMsg::PlanAnswer { decision, .. } => match decision {
+            PlanDecision::Edit { artifact } => bounded_text(artifact, "artifact"),
+            PlanDecision::Approve | PlanDecision::Reject => Ok(()),
+        },
         ClientMsg::Ping => Ok(()),
     }
 }

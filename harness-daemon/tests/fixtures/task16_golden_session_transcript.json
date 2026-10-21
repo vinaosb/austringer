@@ -1,0 +1,151 @@
+[
+  {
+    "id": 1,
+    "event": {
+      "type": "turn_started",
+      "turn": 1
+    }
+  },
+  {
+    "id": 2,
+    "event": {
+      "type": "recorded",
+      "seq": 1,
+      "event": {
+        "type": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "go"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 3,
+    "event": {
+      "type": "recorded",
+      "seq": 2,
+      "event": {
+        "type": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "editing"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 4,
+    "event": {
+      "type": "recorded",
+      "seq": 3,
+      "event": {
+        "type": "tool_call",
+        "call_id": "t1",
+        "tool": "edit_lines",
+        "arguments": {
+          "edits": [
+            {
+              "line": 2,
+              "new_text": "BETA EDITED",
+              "old_text": "beta"
+            }
+          ],
+          "path": "<SESSION-ROOT>/sessions/s-golden16/fixture.txt"
+        }
+      }
+    }
+  },
+  {
+    "id": 5,
+    "event": {
+      "type": "recorded",
+      "seq": 4,
+      "event": {
+        "type": "tool_result",
+        "call_id": "t1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "<SESSION-ROOT>/sessions/s-golden16/fixture.txt (lines 1-3 of 3)\n1 | alpha\n2 | BETA EDITED\n3 | gamma\n"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 6,
+    "event": {
+      "type": "recorded",
+      "seq": 5,
+      "event": {
+        "type": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "edited"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 7,
+    "event": {
+      "type": "turn_finished",
+      "turn": 1,
+      "outcome": "turn_complete"
+    }
+  },
+  {
+    "id": 8,
+    "event": {
+      "type": "turn_started",
+      "turn": 2
+    }
+  },
+  {
+    "id": 9,
+    "event": {
+      "type": "recorded",
+      "seq": 6,
+      "event": {
+        "type": "user",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "second"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 10,
+    "event": {
+      "type": "recorded",
+      "seq": 7,
+      "event": {
+        "type": "assistant",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "second turn reply"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 11,
+    "event": {
+      "type": "turn_finished",
+      "turn": 2,
+      "outcome": "turn_complete"
+    }
+  }
+]

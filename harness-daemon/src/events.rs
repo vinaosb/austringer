@@ -135,6 +135,56 @@ pub enum SessionEvent {
         /// The exhausted budget.
         budget: u64,
     },
+    /// Interactive plan mode entered (todo 16): `plan` names the
+    /// pending plan every gated write will carry. Downgraded for v1
+    /// wires to a `plan_mode_entered` notification.
+    PlanModeEntered {
+        /// The pending plan id.
+        plan: u64,
+    },
+    /// Interactive plan mode exited without approval (the `/mode off`
+    /// path; approval itself surfaces [`SessionEvent::PlanApproved`]).
+    /// v1 wires receive the `plan_mode_exited` notification.
+    PlanModeExited {
+        /// The plan that was abandoned.
+        plan: u64,
+    },
+    /// A write tool was blocked by the pending plan gate (todo 16):
+    /// the block carries the plan id so frontends can offer the
+    /// approve/edit/reject surface. v1 wires receive the
+    /// `plan_blocked` notification.
+    PlanBlocked {
+        /// The pending plan id.
+        plan: u64,
+        /// The write tool that was blocked.
+        tool: String,
+        /// The call's target (path or command), when one was carried.
+        target: Option<String>,
+    },
+    /// The plan artifact was edited (todo 16; the
+    /// plan-as-editable-artifact receipt): the revision bumps and
+    /// writes re-gate. v1 wires receive the `plan_updated`
+    /// notification.
+    PlanUpdated {
+        /// The pending plan id.
+        plan: u64,
+        /// The new artifact revision.
+        revision: u64,
+    },
+    /// The plan was approved (todo 16): plan mode ends and autonomy
+    /// flips back per the matrix. v1 wires receive the `plan_approved`
+    /// notification.
+    PlanApproved {
+        /// The approved plan id.
+        plan: u64,
+    },
+    /// The plan was rejected (todo 16): the plan is refused but plan
+    /// mode STAYS active and writes stay gated. v1 wires receive the
+    /// `plan_rejected` notification.
+    PlanRejected {
+        /// The rejected plan id.
+        plan: u64,
+    },
 }
 
 /// One numbered frame on the monotonic per-session event stream.

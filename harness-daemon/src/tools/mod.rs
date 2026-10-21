@@ -9,6 +9,7 @@
 //! keep their typed NoExecutor dispatch error.
 
 pub(crate) mod providers;
+pub mod run_tests;
 mod safety;
 
 use std::io;
@@ -40,6 +41,7 @@ pub struct CoreExecutors {
     edit_lines: Arc<dyn ToolProvider>,
     execute_command: Arc<dyn ToolProvider>,
     lsp: LspQueryTool,
+    run_tests: crate::tools::run_tests::RunTestsTool,
     /// The delegation services (todo 13); set once by the binary AFTER
     /// DaemonState exists — sessions open later, so every registry sees
     /// the bound services. Unbound = the `task` tool is absent.
@@ -60,10 +62,20 @@ impl CoreExecutors {
             }),
             lsp: LspQueryTool {
                 router: harness_lsp::LspRouter::new(harness_lsp::LspConfig::new(root.clone())),
-                root,
+                root: root.clone(),
             },
+            run_tests: crate::tools::run_tests::RunTestsTool::new(root, None),
             task: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Sets the user-global test-command override (todo 17; read from
+    /// `HARNESS_TEST_COMMAND` by the binary — never a repo-local file).
+    #[must_use]
+    pub fn with_test_command(mut self, command: Option<String>) -> Self {
+        let root = self.lsp.root.clone();
+        self.run_tests = crate::tools::run_tests::RunTestsTool::new(root, command);
+        self
     }
 
     /// Binds the task-delegation services; every registry opened
@@ -82,8 +94,9 @@ impl CoreExecutors {
 
     /// Opens the session's registry with the four in-process executors
     /// bound to their day-one contracts, plus the model-facing
-    /// `search_sessions` tool (todo 11: session-scoped-by-default FTS5
-    /// search over the daemon's event_fts index).
+    /// `search_sessions` tool (todo 11) and `run_tests` tool (todo 17:
+    /// framework detection + typed TestReports; approval-tier parity
+    /// with execute_command).
     ///
     /// # Errors
     /// spill-store creation failure for the session directory.
@@ -103,6 +116,9 @@ impl CoreExecutors {
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
             .register(Arc::new(crate::search::SearchSessionsTool::new(session_dir)))
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        registry
+            .register(Arc::new(self.run_tests.clone()))
             .map_err(|error| io::Error::other(error.to_string()))?;
         if let Some(services) = self.task.get() {
             registry

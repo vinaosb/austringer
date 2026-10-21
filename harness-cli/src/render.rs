@@ -6,7 +6,9 @@
 //! streaming text lines. Everything here is pure and unit-tested.
 
 use harness_core::event::{ContentBlock, Event};
-use harness_daemon::protocol::{AskPayload, Frame, Resolution, ServerMsg, SessionEvent};
+use harness_daemon::protocol::{
+    AskPayload, Frame, PlanOutcome, Resolution, ServerMsg, SessionEvent,
+};
 
 /// One NDJSON envelope line for an event frame.
 #[must_use]
@@ -81,6 +83,35 @@ pub fn human(msg: &ServerMsg) -> Option<String> {
             verdict.as_str(),
             evidence.len()
         )),
+        ServerMsg::PlanAsk { ask } => Some(format!(
+            "plan {} (revision {}) awaiting approval — approve, edit, or reject over WS/IPC",
+            ask.plan_id, ask.revision
+        )),
+        ServerMsg::PlanResolved {
+            ask_id,
+            plan_id,
+            outcome,
+        } => Some(plan_resolution_line(*ask_id, *plan_id, outcome)),
+    }
+}
+
+fn plan_resolution_line(ask_id: u64, plan_id: u64, outcome: &PlanOutcome) -> String {
+    match outcome {
+        PlanOutcome::Approved { by } => {
+            format!("plan ask {ask_id}: plan {plan_id} approved by {by}; writes re-armed")
+        }
+        PlanOutcome::Rejected { by } => {
+            format!("plan ask {ask_id}: plan {plan_id} rejected by {by}; still gated")
+        }
+        PlanOutcome::Edited { by, .. } => format!(
+            "plan ask {ask_id}: plan {plan_id} edited by {by}; re-gated on the new revision"
+        ),
+        PlanOutcome::Cancelled { by } => {
+            format!("plan ask {ask_id}: withdrawn by {by}; plan {plan_id} stays pending")
+        }
+        PlanOutcome::Timeout => format!(
+            "plan ask {ask_id} timed out; plan {plan_id} stays pending (never auto-approved)"
+        ),
     }
 }
 
@@ -126,6 +157,25 @@ fn human_event(event: &SessionEvent) -> Option<String> {
         SessionEvent::TeamBudgetExhausted { spent, budget } => Some(format!(
             "team budget exhausted: {spent} of {budget} tokens — further task spawns refused"
         )),
+        SessionEvent::PlanModeEntered { plan } => {
+            Some(format!("plan mode entered (plan {plan}); writes gated until approval"))
+        }
+        SessionEvent::PlanModeExited { plan } => {
+            Some(format!("plan mode exited without approval (plan {plan})"))
+        }
+        SessionEvent::PlanBlocked { plan, tool, target } => Some(match target {
+            Some(target) => {
+                format!("plan {plan} pending approval: '{tool}' on '{target}' blocked")
+            }
+            None => format!("plan {plan} pending approval: '{tool}' blocked"),
+        }),
+        SessionEvent::PlanUpdated { plan, revision } => Some(format!(
+            "plan {plan} edited (revision {revision}); writes re-gated"
+        )),
+        SessionEvent::PlanApproved { plan } => Some(format!("plan {plan} approved; writes re-armed")),
+        SessionEvent::PlanRejected { plan } => {
+            Some(format!("plan {plan} rejected; plan mode stays active"))
+        }
     }
 }
 

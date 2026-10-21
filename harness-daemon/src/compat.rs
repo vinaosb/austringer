@@ -28,12 +28,19 @@ pub fn downgrade_for_v1(msg: ServerMsg) -> Option<ServerMsg> {
         // accounted nowhere a v1 client can act on them; FallbackAsk /
         // FallbackResolved are replaced on v1 wires by the
         // v1-decodable `Notification` pair the session host publishes
-        // alongside (no v1 client silently misses an ask).
+        // alongside (no v1 client silently misses an ask); PlanAsk /
+        // PlanResolved are answered nowhere a v1 client can reach —
+        // v1 sees the pending plan through the `plan_*` notification
+        // downgrades of the plan SessionEvents instead (a v1 client
+        // can observe a pending plan but never resolve one; timeout
+        // keeps the plan gated).
         ServerMsg::MediaResult { .. }
         | ServerMsg::Usage { .. }
         | ServerMsg::FallbackAsk { .. }
         | ServerMsg::FallbackResolved { .. }
-        | ServerMsg::Verdict { .. } => None,
+        | ServerMsg::Verdict { .. }
+        | ServerMsg::PlanAsk { .. }
+        | ServerMsg::PlanResolved { .. } => None,
         ServerMsg::Event { frame } => downgrade_frame(frame).map(|frame| ServerMsg::Event { frame }),
         ServerMsg::Snapshot { frames } => Some(ServerMsg::Snapshot {
             frames: frames.into_iter().filter_map(downgrade_frame).collect(),
@@ -124,6 +131,35 @@ fn downgrade_frame(frame: Frame) -> Option<Frame> {
                 "delegation budget exhausted: {spent} of {budget} tokens; \
                  further task spawns refused"
             ),
+        },
+        SessionEvent::PlanModeEntered { plan } => SessionEvent::Notification {
+            kind: "plan_mode_entered".to_owned(),
+            message: format!("plan mode entered (plan {plan}); writes gated until approval"),
+        },
+        SessionEvent::PlanModeExited { plan } => SessionEvent::Notification {
+            kind: "plan_mode_exited".to_owned(),
+            message: format!("plan mode exited without approval (plan {plan})"),
+        },
+        SessionEvent::PlanBlocked { plan, tool, target } => SessionEvent::Notification {
+            kind: "plan_blocked".to_owned(),
+            message: match target {
+                Some(target) => format!(
+                    "plan {plan} pending approval: write tool '{tool}' on '{target}' blocked"
+                ),
+                None => format!("plan {plan} pending approval: write tool '{tool}' blocked"),
+            },
+        },
+        SessionEvent::PlanUpdated { plan, revision } => SessionEvent::Notification {
+            kind: "plan_updated".to_owned(),
+            message: format!("plan {plan} artifact edited (revision {revision}); writes re-gated"),
+        },
+        SessionEvent::PlanApproved { plan } => SessionEvent::Notification {
+            kind: "plan_approved".to_owned(),
+            message: format!("plan {plan} approved; writes re-armed"),
+        },
+        SessionEvent::PlanRejected { plan } => SessionEvent::Notification {
+            kind: "plan_rejected".to_owned(),
+            message: format!("plan {plan} rejected; plan mode stays active"),
         },
     };
     Some(Frame { id, event })

@@ -8,7 +8,9 @@
 //! loop renders iff [`App::should_redraw`] — there is no timer, no
 //! poll, and therefore 0% idle CPU (pinned by test).
 
-use harness_daemon::protocol::{Answer, AskPayload, ClientMsg, Resolution, ServerMsg};
+use harness_daemon::protocol::{
+    Answer, AskPayload, ClientMsg, PlanOutcome, Resolution, ServerMsg,
+};
 
 use crate::hud;
 use crate::keys::{Key, Keybinds};
@@ -314,6 +316,22 @@ impl App {
                 ));
                 self.dirty = true;
             }
+            ServerMsg::PlanAsk { ask } => {
+                self.view.note(&format!(
+                    "plan {} (revision {}) awaiting approval — approve, edit, or reject it",
+                    ask.plan_id, ask.revision
+                ));
+                self.dirty = true;
+            }
+            ServerMsg::PlanResolved {
+                ask_id,
+                plan_id,
+                outcome,
+            } => {
+                self.view
+                    .note(&plan_resolution_note(ask_id, plan_id, &outcome));
+                self.dirty = true;
+            }
             ServerMsg::Bye { reason } => {
                 self.view.note(&format!("daemon closed: {reason}"));
                 self.dirty = true;
@@ -331,6 +349,26 @@ fn resolution_note(ask_id: u64, resolution: &Resolution) -> String {
         Resolution::Denied { by } => describe("denied", by),
         Resolution::Cancelled { by } => describe("cancelled", by),
         Resolution::Timeout => format!("ask {ask_id} timed out"),
+    }
+}
+
+fn plan_resolution_note(ask_id: u64, plan_id: u64, outcome: &PlanOutcome) -> String {
+    match outcome {
+        PlanOutcome::Approved { by } => {
+            format!("plan ask {ask_id}: plan {plan_id} approved by {by}; writes re-armed")
+        }
+        PlanOutcome::Rejected { by } => {
+            format!("plan ask {ask_id}: plan {plan_id} rejected by {by}; still gated")
+        }
+        PlanOutcome::Edited { by, .. } => {
+            format!("plan ask {ask_id}: plan {plan_id} edited by {by}; re-gated on the new revision")
+        }
+        PlanOutcome::Cancelled { by } => {
+            format!("plan ask {ask_id}: withdrawn by {by}; plan {plan_id} stays pending")
+        }
+        PlanOutcome::Timeout => format!(
+            "plan ask {ask_id} timed out; plan {plan_id} stays pending (never auto-approved)"
+        ),
     }
 }
 
@@ -567,6 +605,52 @@ mod tests {
                 .notes()
                 .iter()
                 .any(|n| n.contains("unknown command"))
+        );
+    }
+
+    #[test]
+    fn mode_command_wires_daemon_plan_mode() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/mode plan");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::PlanMode { on: true })]
+        );
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/mode off");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::PlanMode { on: false })]
+        );
+    }
+
+    #[test]
+    fn plan_ask_and_resolution_surface_as_notes() {
+        use harness_daemon::protocol::{PlanAskPayload, PlanOutcome};
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Server(ServerMsg::PlanAsk {
+            ask: PlanAskPayload {
+                ask_id: 4,
+                plan_id: 1,
+                revision: 1,
+                artifact: "# Plan".into(),
+                deadline_ms: 30_000,
+            },
+        }));
+        assert!(app.view.notes().iter().any(|n| n.contains("plan 1")));
+        app.step(UiEvent::Server(ServerMsg::PlanResolved {
+            ask_id: 4,
+            plan_id: 1,
+            outcome: PlanOutcome::Approved {
+                by: "tui".into(),
+            },
+        }));
+        assert!(
+            app.view
+                .notes()
+                .iter()
+                .any(|n| n.contains("approved") && n.contains("tui"))
         );
     }
 

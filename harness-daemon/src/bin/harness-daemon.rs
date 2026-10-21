@@ -62,6 +62,14 @@ fn config_from_env_and_args() -> Result<DaemonConfig, String> {
         config.session_cost_cap_micros =
             harness_daemon::config::parse_session_cost_cap_usd(raw.trim())?;
     }
+    // Todo 17: the user-global test-command override for `run_tests`.
+    // Daemon-owned user-global config ONLY — the tool refuses a
+    // repo-local override file with a typed error.
+    if let Ok(raw) = std::env::var("HARNESS_TEST_COMMAND")
+        && !raw.trim().is_empty()
+    {
+        config.test_command = Some(raw.trim().to_owned());
+    }
     Ok(config)
 }
 
@@ -216,6 +224,9 @@ async fn build_state(config: DaemonConfig) -> Result<Arc<DaemonState>, String> {
     let routing = config.provider.as_ref().and_then(|provider| {
         routing_intake(provider, routing_json.as_deref(), Arc::clone(&transport))
     });
+    // Todo 17: the user-global run_tests command override, captured
+    // before `config` moves into the daemon state.
+    let test_command = config.test_command.clone();
     let mut state =
         DaemonState::new(config, factory).map_err(|e| format!("token generation: {e}"))?;
     state.projection_factory =
@@ -226,7 +237,9 @@ async fn build_state(config: DaemonConfig) -> Result<Arc<DaemonState>, String> {
     // LSP router per daemon (language servers spawn lazily) — and every
     // session's registry binds it at open; the worker protocol stays
     // available for future out-of-process execution.
-    let core_executors = Arc::new(harness_daemon::tools::CoreExecutors::in_process());
+    let core_executors = Arc::new(
+        harness_daemon::tools::CoreExecutors::in_process().with_test_command(test_command),
+    );
     core_executors.start_lsp_guard();
     state.executor_factory = core_executors.executor_factory();
     let state = Arc::new(state);

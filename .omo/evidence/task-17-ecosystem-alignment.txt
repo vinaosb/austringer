@@ -1,0 +1,205 @@
+Task 17 — Test-runner tool: detection + structured results (ecosystem-alignment)
+================================================================================
+Date: 2026-10-21 (19:44Z) | Worker: Sisyphus-jior (unspecified-high)
+Plan: .omo/plans/ecosystem-alignment.md checkbox 17 | Blocked-by: 3, 4 (both
+complete) | Blocks: 18
+
+DELIVERED
+---------
+New `run_tests` tool in harness-daemon (registered through the task-3
+ToolRegistry as an aux tool in CoreExecutors::open_registry):
+
+  harness-daemon/src/tools/run_tests/mod.rs     provider + orchestration (235 pure LOC)
+  harness-daemon/src/tools/run_tests/report.rs  typed TestReport/TestEntry/TestSummary (91)
+  harness-daemon/src/tools/run_tests/parse.rs   nextest-human + libtest parsers (145)
+  harness-daemon/src/tools/run_tests/run.rs     gated headless spawn lane (155)
+  harness-daemon/tests/run_tests_tool_tests.rs  9 e2e/direct tests (446)
+
+Wiring (all extend EXISTING shapes — no new config format, per guardrail):
+  - DaemonConfig.test_command: Option<String> (config.rs; default None) — the
+    user-global command override, read ONLY from HARNESS_TEST_COMMAND by the
+    binary (mirrors the HARNESS_SESSION_COST_CAP_USD pattern from todo 33).
+  - CoreExecutors: run_tests field + with_test_command() builder;
+    open_registry registers the tool next to search_sessions/task.
+  - Cargo.toml: win32job.workspace=true under cfg(windows) (already in the
+    workspace lockfile via harness-exec/harness-media — no new dependency
+    introduced to the workspace graph); libc already a cfg(unix) dep.
+  - No SessionEvent variants changed (t33 discipline not triggered).
+
+DESIGN DECISIONS (with rationale)
+---------------------------------
+1. Execution lane: executor-#3 pattern = the todo-4 safety gate reused
+   VERBATIM (tools::safety::gate: policy validation + deny-all egress verdict
+   + requested-vs-enforced report) + the policy's EnvScrub applied at the
+   spawn seam (scrub_env -> env_clear + envs(kept), exactly what
+   ExecSpec.env_scrub does at the PTY seam). Spawn mechanics mirror the
+   harness-media tool lane (std::process headless capture + kernel kill-tree
+   domain) rather than the PTY screen-delta lane, because the parser needs
+   the runner's FULL stream: the PTY grid is bounded by construction
+   (head+tail transcript + 75-line window law) and silently loses per-test
+   lines on any real suite. Kill tree: Windows Job Object
+   KILL_ON_JOB_CLOSE (win32job), Unix process_group(0) + killpg — the
+   media-lane thin copy of todo-19's TreeGuard (exec's guard takes a PTY
+   child). Todo-4's issues.md note ("todo 17 should reuse
+   tools::safety::gate + ExecSpec.env_scrub verbatim") is honored: gate is
+   the same function; the scrub is the same policy object applied at the
+   equivalent seam of the chosen lane.
+2. Gate seam: the override command line is verdicted AS GIVEN, pre-shell
+   resolution — exactly where execute_command's gate sits. (RED->GREEN round
+   caught the bug: gating the post-shell_argv line let a curl-shaped
+   override through, because the egress guard matches PROGRAM WORDS like
+   `curl`, not the powershell wrapper around them. The todo-4 learning
+   "a string-pattern guard on the PROGRAM WORD is the correct seam"
+   predicted this.)
+3. Framework detection (day-one = cargo test + cargo nextest): Cargo.toml at
+   the tested root -> cargo framework; a gated `cargo nextest --version`
+   probe (15s ceiling) prefers `cargo nextest run --no-fail-fast`, falling
+   back to `cargo test`. cargo resolves via $CARGO when set (tests/CI),
+   else PATH (production).
+4. Machine-readable format choice — EMPIRICALLY captured on this machine
+   (nextest 0.9.144, stable libtest), before the parser was written:
+   - `--message-format json` does NOT exist in 0.9.144 (possible values:
+     human, libtest-json, libtest-json-plus);
+   - libtest-json requires NEXTEST_EXPERIMENTAL_LIBTEST_JSON=1 (experimental
+     flag — rejected as a day-one dependency);
+   - nextest HUMAN output carries per-test statuses WITH durations
+     (`PASS|FAIL|SKIP|ABORT|TIMEOUT [ 0.051s] (1/2) <binary> <test>`) and
+     rides STDERR; parsing stops at the `Summary [` line so the failure
+     recap never double-counts;
+   - stable libtest text (`test NAME ... ok|FAILED|ignored`) carries
+     per-test statuses WITHOUT per-test durations (JSON is nightly-only) —
+     TestEntry.duration_ms is Option for exactly that honesty.
+   nextest-ignored tests appear only in summary counts ("N skipped"), not as
+   individual SKIP lines — documented in parse.rs.
+5. Crash semantics: with nextest, an aborting test is DATA (process-per-test
+   catches it: a failed entry with a duration). The typed crash error fires
+   when the run failed with ZERO parseable per-test results (libtest crash,
+   compile failure): "failed with exit code {code} and produced no parseable
+   per-test results — stderr: {head}". A failing TEST is a report, never an
+   error.
+6. Permission tier: run_tests rides the approval stage as an aux tool
+   (task-11 pattern) — no capability column maps it (capability_of
+   ("run_tests") == None: no matrix toggle can EVER allow it), and the
+   column execute_command maps to (Exec) is OFF in every preset. Under the
+   default policy every call asks; an unanswered ask is refused and NOTHING
+   executes. Never auto-allow — structural, asserted by tests.
+7. Repo-local override refusal: {root}/.harness/run_tests.json is refused
+   pre-execution with a typed error naming the file and pointing at the
+   user-global config (HARNESS_TEST_COMMAND / DaemonConfig.test_command).
+
+RED (captured before implementation)
+------------------------------------
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo
+nextest run -p harness-daemon --test run_tests_tool_tests"
+Result: compile failure (the intended red for missing functionality):
+  error[E0432] unresolved import `harness_daemon::tools::run_tests` (module absent)
+  error[E0609] no field `test_command` on type `DaemonConfig`
+  error[E0594]/[E0308]/[E0560] follow-on shape misses in the test kit
+(plus one test-kit bug E0594 mut-state — fixed in the test before green)
+
+GREEN (all NEW tests)
+---------------------
+1. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo
+   nextest run -p harness-daemon --test run_tests_tool_tests"
+     Summary: 9 tests run: 9 passed, 0 skipped
+       PASS run_tests_user_global_override_runs_and_is_safety_gated
+       PASS run_tests_tier_parity_no_capability_auto_allow_path
+       PASS run_tests_repo_local_override_file_is_refused_with_typed_error
+       PASS run_tests_config_override_extends_existing_daemon_config
+       PASS run_tests_unknown_framework_is_typed_error_with_config_instructions
+       PASS run_tests_unanswered_ask_under_default_policy_is_refused
+       PASS run_tests_binary_crash_is_typed_error_with_exit_code
+       PASS run_tests_fixture_crate_report_has_exact_entries
+       PASS run_tests_e2e_structured_report_flows_through_registry
+2. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo
+   nextest run -p harness-daemon --lib run_tests"
+     Summary: 6 tests run: 6 passed (parser + report units, incl. canned
+     REAL captured output for both formats)
+3. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo
+   nextest run -p harness-daemon -p harness-exec --no-fail-fast"
+     Summary: 475 tests run: 473 passed, 2 failed, 8 skipped
+     Both failures are documented pre-existing machine-local issues, NOT
+     regressions from this task:
+     - harness-exec::pty_live::cargo_version_style_command_renders_cleanly:
+       todo-1 issues.md entry (ConPTY child cannot resolve cargo on this
+       machine's PATH; CI unaffected). Failed at 0.325s = the documented
+       fast PATH signature.
+     - harness-daemon::provider_binary_tests::
+       unconfigured_daemon_fails_typed_over_the_wire: todo-6 issues.md
+       contention flake. Verified GREEN in isolation after the full run:
+         nextest run -p harness-daemon --test provider_binary_tests
+         unconfigured_daemon -> Summary: 1 tests run: 1 passed
+4. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo
+   clippy --workspace --all-targets -- -D warnings"
+     Finished `dev` profile ... in 52.19s (clean; one round fixed
+     clippy::unnecessary-mut-passed in run.rs)
+
+INVARIANT EVIDENCE (a)-(d) + QA scenarios
+-----------------------------------------
+(a) run_tests_fixture_crate_report_has_exact_entries: fixture crate
+    (rtfx_direct: 1 passing + 1 failing test), report deserialized from the
+    tool observation: framework cargo-nextest (or cargo-libtest), EXACTLY 2
+    entries, passes->passed / fails->failed, summary {1,1,0}; per-test
+    duration_ms Some on the nextest lane. HAPPY QA: the structured report is
+    JSON — usable without parsing text (e2e asserts the wire carries
+    "framework":"cargo-", per-status fields, and "summary" inside the
+    recorded tool result).
+(b) run_tests_unknown_framework_is_typed_error_with_config_instructions:
+    non-cargo root -> ProviderError::Execution containing "unknown test
+    framework" + HARNESS_TEST_COMMAND instructions.
+(c) Tier parity, two layers:
+    - run_tests_tier_parity_no_capability_auto_allow_path (unit):
+      capability_of("run_tests").is_none() + capability_of("execute_command")
+      == Some(Exec) + !allows(Exec) for EVERY AutonomyMode preset.
+    - run_tests_unanswered_ask_under_default_policy_is_refused (e2e): a
+      run_tests call under the default (empty-rules) policy raises
+      PermissionAsk naming tool "run_tests"; with no answerer the ask is
+      refused ("the ask was refused") and NO report frame ever appears —
+      execution never happened.
+(d) run_tests_repo_local_override_file_is_refused_with_typed_error:
+    .harness/run_tests.json in the fixture -> typed error naming the file +
+    "user-global" instructions.
+    Failure-path QA: run_tests_binary_crash_is_typed_error_with_exit_code —
+    a single abort() test forced onto the libtest lane (via the user-global
+    override) surfaces as a typed error carrying the nonzero exit code and
+    stderr head.
+    Bonus parity: run_tests_user_global_override_runs_and_is_safety_gated —
+    a curl-shaped user-global override is BLOCKED before spawn by the same
+    egress gate as execute_command (block text names the denied host +
+    requested-vs-enforced + backend).
+
+RECEIPTS
+--------
+- Zed #5242 (886 upvotes) — structured test results as the most-requested
+  editor integration; the typed TestReport is the shape such consumers need.
+- Qwen Test Failure Explorer (shipped 2026-10) — per-test structured
+  results, not raw text.
+- JetBrains native test runner — native structured test integration.
+- In-repo: todo-4 issues.md ("reuse tools::safety::gate + ExecSpec.env_scrub
+  verbatim"), media M15 spawn lane (headless capture + kill-tree + env
+  redaction), todo-11 aux-tool registration seam.
+
+NOTES FOR TASK 18 (gate binding)
+--------------------------------
+TestReport is Serialize+Deserialize (camelCase-free snake_case wire,
+matching protocol norms) and re-exported at
+harness_daemon::tools::run_tests::{TestReport, TestEntry, TestStatus,
+TestSummary}. The tool observation's FIRST LINE is the report JSON (the
+second line is the [safety] requested-vs-enforced suffix) — gate criteria
+can deserialize recorded ToolCall results directly. No SessionEvent variant
+was added (per task instruction), so test-run event ids for verdict
+evidence should reference the recorded ToolCall/ToolResult events.
+
+SCOPE DISCIPLINE
+----------------
+- .omo/plans untouched; nothing committed (orchestrator commits).
+- harness-daemon/src/bin/harness-daemon.rs is pre-existing over the 250
+  pure-LOC ceiling (flagged since todo-9); received a 3-line surgical
+  addition (hoisted test_command capture) per the todo-9/11/13 precedent.
+- Concurrent todo-16 worker (plan mode) was landing protocol/mediation/
+  transport/handlers edits in the same tree throughout; daemon-lib compile
+  was transiently broken by their in-flight Plan* variants twice — waited
+  (todo-14 protocol), no cross-edits. Final gates ran against the merged
+  tree.
+- tools/mod.rs 167 pure, config.rs 71, providers.rs 212 (+1 visibility
+  keyword), run_tests module files 91-235 pure — all under the 250 ceiling.

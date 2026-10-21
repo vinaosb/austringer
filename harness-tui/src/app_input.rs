@@ -120,6 +120,23 @@ impl App {
         true
     }
 
+    /// `/mode` dispatch (todo 16): `plan` enters daemon plan mode and
+    /// `off`/`exit` leaves it; the engine-side autonomy levels have no
+    /// daemon surface, so they note honestly instead of pretending.
+    fn mode_command(&mut self, name: &str) -> Vec<UiAction> {
+        match name {
+            "plan" => vec![UiAction::Send(ClientMsg::PlanMode { on: true })],
+            "off" | "exit" => vec![UiAction::Send(ClientMsg::PlanMode { on: false })],
+            other => {
+                self.view.note(&format!(
+                    "/mode {other}: daemon plan mode is the wired surface (/mode plan, /mode off); \
+                     autonomy levels are engine-side"
+                ));
+                Vec::new()
+            }
+        }
+    }
+
     fn submit(&mut self) -> Vec<UiAction> {
         let text = self.bar.text();
         if text.is_empty() {
@@ -138,12 +155,7 @@ impl App {
                 };
                 vec![UiAction::Send(ClientMsg::Command { command })]
             }
-            Parsed::Mode { name } => {
-                self.view.note(&format!(
-                    "/mode {name}: recognized, engine command wiring lands with todo 40/42"
-                ));
-                Vec::new()
-            }
+            Parsed::Mode { name } => self.mode_command(&name),
             Parsed::Rewind { steps } => {
                 vec![UiAction::Send(ClientMsg::Rewind {
                     steps: steps.unwrap_or(1),

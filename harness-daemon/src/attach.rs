@@ -121,6 +121,8 @@ pub struct SessionHost {
     /// those sessions have no cost surface (honest absence, fail-open:
     /// nothing to trip).
     pub(crate) cost_ledger: std::sync::OnceLock<Arc<crate::cost_ledger::SessionLedger>>,
+    /// The interactive plan-mode gate (todo 16); inactive by default.
+    plan: crate::plan::PlanGate,
     pub(crate) turn_counter: AtomicU64,
     pub(crate) journal_root: Option<PathBuf>,
 }
@@ -163,6 +165,7 @@ impl SessionHost {
             skills: std::sync::OnceLock::new(),
             launcher: std::sync::OnceLock::new(),
             cost_ledger: std::sync::OnceLock::new(),
+            plan: crate::plan::PlanGate::default(),
             turn_counter: AtomicU64::new(0),
             journal_root,
         });
@@ -203,6 +206,14 @@ impl SessionHost {
     #[must_use]
     pub fn cost_ledger(&self) -> Option<Arc<crate::cost_ledger::SessionLedger>> {
         self.cost_ledger.get().cloned()
+    }
+
+    /// The interactive plan-mode gate (todo 16): OFF by default; the
+    /// approval/execution stage wrappers and the `PlanMode` transports
+    /// all consult this one state.
+    #[must_use]
+    pub fn plan_gate(&self) -> &crate::plan::PlanGate {
+        &self.plan
     }
 
     /// The executor-side event sink (diffs from tool execution).

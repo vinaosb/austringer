@@ -254,18 +254,25 @@ impl SessionHost {
 
     /// Build the daemon's standard stage set over a tool-execution
     /// stage (worker-backed or registry-backed; the session factory's
-    /// injected executor decides).
+    /// injected executor decides). The approval and execution stages
+    /// carry the todo-16 plan gate wrappers: inactive by default
+    /// (byte-identical default path, pinned by the golden-transcript
+    /// fixture), they block write tools both pre-approval and again at
+    /// execution time while a plan is pending.
     #[must_use]
-    pub fn standard_stages(&self, executor: Box<dyn ToolExecutor>) -> StageSet {
+    pub fn standard_stages(self: &Arc<Self>, executor: Box<dyn ToolExecutor>) -> StageSet {
         let mut stages = StageSet::default();
         stages.steer = Box::new(SharedSteerer::new(
             self.steer_queue(),
             self.projection_notice_queue(),
         ));
-        stages.approval = Box::new(crate::stages::ReservedAwareApproval::new(
-            crate::stages::chain_over_mediator(self.mediator()),
+        stages.approval = Box::new(crate::plan::PlanAwareApproval::new(
+            Box::new(crate::stages::ReservedAwareApproval::new(
+                crate::stages::chain_over_mediator(self.mediator()),
+            )),
+            Arc::clone(self),
         ));
-        stages.execution = executor;
+        stages.execution = Box::new(crate::plan::PlanGatedExecutor::new(executor, Arc::clone(self)));
         stages
     }
 

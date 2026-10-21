@@ -224,6 +224,38 @@ impl SessionView {
                     "cost stop: cap reached ({consumed_micros} of {cap_micros} micro-USD); further turns refused"
                 )));
             }
+            SessionEvent::PlanModeEntered { plan } => {
+                self.entries
+                    .push(Entry::Notice(format!("plan mode entered (plan {plan}); writes gated until approval")));
+            }
+            SessionEvent::PlanModeExited { plan } => {
+                self.entries.push(Entry::Notice(format!(
+                    "plan mode exited without approval (plan {plan})"
+                )));
+            }
+            SessionEvent::PlanBlocked { plan, tool, target } => {
+                let detail = match target {
+                    Some(target) => format!(
+                        "plan {plan} pending approval: write tool '{tool}' on '{target}' blocked"
+                    ),
+                    None => format!("plan {plan} pending approval: write tool '{tool}' blocked"),
+                };
+                self.entries.push(Entry::Notice(detail));
+            }
+            SessionEvent::PlanUpdated { plan, revision } => {
+                self.entries.push(Entry::Notice(format!(
+                    "plan {plan} artifact edited (revision {revision}); writes re-gated"
+                )));
+            }
+            SessionEvent::PlanApproved { plan } => {
+                self.entries
+                    .push(Entry::Notice(format!("plan {plan} approved; writes re-armed")));
+            }
+            SessionEvent::PlanRejected { plan } => {
+                self.entries.push(Entry::Notice(format!(
+                    "plan {plan} rejected; plan mode stays active"
+                )));
+            }
         }
     }
 

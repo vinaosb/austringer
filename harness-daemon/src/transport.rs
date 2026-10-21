@@ -235,6 +235,26 @@ pub async fn pump_client(
                                 .await;
                         }
                     }
+                    // Plan mode (todo 16): transitions publish on the
+                    // hub so every client sees them; there is no
+                    // per-connection refusal.
+                    Some(ClientMsg::PlanMode { on }) => {
+                        crate::plan::set_plan_mode(host, on);
+                    }
+                    // Plan answers key on THIS pump's per-connection
+                    // id exactly like fallback answers — the mediation
+                    // policy contract (never a client-asserted
+                    // identity).
+                    Some(ClientMsg::PlanAnswer { ask, decision }) => {
+                        if let Err(e) = mediator.answer_plan(ask, client_id, decision) {
+                            let _ = outbound
+                                .send(ServerMsg::Error {
+                                    code: ErrorCode::Internal,
+                                    message: e.to_string(),
+                                })
+                                .await;
+                        }
+                    }
                 }
             }
             _ = tokio::time::sleep(remaining) => {

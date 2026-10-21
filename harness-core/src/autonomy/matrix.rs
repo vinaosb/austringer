@@ -27,6 +27,8 @@
 
 use std::sync::{Arc, RwLock};
 
+use crate::inspectors::store::GrantScope;
+
 /// The autonomy levels. Levels are toggle PRESETS: a mode fixes a default
 /// toggle vector, a fallback strategy for off-capabilities, and a review
 /// policy; individual toggles remain independently flippable.
@@ -189,9 +191,24 @@ impl AutonomyMatrix {
         self.plan
     }
 
-    /// Enters plan mode: write tools freeze at the dispatch gate.
+    /// Enters plan mode: write tools freeze at the dispatch gate and
+    /// every session-scoped grant suspends ([`Self::honors_grant`])
+    /// until the mode flips back — approval is the only path that
+    /// re-arms [`Capability::Edit`]/[`Capability::Exec`] and restores
+    /// the suspended grants (todo 16).
     pub fn enter_plan(&mut self) {
         self.plan = true;
+    }
+
+    /// Whether a stored grant of `scope` is honored in the current
+    /// state. Plan mode suspends [`GrantScope::Session`] grants (they
+    /// were granted under the pre-plan autonomy, and the plan approval
+    /// — not a stale session grant — re-arms writes); forever grants
+    /// never suspend. The autonomy gate consults this before its
+    /// stored-grant allow.
+    #[must_use]
+    pub fn honors_grant(&self, scope: GrantScope) -> bool {
+        !(self.plan && scope == GrantScope::Session)
     }
 
     /// Flips one capability toggle independently of the others.
