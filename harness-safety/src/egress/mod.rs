@@ -217,3 +217,7 @@ pub enum EgressError {
         input: String,
     },
 }
+
+mod guard;
+
+pub use guard::{CommandEgress, guard_command};

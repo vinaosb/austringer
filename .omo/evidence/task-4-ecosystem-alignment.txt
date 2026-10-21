@@ -1,0 +1,204 @@
+# Task 4 — ecosystem alignment: harness-safety on the execute_command path
+
+Date: 2026-10-21 (machine time), session opencode:ses_ea774e945ffe45I9Wp629UGOW1
+Machine: Windows (first-class); all cargo via `cmd /c %TEMP%\opencode\cargo-env.cmd <cmd>`,
+test runs prefixed `set CARGO_BUILD_JOBS=3&&` (LNK1102 mitigation, learnings todo-1).
+
+## Scope executed
+
+Plan todo 4 (`.omo/plans/ecosystem-alignment.md` lines 131-137): route executor
+#3's execute_command through harness-safety — per-command sandbox policy
+(OS-backend vocabulary via platform_backend), EnvScrub, egress guard —
+generalizing the harness-media/src/tool pattern. Doctor untouched;
+mediation.rs untouched (deny-fails-closed semantics preserved read-only).
+
+## Design (the media pattern, generalized)
+
+harness-media/src/tool/executor.rs `sandbox_gate` is validate-policy ->
+typed ToolError::SandboxDenied{ViolationEvent} -> nothing spawns, with env
+redaction enforced at the command seam and NO unclaimed kernel isolation
+(the module's honesty rule). Todo 4 generalizes exactly that shape onto the
+command lane:
+
+1. Per-command policy (harness-daemon/src/tools/safety.rs `command_policy`):
+   SandboxTier::Readonly, no roots, egress EgressPolicy::none() (the allowlist
+   starts EMPTY — deny-all), EnvScrub::default(). Fail-closed validate()
+   parity with media's sandbox_gate (an unsanctionable policy blocks).
+2. Egress guard — NEW seam in harness-safety (src/egress/guard.rs,
+   `guard_command`): segments the command via perm::commands::split_compound
+   (every segment judged independently — `npm i && curl evil` never rides an
+   allowed prefix), detects egress-shaped program words (curl/wget/ftp/sftp/
+   scp/ssh/nc/ncat/telnet/ping, path- and extension-normalized), reduces
+   destination tokens to (host, port), verdicts against the policy. Pure
+   string-pattern matching: the guard never opens a socket.
+   FAIL-CLOSED: unsegmentable command, egress program with no parsable
+   destination, or an unresolvable destination token are ALL denials.
+3. EnvScrub at the spawn seam — harness-exec ExecSpec gains
+   `env_scrub: Option<EnvScrub>`; spawn_pty (both cfg arms) removes dropped
+   variables (additions AND the inherited ambient set — portable-pty's
+   CommandBuilder base IS the full ambient) via env_remove. Dependency
+   direction exec -> safety is the sanctioned one (windows_sandbox.rs
+   documents it).
+4. Requested-vs-enforced in the RESULT: every allowed run appends
+   `render_report` (IsolationReport::diff over the PTY lane's HONEST enforced
+   summary: network=UserlandProxy — the guard; env_scrubbed=true — the seam;
+   fs_write/fs_read=Isolation::None — NAMED GAPS, never papered over) and
+   names the OS backend resolved via platform_backend() (doctor-parity
+   attribution: backend=windows-appcontainer on this machine). A blocked run
+   renders the typed ViolationEvent plus "requested: ... enforced:
+   blocked-before-spawn (deny honored)".
+
+### Why the OS-backend consult is attribution, not an enforce() attempt
+
+The PTY spawn lane (todo-3's contract: bounded screen-delta rendering) is not
+the sandbox backend's spawn lane (SandboxedChild has wait/kill_tree only, no
+PTY/output). Attempting platform_backend().enforce() per command and denying
+on refusal would (a) make an echo hostage to per-command AppContainer profile
+creation, and (b) on Landlock-less Linux (linux_sandbox REFUSES, by design)
+break the suite cross-platform — while enforcing nothing, since the child
+still spawns through the PTY. Borrowing the backend's kernel-isolation
+report for a PTY spawn would claim isolation that was not established — the
+exact dishonesty harness-rs isolation reporting exists to prevent. The OS
+lane stays owned by the EXISTING safety suites (escape_windows.rs runtime
+restricted-token tests, all green in the full run below); doctor keeps
+probing platform_backend() passively, unchanged. Observation recorded here
+for todo 31: doctor's "backend: <name>" line now agrees with the
+`backend=<name>` field in every execute_command result.
+
+## Files changed
+
+- harness-safety/src/egress.rs -> egress/mod.rs + egress/guard.rs (split at
+  the 250-LOC ceiling; public path `harness_safety::egress::guard_command`
+  unchanged): CommandEgress + guard_command + is_egress_program +
+  destination_host.
+- harness-safety/tests/egress.rs: +8 guard tests (block under empty
+  allowlist naming the host; unqualified/.exe/path-qualified program words;
+  flags-only fail-closed; unsegmentable fail-closed; compound segments
+  independent; non-egress pass; granted-host allow; userinfo/scheme/port
+  reduction).
+- harness-exec: Cargo.toml (+harness-safety), spec.rs (ExecSpec.env_scrub),
+  spawn.rs (scrubbed_names + env_remove in both cfg arms), ExecSpec literal
+  sites updated (preflight/{format,check}.rs, tests/{common,pending_set,
+  preflight_fs,wsl_bridge}.rs).
+- harness-exec/tests/env_scrub.rs (NEW): sentinel through a real PTY child —
+  control run (no scrub) leaks the value; scrubbed run does not; explicit
+  EnvScrub exception survives.
+- harness-daemon: Cargo.toml (+harness-safety), src/tools/safety.rs (NEW:
+  gate + renders + 3 unit tests), src/tools/mod.rs (mod safety),
+  src/tools/providers.rs (ExecuteCommandTool routes through the gate; the
+  policy's env_scrub rides the ExecSpec; report appended to every result).
+- harness-daemon/tests/executor_safety_tests.rs (NEW): the acceptance e2e
+  pair, todo-3 executor_bound style (scripted inference, real registry,
+  recorded event stream).
+
+## RED-first
+
+Invocation: `cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd
+cargo nextest run -p harness-daemon executor_safety"`
+Result: 2 run, 0 passed, 2 failed — for the RIGHT reasons:
+
+- executor_safety_deny_egress_blocks_curl_shaped_command FAILED at
+  "a curl-shaped command under the deny-all egress policy must be blocked
+  with the typed reason". The event stream shows the command RAN (no gate):
+  tool_result text was `timed out after 30.03445s ... cmdlet
+  Invoke-WebRequest at command pipeline position 1 ... Uri:` — on this
+  machine's default PowerShell shell `curl` aliases to Invoke-WebRequest,
+  which hung prompting for Uri. No socket was opened even in RED, and the
+  block assertion still failed: exactly the missing-gate proof. (Side
+  receipt: the string-pattern guard on the program word is the right seam —
+  shell aliasing already rewrites `curl` before any spawn would resolve it.)
+- executor_safety_allowed_command_carries_policy_metadata FAILED at
+  "the result must carry the requested-vs-enforced report". tool_result was
+  the bare todo-3 output `exit code 0\nharness-safety-bound-4c1d` — no
+  `requested:`/`enforced:`/`backend=`/`gaps:` metadata.
+
+## GREEN + verification (every invocation)
+
+1. `... cargo nextest run -p harness-safety egress` (after guard landed)
+   -> 10 run, 10 passed (includes the 8 new guard tests).
+2. `... cargo nextest run -p harness-daemon executor_safety -p
+   harness-exec env_scrub` -> daemon e2e both PASS; env_scrub initially
+   FAILED for an argv reason (my test spawned `cmd /d` without `/c` —
+   interactive banner+prompt, no echo). Fixed the test argv to
+   `cmd /d /c <echo>`; not a product defect.
+3. `... cargo nextest run -p harness-exec env_scrub` -> 2 run, 2 passed.
+4. `... cargo nextest run -p harness-safety -p harness-daemon -p
+   harness-exec` -> 542 run, 541 passed, 1 failed:
+   harness-exec::pty_live::cargo_version_style_command_renders_cleanly —
+   the DOCUMENTED pre-existing machine failure (learnings todo-1: ConPTY
+   child cannot resolve `cargo`; proven pre-existing at clean HEAD via git
+   stash; CI unaffected; same CreateProcessW signature here). Re-ran with
+   --no-fail-fast: complete, same single pre-existing failure.
+5. `... cargo clippy -p harness-safety -p harness-daemon -p harness-exec
+   --all-targets` -> one error (clippy::large_enum_variant on
+   SafetyDecision; fixed by boxing the Pass verdict), then CLEAN after fix.
+6. ACCEPTANCE COMMAND: `... cargo nextest run --no-fail-fast -p
+   harness-safety -p harness-daemon` -> **392 tests run: 392 passed,
+   1 skipped** (platform-conditional skip). Includes the EXISTING Windows
+   restricted-token escape suite (allowed_write_inside_root_is_transparent,
+   write_outside_root_is_denied_by_kernel, write_to_protected_git_metadata,
+   write_to_settings_file, deny_glob_target_is_denied, unresolvable_glob_
+   refuses_to_start, spawned_child_dies_with_job_domain, report/gap honesty
+   tests) — the OS-lane coverage the todo requires via existing tests.
+7. Targeted re-run after the Box fix:
+   `... cargo nextest run -p harness-daemon executor_safety -p
+   harness-daemon tools::safety` -> 5 run, 5 passed.
+8. Post-split: clippy -p harness-safety --all-targets clean; egress filter
+   10/10.
+
+## QA scenarios
+
+- HAPPY (allowed command runs with policy metadata): e2e
+  executor_safety_allowed_command_carries_policy_metadata asserts the echo
+  output AND `exit code 0` AND `requested:` AND `enforced:` AND `backend=`
+  AND `gaps:` AND NOT "blocked by sandbox policy". The rendered suffix for
+  this machine is:
+  `[safety] requested: tier=readonly egress=deny-all env_scrub=on |
+  enforced: egress=userland-guard env_scrub=at-spawn fs=unconfined |
+  backend=windows-appcontainer | gaps: fs_write, fs_read`
+- FAILURE (denied command returns typed block with reason): e2e
+  executor_safety_deny_egress_blocks_curl_shaped_command asserts
+  `blocked by sandbox policy`, `egress`, the denied host
+  `egress-blocked.invalid` (RFC 2606 reserved — hermetic even in RED),
+  `requested:`/`enforced:`, and no NoExecutor regression. The block is
+  generated from the typed ViolationEvent { kind: EgressDenied, detail:
+  "egress to egress-blocked.invalid denied (not in allowlist) — the egress
+  allowlist starts empty, so no network-shaped command runs; segment:
+  `curl -s https://egress-blocked.invalid/lease`" } plus
+  `[safety] requested: tier=readonly egress=deny-all | enforced:
+  blocked-before-spawn (deny honored) | backend=windows-appcontainer`.
+  Nothing spawns — the string-pattern verdict fires pre-spawn (test-passed;
+  no network in tests).
+- Env seam (harness-exec::env_scrub): control run leaks the sentinel value
+  through a real PTY child; scrubbed run does not; named exception survives.
+
+## Deny-fails-closed audit
+
+- harness-daemon/src/mediation.rs: UNTOUCHED (git status verified).
+- The gate: policy.validate() Err -> Block; guard unsegmentable/unresolvable/
+  no-destination -> Denied; empty allowlist -> every network-shaped command
+  denied. No path through the gate converts a safety-layer error into an
+  allow.
+- No `#[allow]` on any safety lint; no harness-safety gate weakened.
+
+## Notes / observations for downstream todos
+
+- todo 17 (run_tests rides the same path): the gate + ExecSpec.env_scrub +
+  render_report are the reusable seams; run_tests should call
+  tools::safety::gate and attach verdict.policy.env_scrub identically.
+- todo 31 (doctor honesty): doctor's sandbox probe still reports
+  `backend: windows-appcontainer` passively — now corroborated per-command
+  by the result metadata. No doctor change made (per MUST NOT).
+- The egress guard is deliberately conservative (documented in guard.rs):
+  any non-flag token after an egress program that does not reduce to a
+  (host, port) denies — e.g. `curl -u user:pass url` denies because
+  `user:pass` is unresolvable. Under the current deny-all default this has
+  no observable cost; when an allowlist grant surface arrives (perm compile
+  seam exists: compile_egress), the guard's destination grammar may need
+  widening with tests first.
+- Known pre-existing machine failure re-confirmed (not caused by this
+  change): pty_live::cargo_version_style_command_renders_cleanly.
+
+Stopping condition met: safety on the exec path test-proven (RED -> GREEN),
+acceptance suite green (392/392 on `-p harness-safety -p harness-daemon`),
+clippy clean, no commit made.

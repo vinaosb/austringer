@@ -57,6 +57,11 @@ pub struct ExecSpec {
     pub cwd: Option<PathBuf>,
     /// Environment additions layered over the inherited environment.
     pub env: BTreeMap<String, String>,
+    /// When set, variables the scrub drops (KEY/SECRET/TOKEN minus its
+    /// exceptions, CORE_VARS always kept) are removed from the child's
+    /// INHERITED environment and the additions — the safety policy's
+    /// env scrub applied at this spawn seam (todo 4).
+    pub env_scrub: Option<harness_safety::scrub::EnvScrub>,
     /// Mandatory timeout; clamped by [`MAX_COMMAND_TIMEOUT`].
     pub timeout: Duration,
     /// Terminal geometry.

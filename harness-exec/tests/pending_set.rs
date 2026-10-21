@@ -14,6 +14,7 @@ fn spec(name: &str) -> ExecSpec {
         args: Vec::new(),
         cwd: None,
         env: Default::default(),
+        env_scrub: None,
         timeout: Duration::from_secs(5),
         size: ScreenSize::default(),
         run_in: RunIn::Native,

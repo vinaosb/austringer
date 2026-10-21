@@ -20,6 +20,10 @@ harness-core = { path = "../harness-core", version = "0.1.0" }
 # execute_command rides harness-exec's PTY pipeline (screen-delta model,
 # kill trees, bounded windowed output).
 harness-exec = { path = "../harness-exec", version = "0.1.0" }
+# Todo 4 (ecosystem alignment): the execute_command safety gate —
+# per-command sandbox policy vocabulary, the userland egress guard, and
+# the requested-vs-enforced isolation report that rides every result.
+harness-safety = { path = "../harness-safety", version = "0.1.0" }
 # T42 routing table + M7 capability catalog for the submit-time
 # projection mediation (plan M10: the configured capable utility role).
 harness-intel = { path = "../harness-intel", version = "0.1.0" }

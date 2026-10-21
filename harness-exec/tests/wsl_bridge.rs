@@ -194,6 +194,7 @@ fn native_spec() -> ExecSpec {
         args: vec!["/c".into(), "echo hi".into()],
         cwd: None,
         env: Default::default(),
+        env_scrub: None,
         timeout: std::time::Duration::from_secs(5),
         size: harness_exec::spec::ScreenSize::default(),
         run_in: RunIn::Native,

@@ -17,6 +17,11 @@ harness-ast = { path = "../harness-ast", version = "0.1.0" }
 # Todo-22 pre-flight: gates run INSIDE a T21 shadow; the corrective cycle
 # revises applied edits through ShadowHandle and the caller commits after.
 harness-vfs = { path = "../harness-vfs", version = "0.1.0" }
+# Todo 4 (ecosystem alignment): the spawn seam accepts the safety
+# policy's EnvScrub and removes dropped variables from the child's
+# inherited environment (dependency direction exec -> safety is the
+# sanctioned one; safety never depends on exec).
+harness-safety = { path = "../harness-safety", version = "0.1.0" }
 portable-pty.workspace = true
 vt100.workspace = true
 blake3.workspace = true

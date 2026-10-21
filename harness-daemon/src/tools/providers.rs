@@ -16,6 +16,8 @@ use serde_json::Value;
 
 use harness_core::tools::{ProviderError, ToolProvider, ToolSchema, core_schema};
 
+use super::safety::{SafetyDecision, gate, render_block, render_report};
+
 /// Default `execute_command` timeout when the call omits `timeout_ms`.
 const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 120_000;
 
@@ -110,9 +112,12 @@ impl ToolProvider for EditLinesTool {
     }
 }
 
-/// `execute_command` over `harness-exec`'s PTY pipeline: the command
-/// line runs under the resolved default shell, output is the bounded
-/// screen-delta rendering, never raw bytes.
+/// `execute_command` over `harness-exec`'s PTY pipeline behind the
+/// per-command safety gate (todo 4): the command line runs under the
+/// resolved default shell, output is the bounded screen-delta
+/// rendering, never raw bytes, and every result carries the
+/// requested-vs-enforced isolation report (a network-shaped command
+/// under the deny-all egress policy is typed-blocked before spawn).
 pub(crate) struct ExecuteCommandTool {
     pub(crate) runner: Arc<harness_exec::PtyRunner>,
 }
@@ -151,36 +156,47 @@ impl ToolProvider for ExecuteCommandTool {
     async fn execute(&self, arguments: &Value) -> Result<Vec<u8>, ProviderError> {
         let command = str_arg(arguments, "command")?;
         let timeout_ms = optional_u64_arg(arguments, "timeout_ms")?;
-        let (program, args) = shell_argv(command)?;
-        let spec = harness_exec::ExecSpec {
-            program,
-            args,
-            cwd: None,
-            env: BTreeMap::new(),
-            timeout: Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_COMMAND_TIMEOUT_MS))
-                .min(harness_exec::spec::MAX_COMMAND_TIMEOUT),
-            size: harness_exec::ScreenSize::default(),
-            run_in: harness_exec::RunIn::Native,
-        };
-        let runner = Arc::clone(&self.runner);
-        let outcome = tokio::task::spawn_blocking(move || runner.run(&spec))
-            .await
-            .map_err(|join| ProviderError::Execution {
-                message: format!("command task failed: {join}"),
-            })?
-            .map_err(|error| ProviderError::Execution {
-                message: error.to_string(),
-            })?;
-        let status = match outcome.status {
-            harness_exec::ExecStatus::Completed { exit_code } => {
-                format!("exit code {exit_code}")
+        match gate(command) {
+            SafetyDecision::Block { violation, backend } => {
+                Ok(render_block(&violation, backend).into_bytes())
             }
-            harness_exec::ExecStatus::TimedOut => {
-                format!("timed out after {:?}", outcome.elapsed)
+            SafetyDecision::Pass(verdict) => {
+                let (program, args) = shell_argv(command)?;
+                let spec = harness_exec::ExecSpec {
+                    program,
+                    args,
+                    cwd: None,
+                    env: BTreeMap::new(),
+                    env_scrub: Some(verdict.policy.env_scrub.clone()),
+                    timeout: Duration::from_millis(
+                        timeout_ms.unwrap_or(DEFAULT_COMMAND_TIMEOUT_MS),
+                    )
+                    .min(harness_exec::spec::MAX_COMMAND_TIMEOUT),
+                    size: harness_exec::ScreenSize::default(),
+                    run_in: harness_exec::RunIn::Native,
+                };
+                let runner = Arc::clone(&self.runner);
+                let outcome = tokio::task::spawn_blocking(move || runner.run(&spec))
+                    .await
+                    .map_err(|join| ProviderError::Execution {
+                        message: format!("command task failed: {join}"),
+                    })?
+                    .map_err(|error| ProviderError::Execution {
+                        message: error.to_string(),
+                    })?;
+                let status = match outcome.status {
+                    harness_exec::ExecStatus::Completed { exit_code } => {
+                        format!("exit code {exit_code}")
+                    }
+                    harness_exec::ExecStatus::TimedOut => {
+                        format!("timed out after {:?}", outcome.elapsed)
+                    }
+                    harness_exec::ExecStatus::Cancelled => "cancelled".to_owned(),
+                };
+                let safety = render_report(&verdict);
+                Ok(format!("{status}\n{}\n{safety}", outcome.model_text).into_bytes())
             }
-            harness_exec::ExecStatus::Cancelled => "cancelled".to_owned(),
-        };
-        Ok(format!("{status}\n{}", outcome.model_text).into_bytes())
+        }
     }
 }
 

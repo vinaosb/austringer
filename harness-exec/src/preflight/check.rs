@@ -44,6 +44,7 @@ fn spec(
         args: args.to_vec(),
         cwd: Some(root.to_path_buf()),
         env,
+        env_scrub: None,
         timeout,
         size: ScreenSize {
             cols: 1000,

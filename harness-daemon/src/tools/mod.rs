@@ -9,6 +9,7 @@
 //! keep their typed NoExecutor dispatch error.
 
 mod providers;
+mod safety;
 
 use std::io;
 use std::path::{Path, PathBuf};
