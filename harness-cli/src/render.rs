@@ -102,6 +102,19 @@ fn human_event(event: &SessionEvent) -> Option<String> {
         SessionEvent::ChildFinished { child, task, state, detail } => {
             Some(format!("child {child} ({task}) finished {state}: {detail}"))
         }
+        SessionEvent::CostWarning { consumed_micros, cap_micros } => {
+            let pct = if *cap_micros == 0 {
+                100
+            } else {
+                u32::try_from(consumed_micros.saturating_mul(100) / cap_micros).unwrap_or(100)
+            };
+            Some(format!(
+                "cost warning: {pct}% of session cap ({consumed_micros} of {cap_micros} micro-USD)"
+            ))
+        }
+        SessionEvent::CostStop { consumed_micros, cap_micros } => Some(format!(
+            "cost stop: session cap reached ({consumed_micros} of {cap_micros} micro-USD) — further turns refused"
+        )),
     }
 }
 

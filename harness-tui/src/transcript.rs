@@ -172,6 +172,16 @@ impl SessionView {
                     cell.state = state.clone();
                 }
             }
+            SessionEvent::CostWarning { consumed_micros, cap_micros } => {
+                self.entries.push(Entry::Notice(format!(
+                    "cost warning: {consumed_micros} of {cap_micros} micro-USD (80% of cap)"
+                )));
+            }
+            SessionEvent::CostStop { consumed_micros, cap_micros } => {
+                self.entries.push(Entry::Notice(format!(
+                    "cost stop: cap reached ({consumed_micros} of {cap_micros} micro-USD); further turns refused"
+                )));
+            }
         }
     }
 
