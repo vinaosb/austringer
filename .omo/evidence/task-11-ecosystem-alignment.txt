@@ -1,0 +1,145 @@
+Task 11 — event_fts query path: cross-session transcript search (ecosystem alignment)
+====================================================================================================
+Date: 2026-10-21
+Worker: Sisyphus-junior (checkbox 11, .omo/plans/ecosystem-alignment.md)
+
+RECEIPT NOTE (plan-mandated):
+  Zed #58686 is a roadmap ticket, not shipped-proven. This todo is justified under the
+  filter's lightweight clause: a SELECT-only reader over the event_fts index that is
+  ALREADY maintained on every append (session.rs:238) and fork (fork.rs:106). No
+  write-path change shipped in this task.
+
+WHAT LANDED
+-----------
+1. harness-sessions (the store API — meta.rs idiom reused, retrieval.rs NOT mirrored):
+   - meta.rs: extracted the shared MATCH/bm25/snippet/rank pieces (hit_row,
+     fts_error_mapper) from the one existing SELECT (search_events_conn) and added
+     search_events_in_conn: same idiom + `AND session_id IN (...)` over the
+     UNINDEXED column. Empty scope short-circuits to no hits (fail-closed).
+   - meta.rs classifier hardening (pre-existing gap found by the new tests): FTS5
+     parse errors surface as rusqlite "unterminated string" WITHOUT the "fts5"
+     prefix; the mapper now also classifies SQLITE_ERROR primary code
+     (rusqlite::ErrorCode::Unknown) on these MATCH-only statements as
+     SessionError::BadQuery. Without this, syntax errors leaked as Sqlite{..} =>
+     would have become a 500 on the route.
+   - store.rs: public SessionStore::search_events_in_sessions(query, &[&str], limit)
+     beside the existing search_events.
+2. harness-daemon/src/search.rs (new module, the todo-11 surface):
+   - GET /sessions/search?q=<fts5>&limit=N&sessions=a,b — cross-session over the
+     daemon's ONE store root (per-request SessionStore::open at data_dir, the
+     RunHistory/AutomationStore convention). Empty result = 200 + [] (bare array,
+     the history-route precedent). BadQuery => typed 400 {"error":{"code":"bad_query",
+     "query","detail"}}; missing q => typed 400 missing_query. limit default 20,
+     cap 100.
+   - SearchSessionsTool (model-facing `search_sessions` ToolProvider): registered
+     via ToolRegistry::register in CoreExecutors::open_registry (the task-3
+     per-session registry) — session-scoped BY DEFAULT (scope = the session dir's
+     own id; store root derived by rewind.rs's sessions_root, now pub(crate));
+     cross-session requires explicit session_ids; limit default 8, hard cap 25
+     (requested limit clamped). BadQuery => ProviderError::InvalidArguments (typed,
+     model-correctable). NO path argument exists anywhere => no search can cross
+     working-dir roots (provider-egress boundary is structural).
+   - server.rs: one route line; lib.rs: mod search; tools/providers.rs: str_arg/
+     optional_u64_arg made pub(crate) for reuse.
+3. harness-cli:
+   - `harness sessions search [--limit N] [--sessions a,b] <query>` (cli.rs
+     Sessions/SessionsCommand::Search + src/sessions.rs flow + bin dispatch).
+     HTTP-only: IPC has no HTTP base and the daemon does not persist its port, so a
+     missing --url is a typed transport hint raised BEFORE Target::resolve (else it
+     would surface as a misleading token-file failure). 200 => ranked lines / "no
+     hits" + exit 0; 400 => typed "protocol error: status 400: bad query: ..." exit 1.
+
+RANKING NOTE (honest deviation):
+  The plan's QA prose says "recency-weighted bm25". The binding instruction
+  (References) is "reuse meta.rs's MATCH/bm25/snippet/rank idiom", which is pure
+  bm25 (ORDER BY rank); event_fts carries no timestamp column to weight by, and
+  inventing a recency blend would diverge from the mandated idiom and require a
+  schema change on a SELECT-only task. Ranking shipped = bm25 ascending (best
+  first, term-frequency weighted). Recorded here and in issues.md for the
+  orchestrator.
+
+RED (captured before implementation; all failing for the product gap):
+  - harness-sessions: compile error E0599 x6 — no method `search_events_in_sessions`
+    (cargo nextest run -p harness-sessions search bad_query).
+  - harness-daemon (13 -> 9 tests): route tests failed 404-vs-200/400 (route absent);
+    tool tests failed with "no executor registered for tool \"search_sessions\"" /
+    approval-refusal (tool unregistered). One test-infra race fixed in RED phase:
+    the ask answerer must subscribe BEFORE tokio::spawn (executor_bound_tests
+    pattern) or the engine's ask times out after 30s.
+  - harness-cli: "error: unrecognized subcommand 'sessions'" (exit 2) on all 4.
+
+GREEN GATES (exact invocations + results)
+----------------------------------------------------------------------------------------------------
+1. cargo nextest run -p harness-sessions -p harness-daemon -p harness-cli
+   (via cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run ...")
+   => 389 tests run: 389 passed, 1 skipped (pre-existing skip). Includes the 24 NEW tests:
+   - harness-sessions/tests/search.rs (5): ranked hits across 3 sessions carry ids+seq
+     with tf-ordered bm25; scoped search filters to listed ids; empty scope matches
+     nothing; scoped limit bounds; unparseable FTS ("unbalanced / NEAR( / AND) is
+     typed BadQuery on BOTH paths.
+   - harness-daemon/tests/sessions_search_tests.rs (9): route ranked-across-sessions
+     (bm25 ascending, s2-tf-first, session_id+seq+snippet on every hit); route scoped
+     via &sessions=; route empty = 200 []; route syntax error = typed 400 bad_query
+     (not 500); route missing q = typed 400 missing_query; tool session-scoped by
+     default (other session's hits absent); tool cross-session only with explicit
+     ids (listed id's hits present, own session's absent); tool bounded (30 matches,
+     limit 1000 requested => "25 hit(s)"); tool bad syntax => typed invalid-arguments
+     for search_sessions, session continues.
+   - harness-cli/tests/sessions_search_cli.rs (4) + sessions.rs unit tests (2):
+     ranked hits printed (s2 before s1); empty = exit 0 "no hits"; syntax error =
+     exit 1 stderr "bad query"; missing --url = exit 1 stderr carries "--url" hint;
+     error_detail code-spacing + bounded raw fallback.
+
+2. cargo clippy --workspace --all-targets -- -D warnings  => green (one needless_borrow
+   fixed during the run).
+
+HAPPY PATH (hands-on, real binaries; the ranked output as shipped)
+----------------------------------------------------------------------------------------------------
+Invocation: cargo nextest run -p harness-cli sessions_search_cli_prints_ranked_hits --nocapture
+  (drives the real harness.exe binary against the real daemon router, seeded
+  3-session store: s1 "the needle appears once here"; s2 x3 needle events)
+
+--- ranked output for query "needle" ---
+[1] session=s2 seq=1 bm25=-0.0000012846715328467155 :: needle needle in the haystack
+[2] session=s2 seq=2 bm25=-0.000001113924050632911 :: another needle sighting
+[3] session=s1 seq=2 bm25=-0.0000009072164948453608 :: the needle appears once here
+[4] session=s2 seq=3 bm25=-0.0000009072164948453608 :: needle once more, third time
+
+  => phrase/term match ACROSS sessions, ranked best-first by bm25 (term-frequency
+     weighted: s2's double-occurrence event outranks everything; s1's single hit
+     ties with s2's third and lands after it). Every hit carries session id + seq.
+
+Hands-on daemon round trip (real harness-daemon.exe on a fresh data dir, real CLI):
+  - empty store, query zzznosuchterm   => `no hits for "zzznosuchterm"`, exit code 0
+  - raw route empty:  curl .../sessions/search?q=zzznosuchterm  => body `[]`, http_status=200
+  - unauthenticated:  curl without token => http_status=401
+
+FAILURE PATH (hands-on, real binaries)
+----------------------------------------------------------------------------------------------------
+  - CLI with FTS5 syntax error `NEAR(`:
+      harness.exe sessions search --url ... --token ... "NEAR("
+      => stderr: harness: protocol error: status 400: bad query: fts5: syntax error near ""
+      => exit code: 1  (typed, NOT a 500)
+  - Raw route with unterminated quote (curl.exe):
+      GET /sessions/search?q=%22unbalanced
+      => {"error":{"code":"bad_query","detail":"unterminated string","query":"\"unbalanced"}}
+         http_status=400
+  - Missing --url (CLI):
+      => stderr: harness: daemon unreachable: sessions search needs the HTTP transport;
+         pass --url http://127.0.0.1:PORT (the daemon prints its URL at startup)
+      => exit code: 1
+
+NOTES / DEVIATIONS
+------------------
+- Recency weighting: see RANKING NOTE above (bm25 idiom as mandated; no schema change).
+- FTS5 grammar trap discovered: hyphenated query strings (e.g. `zzz-no-such-term`)
+  parse as column filters => "no such column: no" => typed 400, NOT an empty match.
+  Empty-match fixtures must use single barewords.
+- Pre-existing over-ceiling file received a surgical 1-line addition:
+  harness-daemon/src/server.rs (283 pure LOC; flagged since todo-9). No other touched
+  file exceeds the 250 ceiling (meta.rs 161, store.rs 214, search.rs 187 new,
+  providers.rs 212, sessions.rs 101 new).
+- Machine events during the run (not repo defects): one leaked harness-daemon.exe from
+  an earlier session locked C:\ct\debug (killed); PS 5.1 lacks -SkipHttpErrorCheck and
+  eats leading quotes in native args (demo switched to curl.exe + NEAR( ).
+- harness-exec pty_live known machine-local failure NOT in the -p set; not re-run here.

@@ -64,6 +64,9 @@ pub enum Command {
     /// MCP surface: list scanned servers, serve harness over stdio,
     /// smoke-call one server (never contacts the daemon).
     Mcp(McpArgs),
+    /// Session-store surface over the daemon's HTTP routes (todo 11:
+    /// transcript search).
+    Sessions(SessionsArgs),
 }
 
 /// `mcp` arguments.
@@ -111,6 +114,39 @@ pub struct McpCallArgs {
     /// Directory to scan (repeatable; default: the working directory).
     #[arg(long = "dir")]
     pub dirs: Vec<PathBuf>,
+}
+
+/// `sessions` arguments.
+#[derive(Debug, Args)]
+pub struct SessionsArgs {
+    #[command(subcommand)]
+    pub command: SessionsCommand,
+}
+
+/// The `sessions` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum SessionsCommand {
+    /// Full-text search (FTS5) over session transcripts through the
+    /// daemon's search route; hits are ranked by bm25. Requires `--url`
+    /// (the HTTP transport).
+    Search(SessionsSearchArgs),
+}
+
+/// `sessions search` arguments.
+#[derive(Debug, Args)]
+pub struct SessionsSearchArgs {
+    /// Maximum hits (the daemon caps at 100).
+    #[arg(long)]
+    pub limit: Option<u32>,
+
+    /// Comma-separated session ids to scope (default: all sessions in
+    /// the daemon's store).
+    #[arg(long)]
+    pub sessions: Option<String>,
+
+    /// The FTS5 query (a word, a quoted phrase, `a OR b`).
+    #[arg(trailing_var_arg = true, required = true)]
+    pub query: Vec<String>,
 }
 
 /// `run` arguments.

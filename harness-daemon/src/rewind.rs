@@ -148,8 +148,9 @@ pub fn rewind(host: &Arc<SessionHost>, steps: u64) -> Result<(), RewindError> {
 
 /// The persisted sessions store for a session root: the daemon data
 /// dir, the grandparent of the engine session dir
-/// (`{data}/sessions/{sid}` → `{data}`).
-fn sessions_root(session_dir: &std::path::Path) -> PathBuf {
+/// (`{data}/sessions/{sid}` → `{data}`). Shared by the rewind bridge
+/// and the event_fts search surface (todo 11).
+pub(crate) fn sessions_root(session_dir: &std::path::Path) -> PathBuf {
     session_dir
         .parent()
         .and_then(std::path::Path::parent)

@@ -104,7 +104,7 @@ impl Target {
 }
 
 /// Read the daemon-generated token file (trailing newline tolerated).
-fn read_token(data_dir: &Path) -> Option<String> {
+pub(crate) fn read_token(data_dir: &Path) -> Option<String> {
     std::fs::read_to_string(data_dir.join(TOKEN_FILENAME))
         .ok()
         .map(|token| token.trim().to_owned())

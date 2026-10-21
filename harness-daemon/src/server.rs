@@ -365,6 +365,7 @@ pub fn build_router(state: Arc<DaemonState>) -> Router {
     Router::new()
         .route("/", get(crate::handlers::root))
         .route("/sessions", get(crate::handlers::list_sessions))
+        .route("/sessions/search", get(crate::search::sessions_search))
         .route("/s/{sid}", get(crate::handlers::session_page))
         .route("/s/{sid}/attach", get(crate::handlers::attach_ws))
         .route("/s/{sid}/events", get(crate::handlers::sse_events))

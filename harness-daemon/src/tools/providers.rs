@@ -21,7 +21,7 @@ use super::safety::{SafetyDecision, gate, render_block, render_report};
 /// Default `execute_command` timeout when the call omits `timeout_ms`.
 const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 120_000;
 
-fn str_arg<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, ProviderError> {
+pub(crate) fn str_arg<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, ProviderError> {
     arguments.get(key).and_then(Value::as_str).ok_or_else(|| {
         ProviderError::InvalidArguments {
             message: format!("arguments must include a string {key:?} field"),
@@ -29,7 +29,7 @@ fn str_arg<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, ProviderError
     })
 }
 
-fn optional_u64_arg(arguments: &Value, key: &str) -> Result<Option<u64>, ProviderError> {
+pub(crate) fn optional_u64_arg(arguments: &Value, key: &str) -> Result<Option<u64>, ProviderError> {
     match arguments.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => value.as_u64().map(Some).ok_or_else(|| {

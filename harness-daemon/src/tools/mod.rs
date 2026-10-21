@@ -8,7 +8,7 @@
 //! remains the default executor for un-injected states; unbound tools
 //! keep their typed NoExecutor dispatch error.
 
-mod providers;
+pub(crate) mod providers;
 mod safety;
 
 use std::io;
@@ -70,7 +70,9 @@ impl CoreExecutors {
     }
 
     /// Opens the session's registry with the four in-process executors
-    /// bound to their day-one contracts.
+    /// bound to their day-one contracts, plus the model-facing
+    /// `search_sessions` tool (todo 11: session-scoped-by-default FTS5
+    /// search over the daemon's event_fts index).
     ///
     /// # Errors
     /// spill-store creation failure for the session directory.
@@ -87,6 +89,9 @@ impl CoreExecutors {
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
             .bind_executor("lsp_query", Arc::new(self.lsp.clone()))
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        registry
+            .register(Arc::new(crate::search::SearchSessionsTool::new(session_dir)))
             .map_err(|error| io::Error::other(error.to_string()))?;
         Ok(registry)
     }

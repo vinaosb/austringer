@@ -43,6 +43,7 @@ pub mod routing;
 pub mod run_history;
 pub mod runner;
 pub mod scheduler;
+pub mod search;
 pub mod server;
 pub mod skills;
 pub mod stages;

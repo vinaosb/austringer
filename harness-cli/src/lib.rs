@@ -19,5 +19,6 @@ pub mod mcp;
 pub mod render;
 pub mod repl;
 pub mod run;
+pub mod sessions;
 pub mod target;
 pub mod version;

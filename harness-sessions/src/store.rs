@@ -9,7 +9,9 @@ use rusqlite::{Connection, OptionalExtension};
 use crate::error::SessionError;
 use crate::layout::Layout;
 use crate::lease::{LeaseOwner, SharedProbe, SysinfoLeaseProbe};
-use crate::meta::{EventSearchHit, SessionMeta, load_meta_conn, search_events_conn};
+use crate::meta::{
+    EventSearchHit, SessionMeta, load_meta_conn, search_events_conn, search_events_in_conn,
+};
 use crate::retrieval::RecallConfig;
 use crate::session::OpenMode;
 use crate::vector::VectorIndex;
@@ -223,6 +225,23 @@ impl SessionStore {
     ) -> Result<Vec<EventSearchHit>, SessionError> {
         let conn = self.lock_conn()?;
         search_events_conn(&conn, query, limit)
+    }
+
+    /// Session-scoped BM25 search: only the listed session ids are
+    /// searched, over the same event_fts index and ranking idiom as
+    /// [`Self::search_events`]. An empty `session_ids` scope matches
+    /// nothing (fail-closed).
+    ///
+    /// # Errors
+    /// Typed [`SessionError::BadQuery`] for unparseable FTS5 syntax.
+    pub fn search_events_in_sessions(
+        &self,
+        query: &str,
+        session_ids: &[&str],
+        limit: u32,
+    ) -> Result<Vec<EventSearchHit>, SessionError> {
+        let conn = self.lock_conn()?;
+        search_events_in_conn(&conn, query, session_ids, limit)
     }
 
     /// The last event sequence of `turn` (`None` when the session has

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use clap::Parser as _;
 use harness_cli::attach;
-use harness_cli::cli::{Cli, Command};
+use harness_cli::cli::{Cli, Command, SessionsArgs, SessionsCommand};
 use harness_cli::client::{Connect, LIVE_ONLY, SessionTransport};
 use harness_cli::doctor::{DoctorOptions, doctor};
 use harness_cli::error::CliError;
@@ -15,6 +15,7 @@ use harness_cli::image;
 use harness_cli::mcp;
 use harness_cli::repl;
 use harness_cli::run::{self, RunOptions};
+use harness_cli::sessions;
 use harness_cli::target::{Target, TargetSpec, default_session};
 
 fn main() -> ExitCode {
@@ -51,6 +52,16 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
         data_dir: cli.data_dir.clone(),
         ipc_name: cli.ipc_name.clone(),
     };
+    // `sessions search` rides the HTTP route surface only (the IPC
+    // carrier has no HTTP base), so it checks its transport BEFORE
+    // resolve — a missing --url is the typed hint, not a token-file
+    // failure.
+    if let Command::Sessions(SessionsArgs {
+        command: SessionsCommand::Search(args),
+    }) = &cli.command
+    {
+        return sessions::search(&spec, args).await;
+    }
     let target = Target::resolve(&spec)?;
     let images = image::attachments(&cli.images, false)?;
     match cli.command {
@@ -111,6 +122,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
             .await
         }
         Command::Mcp(_) => unreachable!("mcp dispatched before transport resolution"),
+        Command::Sessions(_) => unreachable!("sessions dispatched before transport resolution"),
     }
 }
 
