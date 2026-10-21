@@ -51,6 +51,10 @@ pub enum CommandRejected {
     /// The submit carried no content at all.
     #[error("empty submit")]
     Empty,
+    /// A skill activation (explicit `/skill` or trigger-driven) was
+    /// refused by the trust gate; the refusal carries the tier.
+    #[error("{0}")]
+    SkillRefused(crate::skills::SkillRefusal),
 }
 
 /// Attach failures.
@@ -95,6 +99,10 @@ pub struct SessionHost {
     /// session factory BEFORE the engine spawns (the steer stage
     /// captures its notice queue).
     pub(crate) projection: std::sync::OnceLock<Arc<crate::projection::ProjectionIntake>>,
+    /// The daemon-wide skills runtime (todo 6); set once by the
+    /// session factory. Every Submit passes its trust/consent gates
+    /// (`/skill` commands and trigger matches alike).
+    pub(crate) skills: std::sync::OnceLock<Arc<crate::skills::SkillsRuntime>>,
     pub(crate) turn_counter: AtomicU64,
     pub(crate) journal_root: Option<PathBuf>,
 }
@@ -134,6 +142,7 @@ impl SessionHost {
             steer_queue: Arc::clone(&steer_queue),
             media_dir: std::sync::OnceLock::new(),
             projection: std::sync::OnceLock::new(),
+            skills: std::sync::OnceLock::new(),
             turn_counter: AtomicU64::new(0),
             journal_root,
         });
@@ -197,6 +206,10 @@ impl SessionHost {
                     queue.push_back(text.clone());
                 }
             }
+            HostCommand::Submit(text) => {
+                let queued = self.route_skills(text)?;
+                let _ = self.cmd_tx.send(queued).await;
+            }
             HostCommand::SubmitMedia { text, media } => {
                 let blocks = self.resolve_media_blocks(text, media)?;
                 // Plan M10: needed projections resolve BEFORE the turn
@@ -207,11 +220,51 @@ impl SessionHost {
                 }
                 self.queue_blocks(blocks, media);
             }
-            HostCommand::Submit(_) | HostCommand::SubmitBlocks(_) | HostCommand::Cancel => {
+            HostCommand::SubmitBlocks(_) | HostCommand::Cancel => {
                 let _ = self.cmd_tx.send(command).await;
             }
         }
         Ok(())
+    }
+
+    /// The skills submit-lane gate (todo 6): every Submit passes the
+    /// trust/consent gates — `/skill` commands AND trigger matches.
+    /// Refusals are typed and carry the quarantine tier; an activated
+    /// skill's context rides the turn as typed blocks while untouched
+    /// submits queue in their original form. A host with no runtime
+    /// bound (built outside the daemon factory) has no skills surface
+    /// at all: `/skill` fails closed, plain text passes untouched.
+    fn route_skills(&self, text: &str) -> Result<HostCommand, CommandRejected> {
+        let is_skill_command = text.starts_with("/skill ");
+        let Some(runtime) = self.skills.get() else {
+            return if is_skill_command {
+                let name = text
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_owned();
+                Err(CommandRejected::SkillRefused(
+                    crate::skills::SkillRefusal::NotBound { name },
+                ))
+            } else {
+                Ok(HostCommand::Submit(text.to_owned()))
+            };
+        };
+        let args = text
+            .strip_prefix("/skill ")
+            .and_then(|rest| rest.split_once(' ').map(|(_, args)| args))
+            .unwrap_or_default();
+        match runtime.route_submit(text) {
+            crate::skills::SubmitRouting::Pass => Ok(HostCommand::Submit(text.to_owned())),
+            crate::skills::SubmitRouting::Refused(refusal) => {
+                Err(CommandRejected::SkillRefused(refusal))
+            }
+            crate::skills::SubmitRouting::Activate(skill) => Ok(HostCommand::SubmitBlocks(
+                vec![ContentBlock::Text {
+                    text: crate::skills::SkillsRuntime::render_context(&skill, args),
+                }],
+            )),
+        }
     }
 
     /// Resolve uploaded refs into typed media blocks: each ref must

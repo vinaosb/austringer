@@ -53,6 +53,9 @@ pub struct DaemonState {
     pub sessions_root: PathBuf,
     /// Remote-worker router (split-brain tool execution).
     pub worker_router: Arc<WorkerRouter>,
+    /// The startup-loaded skills surface (todo 6): every session's
+    /// submit lane routes through its trust/consent gates.
+    pub skills: Arc<crate::skills::SkillsRuntime>,
     /// The bound listener kept for zero-downtime reload handoff.
     pub listener: Mutex<Option<std::net::TcpListener>>,
     /// Fired when a reload completed handing the socket off.
@@ -75,6 +78,7 @@ impl DaemonState {
             None => auth::generate_token()?,
         };
         let worker_router = Arc::new(WorkerRouter::new(config.worker_call_timeout));
+        let skills = Arc::new(crate::skills::SkillsRuntime::load(&config.data_dir));
         let (drain, _) = tokio::sync::watch::channel(false);
         let executor_factory: ExecutorFactory = Arc::new({
             let worker_router = Arc::clone(&worker_router);
@@ -89,6 +93,7 @@ impl DaemonState {
         Ok(Self {
             token,
             worker_router,
+            skills,
             sessions_root: config.data_dir.join("sessions"),
             config,
             inference_factory: inference_factory.into_factory(),
@@ -146,6 +151,7 @@ impl DaemonState {
         // The projection intake must be set BEFORE the engine spawns:
         // the steer stage captures its notice queue at stage construction.
         let _ = host.media_dir.set(session_dir.clone());
+        let _ = host.skills.set(Arc::clone(&self.skills));
         if let Some(intake) = (self.projection_factory)(&session_dir) {
             let _ = host.projection.set(intake);
         }
@@ -311,6 +317,7 @@ pub fn build_router(state: Arc<DaemonState>) -> Router {
         .route("/s/{sid}/media", post(crate::media::upload_media))
         .route("/s/{sid}/media/{hash}", get(crate::media::get_media))
         .route("/automations", get(crate::handlers::list_automations))
+        .route("/packs", get(crate::handlers::list_packs))
         .route("/worker", get(crate::ws::worker_ws))
         .route("/admin/reload", post(crate::handlers::reload_endpoint))
         .layer(middleware::from_fn_with_state(Arc::clone(&state), auth_mw))

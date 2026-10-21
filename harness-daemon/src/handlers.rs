@@ -249,8 +249,15 @@ pub(crate) async fn list_automations(State(state): State<Arc<DaemonState>>) -> R
     Json(serde_json::json!({ "automations": automations })).into_response()
 }
 
-pub(crate) async fn reload_endpoint(State(state): State<Arc<DaemonState>>) -> Response {
-    let Ok(exe) = std::env::current_exe() else {
+/// `GET /packs` — every loaded skill pack with its trust tier and
+/// status, plus every declared MCP server with its disabled marker
+/// (pack-sourced declarations always land disabled; enabling one is a
+/// separate explicit consent step, not this surface).
+pub(crate) async fn list_packs(State(state): State<Arc<DaemonState>>) -> Response {
+    Json(state.skills.packs_json()).into_response()
+}
+
+pub(crate) async fn reload_endpoint(State(state): State<Arc<DaemonState>>) -> Response {    let Ok(exe) = std::env::current_exe() else {
         return (StatusCode::INTERNAL_SERVER_ERROR, "no exe").into_response();
     };
     let listener = match state.listener.lock() {

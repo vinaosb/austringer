@@ -150,10 +150,17 @@ impl App {
                 })]
             }
             Parsed::Skill { name, rest } => {
-                self.view.note(&format!(
-                    "/skill {name} {rest}: recognized, skill invocation wiring lands with todo 40"
-                ));
-                Vec::new()
+                // Submit verbatim, never Steer: the daemon-side trust
+                // gate parses /skill off the submit lane — steering
+                // would bypass it.
+                let text = if rest.is_empty() {
+                    format!("/skill {name}")
+                } else {
+                    format!("/skill {name} {rest}")
+                };
+                vec![UiAction::Send(ClientMsg::Command {
+                    command: SessionCommand::Submit { text },
+                })]
             }
             Parsed::UnknownCommand { word } => {
                 self.view.note(&format!("unknown command /{word}"));

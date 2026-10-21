@@ -474,6 +474,46 @@ mod tests {
     }
 
     #[test]
+    fn skill_command_sends_submit_text_verbatim() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/skill audit run twice");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Submit {
+                    text: "/skill audit run twice".into()
+                }
+            })],
+            "the daemon-side trust gate parses /skill off the submit lane"
+        );
+    }
+
+    #[test]
+    fn skill_command_never_steers_mid_turn() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Server(ServerMsg::Event {
+            frame: Frame {
+                id: 1,
+                event: SessionEvent::TurnStarted { turn: 1 },
+            },
+        }));
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/skill audit now");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Submit {
+                    text: "/skill audit now".into()
+                }
+            })],
+            "steering would bypass the daemon-side gates; /skill always submits"
+        );
+    }
+
+    #[test]
     fn gate_is_modal_and_yan_answers() {
         let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
         app.step(UiEvent::Key(char_key('i')));

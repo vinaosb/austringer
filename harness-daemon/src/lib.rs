@@ -42,6 +42,7 @@ pub mod run_history;
 pub mod runner;
 pub mod scheduler;
 pub mod server;
+pub mod skills;
 pub mod stages;
 pub mod tools;
 pub mod transport;

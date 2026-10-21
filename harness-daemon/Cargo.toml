@@ -39,6 +39,11 @@ harness-media = { path = "../harness-media", version = "0.1.0", features = [
 ] }
 harness-providers = { path = "../harness-providers", version = "0.1.0" }
 harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
+# Todo 6 (ecosystem alignment): skill packs load at startup through the
+# harness-skills SkillLoader; every activation path (explicit /skill and
+# trigger-driven routing) is governed by the pack-tier trust gate and
+# the consent gate. Pack MCP entries land as DISABLED declarations.
+harness-skills = { path = "../harness-skills", version = "0.1.0" }
 # Todo 5 (ecosystem alignment): /rewind restores workspace state through
 # the snapshot store (transactional file restore + turn restore points).
 harness-snapshots = { path = "../harness-snapshots", version = "0.1.0" }
@@ -76,6 +81,9 @@ libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Todo 6: proving pack-installed MCP declarations parse as
+# DeferredOnFirstUse under the manager's autostart decision.
+harness-mcp = { path = "../harness-mcp", version = "0.1.0" }
 # M32: cassette SSE scripts + scripted in-memory provider transports.
 harness-test-support = { path = "../harness-test-support", version = "0.1.0" }
 # WS client for integration tests against the real axum WebSocket transport

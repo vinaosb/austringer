@@ -36,6 +36,8 @@ function boot() {
     status: "idle",
     transport: "",
     sessions: [],
+    packs: [],
+    mcpServers: [],
     replayIdx: null,
     session: sessionFromPath(location.pathname),
     shareHash: location.hash.startsWith("#share=") ? location.hash : null,
@@ -48,6 +50,8 @@ function boot() {
     status: app.status,
     transport: app.transport,
     sessions: app.sessions,
+    packs: app.packs,
+    mcpServers: app.mcpServers,
     replayIdx: app.replayIdx ?? (app.store.getState().frames.length - 1),
     share: app.shareParsed,
   });
@@ -121,6 +125,25 @@ function boot() {
         repaint();
       }
     },
+    async loadPacks() {
+      if (!app.token) return;
+      try {
+        const response = await fetch("/packs", {
+          headers: { authorization: `Bearer ${app.token}` },
+        });
+        if (response.status === 401) {
+          store.dispatch(JSON.stringify({ type: "error", code: "auth", message: "unauthorized" }));
+          return;
+        }
+        const body = await response.json();
+        app.packs = Array.isArray(body.packs) ? body.packs : [];
+        app.mcpServers = Array.isArray(body.mcp_servers) ? body.mcp_servers : [];
+        repaint();
+      } catch {
+        app.status = "error";
+        repaint();
+      }
+    },
     reconnect() {
       connectAll();
     },
@@ -160,6 +183,7 @@ function boot() {
     connectAll();
   } else if (app.token) {
     actions.loadSessions();
+    actions.loadPacks();
   }
 
   window.addEventListener("hashchange", () => {

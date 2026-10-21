@@ -125,7 +125,7 @@ function dashboardView(state, props, actions) {
     sessions,
     toolHeatmap(state),
     trendsPanel(state),
-    packsPanel(),
+    packsPanel(state, props),
   ]);
 }
 
@@ -173,14 +173,39 @@ function trendsPanel(state) {
   return panel;
 }
 
-function packsPanel() {
-  return el("section", { class: "panel", "data-testid": "pack-manager" }, [
+function packsPanel(state, props) {
+  const panel = el("section", { class: "panel", "data-testid": "pack-manager" }, [
     el("h2", { text: "packs" }),
-    el(
-      "p",
-      { class: "empty", text: "registry manager is client-ready; the daemon ships no packs endpoint yet (disclosed in task-37 evidence)" },
-    ),
   ]);
+  const packs = props.packs || [];
+  if (packs.length === 0) {
+    panel.append(el("p", { class: "empty", text: "no skill packs reported by the daemon yet" }));
+    return panel;
+  }
+  for (const pack of packs) {
+    const trusted = pack.trusted
+      ? el("span", { class: "status status-open", text: `${pack.tier} · trusted` })
+      : el("span", { class: "status status-closed", text: `${pack.tier} · quarantined` });
+    panel.append(
+      el("div", { class: "row", "data-pack": pack.name }, [
+        el("strong", { text: pack.name }),
+        trusted,
+        el("span", { class: "hint", text: pack.description || "" }),
+      ]),
+    );
+  }
+  const servers = props.mcpServers || [];
+  for (const server of servers) {
+    panel.append(
+      el("div", { class: "row", "data-mcp-server": server.server }, [
+        el("span", { text: `mcp: ${server.server}` }),
+        server.disabled
+          ? el("span", { class: "status status-closed", text: "disabled — explicit consent required" })
+          : el("span", { class: "status status-open", text: "enabled" }),
+      ]),
+    );
+  }
+  return panel;
 }
 
 // ---- Session view (route "/s/{sid}") ---------------------------------

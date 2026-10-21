@@ -49,6 +49,20 @@ pub struct SkillIndex {
 }
 
 impl SkillIndex {
+    /// An index with no entries, partials, or routing surface — the
+    /// fail-soft value for embedders whose scan errored.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+            partials: BTreeMap::new(),
+            partial_paths: Vec::new(),
+            shared_dir: None,
+            report: ScanReport::default(),
+            routable: Vec::new(),
+        }
+    }
+
     /// The scan report.
     pub fn report(&self) -> &ScanReport {
         &self.report
