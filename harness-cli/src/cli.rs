@@ -1,8 +1,9 @@
 //! The clap argument surface (plan todo 39 names clap): five
-//! subcommands over one daemon client — `run` (headless turn),
-//! `capture` (quick one-liner), `repl`, `attach`, and `doctor` — plus
-//! the transport flags and the shared `--image` / `--output-json`
-//! flags (global so the top-level help documents them).
+//! daemon-client subcommands — `run` (headless turn), `capture`
+//! (quick one-liner), `repl`, `attach`, and `doctor` — plus the
+//! daemon-less `mcp` family (todo 7), the transport flags, and the
+//! shared `--image` / `--output-json` flags (global so the top-level
+//! help documents them).
 
 use std::path::PathBuf;
 
@@ -47,7 +48,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-/// The five subcommands.
+/// The five daemon subcommands plus the daemon-less `mcp` family.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Run one headless turn and print its result.
@@ -60,6 +61,56 @@ pub enum Command {
     Attach(AttachArgs),
     /// Health-check config, provider, sandbox, MCP, sessions, env.
     Doctor(DoctorArgs),
+    /// MCP surface: list scanned servers, serve harness over stdio,
+    /// smoke-call one server (never contacts the daemon).
+    Mcp(McpArgs),
+}
+
+/// `mcp` arguments.
+#[derive(Debug, Args)]
+pub struct McpArgs {
+    #[command(subcommand)]
+    pub command: McpCommand,
+}
+
+/// The `mcp` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum McpCommand {
+    /// List MCP server entries found in config files (parse-only).
+    #[command(visible_alias = "scan")]
+    List(McpListArgs),
+    /// Serve the harness MCP server over stdio until disconnect.
+    Serve,
+    /// Smoke-test one configured server: connect, then list tools
+    /// (or call one with `--tool`/`--args`).
+    Call(McpCallArgs),
+}
+
+/// `mcp list` arguments.
+#[derive(Debug, Args)]
+pub struct McpListArgs {
+    /// Directory to scan (repeatable; default: the working directory).
+    #[arg(long = "dir")]
+    pub dirs: Vec<PathBuf>,
+}
+
+/// `mcp call` arguments.
+#[derive(Debug, Args)]
+pub struct McpCallArgs {
+    /// Server name as keyed in the scanned config files.
+    pub server: String,
+
+    /// Call this one tool instead of listing tools.
+    #[arg(long)]
+    pub tool: Option<String>,
+
+    /// Tool arguments as one JSON object (with `--tool`).
+    #[arg(long)]
+    pub args: Option<String>,
+
+    /// Directory to scan (repeatable; default: the working directory).
+    #[arg(long = "dir")]
+    pub dirs: Vec<PathBuf>,
 }
 
 /// `run` arguments.

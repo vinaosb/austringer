@@ -15,6 +15,7 @@ pub mod doctor;
 pub mod doctor_probes;
 pub mod error;
 pub mod image;
+pub mod mcp;
 pub mod render;
 pub mod repl;
 pub mod run;

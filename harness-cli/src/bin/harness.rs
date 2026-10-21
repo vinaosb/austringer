@@ -12,6 +12,7 @@ use harness_cli::client::{Connect, LIVE_ONLY, SessionTransport};
 use harness_cli::doctor::{DoctorOptions, doctor};
 use harness_cli::error::CliError;
 use harness_cli::image;
+use harness_cli::mcp;
 use harness_cli::repl;
 use harness_cli::run::{self, RunOptions};
 use harness_cli::target::{Target, TargetSpec, default_session};
@@ -38,6 +39,12 @@ fn main() -> ExitCode {
 }
 
 async fn dispatch(cli: Cli) -> Result<i32, CliError> {
+    // `mcp` commands are daemon-less (scan/serve/call never contact
+    // the daemon), so they run before transport resolution — no token
+    // file is required to inspect configs or serve stdio.
+    if let Command::Mcp(args) = &cli.command {
+        return mcp::run(&args.command).await;
+    }
     let spec = TargetSpec {
         url: cli.url.clone(),
         token: cli.token.clone(),
@@ -103,6 +110,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
             )
             .await
         }
+        Command::Mcp(_) => unreachable!("mcp dispatched before transport resolution"),
     }
 }
 
