@@ -118,16 +118,15 @@ fn session_mediation(
 
 /// The utility-route mediation candidate from the T42 routing table
 /// (`{data_dir}/routing.json`): the summarizer role's model on the same
-/// provider/credential seam as the session model. An absent file is
+/// provider/credential seam as the session model. An absent document is
 /// silence (unconfigured is the default posture); a present but
 /// unusable one is loud and never fatal to inference.
 fn utility_mediation(
     provider: &harness_daemon::provider::ProviderSelection,
-    data_dir: &std::path::Path,
+    routing_json: &str,
 ) -> Option<harness_daemon::projection::ResolvedMediation> {
-    let json = std::fs::read_to_string(data_dir.join("routing.json")).ok()?;
     let route = match harness_daemon::projection::utility_route(
-        &json,
+        routing_json,
         &harness_intel::catalog::Catalog::seeded(),
     ) {
         Ok(route) => route,
@@ -145,6 +144,43 @@ fn utility_mediation(
         caps: route.caps,
         timeout: selection.inference_timeout,
     })
+}
+
+/// The dispatcher intake (todo 9): the FULL routing table (roles,
+/// tiers, chains, benchmarks, cheap pool, wait-out, retries, sidekick —
+/// routing.json stops being a summarizer-only consumer) plus the
+/// per-model provider-stack source every dispatched identity composes
+/// on (the session's own family/credential seam, model-swapped the same
+/// way the utility route is). An absent document is silence; a present
+/// but unusable one is loud and never fatal to inference (the un-routed
+/// path keeps serving).
+fn routing_intake(
+    provider: &harness_daemon::provider::ProviderSelection,
+    routing_json: Option<&str>,
+    transport: Arc<dyn harness_providers::transport::Transport>,
+) -> Option<Arc<harness_daemon::routing::RoutingIntake>> {
+    let json = routing_json?;
+    let table = match harness_intel::routing::RoutingTable::from_json(
+        json,
+        &harness_intel::catalog::Catalog::seeded(),
+    ) {
+        Ok(table) => table,
+        Err(failure) => {
+            eprintln!("harness-daemon: routing.json unusable for the turn dispatcher: {failure}");
+            return None;
+        }
+    };
+    let models: harness_daemon::routing::ModelSource = {
+        let provider = provider.clone();
+        Arc::new(move |model: &str| {
+            let mut selection = provider.clone();
+            selection.model = model.to_owned();
+            let resolved = selection.resolve().ok()?;
+            let composed = resolved.compose_factory(Arc::clone(&transport))();
+            Some(composed.inference)
+        })
+    };
+    Some(Arc::new(harness_daemon::routing::RoutingIntake { table, models }))
 }
 
 async fn run() -> Result<(), String> {
@@ -167,15 +203,25 @@ async fn run() -> Result<(), String> {
     // its M7 caps cover the media, else the configured capable utility
     // role via the T42 routing table. Computed before `config` moves
     // into the daemon state.
+    let routing_json =
+        std::fs::read_to_string(config.data_dir.join("routing.json")).ok();
     let session = config.provider.as_ref().and_then(session_mediation);
-    let utility = config
-        .provider
-        .as_ref()
-        .and_then(|provider| utility_mediation(provider, &config.data_dir));
+    let utility = config.provider.as_ref().and_then(|provider| {
+        routing_json
+            .as_deref()
+            .and_then(|json| utility_mediation(provider, json))
+    });
+    // Todo 9: the same document feeds the turn dispatcher — the full
+    // spec (roles, tiers, chains, benchmarks, wait-out, retries) is
+    // consumed here, not just the summarizer utility route above.
+    let routing = config.provider.as_ref().and_then(|provider| {
+        routing_intake(provider, routing_json.as_deref(), Arc::clone(&transport))
+    });
     let mut state =
         DaemonState::new(config, factory).map_err(|e| format!("token generation: {e}"))?;
     state.projection_factory =
         harness_daemon::projection::compose_intake_factory(transport, session, utility);
+    state.routing = routing;
     // Todo 3 (ecosystem alignment): CORE_TOOLS served in-process. The
     // executor bundle is constructed once here — one PTY runner and one
     // LSP router per daemon (language servers spawn lazily) — and every

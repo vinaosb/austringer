@@ -47,6 +47,14 @@ pub struct DaemonState {
     /// executor (out-of-process execution, worker protocol preserved);
     /// the binary injects the in-process CORE_TOOLS registry factory.
     pub executor_factory: ExecutorFactory,
+    /// The dispatcher intake for new sessions (todo 9, ecosystem
+    /// alignment): routing table + per-model provider stacks. When
+    /// present (and the session factory is identity-bearing), every
+    /// session turn dispatches through harness-intel's `Dispatcher` —
+    /// role routes from routing.json, stickiness pins, and mediated
+    /// ask-first fallbacks. `None` (default) keeps the direct
+    /// session-model path.
+    pub routing: Option<Arc<crate::routing::RoutingIntake>>,
     /// Session hosts by URL-addressable session id.
     pub hosts: Mutex<HashMap<String, Arc<SessionHost>>>,
     /// Engine session dirs root.
@@ -112,6 +120,7 @@ impl DaemonState {
             inference_factory,
             projection_factory: crate::projection::disabled_factory(),
             executor_factory,
+            routing: None,
             hosts: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             drain,
@@ -185,9 +194,22 @@ impl DaemonState {
         // scripted stacks stay bare. The cost ledger wraps the
         // Usage-accounted stack: its preflight gate halts further
         // provider calls once the cap is reached, and priced spend
-        // books into the session ledger (todo 33).
-        let inference = match identity {
-            Some(identity) => {
+        // books into the session ledger (todo 33). With a routing
+        // intake bound (todo 9), the SessionRouter OWNS that wrap per
+        // dispatched model instead — identity, Usage frames, and spend
+        // follow the dispatch, and an acknowledged fallback hop
+        // re-cites the new model.
+        let inference = match (&self.routing, identity) {
+            (Some(intake), Some(configured)) => {
+                Box::new(crate::routing::SessionRouter::new(
+                    Arc::clone(intake),
+                    id,
+                    Arc::clone(&host),
+                    Arc::clone(&cost_ledger),
+                    configured,
+                )) as Box<dyn harness_core::agent_loop::Inference>
+            }
+            (None, Some(identity)) => {
                 let usage = crate::usage::UsageInference::new(
                     Arc::clone(&host),
                     identity.clone(),
@@ -201,7 +223,7 @@ impl DaemonState {
                     Box::new(usage),
                 ))
             }
-            None => inference,
+            (_, None) => inference,
         };
         let _ = host.spawn_engine_with_config(
             session_dir,
