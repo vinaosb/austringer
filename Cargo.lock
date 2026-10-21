@@ -3113,6 +3113,7 @@ dependencies = [
  "harness-media",
  "harness-providers",
  "harness-sessions",
+ "harness-snapshots",
  "harness-test-support",
  "harness-tools",
  "harness-web",

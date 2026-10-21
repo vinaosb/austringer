@@ -37,6 +37,7 @@ pub mod provider;
 pub mod projection;
 pub mod registry;
 pub mod reload;
+pub mod rewind;
 pub mod run_history;
 pub mod runner;
 pub mod scheduler;

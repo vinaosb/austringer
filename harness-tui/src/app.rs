@@ -454,6 +454,26 @@ mod tests {
     }
 
     #[test]
+    fn rewind_command_sends_client_rewind_message() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/rewind 2");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Rewind { steps: 2 })]
+        );
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/rewind");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Rewind { steps: 1 })],
+            "bare /rewind rewinds one step"
+        );
+    }
+
+    #[test]
     fn gate_is_modal_and_yan_answers() {
         let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
         app.step(UiEvent::Key(char_key('i')));

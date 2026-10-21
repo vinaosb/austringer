@@ -1,0 +1,163 @@
+Task 5 — Snapshots → /rewind bridge (Wave F, ecosystem-alignment)
+Date: 2026-10-21
+Session: opencode:ses_ea774e945ffe45I9Wp629UGOW1
+Machine: cargo via %TEMP%\opencode\cargo-env.cmd, CARGO_BUILD_JOBS=3, nextest plain positional filters
+
+ACCEPTANCE BEHAVIORS (all five test-proven)
+ 1. Rewind restores snapshot N and emits System "restored to <label>"
+    -> harness-daemon::rewind_tests::rewind_restores_snapshot_truncates_log_and_emits_system_event
+ 2. TUI /rewind 2 sends ClientMsg::Rewind{2}
+    -> harness-tui app::tests::rewind_command_sends_client_rewind_message
+ 3. Post-rewind event_fts holds no rows with seq > restored head
+    -> harness-sessions::truncate::truncate_drops_fts_above_head_and_resets_counters
+       (shared "needle" term hits only surviving seqs; turn-3 unique term gone)
+ 4. last_seq/event_count/turn_index consistent with restored head
+       next append receives seq = head+1, no skip/repeat across the boundary
+       -> harness-sessions::truncate::next_append_continues_at_head_plus_one_without_gaps
+       fork at the post-rewind head copies only events <= head
+       -> harness-sessions::truncate::fork_at_post_rewind_head_copies_only_surviving_events
+       turn-boundary mapping -> harness-sessions::truncate::turn_end_seq_maps_turn_boundaries
+ 5. Beyond-oldest is a typed error naming the oldest available
+    -> harness-daemon::rewind_tests::rewind_beyond_oldest_snapshot_is_typed_error_naming_oldest
+       + harness-daemon rewind::tests::beyond_oldest_display_names_the_oldest_restore_point
+       (RewindError::BeyondOldest{requested,available,oldest} -> "rewind 99 exceeds the 3
+        available snapshot(s); the oldest restore point is turn 1")
+
+RED-FIRST CAPTURES (failing runs recorded before any implementation)
+
+ RED 1 — harness-sessions (cargo nextest run -p harness-sessions truncate):
+   error[E0599]: no method named `turn_end_seq` found for struct `SessionStore`
+   error[E0599]: no method named `truncate_to` found for struct `SessionHandle<'a>`
+   error[E0599]: no variant named `TruncateBeyondLog` found for enum `SessionError`
+   error[E0624]: method `load_meta` is private
+   -> could not compile `harness-sessions` (test "truncate") due to 14 previous errors
+
+ RED 2 — harness-daemon (cargo nextest run -p harness-daemon rewind_restores rewind_beyond):
+   error[E0432]: unresolved import `harness_snapshots` (crate not yet a dependency)
+   error[E0599]: no method named `turn_end_seq` found for struct `SessionStore`
+   error: unused import: `std::time::Duration`
+   -> could not compile `harness-daemon` (test "rewind_tests") due to 4 previous errors
+
+ RED 3 — harness-tui (cargo nextest run -p harness-tui rewind_command snapshot_marker):
+   error[E0599]: no variant named `Rewind` found for enum
+                 `harness_daemon::protocol::ClientMsg`
+   -> could not compile `harness-tui` (lib test) due to 2 previous errors
+
+ Intermediate honest failure (implementation round 1, before fix):
+   happy-path e2e failed with:
+   {"type":"error","code":"malformed_frame",
+    "message":"session log has no turn 2; cannot map the restore head"}
+   Root cause: sessions_root resolved ONE parent up ({data}/sessions) instead of
+   the daemon data dir ({data}/sessions/{sid} -> {data}); the daemon opened an
+   empty store beside the engine dirs. Fixed by walking two parents up.
+
+IMPLEMENTATION SURFACE
+ harness-sessions:
+   src/truncate.rs (NEW): SessionHandle::truncate_to + truncate_in_tx — ONE
+     transaction deletes events/event_fts/turn_index rows above the head, clips
+     the straddling turn's end_seq, recomputes last_seq/event_count/turn_count/
+     payload_bytes. FTS truncation is in the SAME transaction as the session
+     truncation (search can never see un-happened events). Typed refusal
+     SessionError::TruncateBeyondLog{at,last} when head > last_seq.
+   src/error.rs: + SessionError::TruncateBeyondLog.
+   src/store.rs: + SessionStore::turn_end_seq(id, turn) -> Option<u64> (the
+     rewind head when no checkpoint recorded through-seqs).
+   src/session.rs: assert_writable made pub(crate) for the sibling module
+     (paging.rs precedent); no other change.
+   src/lib.rs: mod truncate.
+ harness-snapshots:
+   src/store.rs: SnapshotStore::turns_of pub(crate) -> pub (the bridge's
+     restore-point enumeration; both backends return ascending turns).
+ harness-daemon:
+   Cargo.toml: + harness-snapshots dep (workspace-internal; no external deps).
+   src/rewind.rs (NEW): explicit-only bridge. ClientMsg::Rewind -> steps ->
+     turns_of -> select_turn (1 = latest, N = Nth back) -> rewind_plan
+     (FilesOnly, ExternallyModifiedPolicy::Skip) -> execute_rewind (transactional
+     file restore; stash + rollback live in the crate) -> post-commit log
+     truncation via SessionStore (head = checkpoint through-seq when recorded,
+     else turn_index end_seq; TurnMissingFromLog typed when unresolvable) ->
+     host.publish(Recorded{seq: head, Event::System "restored to turn N"}).
+     RewindError typed enum: NoSessionDir / InvalidSteps / BadSessionId /
+     NoSnapshots / BeyondOldest{requested,available,oldest} / TurnMissingFromLog /
+     Session / Snapshot. Design note recorded in-code: the crate's RewindLog
+     seam is honored in ORDER (truncate only after committed restore) but not
+     via the trait — SessionError would have to launder through SnapshotError
+     (stringly) to ride it; the daemon truncates directly with typed errors.
+   src/protocol.rs: + ClientMsg::Rewind { steps: u64 } + validate_client arm
+     (count, not free text; oversized counts rewind-refuse typed). ServerMsg
+     untouched; compat.rs untouched (Error frames ride the existing v1 lane).
+   src/transport.rs: pump dispatch arm — spawn_blocking via
+     rewind::run_rewind; success publishes on the hub (ALL attached clients
+     see the restore event); refusal is per-connection Error{code,message}.
+   src/handlers.rs: post_command arm (forced by enum exhaustiveness; route
+     table untouched) — 200 "restored" / 400 typed message.
+   src/lib.rs: pub mod rewind.
+ harness-tui:
+   src/app_input.rs: Parsed::Rewind -> UiAction::Send(ClientMsg::Rewind{steps:
+     steps.unwrap_or(1)}) — the "wiring lands with todo 40/42" stub is gone.
+   src/transcript.rs: Event::Snapshot { label } renders minimally as
+     Entry::Notice("snapshot: {label}") (was `=> {}` discard); the restore
+     System event renders through the existing Event::System arm.
+
+EXPLICIT-ONLY GUARANTEE
+ The only entry points into crate::rewind are the two client-protocol dispatch
+ arms (transport pump, post_command). No startup path, engine path, or session
+ factory path calls it; nothing in the daemon takes snapshots or restores
+ implicitly. grep-verified: `rewind(` callers = transport.rs, handlers.rs,
+ rewind.rs internals.
+
+SCOPING DECISION (documented in rewind.rs module docs)
+ The snapshot store and the persisted log are session-scoped today: the store
+ opens over {data}/sessions/{sid} (no-git backend under the session dir; hermetic)
+ and the sessions store over {data}. The daemon has no workspace binding yet;
+ the loop wiring (todos 21/23 — blocked by this todo) relocates the store to
+ the real workspace when that binding exists.
+
+INVOCATIONS + RESULTS (all with cargo-env.cmd wrapper, CARGO_BUILD_JOBS=3)
+ 1. cargo nextest run -p harness-sessions truncate          -> 14 compile errors (RED 1)
+ 2. cargo nextest run -p harness-daemon rewind_restores rewind_beyond -> 4 errors (RED 2)
+ 3. cargo nextest run -p harness-tui rewind_command snapshot_marker   -> 2 errors (RED 3)
+ 4. cargo nextest run -p harness-sessions (after sessions impl) -> 60/63, 3 fixture-
+    expectation bugs in the NEW test (turn boundary semantics: a Snapshot event
+    EXTENDS the user's turn; and events_range(Sequence(u64::MAX)) casts to -1 in
+    SQL BETWEEN) — implementation was correct; test fixed, not code weakened.
+ 5. cargo nextest run -p harness-daemon rewind (round 1)    -> 3 pass, 1 fail
+    (sessions_root parent bug, honest failure captured above)
+ 6. cargo nextest run -p harness-daemon rewind (round 2)    -> 4/4 PASS
+ 7. cargo nextest run -p harness-daemon -p harness-tui -p harness-sessions
+                                                            -> 348 tests run:
+                                                               348 passed, 1 skipped
+    (skip is pre-existing)
+ 8. cargo nextest run -p harness-snapshots -p harness-cli   -> 89/89 PASS
+    (touched snapshots surface; cli compiles/matches ClientMsg downstream)
+ 9. cargo clippy -p harness-daemon -p harness-tui -p harness-sessions
+    -p harness-snapshots --all-targets -- -D warnings        -> clean
+    (one clippy::ptr_arg fixed: sessions_root &PathBuf -> &Path)
+ 10. cargo nextest run -p harness-sessions (after truncate.rs extraction)
+                                                             -> 63/63 PASS
+
+REWIND ROUNDTRIP — FIXTURE STATE COMPARISON (happy path, from test 6)
+ Fixture: {session_dir}/notes.txt written v1 -> snapshot turn 1, v2 -> snapshot
+ turn 2, v3 -> snapshot turn 3. Persisted log: 6 events (User + Snapshot marker
+ x3), turns 1..3.
+ Pre-rewind  : notes.txt == "v3"; store last_seq 6, event_count 6, turn_count 3.
+ ClientMsg   : {"type":"rewind","steps":2}
+ Post-rewind : notes.txt == "v2"  (== the turn-2 snapshot fixture content)
+               store last_seq 4, event_count 4, turn_count 2
+               turn_end_seq(2) == Some(4)  (head = user2 + snapshot-2 marker)
+               search("gamma") == []       (turn-3 text un-happened)
+ Stream      : {"type":"event","frame":{...{"type":"recorded","seq":4,
+               "event":{"type":"system","text":"restored to turn 2"}}}}
+ Failure     : steps=99 -> {"type":"error","code":"malformed_frame",
+               "message":"rewind 99 exceeds the 3 available snapshot(s); the
+               oldest restore point is turn 1"}; notes.txt still "v3"; log
+               still last_seq 6 (refusal changed nothing).
+
+POST-WRITE MEASUREMENTS (pure LOC, non-blank non-comment)
+  harness-daemon/src/rewind.rs 134 (new) | harness-sessions/src/truncate.rs 72 (new)
+  harness-sessions/src/session.rs 212 (under budget after extraction)
+  protocol.rs 266 / handlers.rs 246 / transcript.rs 384: pre-existing sizes in
+  frozen/minimal-diff files; additions are the mandated additive arms (splitting
+  them would restructure landed frozen surfaces — out of scope for this todo).
+
+NO COMMIT made (per task instructions). No .omo/plans edits.

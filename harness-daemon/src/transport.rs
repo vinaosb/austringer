@@ -221,6 +221,20 @@ pub async fn pump_client(
                                 .await;
                         }
                     }
+                    // Explicit-only rewind: the one path that restores
+                    // snapshots (never automatic). The System "restored
+                    // to <label>" event rides the hub, so every client
+                    // sees it; only the refusal is per-connection.
+                    Some(ClientMsg::Rewind { steps }) => {
+                        if let Err(e) = crate::rewind::run_rewind(Arc::clone(host), steps).await {
+                            let _ = outbound
+                                .send(ServerMsg::Error {
+                                    code: e.error_code(),
+                                    message: e.to_string(),
+                                })
+                                .await;
+                        }
+                    }
                 }
             }
             _ = tokio::time::sleep(remaining) => {

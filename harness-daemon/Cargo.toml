@@ -35,6 +35,9 @@ harness-media = { path = "../harness-media", version = "0.1.0", features = [
 ] }
 harness-providers = { path = "../harness-providers", version = "0.1.0" }
 harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
+# Todo 5 (ecosystem alignment): /rewind restores workspace state through
+# the snapshot store (transactional file restore + turn restore points).
+harness-snapshots = { path = "../harness-snapshots", version = "0.1.0" }
 # view_window/edit_lines ride harness-tools' bounded reader and anchored
 # edits (syntax gate, fringe-only results).
 harness-tools = { path = "../harness-tools", version = "0.1.0" }

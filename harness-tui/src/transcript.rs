@@ -190,7 +190,10 @@ impl SessionView {
                     tool.result = Some(text_of(blocks));
                 }
             }
-            Event::Snapshot { .. } => {}
+            Event::Snapshot { label } => {
+                self.entries
+                    .push(Entry::Notice(format!("snapshot: {label}")));
+            }
         }
     }
 
@@ -448,5 +451,35 @@ mod tests {
         });
         assert_eq!(view.entries(), &[Entry::User("via msg".into())]);
         assert_eq!(view.last_event_id, 1);
+    }
+
+    #[test]
+    fn snapshot_marker_and_restore_notice_render() {
+        let mut view = SessionView::new();
+        view.apply_frame(&Frame {
+            id: 4,
+            event: SessionEvent::Recorded {
+                seq: 4,
+                event: Event::Snapshot {
+                    label: "turn-2".into(),
+                },
+            },
+        });
+        view.apply_frame(&Frame {
+            id: 5,
+            event: SessionEvent::Recorded {
+                seq: 4,
+                event: Event::System {
+                    text: "restored to turn 2".into(),
+                },
+            },
+        });
+        assert_eq!(
+            view.entries(),
+            &[
+                Entry::Notice("snapshot: turn-2".into()),
+                Entry::System("restored to turn 2".into()),
+            ]
+        );
     }
 }

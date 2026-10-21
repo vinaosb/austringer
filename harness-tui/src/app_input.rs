@@ -145,11 +145,9 @@ impl App {
                 Vec::new()
             }
             Parsed::Rewind { steps } => {
-                self.view.note(&format!(
-                    "/rewind {}: recognized, engine command wiring lands with todo 40/42",
-                    steps.unwrap_or(1)
-                ));
-                Vec::new()
+                vec![UiAction::Send(ClientMsg::Rewind {
+                    steps: steps.unwrap_or(1),
+                })]
             }
             Parsed::Skill { name, rest } => {
                 self.view.note(&format!(

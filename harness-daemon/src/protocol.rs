@@ -108,6 +108,16 @@ pub enum ClientMsg {
         /// The identity the answering client chooses.
         chosen: ModelIdentity,
     },
+    /// Rewind the session to the snapshot `steps` restore points back
+    /// (1 = the latest snapshot): restores workspace files through the
+    /// harness-snapshots transaction, truncates the persisted session
+    /// log to the restore head, and broadcasts a System "restored to
+    /// <label>" event. Explicit-only — nothing ever rewinds without
+    /// this message.
+    Rewind {
+        /// Restore points to walk back (1 = latest snapshot).
+        steps: u64,
+    },
     /// Liveness ping.
     Ping,
 }
@@ -341,6 +351,9 @@ pub fn validate_client(msg: &ClientMsg) -> Result<(), ProtocolError> {
         // only on exact match against the ask's server-proposed
         // identity, so garbage resolves deny-side (same-model retry).
         ClientMsg::FallbackAnswer { .. } => Ok(()),
+        // `steps` is a count, not free text; an oversized count simply
+        // exceeds the available snapshots and rewinds typed-refuses.
+        ClientMsg::Rewind { .. } => Ok(()),
         ClientMsg::Ping => Ok(()),
     }
 }

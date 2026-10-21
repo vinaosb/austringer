@@ -225,6 +225,22 @@ impl SessionStore {
         search_events_conn(&conn, query, limit)
     }
 
+    /// The last event sequence of `turn` (`None` when the session has
+    /// no such turn) — the rewind head when no checkpoint recorded one.
+    ///
+    /// # Errors
+    /// Typed storage failure.
+    pub fn turn_end_seq(&self, id: &str, turn: u32) -> Result<Option<u64>, SessionError> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT end_seq FROM turn_index WHERE session_id = ?1 AND turn = ?2",
+            rusqlite::params![id, turn],
+            |row| Ok(u64::try_from(row.get::<_, i64>(0)?).unwrap_or(u64::MAX)),
+        )
+        .optional()
+        .map_err(SessionError::sqlite)
+    }
+
     /// Sets or clears the pinned exemption.
     ///
     /// # Errors

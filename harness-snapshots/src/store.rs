@@ -147,7 +147,13 @@ impl SnapshotStore {
         Ok(sessions)
     }
 
-    pub(crate) fn turns_of(&self, session: &SessionId) -> Result<Vec<Turn>, SnapshotError> {
+    /// All turns with a recorded snapshot for `session`, ascending.
+    /// The `/rewind` bridge (plan todo 5) walks this list to resolve
+    /// `steps` into a target restore point.
+    ///
+    /// # Errors
+    /// Git backends: typed ref-iteration failure.
+    pub fn turns_of(&self, session: &SessionId) -> Result<Vec<Turn>, SnapshotError> {
         match &self.inner {
             Backend::Git(git) => git.turns(session),
             Backend::NoGit(nogit) => Ok(nogit.turns(session)),

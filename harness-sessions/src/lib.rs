@@ -42,6 +42,7 @@ mod lifecycle;
 mod meta;
 mod migrations;
 mod paging;
+mod truncate;
 
 pub mod crypto;
 pub mod dream;
