@@ -83,10 +83,12 @@ impl Inference for ScriptedModel {
             Answer::Text(text) => Ok(AssistantTurn {
                 blocks: vec![ContentBlock::Text { text: text.to_owned() }],
                 tool_calls: Vec::new(),
+                usage: None,
             }),
             Answer::Empty => Ok(AssistantTurn {
                 blocks: Vec::new(),
                 tool_calls: Vec::new(),
+                usage: None,
             }),
             Answer::ToolCall => Ok(AssistantTurn {
                 blocks: Vec::new(),
@@ -95,6 +97,7 @@ impl Inference for ScriptedModel {
                     tool: "look".to_owned(),
                     arguments: serde_json::json!({}),
                 }],
+                usage: None,
             }),
             Answer::Hang => {
                 std::future::pending::<Result<AssistantTurn, InferenceError>>().await

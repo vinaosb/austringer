@@ -44,6 +44,7 @@ impl Inference for ToolLoopInference {
                 tool: "echo".into(),
                 arguments: serde_json::json!({"q": 1}),
             }],
+            usage: None,
         })
     }
 }
@@ -67,6 +68,7 @@ impl Inference for CompleteOnlyInference {
                 tool: TASK_COMPLETED_TOOL.to_owned(),
                 arguments: serde_json::json!({}),
             }],
+            usage: None,
         })
     }
 }
@@ -110,6 +112,7 @@ impl Inference for TwoStepInference {
                     tool: TASK_COMPLETED_TOOL.to_owned(),
                     arguments: serde_json::json!({}),
                 }],
+                usage: None,
             })
         } else {
             Ok(AssistantTurn {
@@ -121,6 +124,7 @@ impl Inference for TwoStepInference {
                     tool: "echo".into(),
                     arguments: serde_json::json!({"q": 1}),
                 }],
+                usage: None,
             })
         }
     }
@@ -141,10 +145,11 @@ pub async fn spawn_daemon(
 }
 
 /// `spawn_daemon` with the session factory injected — the M32 provider
-/// wiring tests compose the production factory and plug it in here.
+/// wiring tests compose the production factory (identity-bearing) and
+/// plug it in here; scripted tests pass legacy factories.
 pub async fn spawn_daemon_with_factory(
     tweak: impl FnOnce(DaemonConfig) -> DaemonConfig,
-    factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>,
+    factory: impl harness_daemon::usage::IntoSessionFactory,
 ) -> Result<Spawned, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
     let config = DaemonConfig {

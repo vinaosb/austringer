@@ -5,16 +5,15 @@
 
 mod common;
 
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::cassette::{Cassette, CassetteTransport, anthropic_text_cassette};
-use harness_core::agent_loop::Inference;
 use harness_core::agent_loop::{CancelToken, InferenceRequest};
 use harness_core::event::ContentBlock;
 use harness_daemon::provider::{ProviderFamily, ProviderSelection, compose_factory};
+use harness_daemon::usage::InferenceFactory;
 
-type Factory = Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>;
+type Factory = InferenceFactory;
 
 const KEY_ENV: &str = "HARNESS_M32_E2E_KEY";
 
@@ -32,7 +31,7 @@ async fn infer_once(
     factory: &Factory,
 ) -> Result<harness_core::agent_loop::AssistantTurn, harness_core::agent_loop::InferenceError>
 {
-    let mut inference = factory();
+    let mut inference = factory().inference;
     let request = InferenceRequest {
         events: &[],
         focus_block: "M32-FOCUS question about the projection",

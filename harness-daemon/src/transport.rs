@@ -12,7 +12,6 @@ use tokio::sync::{broadcast, mpsc};
 use crate::attach::{AttachError, HostCommand, SessionHost};
 use crate::compat::downgrade_for_v1;
 use crate::events::ReplayKind;
-use crate::mediation::MediationError;
 use crate::protocol::{ClientMsg, ErrorCode, PROTOCOL_VERSION, ServerMsg, SessionCommand, version_compatible};
 
 /// Why a client session ended.
@@ -190,25 +189,34 @@ pub async fn pump_client(
                         }
                     }
                     Some(ClientMsg::PermissionAnswer { ask_id, answer }) => {
-                        if let Err(MediationError::UnknownAsk(ask_id)) =
-                            mediator.answer(ask_id, client_id, answer)
-                        {
+                        if let Err(e) = mediator.answer(ask_id, client_id, answer) {
                             let _ = outbound
                                 .send(ServerMsg::Error {
                                     code: ErrorCode::Internal,
-                                    message: format!("unknown ask {ask_id}"),
+                                    message: e.to_string(),
                                 })
                                 .await;
                         }
                     }
                     Some(ClientMsg::PermissionCancel { ask_id }) => {
-                        if let Err(MediationError::UnknownAsk(ask_id)) =
-                            mediator.cancel_vote(ask_id, client_id)
-                        {
+                        if let Err(e) = mediator.cancel_vote(ask_id, client_id) {
                             let _ = outbound
                                 .send(ServerMsg::Error {
                                     code: ErrorCode::Internal,
-                                    message: format!("unknown ask {ask_id}"),
+                                    message: e.to_string(),
+                                })
+                                .await;
+                        }
+                    }
+                    // Fallback answers key on THIS pump's per-connection
+                    // id (the 'sse-readonly' discipline) — never a
+                    // client-asserted identity.
+                    Some(ClientMsg::FallbackAnswer { ask, chosen }) => {
+                        if let Err(e) = mediator.answer_fallback(ask, client_id, chosen) {
+                            let _ = outbound
+                                .send(ServerMsg::Error {
+                                    code: ErrorCode::Internal,
+                                    message: e.to_string(),
                                 })
                                 .await;
                         }

@@ -12,8 +12,11 @@ use async_trait::async_trait;
 use tokio::sync::{broadcast, oneshot};
 
 use harness_core::inspectors::store::{AskPolicy, AskRequest, AskResolution, GrantScope};
+use harness_providers::identity::{FallbackRequest, ModelIdentity};
 
-use crate::protocol::{Answer, AskPayload, Resolution, ServerMsg};
+use crate::protocol::{
+    Answer, AskPayload, FallbackAskPayload, Resolution, ServerMsg,
+};
 
 /// Which attached clients may resolve an ask.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,12 +49,27 @@ pub enum MediationError {
     /// No such ask (unknown, resolved-and-reaped, or garbage id).
     #[error("unknown ask {0}")]
     UnknownAsk(u64),
+    /// The ask exists but is not a permission ask.
+    #[error("ask {0} is not a permission ask")]
+    NotAPermissionAsk(u64),
+    /// The ask exists but is not a fallback ask.
+    #[error("ask {0} is not a fallback ask")]
+    NotAFallbackAsk(u64),
+}
+
+enum AskKind {
+    Permission,
+    Fallback {
+        current: ModelIdentity,
+        proposed: ModelIdentity,
+    },
 }
 
 struct PendingAsk {
     votes: Vec<(String, Answer)>,
     resolution: Option<Resolution>,
     waiter: Option<oneshot::Sender<Resolution>>,
+    kind: AskKind,
 }
 
 #[derive(Default)]
@@ -113,10 +131,22 @@ impl PermissionMediator {
         if let Some(waiter) = ask.waiter.take() {
             let _ = waiter.send(resolution.clone());
         }
-        let _ = self.control.send(ServerMsg::PermissionResolved {
-            ask_id,
-            resolution: resolution.clone(),
-        });
+        // The resolved frame follows the ask's kind so each ask type
+        // observes its own vocabulary on the control bus.
+        let resolved = match &ask.kind {
+            AskKind::Permission => ServerMsg::PermissionResolved {
+                ask_id,
+                resolution: resolution.clone(),
+            },
+            AskKind::Fallback { current, proposed } => {
+                let chosen = match resolution {
+                    Resolution::Allowed { .. } => proposed.clone(),
+                    _ => current.clone(),
+                };
+                ServerMsg::FallbackResolved { ask_id, chosen }
+            }
+        };
+        let _ = self.control.send(resolved);
         state.asks.remove(&ask_id);
         Some(resolution)
     }
@@ -129,11 +159,62 @@ impl PermissionMediator {
         }
     }
 
-    /// Record one client's answer. Returns the resolution when this call
-    /// produced it (exactly once per ask), `Ok(None)` when the vote was
-    /// recorded (or ignored per policy) without resolving, and
-    /// [`MediationError::UnknownAsk`] for garbage ids.
+    /// Record one client's answer to a permission ask. Returns the
+    /// resolution when this call produced it (exactly once per ask),
+    /// `Ok(None)` when the vote was recorded (or ignored per policy)
+    /// without resolving, and a typed error for garbage or mismatched
+    /// ids.
     pub fn answer(
+        &self,
+        ask_id: u64,
+        client_id: &str,
+        answer: Answer,
+    ) -> Result<Option<Resolution>, MediationError> {
+        {
+            let state = self.lock();
+            match state.asks.get(&ask_id) {
+                None => return Err(MediationError::UnknownAsk(ask_id)),
+                Some(ask) if !matches!(ask.kind, AskKind::Permission) => {
+                    return Err(MediationError::NotAPermissionAsk(ask_id));
+                }
+                Some(_) => {}
+            }
+        }
+        self.record_answer(ask_id, client_id, answer)
+    }
+
+    /// Record one connection's answer to a fallback ask. `chosen` maps
+    /// onto the permission vocabulary under the ask's own proposal:
+    /// an exact match with `proposed` is an allow, anything else is a
+    /// deny (the current model is kept — ask, never substitute). The
+    /// same policy gate and exactly-once resolution as permission
+    /// answers apply.
+    pub fn answer_fallback(
+        &self,
+        ask_id: u64,
+        client_id: &str,
+        chosen: ModelIdentity,
+    ) -> Result<Option<Resolution>, MediationError> {
+        let answer = {
+            let state = self.lock();
+            let Some(ask) = state.asks.get(&ask_id) else {
+                return Err(MediationError::UnknownAsk(ask_id));
+            };
+            let AskKind::Fallback { proposed, .. } = &ask.kind else {
+                return Err(MediationError::NotAFallbackAsk(ask_id));
+            };
+            if chosen == *proposed {
+                Answer::AllowOnce
+            } else {
+                Answer::Deny
+            }
+        };
+        self.record_answer(ask_id, client_id, answer)
+    }
+
+    /// Shared vote/resolve tail of [`Self::answer`] and
+    /// [`Self::answer_fallback`] (kind checks happen before entry).
+    fn record_answer(
         &self,
         ask_id: u64,
         client_id: &str,
@@ -212,6 +293,7 @@ impl PermissionMediator {
                     votes: Vec::new(),
                     resolution: None,
                     waiter: Some(tx),
+                    kind: AskKind::Permission,
                 },
             );
             let payload = AskPayload {
@@ -235,6 +317,57 @@ impl PermissionMediator {
                 self.resolve_once(&mut state, ask_id, Resolution::Timeout)
                     .unwrap_or(Resolution::Timeout)
             }
+        }
+    }
+
+    /// Mediate one model-fallback ask: broadcast a
+    /// [`ServerMsg::FallbackAsk`], wait up to the synchronous deadline,
+    /// resolve exactly once under the same policy as permission asks.
+    /// The returned identity is what the NEXT request targets: the
+    /// proposed hop when acknowledged, the current model otherwise —
+    /// deny, cancel, and timeout all retry the SAME model (the T9
+    /// identity contract: no silent substitution exists).
+    pub async fn mediate_fallback(&self, request: FallbackRequest) -> ModelIdentity {
+        let FallbackRequest { from, to, reason } = request;
+        let (ask_id, payload, rx) = {
+            let mut state = self.lock();
+            let ask_id = state.next_ask_id.saturating_add(1);
+            state.next_ask_id = ask_id;
+            let (tx, rx) = oneshot::channel();
+            state.asks.insert(
+                ask_id,
+                PendingAsk {
+                    votes: Vec::new(),
+                    resolution: None,
+                    waiter: Some(tx),
+                    kind: AskKind::Fallback {
+                        current: from.clone(),
+                        proposed: to.clone(),
+                    },
+                },
+            );
+            let payload = FallbackAskPayload {
+                ask_id,
+                current: from.clone(),
+                proposed: to.clone(),
+                reason,
+                deadline_ms: u64::try_from(self.ask_timeout.as_millis()).unwrap_or(u64::MAX),
+            };
+            (ask_id, payload, rx)
+        };
+        let _ = self.control.send(ServerMsg::FallbackAsk { ask: payload });
+        let resolution = match tokio::time::timeout(self.ask_timeout, rx).await {
+            Ok(Ok(resolution)) => resolution,
+            Ok(Err(_)) => Resolution::Timeout,
+            Err(_) => {
+                let mut state = self.lock();
+                self.resolve_once(&mut state, ask_id, Resolution::Timeout)
+                    .unwrap_or(Resolution::Timeout)
+            }
+        };
+        match resolution {
+            Resolution::Allowed { .. } => to,
+            _ => from,
         }
     }
 }
@@ -311,6 +444,7 @@ mod tests {
                 votes: Vec::new(),
                 resolution: None,
                 waiter: Some(tx),
+                kind: AskKind::Permission,
             },
         );
         (ask_id, rx)

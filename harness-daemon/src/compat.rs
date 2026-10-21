@@ -24,7 +24,16 @@ use crate::protocol::{Frame, ServerMsg, SessionEvent};
 #[must_use]
 pub fn downgrade_for_v1(msg: ServerMsg) -> Option<ServerMsg> {
     match msg {
-        ServerMsg::MediaResult { .. } => None,
+        // v2-only variants: withheld entirely. Usage/Verdict are
+        // accounted nowhere a v1 client can act on them; FallbackAsk /
+        // FallbackResolved are replaced on v1 wires by the
+        // v1-decodable `Notification` pair the session host publishes
+        // alongside (no v1 client silently misses an ask).
+        ServerMsg::MediaResult { .. }
+        | ServerMsg::Usage { .. }
+        | ServerMsg::FallbackAsk { .. }
+        | ServerMsg::FallbackResolved { .. }
+        | ServerMsg::Verdict { .. } => None,
         ServerMsg::Event { frame } => Some(ServerMsg::Event {
             frame: downgrade_frame(frame),
         }),

@@ -279,6 +279,41 @@ impl App {
                 self.view.note(&format!("media ({producer}): {diff_summary}"));
                 self.dirty = true;
             }
+            ServerMsg::Usage {
+                model,
+                input_tokens,
+                output_tokens,
+                ..
+            } => {
+                self.view.note(&format!(
+                    "model {}: {input_tokens} in / {output_tokens} out",
+                    model.model
+                ));
+                self.dirty = true;
+            }
+            ServerMsg::FallbackAsk { ask } => {
+                self.view.note(&format!(
+                    "fallback proposed: {} -> {} ({})",
+                    ask.current.model, ask.proposed.model, ask.reason
+                ));
+                self.dirty = true;
+            }
+            ServerMsg::FallbackResolved { ask_id, chosen } => {
+                self.view.note(&format!("fallback {ask_id} resolved: next model {}", chosen.model));
+                self.dirty = true;
+            }
+            ServerMsg::Verdict {
+                turn,
+                verdict,
+                evidence,
+            } => {
+                self.view.note(&format!(
+                    "turn {turn} verdict: {} ({} evidence events)",
+                    verdict.as_str(),
+                    evidence.len()
+                ));
+                self.dirty = true;
+            }
             ServerMsg::Bye { reason } => {
                 self.view.note(&format!("daemon closed: {reason}"));
                 self.dirty = true;

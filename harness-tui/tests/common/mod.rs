@@ -59,6 +59,7 @@ impl Inference for OneShotToolInference {
                     tool: "echo".into(),
                     arguments: serde_json::json!({"q": 1}),
                 }],
+                usage: None,
             }
         } else {
             AssistantTurn {
@@ -70,6 +71,7 @@ impl Inference for OneShotToolInference {
                     tool: TASK_COMPLETED_TOOL.to_owned(),
                     arguments: serde_json::json!({}),
                 }],
+                usage: None,
             }
         })
     }

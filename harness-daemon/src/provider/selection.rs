@@ -44,7 +44,7 @@ impl ProviderFamily {
         !matches!(self, Self::Compat)
     }
 
-    fn canonical(self) -> &'static str {
+    pub(crate) fn canonical(self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
             Self::OpenAi => "openai",

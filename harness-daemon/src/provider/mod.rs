@@ -21,14 +21,16 @@ pub use selection::{ProviderFamily, ProviderSelection, ProviderSetupError};
 
 use std::sync::Arc;
 
-use harness_core::agent_loop::Inference;
 use harness_providers::transport::Transport;
+
+use crate::usage::InferenceFactory;
 
 /// Composes the daemon session factory from the provider seam.
 ///
 /// `None` (the default, and the posture of an unconfigured daemon)
 /// yields the typed unconfigured inference — never a panic, and never a
-/// silently-enabled provider.
+/// silently-enabled provider. A resolved selection yields the stack
+/// WITH its model identity (Usage-frame emission).
 ///
 /// # Errors
 /// The typed [`ProviderSetupError`] of the key resolution (an unset key
@@ -36,7 +38,7 @@ use harness_providers::transport::Transport;
 pub fn compose_factory(
     selection: Option<&ProviderSelection>,
     transport: Arc<dyn Transport>,
-) -> Result<Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>, ProviderSetupError> {
+) -> Result<InferenceFactory, ProviderSetupError> {
     match selection {
         Some(selection) => Ok(selection.resolve()?.compose_factory(transport)),
         None => Ok(compose::unconfigured_factory()),

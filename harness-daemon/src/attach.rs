@@ -293,6 +293,44 @@ impl SessionHost {
         self.with_hub(|hub| hub.publish(event))
     }
 
+    /// Fan out one transient server message to live subscribers (no
+    /// event id, no ring retention) — the v2-only receipt lane
+    /// (MediaResult, Usage, Verdict). v1 connections receive nothing:
+    /// the per-connection downgrade withholds v2-only variants at the
+    /// transport pump.
+    pub fn broadcast(&self, msg: ServerMsg) {
+        self.with_hub(|hub| hub.broadcast(msg));
+    }
+
+    /// Mediate a model-fallback ask (T9: routing proposes, the user
+    /// disposes). The `FallbackAsk` rides the control bus to v2
+    /// clients while a v1-decodable `Notification` pair rides the hub,
+    /// so no v1 client silently misses an ask; resolution flows through
+    /// the permission mediator under the session's policy and the
+    /// returned identity is what the next request targets (deny,
+    /// cancel, and timeout all retry the SAME model).
+    pub async fn mediate_fallback(
+        &self,
+        request: harness_providers::identity::FallbackRequest,
+    ) -> harness_providers::identity::ModelIdentity {
+        self.publish(SessionEvent::Notification {
+            kind: "fallback".into(),
+            message: format!(
+                "model fallback proposed: {} -> {} ({}); awaiting answer",
+                request.from.model, request.to.model, request.reason
+            ),
+        });
+        let chosen = self.mediator.mediate_fallback(request).await;
+        self.publish(SessionEvent::Notification {
+            kind: "fallback".into(),
+            message: format!(
+                "model fallback resolved; next requests target {}",
+                chosen.model
+            ),
+        });
+        chosen
+    }
+
     /// Highest published event id.
     #[must_use]
     pub fn last_event_id(&self) -> u64 {

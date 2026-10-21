@@ -1,0 +1,344 @@
+# Task 1 evidence — Protocol extension: usage/model/fallback/verdict frames (Wave F)
+
+Session: opencode:ses_ea774e945ffe45I9Wp629UGOW1
+Date: 2026-10-20/21 (local)
+Machine note: builds run through `cmd /c %TEMP%\opencode\cargo-env.cmd <cargo cmd>` — this
+machine's VS installs under Program Files lack MSVC C headers and a working vcvarsall.bat;
+the complete toolset is the standalone BuildTools at C:\BuildTools (MSVC 14.44.35207), which
+the wrapper pins via INCLUDE/LIB/PATH/CC. CARGO_TARGET_DIR=C:\ct is machine-global.
+Test-binary linking OOMs above ~3 parallel link jobs (LNK1102); acceptance runs used
+CARGO_BUILD_JOBS=3.
+
+## Scenario 0 — environment failure (blocking, resolved)
+
+Command (first attempt, plain cargo):
+    cargo nextest run -p harness-daemon --test protocol_frames_tests
+Exit: 101 (build failure)
+Decisive output:
+    sqlite3/sqlite3.c(356): fatal error C1083: Cannot open include file: 'stdarg.h': No such file or directory
+    (same earlier for ring: curve25519.c ... 'vcruntime.h')
+Root cause: cc-rs auto-picks cl.exe from VS 18 Insiders MSVC 14.50 (bin+lib, NO include dir);
+VsDevCmd resolves MSVC 14.44 under Program Files (also NO include dir). Only C:\BuildTools
+carries a complete toolset. Resolution: cargo-env.cmd wrapper pinning CC/INCLUDE/LIB/PATH to
+C:\BuildTools\VC\Tools\MSVC\14.44.35207 + Windows SDK 10.0.26100.0. All runs below use it.
+
+## Scenario 1 — RED (failing-first, tests written before implementation)
+
+Command:
+    cmd /c %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test protocol_frames_tests
+Exit: 101 (compile failure — the new tests cannot compile against the unextended protocol)
+Decisive output (32 errors, all naming missing surface):
+    error[E0432]: unresolved import `harness_daemon::protocol::VerdictKind`
+    error[E0432]: unresolved import `harness_daemon::usage`
+    error[E0422]: cannot find struct, variant or union type `FallbackAskPayload` in module `harness_daemon::protocol`
+    error[E0599]: no variant named `Usage` found for enum `ServerMsg`
+    error[E0599]: no variant named `FallbackAsk` found for enum `ServerMsg`
+    error[E0599]: no variant named `FallbackResolved` found for enum `ServerMsg`
+    error[E0599]: no variant named `Verdict` found for enum `ServerMsg`
+    error[E0599]: no variant named `FallbackAnswer` found for enum `ClientMsg`
+    error[E0599]: no method named `mediate_fallback` found for struct `Arc<SessionHost>` / `Arc<PermissionMediator>`
+    error[E0599]: no method named `answer_fallback` found for struct `Arc<PermissionMediator>`
+    error: could not compile `harness-daemon` (test "protocol_frames_tests") due to 32 previous errors
+Full log preserved at: .omo/evidence/task-1-red-run.log
+(Two of the initial 34 errors were test-code bugs — `.map(Result::ok).flatten()` on a
+non-nested Result — fixed before this capture so the red state names only missing surface.)
+
+## Scenario 2 — GREEN: full daemon suite
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon"
+Exit: 0
+Decisive output:
+    Summary [   7.150s] 203 tests run: 203 passed, 1 skipped
+Includes the pre-existing v1 corpus replay tests (v1_ipc_corpus_replays_byte_identically_against_current_daemon,
+v1_ws_corpus_replays_byte_identically_against_current_daemon) — v1 wires remain byte-stable
+with the new variants withheld.
+
+## Scenario 3 — happy filters (plan QA scenario, verbatim command)
+
+Command:
+    cmd /c %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon usage_frame fallback_ask verdict_frame
+Exit: 0
+Decisive output:
+    PASS (1/3) harness-daemon::protocol_frames_tests fallback_ask_then_fallback_resolved_on_answer
+    PASS (2/3) harness-daemon::protocol_frames_tests usage_frame_emitted_once_per_assistant_turn
+    PASS (3/3) harness-daemon::protocol_frames_tests verdict_frame_carries_non_empty_evidence
+    Summary [   0.047s] 3 tests run: 3 passed, 201 skipped
+
+(a) usage_frame_emitted_once_per_assistant_turn: one-step fake provider through the REAL
+    engine driver (spawn_engine + standard_stages + WorkerToolExecutor); asserts exactly one
+    ServerMsg::Usage on the hub lane with turn=1, model == the fake identity, effort="high",
+    tokens (120,34,10,5), cost_usd_micros=Some(4250).
+(b) fallback_ask_then_fallback_resolved_on_answer: SessionHost::mediate_fallback broadcasts
+    FallbackAsk { ask } (ask_id>0, current/proposed identities, reason carries "outage",
+    deadline_ms>0) on the control bus; a v1-decodable Notification { kind: "fallback" }
+    naming the proposed model rides the hub; answer_fallback(ask_id,"tui",proposed) resolves
+    Allowed; FallbackResolved { ask_id, chosen == proposed } broadcasts exactly once; the
+    mediate_fallback future returns the proposed identity.
+(c) verdict_frame_carries_non_empty_evidence: scheduled fixture run (RunSink + CriteriaGate +
+    spawn_watcher); TurnStarted+TurnFinished publishes yield ServerMsg::Verdict { turn: 1,
+    verdict: Confirmed, evidence: non-empty event ids } on the hub.
+
+## Scenario 4 — failure filters (plan QA scenario, verbatim command)
+
+Command:
+    cmd /c %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon compat_withholds_v2_frames fallback_mediation_policy
+Exit: 0
+Decisive output:
+    PASS (1/2) harness-daemon::protocol_frames_tests compat_withholds_v2_frames_from_v1_wires
+    PASS (2/2) harness-daemon::protocol_frames_tests fallback_mediation_policy_local_only_and_exactly_once
+    Summary [   0.032s] 2 tests run: 2 passed, 202 skipped
+
+(d) compat_withholds_v2_frames_from_v1_wires: downgrade_for_v1(Usage|FallbackAsk|
+    FallbackResolved|Verdict) == None; Pong still passes through (Some).
+(e) v1_shaped_enum_errors_decoding_v2_frames (same run, full-suite green): a locally
+    defined v1-shaped ServerMsg enum (exactly the 10 pre-v2 variants, same serde tagging)
+    ERRORS decoding the JSON of all four new frames — proving a v1 client would break on
+    them, hence the compat withholding is mandatory (MediaResult precedent).
+(f) fallback_mediation_policy_local_only_and_exactly_once: LocalOnly ignores a
+    non-designated FallbackAnswer (Ok(None), ask stays pending); the designated connection's
+    answer resolves Allowed exactly once; a second divergent designated answer hits
+    UnknownAsk; exactly one FallbackResolved broadcast. Companion test
+    fallback_deny_and_timeout_retry_the_same_model: chosen==current maps to deny ->
+    keeps current model; no answer under start_paused clock advance -> timeout retries the
+    SAME model (never a substitution).
+    Also in suite: fallback_answer_client_roundtrip (ClientMsg::FallbackAnswer wire
+    round-trip).
+
+## Scenario 5 — workspace clippy gate
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+Exit: 0
+Decisive output:
+    Checking harness-daemon v0.1.0 ... Checking harness-cli ... Checking harness-tui ...
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 49.42s
+(no warnings; the exhaustive ServerMsg dispatch sites in harness-cli/src/render.rs and
+harness-tui/src/app.rs were patched in this change — sibling arms, not wildcard-covered.
+harness-tui/src/transcript.rs and harness-cli attach.rs/run.rs are wildcard-covered and
+needed no patch. harness-web/harness-vscode untouched; harness-web compiled clean under the
+workspace gate — its JS proto surface is dispatch-tolerant (generic renderer), no patch
+required.)
+
+## Scenario 6 — perf-gate (budget contract; per-turn hot path untouched)
+
+Command (CI form):
+    cmd /c %TEMP%\opencode\cargo-env.cmd cargo run --release -q -p harness-bench --bin perf-gate -- --budgets harness-bench/budgets.json --baseline harness-bench/baselines/gate_baseline.json
+Exit: 0
+Decisive output:
+    perf-gate: 10 scenarios, 0 breaches, 3 skipped, verdict PASS
+Note: engine.rs run_turn is untouched; Usage emission lives in the UsageInference decorator
+(not yet composed into the shipped binary — provider token meters do not cross the
+harness-core Inference seam yet; see "Deferred" below), so the measured hot path is
+unchanged. Gate recorded as insurance against enum-growth effects.
+
+## Scenario 7 — final acceptance re-run (single command, full scope)
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon"
+Exit: 0 — Summary: 203 passed, 1 skipped
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+Exit: 0 — Finished, no warnings.
+
+## Change surface (git diff --stat, source only)
+
+    harness-cli/src/render.rs            | 25 +++++   (4 sibling dispatch arms)
+    harness-daemon/src/ask.rs            | 21 +++    (FallbackAskPayload)
+    harness-daemon/src/attach.rs         | 38 ++++   (SessionHost::broadcast + mediate_fallback)
+    harness-daemon/src/bridge.rs         | 25 +++-   (verdict frame + evidence ids)
+    harness-daemon/src/compat.rs         | 11 +-    (withhold the four new variants)
+    harness-daemon/src/handlers.rs       |  9 ++    (typed HTTP rejection for FallbackAnswer)
+    harness-daemon/src/lib.rs            |  1 +     (pub mod usage)
+    harness-daemon/src/mediation.rs      | 152 +++++++ (AskKind, mediate_fallback, answer_fallback, typed errors)
+    harness-daemon/src/protocol.rs       | 96 +++++-  (4 ServerMsg variants, VerdictKind, ClientMsg::FallbackAnswer)
+    harness-daemon/src/transport.rs      | 26 ++-   (FallbackAnswer arm on pump connection id)
+    harness-tui/src/app.rs               | 35 ++++   (4 sibling dispatch arms)
+    harness-daemon/src/usage.rs          | NEW     (UsageInference + TurnAccount)
+    harness-daemon/tests/protocol_frames_tests.rs | NEW (8 tests)
+
+PROTOCOL_VERSION stays 2; the existing 10 ServerMsg variants are unchanged; no commit or
+stage was made.
+
+## Deliberate decisions (record for the reviewer)
+
+1. cost_usd -> cost_usd_micros: Option<u64>, integer micro-USD. The repo's money path is
+   integer-only by rule (harness-providers/src/cost: "no floats anywhere in the money
+   path"); None = unpriced (CostTable's Unpriced marker).
+2. FallbackAsk carries FallbackAskPayload { ask_id, current, proposed, reason, deadline_ms }
+   — the FallbackRequest shape plus correlation id and deadline (AskPayload precedent);
+   field names current/proposed per the plan text (identity.rs calls them from/to).
+   FallbackResolved carries { ask_id, chosen } — ask_id added for client correlation
+   (PermissionResolved precedent).
+3. FallbackAnswer over the HTTP /cmd route is a typed 400: that route has no per-connection
+   identity (the hardcoded "http" wart the plan forbids amplifying). The mediated answer
+   path is the WS/IPC pump, which owns the server-assigned per-connection id (the
+   'sse-readonly' discipline). The web SPA answers asks over WS primary (POST /cmd is its
+   fallback carrier), so no in-repo frontend loses the capability.
+4. Deferred (explicitly NOT this todo, no acceptance criterion demands it): composing
+   UsageInference into the shipped binary's session factory. ResolvedProvider knows the
+   identity but the Inference seam returns no token counts (InferenceAdapter drops
+   CompletedTurn.usage), so a production wrap would broadcast invented zeros — dishonest.
+   The decorator is the emission path; the cost-ledger wave (todo 33) composes it when the
+   seam carries meters.
+   [UPDATE 2026-10-21, resume round: RETRACTED AND COMPLETED — the premise was wrong.
+   CompletedTurn.usage EXISTS (harness-providers/src/event.rs) and InferenceAdapter
+   dropped it at construction (adapter.rs:206). The seam now carries TurnUsage on
+   AssistantTurn and the shipped factory emits real counts; see Scenario 8.]
+5. verdict evidence = the session event ids the run's watcher observed from kickoff through
+   TurnFinished (the ids a Verdict frame can honestly cite today; gate EvidenceLink labels
+   are prose, not ids).
+6. Verdict frames ride only watched (scheduled) runs — RunSink::spawn_watcher is the only
+   emission site, matching "scheduled run verdict emits Verdict frame".
+
+## Commit-message draft (orchestrator commits)
+
+feat(daemon): protocol v2 usage/fallback/verdict frames
+
+Additive to protocol v2 (PROTOCOL_VERSION stays 2): ServerMsg::Usage
+(per assistant turn, model identity + integer micro-USD cost),
+FallbackAsk/FallbackResolved (T9 ask-never-substitute over the
+PermissionMediator under the session's MediationPolicy; deny/cancel/
+timeout retry the SAME model), Verdict (scheduled-run completion gate
+with evidence event ids), and ClientMsg::FallbackAnswer answered under
+the pump's server-assigned connection id (HTTP /cmd route rejects
+typed — no connection identity there). All four frames withheld from
+v1 wires via compat::downgrade_for_v1 (fail-closed match extended); a
+v1-decodable Notification pair accompanies every fallback ask so no
+v1 client silently misses one. Frontend exhaustive dispatch patched:
+harness-cli/src/render.rs + harness-tui/src/app.rs sibling arms;
+harness-tui transcript.rs and harness-cli attach.rs/run.rs are
+wildcard-covered; harness-web/harness-vscode untouched (web compiled
+clean under the workspace clippy gate; its JS renderer is
+dispatch-tolerant).
+
+cargo nextest run -p harness-daemon: 203 passed, 1 skipped (8 new).
+cargo clippy --workspace --all-targets -- -D warnings: clean.
+perf-gate --baseline harness-bench/baselines/gate_baseline.json: PASS.
+
+================================================================================
+RESUME ROUND (2026-10-21): production Usage emission — Scenario 8+
+
+Reviewer finding: the "Deferred" decision 4 above rested on a false premise
+(InferenceAdapter DROPPED CompletedTurn.usage; the counts existed). Production wiring
+completed in this round.
+
+## Scenario 8 — RED: production emission test against the dormant composition
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test protocol_frames_tests production_factory"
+Exit: non-zero (test failure — a genuine RUNTIME red, not a compile red)
+Decisive output:
+    FAIL harness-daemon::protocol_frames_tests production_factory_emits_real_provider_usage
+    assertion `left == right` failed: the shipped path must emit exactly one Usage frame:
+      [Event TurnStarted {turn:1}, Event Recorded User "hello", Event Recorded Assistant
+       "done", Event TurnFinished {turn:1, outcome:"turn_complete"}]
+      left: 0
+      right: 1
+The test drives the REAL shipped path (ProviderSelection -> resolve_with fake key ->
+ResolvedProvider::compose_factory over CassetteTransport with an anthropic SSE cassette ->
+DaemonState::new -> state.session(...) -> Submit) and was written BEFORE any resume-round
+implementation change; it compiled unmodified against the dormant tree.
+
+## Scenario 9 — Implementation (what the fix touched)
+
+- harness-core/src/agent_loop/inference.rs: new `TurnUsage { input_tokens,
+  output_tokens, cache_read_tokens, cache_write_tokens }`; `AssistantTurn` gains
+  `usage: Option<TurnUsage>` (None = honest absence). Re-exported from agent_loop.
+- harness-providers/src/adapter.rs: maps CompletedTurn.usage -> TurnUsage instead of
+  dropping it ("refusing to fake or silently drop it", the adapter's own ethos line).
+- ~25 mechanical `usage: None` constructor updates across workspace test kits/fakes
+  (daemon/web/cli/tui/media/core/providers). Two existing provider tests upgraded to
+  REAL assertions: their scripts emit ev_usage(3,2) / ev_usage(2,2) and the expected
+  AssistantTurns now pin those counts through the adapter and across a mid-stream resume.
+- harness-daemon/src/usage.rs: `ComposedInference { inference, identity }` +
+  `InferenceFactory` type + `IntoSessionFactory` (local trait; `impl From<Arc<...>>` is
+  blocked by the orphan rule). UsageInference now reads turn.usage, skips the frame
+  entirely when the provider reported nothing, prices via a OnceLock-cached
+  CostTable::builtin() (integer micros; Unpriced -> None).
+- harness-daemon/src/provider/compose.rs: `ResolvedProvider::identity()` (canonical
+  family name + model); compose_factory yields ComposedInference WITH identity.
+  provider::compose_factory returns InferenceFactory. unconfigured factory -> identity
+  None (no Usage emission, matching its typed-error posture).
+- harness-daemon/src/server.rs: DaemonState.inference_factory: InferenceFactory;
+  `new` takes `impl IntoSessionFactory` (legacy factories adapted -> identity None), so
+  every existing scripted-test call site compiled unchanged; session_with_config wraps
+  identity-bearing stacks in UsageInference (where the per-session host lives).
+- Legacy inline-closure call sites needing a type annotation (4 files: v1_replay,
+  v1_corpus_capture, media_v2_tests, ipc_tests) — the compiler-forced mechanical churn.
+
+## Scenario 10 — GREEN: production emission through the composed factory
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test protocol_frames_tests"
+Exit: 0
+Decisive output:
+    PASS production_factory_emits_real_provider_usage
+    Summary 9 tests run: 9 passed, 0 skipped
+The test asserts, through the SHIPPED composition: exactly one Usage frame, turn=1,
+model == ("anthropic","claude-haiku-4-5"), effort None, tokens == the cassette's wire
+usage (12 in / 7 out / 0 / 0) as parsed by the anthropic adapter, and
+cost_usd_micros == Some(47) hand-computed from the builtin haiku price row
+(12*1e6/1e6 + 7*5e6/1e6). The round-1 decorator test now feeds counts via
+AssistantTurn.usage and asserts cost None for the unpriced fake identity (honest
+absence, never zero).
+
+## Scenario 11 — regression gates
+
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon"
+Exit: 0 — Summary: 204 tests run: 204 passed, 1 skipped (v1 corpus replays byte-identical).
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run --workspace --no-fail-fast"
+Exit: non-zero ONLY for a pre-existing environmental failure:
+    Summary [ 63.726s] 2376 tests run: 2375 passed, 1 failed, 32 skipped
+    FAIL harness-exec::pty_live cargo_version_style_command_renders_cleanly
+Pre-existing proof: `git stash push -u` (clean HEAD) -> same test fails identically
+(ConPTY child cannot resolve `cargo`, which is not on this machine's persistent PATH;
+harness-exec is untouched by this change) -> `git stash pop` restored the working tree.
+Command:
+    cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+Exit: 0 — Finished, no warnings.
+
+## Scenario 12 — perf-gate before/after (decorator now crosses session infer)
+
+Before (round-1 tree, evidence Scenario 6 above):
+    perf-gate: 10 scenarios, 0 breaches, 3 skipped, verdict PASS (exit 0)
+After (this round; UsageInference wraps every identity-bearing session stack):
+    cmd /c %TEMP%\opencode\cargo-env.cmd cargo run --release -q -p harness-bench --bin perf-gate -- --budgets harness-bench/budgets.json --baseline harness-bench/baselines/gate_baseline.json
+    perf-gate: 10 scenarios, 0 breaches, 3 skipped, verdict PASS (exit 0)
+No budget moved; the gate's scenarios do not drive provider inference turns, and the
+decorator adds one Option read + one broadcast per successful turn — outside every
+measured budget. No baseline re-record needed.
+
+## Resume-round change surface (source only, on top of round 1)
+
+    harness-core/src/agent_loop/inference.rs   | TurnUsage + AssistantTurn.usage
+    harness-core/src/agent_loop/mod.rs         | re-export TurnUsage
+    harness-providers/src/adapter.rs           | maps CompletedTurn.usage (was dropped)
+    harness-daemon/src/usage.rs                | ComposedInference/InferenceFactory/
+                                                 IntoSessionFactory; decorator reads real
+                                                 counts; builtin-table pricing; skip on None
+    harness-daemon/src/provider/compose.rs     | identity(); factory yields identity
+    harness-daemon/src/provider/mod.rs         | returns InferenceFactory
+    harness-daemon/src/provider/selection.rs   | canonical() pub(crate)
+    harness-daemon/src/server.rs               | factory type + IntoSessionFactory + wrap
+    + mechanical constructor/test-fixture updates: daemon tests (common, engine, ipc,
+      media_v2, provider_config, provider_ws_e2e, v1_corpus, v1_replay), core test kits
+      (loopkit, inspectorkit, stages_kit), providers tests (inference_adapter,
+      inference_cancel_resilience — upgraded to real usage assertions), cli inproc_flow,
+      tui common, media projection_pipeline, web e2e daemon fixture.
+
+## Resume-round commit-message draft (append to the round-1 draft)
+
+feat(core,providers,daemon): thread real usage through the Inference seam
+
+AssistantTurn carries Option<TurnUsage>; the providers adapter maps
+CompletedTurn.usage instead of dropping it. The daemon session factory
+now yields identity-bearing stacks (ComposedInference /
+IntoSessionFactory; legacy scripted factories adapted, identity None)
+and session_with_config wraps them in UsageInference: exactly one
+ServerMsg::Usage per assistant turn with the provider-REPORTED counts,
+integer cost from the builtin tables (None when unpriced), and NO frame
+when the provider reported nothing — never invented zeros. Proven
+through the shipped composition over a cassette (claude-haiku-4-5,
+12/7 tokens, 47 micro-USD hand-checked).

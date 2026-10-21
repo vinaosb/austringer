@@ -18,11 +18,10 @@ use axum::routing::{get, post};
 
 use serde::Deserialize;
 
-use harness_core::agent_loop::Inference;
-
 use crate::attach::SessionHost;
 use crate::auth::{self, AuthVerdict};
 use crate::config::DaemonConfig;
+use crate::usage::{ComposedInference, InferenceFactory, IntoSessionFactory};
 
 use crate::stages::WorkerToolExecutor;
 
@@ -35,8 +34,9 @@ pub struct DaemonState {
     /// The live auth token.
     pub token: String,
     /// Inference factory for new sessions (scripted in tests, provider
-    /// adapter in the binary).
-    pub inference_factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>,
+    /// adapter in the binary); yields each session's stack WITH its
+    /// model identity so the session can emit Usage frames.
+    pub inference_factory: InferenceFactory,
     /// Submit-time projection intake factory for new sessions (M10):
     /// composes each session's mediation candidates against its session
     /// dir. The default keeps the submit path marker-only; the binary
@@ -56,12 +56,14 @@ pub struct DaemonState {
 
 impl DaemonState {
     /// Build state (generating a token when the config has none).
+    /// Accepts an [`InferenceFactory`] or a legacy identity-less
+    /// factory (adapted; those sessions emit no Usage frames).
     ///
     /// # Errors
     /// token generation failure.
     pub fn new(
         config: DaemonConfig,
-        inference_factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>,
+        inference_factory: impl IntoSessionFactory,
     ) -> Result<Self, auth::AuthError> {
         let token = match &config.token {
             Some(fixed) => fixed.clone(),
@@ -74,7 +76,7 @@ impl DaemonState {
             worker_router,
             sessions_root: config.data_dir.join("sessions"),
             config,
-            inference_factory,
+            inference_factory: inference_factory.into_factory(),
             projection_factory: crate::projection::disabled_factory(),
             hosts: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
@@ -133,10 +135,23 @@ impl DaemonState {
         }
         let executor =
             WorkerToolExecutor::new(Arc::clone(&self.worker_router), None, host.event_sink());
+        let ComposedInference { inference, identity } = (self.inference_factory)();
+        // Identity-bearing stacks (the shipped provider composition)
+        // emit one Usage frame per assistant turn; identity-less
+        // scripted stacks stay bare.
+        let inference = match identity {
+            Some(identity) => Box::new(crate::usage::UsageInference::new(
+                Arc::clone(&host),
+                identity,
+                None,
+                inference,
+            )),
+            None => inference,
+        };
         let _ = host.spawn_engine_with_config(
             session_dir,
             host.standard_stages(executor),
-            (self.inference_factory)(),
+            inference,
             cmd_rx,
             loop_config,
         );

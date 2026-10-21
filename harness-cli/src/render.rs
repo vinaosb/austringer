@@ -56,6 +56,31 @@ pub fn human(msg: &ServerMsg) -> Option<String> {
             diff_summary,
             ..
         } => Some(format!("media ({producer}): {diff_summary}")),
+        ServerMsg::Usage {
+            model,
+            input_tokens,
+            output_tokens,
+            ..
+        } => Some(format!(
+            "usage: {} — {input_tokens} in / {output_tokens} out",
+            model.model
+        )),
+        ServerMsg::FallbackAsk { ask } => Some(format!(
+            "model fallback proposed: {} -> {} — {} (answer over WS/IPC)",
+            ask.current.model, ask.proposed.model, ask.reason
+        )),
+        ServerMsg::FallbackResolved { ask_id, chosen } => {
+            Some(format!("fallback {ask_id} resolved: next model {}", chosen.model))
+        }
+        ServerMsg::Verdict {
+            turn,
+            verdict,
+            evidence,
+        } => Some(format!(
+            "turn {turn} verdict: {} ({} evidence events)",
+            verdict.as_str(),
+            evidence.len()
+        )),
     }
 }
 

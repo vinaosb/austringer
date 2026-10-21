@@ -6,7 +6,7 @@ mod common;
 
 use std::sync::Arc;
 use std::time::Duration;
-
+use harness_core::agent_loop::Inference;
 use interprocess::local_socket::GenericNamespaced;
 use interprocess::local_socket::tokio::Stream;
 use interprocess::local_socket::tokio::prelude::*;
@@ -60,13 +60,15 @@ async fn read_lines(
 async fn ipc_hello_with_wrong_token_is_refused() {
     let dir = tempfile::tempdir().ok();
     let Some(dir) = dir else { return };
+    let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
+        Arc::new(|| Box::new(common::CompleteOnlyInference));
     let state = match harness_daemon::server::DaemonState::new(
         harness_daemon::config::DaemonConfig {
             data_dir: dir.path().to_owned(),
             token: Some("ipc-token".into()),
             ..harness_daemon::config::DaemonConfig::default()
         },
-        Arc::new(|| Box::new(common::CompleteOnlyInference)),
+        factory,
     ) {
         Ok(state) => Arc::new(state),
         Err(_) => return,
@@ -104,13 +106,15 @@ async fn ipc_hello_with_wrong_token_is_refused() {
 async fn ipc_two_clients_share_one_ask_resolution() {
     let dir = tempfile::tempdir().ok();
     let Some(dir) = dir else { return };
+    let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
+        Arc::new(|| Box::new(common::TwoStepInference::new()));
     let state = match harness_daemon::server::DaemonState::new(
         harness_daemon::config::DaemonConfig {
             data_dir: dir.path().to_owned(),
             token: Some("ipc-token".into()),
             ..harness_daemon::config::DaemonConfig::default()
         },
-        Arc::new(|| Box::new(common::TwoStepInference::new())),
+        factory,
     ) {
         Ok(state) => Arc::new(state),
         Err(_) => return,

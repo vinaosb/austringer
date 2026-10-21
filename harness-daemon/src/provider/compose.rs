@@ -17,6 +17,7 @@ use harness_providers::adapters::{
     AnthropicAdapter, CompatAdapter, GoogleAdapter, OpenAiAdapter, XaiAdapter,
 };
 use harness_providers::auth::CredentialSource;
+use harness_providers::identity::ModelIdentity;
 use harness_providers::media::MediaDelivery;
 use harness_providers::provider::Provider;
 use harness_providers::retry::RetryPolicy;
@@ -24,6 +25,7 @@ use harness_providers::transport::Transport;
 use harness_providers::turn::RecoveryConfig;
 
 use super::selection::ProviderFamily;
+use crate::usage::{ComposedInference, InferenceFactory};
 
 /// A validated selection with the credential source resolved: ready to
 /// compose adapters over any [`Transport`].
@@ -53,24 +55,33 @@ impl ResolvedProvider {
         }
     }
 
-    /// Builds the shared session factory: every call composes a fresh
-    /// adapter + recovery stack over `transport`.
+    /// The identity of the model this provider serves — what Usage
+    /// frames cite and the fallback contract switches between.
     #[must_use]
-    pub fn compose_factory(
-        &self,
-        transport: Arc<dyn Transport>,
-    ) -> Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> {
+    pub fn identity(&self) -> ModelIdentity {
+        ModelIdentity::new(self.family.canonical(), &self.model)
+    }
+
+    /// Builds the shared session factory: every call composes a fresh
+    /// adapter + recovery stack over `transport`, yielded WITH the
+    /// served identity so sessions can emit Usage frames.
+    #[must_use]
+    pub fn compose_factory(&self, transport: Arc<dyn Transport>) -> InferenceFactory {
         let provider = self.compose_provider(transport);
         let timeout = self.inference_timeout;
+        let identity = self.identity();
         Arc::new(move || {
-            Box::new(DeadlineInference {
-                inner: Box::new(InferenceAdapter::new(
-                    Arc::clone(&provider),
-                    daemon_recovery_config(),
-                    0x5EED_0000_0032,
-                )),
-                deadline: timeout,
-            })
+            ComposedInference {
+                inference: Box::new(DeadlineInference {
+                    inner: Box::new(InferenceAdapter::new(
+                        Arc::clone(&provider),
+                        daemon_recovery_config(),
+                        0x5EED_0000_0032,
+                    )),
+                    deadline: timeout,
+                }),
+                identity: Some(identity.clone()),
+            }
         })
     }
 
@@ -174,8 +185,8 @@ impl Inference for SessionMediaInference {
     }
 }
 
-pub(crate) fn unconfigured_factory() -> Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> {
-    Arc::new(|| Box::new(UnconfiguredInference))
+pub(crate) fn unconfigured_factory() -> InferenceFactory {
+    Arc::new(|| ComposedInference::plain(Box::new(UnconfiguredInference)))
 }
 
 /// Recovery knobs for daemon-composed turns: bounded retries with

@@ -120,12 +120,12 @@ async fn ws_send(socket: &mut WsSocket, raw: &str) {
 }
 
 async fn capture_ws(out: &mut Vec<String>) {
-    let daemon = spawn_daemon_with_factory(
-        |c| c,
-        std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference)),
-    )
-    .await
-    .expect("spawn");
+    let factory: std::sync::Arc<
+        dyn Fn() -> Box<dyn harness_core::agent_loop::Inference> + Send + Sync,
+    > = std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference));
+    let daemon = spawn_daemon_with_factory(|c| c, factory)
+        .await
+        .expect("spawn");
     let url = format!("ws://{}/s/v1-ws/attach?token={}", daemon.base, daemon.token);
     let (mut socket, _) = tokio_tungstenite::connect_async(&url)
         .await
@@ -213,6 +213,9 @@ async fn capture_ipc(out: &mut Vec<String>) {
     use tokio::io::BufReader;
 
     let dir = tempfile::tempdir().expect("tempdir");
+    let factory: std::sync::Arc<
+        dyn Fn() -> Box<dyn harness_core::agent_loop::Inference> + Send + Sync,
+    > = std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference));
     let state = std::sync::Arc::new(
         DaemonState::new(
             harness_daemon::config::DaemonConfig {
@@ -220,7 +223,7 @@ async fn capture_ipc(out: &mut Vec<String>) {
                 token: Some("v1-corpus-ipc".into()),
                 ..harness_daemon::config::DaemonConfig::default()
             },
-            std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference)),
+            factory,
         )
         .expect("state"),
     );

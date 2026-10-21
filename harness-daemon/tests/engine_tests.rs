@@ -40,6 +40,7 @@ fn text_turn(text: &str, calls: Vec<PendingCall>) -> AssistantTurn {
             text: text.to_owned(),
         }],
         tool_calls: calls,
+        usage: None,
     }
 }
 
@@ -61,7 +62,6 @@ fn completion_turn() -> AssistantTurn {
         }],
     )
 }
-
 #[async_trait]
 impl Inference for ScriptedInference {
     async fn infer(

@@ -122,6 +122,15 @@ pub(crate) async fn post_command(
                 Err(_) => (StatusCode::NOT_FOUND, "unknown ask").into_response(),
             }
         }
+        // The HTTP command route has no per-connection identity to key
+        // a fallback answer on (the known "http" hardcode wart must not
+        // be amplified to a new ask type); the mediated answer path
+        // lives on the WS/IPC pumps, which own server-assigned ids.
+        ClientMsg::FallbackAnswer { .. } => (
+            StatusCode::BAD_REQUEST,
+            "fallback answers require a connection identity; answer over WS/IPC",
+        )
+            .into_response(),
         ClientMsg::Hello { .. } | ClientMsg::Ping => {
             (StatusCode::BAD_REQUEST, "not a command").into_response()
         }

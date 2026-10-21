@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::agent_loop::{
-    AssistantTurn, Inference, InferenceError, InferenceRequest, PendingCall,
+    AssistantTurn, Inference, InferenceError, InferenceRequest, PendingCall, TurnUsage,
 };
 use harness_core::event::content::{ContentBlock, MimeType};
 use harness_core::event::media::MediaRef;
@@ -203,7 +203,19 @@ impl Inference for InferenceAdapter {
                 arguments: call.arguments,
             })
             .collect();
-        Ok(AssistantTurn { blocks, tool_calls })
+        // Refusing to silently drop it (adapter ethos): the provider's
+        // usage counts ride the turn; absence stays absence.
+        let usage = completed.usage.map(|usage| TurnUsage {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cache_read_tokens: usage.cache_read_tokens,
+            cache_write_tokens: usage.cache_write_tokens,
+        });
+        Ok(AssistantTurn {
+            blocks,
+            tool_calls,
+            usage,
+        })
     }
 }
 

@@ -31,6 +31,21 @@ pub struct PendingCall {
     pub arguments: serde_json::Value,
 }
 
+/// Provider-reported token accounting for one assistant turn.
+/// `None` is honest absence: a provider that reported no usage yields
+/// no counts, and consumers must not invent any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnUsage {
+    /// Prompt-side tokens.
+    pub input_tokens: u64,
+    /// Completion-side tokens.
+    pub output_tokens: u64,
+    /// Prompt tokens served from the provider read cache.
+    pub cache_read_tokens: u64,
+    /// Prompt tokens written into the provider cache this request.
+    pub cache_write_tokens: u64,
+}
+
 /// A complete assistant turn: content plus requested tool calls.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssistantTurn {
@@ -38,6 +53,8 @@ pub struct AssistantTurn {
     pub blocks: Vec<ContentBlock>,
     /// Tool calls requested by this turn (empty = turn ended).
     pub tool_calls: Vec<PendingCall>,
+    /// Token accounting when the provider reported it.
+    pub usage: Option<TurnUsage>,
 }
 
 /// What one inference call sees: the model-context events (the caller's

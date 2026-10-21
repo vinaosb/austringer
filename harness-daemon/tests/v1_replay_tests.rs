@@ -174,12 +174,12 @@ async fn v1_ws_corpus_replays_byte_identically_against_current_daemon() {
         .filter(|record| record.dir == "s2c")
         .filter_map(|record| record.raw.clone())
         .collect();
-    let daemon = common::spawn_daemon_with_factory(
-        |c| c,
-        std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference)),
-    )
-    .await
-    .expect("spawn");
+    let factory: std::sync::Arc<
+        dyn Fn() -> Box<dyn harness_core::agent_loop::Inference> + Send + Sync,
+    > = std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference));
+    let daemon = common::spawn_daemon_with_factory(|c| c, factory)
+        .await
+        .expect("spawn");
     let url = format!("ws://{}/s/v1-ws/attach?token={}", daemon.base, daemon.token);
     let (mut socket, _) = tokio_tungstenite::connect_async(&url).await.expect("ws connect");
 
@@ -242,6 +242,9 @@ async fn v1_ipc_corpus_replays_byte_identically_against_current_daemon() {
         .filter_map(|record| record.raw.clone())
         .collect();
     let dir = tempfile::tempdir().expect("tempdir");
+    let factory: std::sync::Arc<
+        dyn Fn() -> Box<dyn harness_core::agent_loop::Inference> + Send + Sync,
+    > = std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference));
     let state = std::sync::Arc::new(
         DaemonState::new(
             harness_daemon::config::DaemonConfig {
@@ -249,7 +252,7 @@ async fn v1_ipc_corpus_replays_byte_identically_against_current_daemon() {
                 token: Some("v1-corpus-ipc".into()),
                 ..harness_daemon::config::DaemonConfig::default()
             },
-            std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference)),
+            factory,
         )
         .expect("state"),
     );

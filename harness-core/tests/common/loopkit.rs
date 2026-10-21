@@ -61,6 +61,7 @@ pub fn text_turn(text: &str) -> AssistantTurn {
             text: text.to_owned(),
         }],
         tool_calls: Vec::new(),
+        usage: None,
     }
 }
 
@@ -73,6 +74,7 @@ pub fn call_turn(call_id: &str, tool: &str, arguments: serde_json::Value) -> Ass
             tool: tool.to_owned(),
             arguments,
         }],
+        usage: None,
     }
 }
 
@@ -241,6 +243,7 @@ impl Inference for FakeApiInference {
         Ok(AssistantTurn {
             blocks: vec![ContentBlock::Text { text }],
             tool_calls: calls,
+            usage: None,
         })
     }
 }

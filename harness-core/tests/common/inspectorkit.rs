@@ -35,6 +35,7 @@ pub fn calls_turn(calls: Vec<(&str, &str, serde_json::Value)>) -> AssistantTurn 
                 arguments,
             })
             .collect(),
+        usage: None,
     }
 }
 

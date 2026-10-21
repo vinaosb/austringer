@@ -13,7 +13,7 @@ use crate::attach::SessionHost;
 use crate::automations::{AutomationDefinition, NetworkPolicy};
 use crate::gate::{CompletionGate, EvidenceBundle, EvidenceLink, GateVerdict};
 use crate::notify::{Notification, NotificationKind, Notifier};
-use crate::protocol::{Frame, ServerMsg, SessionEvent};
+use crate::protocol::{ServerMsg, SessionEvent, VerdictKind};
 use crate::run_history::{RunHistory, RunHistoryError, RunRecord};
 
 /// In-flight run context the gate needs at completion.
@@ -108,7 +108,8 @@ impl RunSink {
     /// Completion path: gate the run's evidence, record verdict +
     /// outcome, notify. A run whose criteria were lost across a
     /// restart fails closed to Inconclusive — never auto-confirmed.
-    pub fn on_turn_finished(&self, session_id: &str, turn: u64, outcome: &str) {
+    /// Returns the verdict so the caller can surface it on the wire.
+    pub fn on_turn_finished(&self, session_id: &str, turn: u64, outcome: &str) -> GateVerdict {
         let pending = match self.pending.lock() {
             Ok(mut map) => map.remove(session_id),
             Err(poisoned) => poisoned.into_inner().remove(session_id),
@@ -154,6 +155,7 @@ impl RunSink {
                 verdict.as_str()
             ),
         );
+        verdict
     }
 
     /// Watch a kicked-off session: PermissionAsk → ApprovalNeeded;
@@ -184,12 +186,25 @@ impl RunSink {
         session: String,
         done: oneshot::Sender<()>,
     ) {
+        // The run's evidence: every session event id observed from
+        // kickoff to TurnFinished (the ids a Verdict frame cites).
+        let mut evidence: Vec<u64> = Vec::new();
         loop {
             match live.recv().await {
                 Ok(ServerMsg::Event { frame }) => {
-                    let Frame { event, .. } = frame;
-                    if let SessionEvent::TurnFinished { turn, outcome } = event {
-                        self.on_turn_finished(&session, turn, &outcome);
+                    evidence.push(frame.id);
+                    if let SessionEvent::TurnFinished { turn, outcome } = frame.event {
+                        let verdict = self.on_turn_finished(&session, turn, &outcome);
+                        let kind = match &verdict {
+                            GateVerdict::Confirmed { .. } => VerdictKind::Confirmed,
+                            GateVerdict::Refuted { .. } => VerdictKind::Refuted,
+                            GateVerdict::Inconclusive { .. } => VerdictKind::Inconclusive,
+                        };
+                        host.broadcast(ServerMsg::Verdict {
+                            turn,
+                            verdict: kind,
+                            evidence,
+                        });
                         let _ = done.send(());
                         return;
                     }

@@ -5,8 +5,9 @@
 use serde::{Deserialize, Serialize};
 
 use harness_core::event::MediaRef;
+use harness_providers::identity::ModelIdentity;
 
-pub use crate::ask::{Answer, AskPayload, Resolution};
+pub use crate::ask::{Answer, AskPayload, FallbackAskPayload, Resolution};
 pub use crate::errors::{ErrorCode, ProtocolError};
 
 /// Wire protocol version. Bump on breaking change; servers refuse
@@ -96,6 +97,17 @@ pub enum ClientMsg {
         /// Ask being cancelled.
         ask_id: u64,
     },
+    /// Answer a broadcast model-fallback ask. The answering identity is
+    /// the SERVER-ASSIGNED per-connection id at the transport pump —
+    /// never the client-asserted Hello id (Designated/LocalOnly
+    /// mediation keys on it). `chosen` must equal the ask's `proposed`
+    /// to hop; any other identity keeps the current model.
+    FallbackAnswer {
+        /// Ask being answered.
+        ask: u64,
+        /// The identity the answering client chooses.
+        chosen: ModelIdentity,
+    },
     /// Liveness ping.
     Ping,
 }
@@ -158,6 +170,59 @@ pub enum ServerMsg {
         /// Human-readable summary of the resulting change.
         diff_summary: String,
     },
+    /// Per-assistant-turn token/cost accounting (protocol v2 only;
+    /// withheld from v1 wires by the [`crate::compat`] downgrade).
+    /// Rides the session event stream as a transient broadcast.
+    Usage {
+        /// Turn number the accounting belongs to.
+        turn: u64,
+        /// The identity that served the turn (identity contract).
+        model: ModelIdentity,
+        /// Reasoning-effort name in force (routing vocabulary), when
+        /// known.
+        effort: Option<String>,
+        /// Prompt-side tokens.
+        input_tokens: u64,
+        /// Completion-side tokens.
+        output_tokens: u64,
+        /// Prompt tokens served from the provider read cache.
+        cache_read: u64,
+        /// Prompt tokens written into the provider cache this request.
+        cache_write: u64,
+        /// Integer cost in micro-USD (the money path never floats);
+        /// `None` = model unpriced (tokens-only).
+        cost_usd_micros: Option<u64>,
+    },
+    /// A model-fallback ask broadcast to all attached clients (protocol
+    /// v2 only; withheld from v1 wires, which receive a
+    /// v1-decodable `Notification` instead). Resolved through the
+    /// permission mediator under the session's mediation policy.
+    FallbackAsk {
+        /// The ask.
+        ask: FallbackAskPayload,
+    },
+    /// Exactly-one resolution of a fallback ask (protocol v2 only;
+    /// withheld from v1 wires). `chosen` is the identity the NEXT
+    /// request targets: the proposed hop when acknowledged, the
+    /// current model otherwise (deny/cancel/timeout all retry the
+    /// SAME model — never a silent substitution).
+    FallbackResolved {
+        /// Ask correlation id.
+        ask_id: u64,
+        /// The identity the next request targets.
+        chosen: ModelIdentity,
+    },
+    /// Completion-gate verdict for a scheduled (unattended) run
+    /// (protocol v2 only; withheld from v1 wires). `evidence` cites
+    /// the session event ids the verdict rests on.
+    Verdict {
+        /// Turn number the verdict gates.
+        turn: u64,
+        /// Review verdict.
+        verdict: VerdictKind,
+        /// Session event ids backing the verdict.
+        evidence: Vec<u64>,
+    },
     /// Response to [`ClientMsg::Ping`].
     Pong,
     /// Transport is closing (drain, reload, or fatal).
@@ -165,6 +230,31 @@ pub enum ServerMsg {
         /// Why.
         reason: String,
     },
+}
+
+/// Completion-gate verdict vocabulary (gate.rs `GateVerdict` on the
+/// wire; Droid /verify, research §16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerdictKind {
+    /// Evidence bundle accepted: the run may end.
+    Confirmed,
+    /// Evidence contradicts the goal: the run is rejected.
+    Refuted,
+    /// Evidence insufficient: neither accepted nor rejected.
+    Inconclusive,
+}
+
+impl VerdictKind {
+    /// Stable wire name (matches `crate::gate::GateVerdict::as_str`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmed => "confirmed",
+            Self::Refuted => "refuted",
+            Self::Inconclusive => "inconclusive",
+        }
+    }
 }
 
 /// Decode one client message from raw bytes with bounds enforced first.
@@ -247,6 +337,10 @@ pub fn validate_client(msg: &ClientMsg) -> Result<(), ProtocolError> {
             command: SessionCommand::Cancel,
         } => Ok(()),
         ClientMsg::PermissionAnswer { .. } | ClientMsg::PermissionCancel { .. } => Ok(()),
+        // `chosen` needs no free-text bound: the mediator accepts it
+        // only on exact match against the ask's server-proposed
+        // identity, so garbage resolves deny-side (same-model retry).
+        ClientMsg::FallbackAnswer { .. } => Ok(()),
         ClientMsg::Ping => Ok(()),
     }
 }

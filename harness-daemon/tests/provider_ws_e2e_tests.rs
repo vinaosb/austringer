@@ -6,13 +6,11 @@
 
 mod common;
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use common::cassette::{Cassette, CassetteTransport, anthropic_text_cassette};
 use common::{spawn_daemon_with_factory, ws_hello};
 use futures_util::StreamExt;
-use harness_core::agent_loop::Inference;
 use harness_daemon::provider::{ProviderFamily, ProviderSelection};
 
 const ANSWER: &str = "m32 cassette answer: the projection is sufficient";
@@ -34,8 +32,7 @@ async fn cassette_configured_daemon_answers_submit_over_ws() {
         Ok(resolved) => resolved,
         Err(failure) => panic!("resolve failed: {failure}"),
     };
-    let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
-        resolved.compose_factory(transport.clone());
+    let factory = resolved.compose_factory(transport.clone());
     let daemon = match spawn_daemon_with_factory(|c| c, factory).await {
         Ok(daemon) => daemon,
         Err(failure) => panic!("spawn failed: {failure}"),

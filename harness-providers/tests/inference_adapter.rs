@@ -6,7 +6,9 @@ mod common;
 
 use common::Plan;
 use common::inferkit::{adapter, context, recorded};
-use harness_core::agent_loop::{AssistantTurn, CancelToken, Inference, InferenceRequest};
+use harness_core::agent_loop::{
+    AssistantTurn, CancelToken, Inference, InferenceRequest, TurnUsage,
+};
 use harness_core::event::{ContentBlock, Event, Sequence};
 use harness_test_support::sse::{
     SseEvent, SseScript, SseScriptBuilder, ev_done, ev_message_start, ev_message_stop,
@@ -51,6 +53,13 @@ async fn text_turn_maps_through_the_llm_visible_projection() {
                 text: "found three".to_owned()
             }],
             tool_calls: Vec::new(),
+            // ev_usage(3, 2) from the script rides the turn verbatim.
+            usage: Some(TurnUsage {
+                input_tokens: 3,
+                output_tokens: 2,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            }),
         }
     );
     let served = bridge.served();

@@ -143,12 +143,12 @@ fn downgrade_rewrites_media_blocks_to_text_markers_keeps_image_and_text() {
 /// the corpus/capture factory (CompleteOnlyInference) keeps the
 /// transcript deterministic.
 async fn complete_only_daemon() -> common::Spawned {
-    common::spawn_daemon_with_factory(
-        |c| c,
-        std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference)),
-    )
-    .await
-    .expect("spawn")
+    let factory: std::sync::Arc<
+        dyn Fn() -> Box<dyn harness_core::agent_loop::Inference> + Send + Sync,
+    > = std::sync::Arc::new(|| Box::new(common::CompleteOnlyInference));
+    common::spawn_daemon_with_factory(|c| c, factory)
+        .await
+        .expect("spawn")
 }
 
 fn http() -> reqwest::Client {

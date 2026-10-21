@@ -38,6 +38,7 @@ impl Inference for TwoStepInference {
                     tool: TASK_COMPLETED_TOOL.to_owned(),
                     arguments: serde_json::json!({}),
                 }],
+                usage: None,
             })
         } else {
             Ok(AssistantTurn {
@@ -47,6 +48,7 @@ impl Inference for TwoStepInference {
                     tool: "echo".into(),
                     arguments: serde_json::json!({"q": 1}),
                 }],
+                usage: None,
             })
         }
     }

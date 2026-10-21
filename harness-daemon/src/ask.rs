@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use harness_providers::identity::ModelIdentity;
+
 /// A client's answer to a permission ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -53,5 +55,24 @@ pub struct AskPayload {
     /// Redacted, model-safe reason.
     pub reason: String,
     /// Synchronous deadline in milliseconds after ask start.
+    pub deadline_ms: u64,
+}
+
+/// A broadcast model-fallback ask (the T9 identity contract: routing
+/// proposes, the user disposes). Carries the shape of a
+/// [`harness_providers::identity::FallbackRequest`] plus the ask
+/// correlation id and synchronous deadline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FallbackAskPayload {
+    /// Ask correlation id.
+    pub ask_id: u64,
+    /// The identity being switched away from.
+    pub current: ModelIdentity,
+    /// The proposed replacement identity.
+    pub proposed: ModelIdentity,
+    /// Why the switch is proposed (surfaced for the decision).
+    pub reason: String,
+    /// Synchronous deadline in milliseconds after ask start; a
+    /// timeout retries the SAME (current) model, never a substitution.
     pub deadline_ms: u64,
 }
