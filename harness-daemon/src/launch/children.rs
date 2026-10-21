@@ -3,7 +3,9 @@
 //! engine turn over the objective through the injected factories, and
 //! tool execution through the daemon's executor seam. Writes take the
 //! normal permission path (a declared write set is NEVER an
-//! auto-allow).
+//! auto-allow). Cost governance (todo 33): a child's priced spend
+//! books into the PARENT session's ledger — a child's preflight gate
+//! refuses inference once the parent session's cap is spent.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,6 +16,7 @@ use harness_orchestration::launch::{
 
 use crate::attach::{HostCommand, SessionHost};
 use crate::protocol::{ServerMsg, SessionEvent};
+use crate::usage::ComposedInference;
 
 use super::LaunchServices;
 
@@ -35,6 +38,9 @@ fn child_failure(child_id: &str, class: ChildFailureClass, detail: String) -> Ch
 pub struct SessionChildExecutor {
     /// Daemon services children run under.
     pub services: Arc<LaunchServices>,
+    /// The PARENT session host: its cost ledger aggregates every
+    /// child's spend, and threshold events publish on its stream.
+    pub parent: Arc<SessionHost>,
 }
 
 #[async_trait::async_trait]
@@ -55,7 +61,30 @@ impl SubagentExecutor for SessionChildExecutor {
             None,
         );
         let executor = (self.services.executor_factory)(&session_dir, host.event_sink());
-        let inference = (self.services.inference_factory)().inference;
+        let ComposedInference { inference, identity } = (self.services.inference_factory)();
+        // Identity-bearing child stacks carry the SAME accounting as
+        // parent sessions — Usage frames on the child's own hub, priced
+        // spend into the PARENT ledger (warning/stop events surface on
+        // the parent stream, where the badge lives). Parents without a
+        // ledger (bare hosts) launch unledgered children: honest
+        // absence, unchanged behavior.
+        let inference = match (identity, self.parent.cost_ledger()) {
+            (Some(identity), Some(ledger)) => {
+                let usage = crate::usage::UsageInference::new(
+                    Arc::clone(&host),
+                    identity.clone(),
+                    None,
+                    inference,
+                );
+                Box::new(crate::cost_ledger::CostLedgerInference::new(
+                    Arc::clone(&self.parent),
+                    ledger,
+                    identity,
+                    Box::new(usage),
+                ))
+            }
+            _ => inference,
+        };
         host.spawn_engine(session_dir, host.standard_stages(executor), inference, cmd_rx)
             .map_err(|e| {
                 child_failure(&job.child_id, ChildFailureClass::Tool, format!("engine spawn: {e}"))

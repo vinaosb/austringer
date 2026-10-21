@@ -166,6 +166,15 @@ impl DaemonState {
         let _ = host.media_dir.set(session_dir.clone());
         let _ = host.skills.set(Arc::clone(&self.skills));
         let _ = host.launcher.set(Arc::clone(&self.launch_services));
+        // Todo 33: the per-session cost ledger binds before the engine
+        // spawns — the submit intake gate and HUD consumers read it, and
+        // the inference decorator below enforces it (preflight halt +
+        // threshold events). Scheduled sessions get the same daemon-wide
+        // cap: an automation owns its ledger exactly like a live one.
+        let cost_ledger = Arc::new(crate::cost_ledger::SessionLedger::new(
+            self.config.session_cost_cap_micros,
+        ));
+        let _ = host.cost_ledger.set(Arc::clone(&cost_ledger));
         if let Some(intake) = (self.projection_factory)(&session_dir) {
             let _ = host.projection.set(intake);
         }
@@ -173,14 +182,25 @@ impl DaemonState {
         let ComposedInference { inference, identity } = (self.inference_factory)();
         // Identity-bearing stacks (the shipped provider composition)
         // emit one Usage frame per assistant turn; identity-less
-        // scripted stacks stay bare.
+        // scripted stacks stay bare. The cost ledger wraps the
+        // Usage-accounted stack: its preflight gate halts further
+        // provider calls once the cap is reached, and priced spend
+        // books into the session ledger (todo 33).
         let inference = match identity {
-            Some(identity) => Box::new(crate::usage::UsageInference::new(
-                Arc::clone(&host),
-                identity,
-                None,
-                inference,
-            )),
+            Some(identity) => {
+                let usage = crate::usage::UsageInference::new(
+                    Arc::clone(&host),
+                    identity.clone(),
+                    None,
+                    inference,
+                );
+                Box::new(crate::cost_ledger::CostLedgerInference::new(
+                    Arc::clone(&host),
+                    cost_ledger,
+                    identity,
+                    Box::new(usage),
+                ))
+            }
             None => inference,
         };
         let _ = host.spawn_engine_with_config(

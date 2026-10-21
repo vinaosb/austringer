@@ -88,6 +88,27 @@ pub enum SessionEvent {
         /// overlapping glob that quarantined the child).
         detail: String,
     },
+    /// Session spend crossed the warning threshold (80% of the session
+    /// cost cap; todo 33). The badge-state payload HUD surfaces
+    /// consume (todos 19/20); downgraded for v1 wires to a
+    /// `cost_warning` notification.
+    CostWarning {
+        /// Cumulative priced spend, micro-USD.
+        consumed_micros: u128,
+        /// The session cost cap, micro-USD.
+        cap_micros: u128,
+    },
+    /// Session spend reached 100% of the cap: the typed terminal cost
+    /// stop. Further turns are refused naming the cap; no model
+    /// substitution ever happens (the ask-first contract stands above
+    /// the halt).
+    CostStop {
+        /// Cumulative priced spend, micro-USD (may overshoot on the
+        /// crossing record).
+        consumed_micros: u128,
+        /// The session cost cap, micro-USD.
+        cap_micros: u128,
+    },
 }
 
 /// One numbered frame on the monotonic per-session event stream.

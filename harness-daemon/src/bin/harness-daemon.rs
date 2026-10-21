@@ -55,6 +55,13 @@ fn config_from_env_and_args() -> Result<DaemonConfig, String> {
         ));
     }
     config.provider = provider_from_env()?;
+    // Todo 33: the user-global session cost cap override.
+    if let Ok(raw) = std::env::var("HARNESS_SESSION_COST_CAP_USD")
+        && !raw.trim().is_empty()
+    {
+        config.session_cost_cap_micros =
+            harness_daemon::config::parse_session_cost_cap_usd(raw.trim())?;
+    }
     Ok(config)
 }
 

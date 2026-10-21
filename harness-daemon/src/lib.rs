@@ -16,6 +16,7 @@ pub mod automations;
 pub mod bridge;
 pub mod compat;
 pub mod config;
+pub mod cost_ledger;
 pub mod durable;
 pub mod engine;
 pub mod errors;

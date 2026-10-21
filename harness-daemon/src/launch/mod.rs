@@ -179,6 +179,11 @@ pub async fn run_launch(
     }
     let executor = Arc::new(SessionChildExecutor {
         services: Arc::clone(&services),
+        // Todo 33: children book their spend into the PARENT session's
+        // ledger (the delegation aggregation contract) — the executor
+        // carries the parent host so each child's inference decorator
+        // resolves it.
+        parent: Arc::clone(&host),
     });
     let source = spec_path.map(|path| SpecSource::from(path.to_path_buf()));
     launcher

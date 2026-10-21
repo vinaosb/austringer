@@ -69,7 +69,10 @@ impl IntoSessionFactory for Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> {
     }
 }
 
-fn builtin_prices() -> &'static CostTable {
+/// The builtin price tables, built once per process (shared by the
+/// Usage-frame accounting and the session cost ledger — one table, one
+/// money figure per turn).
+pub(crate) fn builtin_prices() -> &'static CostTable {
     static TABLE: OnceLock<CostTable> = OnceLock::new();
     TABLE.get_or_init(CostTable::builtin)
 }

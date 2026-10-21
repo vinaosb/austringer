@@ -59,6 +59,11 @@ pub enum CommandRejected {
     /// refusal carries the typed launch reason.
     #[error("{0}")]
     LaunchRefused(crate::launch::LaunchRefusal),
+    /// The session's cost cap is reached: further turns are refused
+    /// with the typed stop reason (names consumed and cap). A terminal
+    /// cost stop — never a silent drop, never a model switch.
+    #[error("{0}")]
+    CostCapReached(harness_core::budget::StopReason),
 }
 
 /// Attach failures.
@@ -110,6 +115,12 @@ pub struct SessionHost {
     /// The daemon-wide launch services (todo 8); set once by the
     /// session factory. `/launch` submits fail closed when unbound.
     pub(crate) launcher: std::sync::OnceLock<Arc<crate::launch::LaunchServices>>,
+    /// The session cost ledger (todo 33); set once by the session
+    /// factory BEFORE the engine spawns (the intake gate and HUD
+    /// consumers read it). Unset on hosts built outside the factory —
+    /// those sessions have no cost surface (honest absence, fail-open:
+    /// nothing to trip).
+    pub(crate) cost_ledger: std::sync::OnceLock<Arc<crate::cost_ledger::SessionLedger>>,
     pub(crate) turn_counter: AtomicU64,
     pub(crate) journal_root: Option<PathBuf>,
 }
@@ -151,6 +162,7 @@ impl SessionHost {
             projection: std::sync::OnceLock::new(),
             skills: std::sync::OnceLock::new(),
             launcher: std::sync::OnceLock::new(),
+            cost_ledger: std::sync::OnceLock::new(),
             turn_counter: AtomicU64::new(0),
             journal_root,
         });
@@ -185,6 +197,14 @@ impl SessionHost {
         Arc::clone(&self.steer_queue)
     }
 
+    /// The session cost ledger (todo 33): the badge-state seam HUD
+    /// surfaces consume (`snapshot()`); `None` on hosts built outside
+    /// the daemon factory (no cost surface).
+    #[must_use]
+    pub fn cost_ledger(&self) -> Option<Arc<crate::cost_ledger::SessionLedger>> {
+        self.cost_ledger.get().cloned()
+    }
+
     /// The executor-side event sink (diffs from tool execution).
     #[must_use]
     pub fn event_sink(&self) -> mpsc::Sender<SessionEvent> {
@@ -205,6 +225,8 @@ impl SessionHost {
     /// wires), `/launch` starts a background orchestration launch
     /// (todo 8; the submit itself is the operator authorization),
     /// while plain Submits/SubmitBlocks/Cancel queue to the driver.
+    /// Turn-starting submits pass the cost-cap gate first (todo 33):
+    /// a stopped session refuses NEW spend typed, naming the cap.
     pub async fn handle_command(
         self: &Arc<Self>,
         command: HostCommand,
@@ -217,6 +239,7 @@ impl SessionHost {
                 }
             }
             HostCommand::Submit(text) => {
+                self.refuse_at_cost_cap()?;
                 if text == "/launch" || text.starts_with("/launch ") {
                     let argument = text.strip_prefix("/launch ").unwrap_or_default();
                     return crate::launch::start_launch(self, argument)
@@ -226,6 +249,7 @@ impl SessionHost {
                 let _ = self.cmd_tx.send(queued).await;
             }
             HostCommand::SubmitMedia { text, media } => {
+                self.refuse_at_cost_cap()?;
                 let blocks = self.resolve_media_blocks(text, media)?;
                 // Plan M10: needed projections resolve BEFORE the turn
                 // queues, so the delivery cache inlines at request-build
@@ -235,9 +259,26 @@ impl SessionHost {
                 }
                 self.queue_blocks(blocks, media);
             }
-            HostCommand::SubmitBlocks(_) | HostCommand::Cancel => {
+            HostCommand::SubmitBlocks(_) => {
+                self.refuse_at_cost_cap()?;
                 let _ = self.cmd_tx.send(command).await;
             }
+            HostCommand::Cancel => {
+                let _ = self.cmd_tx.send(command).await;
+            }
+        }
+        Ok(())
+    }
+
+    /// The cost-cap intake gate (todo 33): a session whose ledger is at
+    /// or over its cap refuses turn-starting submits typed, naming the
+    /// cap. Steer and Cancel stay open (steering a finishing turn and
+    /// cancelling are not new spend); hosts without a ledger pass.
+    fn refuse_at_cost_cap(&self) -> Result<(), CommandRejected> {
+        if let Some(ledger) = self.cost_ledger.get()
+            && let Err(reason) = ledger.preflight()
+        {
+            return Err(CommandRejected::CostCapReached(reason));
         }
         Ok(())
     }

@@ -91,6 +91,21 @@ fn downgrade_frame(frame: Frame) -> Option<Frame> {
                 message: format!("{child} ({task}) finished {state}: {detail}"),
             }
         }
+        SessionEvent::CostWarning { consumed_micros, cap_micros } => {
+            SessionEvent::Notification {
+                kind: "cost_warning".to_owned(),
+                message: format!(
+                    "session spend {consumed_micros} of {cap_micros} micro-USD (80% of cap)"
+                ),
+            }
+        }
+        SessionEvent::CostStop { consumed_micros, cap_micros } => SessionEvent::Notification {
+            kind: "cost_stop".to_owned(),
+            message: format!(
+                "session spend {consumed_micros} of {cap_micros} micro-USD (cap reached); \
+                 further turns refused"
+            ),
+        },
     };
     Some(Frame { id, event })
 }
@@ -216,6 +231,41 @@ mod tests {
         let encoded = serde_json::to_string(&frames[0]).unwrap_or_default();
         assert!(!encoded.contains("\"media\""));
         assert!(encoded.contains("[media: audio/wav blake3:"));
+    }
+
+    #[test]
+    fn cost_events_downgrade_to_v1_notifications() {
+        for (event, expected_kind) in [
+            (
+                SessionEvent::CostWarning {
+                    consumed_micros: 850_000,
+                    cap_micros: 1_000_000,
+                },
+                "cost_warning",
+            ),
+            (
+                SessionEvent::CostStop {
+                    consumed_micros: 1_100_000,
+                    cap_micros: 1_000_000,
+                },
+                "cost_stop",
+            ),
+        ] {
+            let frame = Frame { id: 9, event };
+            let downgraded =
+                downgrade_for_v1(ServerMsg::Event { frame }).expect("downgraded, not withheld");
+            let ServerMsg::Event { frame } = downgraded else {
+                panic!("shape");
+            };
+            assert_eq!(frame.id, 9, "frame id survives the downgrade");
+            match frame.event {
+                SessionEvent::Notification { kind, message } => {
+                    assert_eq!(kind, expected_kind);
+                    assert!(message.contains("1000000"), "message names the cap: {message}");
+                }
+                other => panic!("expected notification downgrade, got {other:?}"),
+            }
+        }
     }
 
     #[test]
