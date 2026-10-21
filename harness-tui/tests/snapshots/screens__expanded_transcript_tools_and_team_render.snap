@@ -1,6 +1,5 @@
 ---
 source: harness-tui/tests/screens.rs
-assertion_line: 94
 expression: rendered
 ---
 v transcript (2)
@@ -13,7 +12,7 @@ fn x() {}
 ```
 v tools (0)
 v team (1)
-build        w1         alive
+build            l-child-build running
 
 
 

@@ -51,17 +51,42 @@ pub enum SessionEvent {
         /// Human-facing message.
         message: String,
     },
-    /// A worker claimed this session from a named queue.
-    WorkerClaimed {
-        /// Queue name.
-        queue: String,
-        /// Worker id.
-        worker: String,
+    /// A launcher child session started (todo 8 team contract; v2
+    /// wires carry it typed, v1 connections receive the downgraded
+    /// `Notification` form from [`crate::compat`]).
+    ChildStarted {
+        /// Child session id (`{launch}-child-{task}`).
+        child: String,
+        /// Task label (the spec's task key).
+        task: String,
+        /// Role name (explorer/worker/deep).
+        role: String,
+        /// Resolved model id.
+        model: String,
     },
-    /// The claiming worker vanished; session self-healed.
-    WorkerHealed {
-        /// Queue the session returned to.
-        queue: String,
+    /// A launcher child's phase changed (file touches, escalations,
+    /// collisions). Payload fields feed a status aggregator: child id
+    /// plus a stable phase name plus context.
+    ChildProgress {
+        /// Child session id.
+        child: String,
+        /// Stable phase name (`file_touched`, `collision`,
+        /// `escalation`).
+        phase: String,
+        /// Phase context (touched path, contested path, decision).
+        detail: String,
+    },
+    /// A launcher child finished (or was quarantined before launch).
+    ChildFinished {
+        /// Child session id.
+        child: String,
+        /// Task label.
+        task: String,
+        /// Outcome state: `success`, `failed`, or `quarantined`.
+        state: String,
+        /// Budget/collision context (summary, failure class, or the
+        /// overlapping glob that quarantined the child).
+        detail: String,
     },
 }
 

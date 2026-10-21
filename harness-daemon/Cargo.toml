@@ -38,6 +38,11 @@ harness-media = { path = "../harness-media", version = "0.1.0", features = [
     "image", "svg", "pdf", "audio", "office", "gltf", "georaster", "data", "text",
 ] }
 harness-providers = { path = "../harness-providers", version = "0.1.0" }
+# Todo 8 (ecosystem alignment): the spec-driven launcher — fork-join
+# children as real child sessions, write-set collision alerts with
+# pre-launch quarantine, and the TeamEvent vocabulary mapped onto the
+# daemon's Child* session events.
+harness-orchestration = { path = "../harness-orchestration", version = "0.1.0" }
 harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
 # Todo 6 (ecosystem alignment): skill packs load at startup through the
 # harness-skills SkillLoader; every activation path (explicit /skill and

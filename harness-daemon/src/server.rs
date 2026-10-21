@@ -56,6 +56,10 @@ pub struct DaemonState {
     /// The startup-loaded skills surface (todo 6): every session's
     /// submit lane routes through its trust/consent gates.
     pub skills: Arc<crate::skills::SkillsRuntime>,
+    /// Launch services for `/launch` child sessions (todo 8): the
+    /// same injected factories and permission policy the session
+    /// factory uses, rooted at the sessions dir.
+    pub launch_services: Arc<crate::launch::LaunchServices>,
     /// The bound listener kept for zero-downtime reload handoff.
     pub listener: Mutex<Option<std::net::TcpListener>>,
     /// Fired when a reload completed handing the socket off.
@@ -90,13 +94,22 @@ impl DaemonState {
                 ))
             }
         });
+        let inference_factory = inference_factory.into_factory();
+        let launch_services = Arc::new(crate::launch::LaunchServices {
+            inference_factory: Arc::clone(&inference_factory),
+            executor_factory: Arc::clone(&executor_factory),
+            sessions_root: config.data_dir.join("sessions"),
+            ask_policy: config.ask_policy.clone(),
+            ask_timeout: config.ask_timeout,
+        });
         Ok(Self {
             token,
             worker_router,
             skills,
+            launch_services,
             sessions_root: config.data_dir.join("sessions"),
             config,
-            inference_factory: inference_factory.into_factory(),
+            inference_factory,
             projection_factory: crate::projection::disabled_factory(),
             executor_factory,
             hosts: Mutex::new(HashMap::new()),
@@ -152,6 +165,7 @@ impl DaemonState {
         // the steer stage captures its notice queue at stage construction.
         let _ = host.media_dir.set(session_dir.clone());
         let _ = host.skills.set(Arc::clone(&self.skills));
+        let _ = host.launcher.set(Arc::clone(&self.launch_services));
         if let Some(intake) = (self.projection_factory)(&session_dir) {
             let _ = host.projection.set(intake);
         }

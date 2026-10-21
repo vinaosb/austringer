@@ -3112,6 +3112,7 @@ dependencies = [
  "harness-lsp",
  "harness-mcp",
  "harness-media",
+ "harness-orchestration",
  "harness-providers",
  "harness-safety",
  "harness-sessions",

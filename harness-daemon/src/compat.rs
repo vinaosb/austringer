@@ -34,11 +34,9 @@ pub fn downgrade_for_v1(msg: ServerMsg) -> Option<ServerMsg> {
         | ServerMsg::FallbackAsk { .. }
         | ServerMsg::FallbackResolved { .. }
         | ServerMsg::Verdict { .. } => None,
-        ServerMsg::Event { frame } => Some(ServerMsg::Event {
-            frame: downgrade_frame(frame),
-        }),
+        ServerMsg::Event { frame } => downgrade_frame(frame).map(|frame| ServerMsg::Event { frame }),
         ServerMsg::Snapshot { frames } => Some(ServerMsg::Snapshot {
-            frames: frames.into_iter().map(downgrade_frame).collect(),
+            frames: frames.into_iter().filter_map(downgrade_frame).collect(),
         }),
         // Every v1-native message passes through untouched; new
         // variants MUST be listed here (or withheld above) so a future
@@ -53,17 +51,48 @@ pub fn downgrade_for_v1(msg: ServerMsg) -> Option<ServerMsg> {
     }
 }
 
-fn downgrade_frame(frame: Frame) -> Frame {
-    let SessionEvent::Recorded { seq, event } = frame.event else {
-        return frame;
-    };
-    Frame {
-        id: frame.id,
-        event: SessionEvent::Recorded {
+/// The SessionEvent gate: an EXHAUSTIVE match over every variant, so
+/// a future `SessionEvent` addition fails compilation here until it
+/// is classified for v1 wires (the same fail-closed construction the
+/// `ServerMsg` match above enforces — previously non-`Recorded`
+/// events passed through a let-else with no compiler check).
+///
+/// `Recorded` payloads get the media-block rewrite; the team-event
+/// payloads (`Child*`, todo 8) are DOWNGRADED onto the v1-decodable
+/// `Notification` lane with their frame id preserved (v1 clients keep
+/// a gap-free id sequence and still see team activity — the string
+/// channel the orchestration crate's event vocabulary was designed
+/// for); every v1-native daemon event passes through untouched.
+fn downgrade_frame(frame: Frame) -> Option<Frame> {
+    let Frame { id, event } = frame;
+    let event = match event {
+        SessionEvent::Recorded { seq, event } => SessionEvent::Recorded {
             seq,
             event: downgrade_event(event),
         },
-    }
+        event
+        @ (SessionEvent::TurnStarted { .. }
+        | SessionEvent::TurnFinished { .. }
+        | SessionEvent::Diff { .. }
+        | SessionEvent::Notification { .. }) => event,
+        SessionEvent::ChildStarted { child, task, role, model } => {
+            SessionEvent::Notification {
+                kind: "child_started".to_owned(),
+                message: format!("{child} ({task}) started as {role} on {model}"),
+            }
+        }
+        SessionEvent::ChildProgress { child, phase, detail } => SessionEvent::Notification {
+            kind: "child_progress".to_owned(),
+            message: format!("{child} {phase}: {detail}"),
+        },
+        SessionEvent::ChildFinished { child, task, state, detail } => {
+            SessionEvent::Notification {
+                kind: "child_finished".to_owned(),
+                message: format!("{child} ({task}) finished {state}: {detail}"),
+            }
+        }
+    };
+    Some(Frame { id, event })
 }
 
 fn downgrade_event(mut event: Event) -> Event {

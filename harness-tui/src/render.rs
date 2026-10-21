@@ -71,14 +71,11 @@ fn accordion(
 }
 
 fn team_rows(app: &App) -> Vec<Line<'static>> {
-    let mut workers = app.view.workers();
-    workers.sort_by_key(|w| (w.queue.clone(), w.worker.clone()));
-    workers
+    let mut children = app.view.children();
+    children.sort_by_key(|c| (c.task.clone(), c.child.clone()));
+    children
         .iter()
-        .map(|w| {
-            let alive = if w.alive { "alive" } else { "healed" };
-            Line::from(format!("{:<12} {:<10} {}", w.queue, w.worker, alive))
-        })
+        .map(|c| Line::from(format!("{:<16} {:<10} {}", c.task, c.child, c.state)))
         .collect()
 }
 
@@ -109,7 +106,7 @@ fn body_lines(app: &App, height: u16) -> Vec<Line<'static>> {
     lines.extend(accordion(
         "team",
         app.panels.team,
-        app.view.workers().len(),
+        app.view.children().len(),
         || team_rows(app),
     ));
     for note in app.view.notes() {

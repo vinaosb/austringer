@@ -55,6 +55,10 @@ pub enum CommandRejected {
     /// refused by the trust gate; the refusal carries the tier.
     #[error("{0}")]
     SkillRefused(crate::skills::SkillRefusal),
+    /// A `/launch` request was refused before any child spawned; the
+    /// refusal carries the typed launch reason.
+    #[error("{0}")]
+    LaunchRefused(crate::launch::LaunchRefusal),
 }
 
 /// Attach failures.
@@ -103,6 +107,9 @@ pub struct SessionHost {
     /// session factory. Every Submit passes its trust/consent gates
     /// (`/skill` commands and trigger matches alike).
     pub(crate) skills: std::sync::OnceLock<Arc<crate::skills::SkillsRuntime>>,
+    /// The daemon-wide launch services (todo 8); set once by the
+    /// session factory. `/launch` submits fail closed when unbound.
+    pub(crate) launcher: std::sync::OnceLock<Arc<crate::launch::LaunchServices>>,
     pub(crate) turn_counter: AtomicU64,
     pub(crate) journal_root: Option<PathBuf>,
 }
@@ -143,6 +150,7 @@ impl SessionHost {
             media_dir: std::sync::OnceLock::new(),
             projection: std::sync::OnceLock::new(),
             skills: std::sync::OnceLock::new(),
+            launcher: std::sync::OnceLock::new(),
             turn_counter: AtomicU64::new(0),
             journal_root,
         });
@@ -194,9 +202,11 @@ impl SessionHost {
     /// engine driver is busy inside `run()` and cannot process it),
     /// SubmitMedia resolves its refs against the session media store
     /// (typed refusal on unknown hashes, MediaResult receipts to v2
-    /// wires), while Submit/SubmitBlocks/Cancel queue to the driver.
+    /// wires), `/launch` starts a background orchestration launch
+    /// (todo 8; the submit itself is the operator authorization),
+    /// while plain Submits/SubmitBlocks/Cancel queue to the driver.
     pub async fn handle_command(
-        &self,
+        self: &Arc<Self>,
         command: HostCommand,
     ) -> Result<(), CommandRejected> {
         match &command {
@@ -207,6 +217,11 @@ impl SessionHost {
                 }
             }
             HostCommand::Submit(text) => {
+                if text == "/launch" || text.starts_with("/launch ") {
+                    let argument = text.strip_prefix("/launch ").unwrap_or_default();
+                    return crate::launch::start_launch(self, argument)
+                        .map_err(CommandRejected::LaunchRefused);
+                }
                 let queued = self.route_skills(text)?;
                 let _ = self.cmd_tx.send(queued).await;
             }

@@ -93,10 +93,15 @@ fn human_event(event: &SessionEvent) -> Option<String> {
         }
         SessionEvent::Diff { path, .. } => Some(format!("diff: {path}")),
         SessionEvent::Notification { message, .. } => Some(format!("notice: {message}")),
-        SessionEvent::WorkerClaimed { queue, worker } => {
-            Some(format!("worker {worker} claimed queue {queue}"))
+        SessionEvent::ChildStarted { child, task, role, .. } => {
+            Some(format!("child started: {child} ({task}, {role})"))
         }
-        SessionEvent::WorkerHealed { queue } => Some(format!("session healed back to {queue}")),
+        SessionEvent::ChildProgress { child, phase, detail } => {
+            Some(format!("child {child} {phase}: {detail}"))
+        }
+        SessionEvent::ChildFinished { child, task, state, detail } => {
+            Some(format!("child {child} ({task}) finished {state}: {detail}"))
+        }
     }
 }
 

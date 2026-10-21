@@ -54,15 +54,17 @@ pub struct DiffEntry {
     pub hunks: Vec<String>,
 }
 
-/// Live worker state per queue (feeds the team grid).
+/// Live child-session state (feeds the team grid); the state string
+/// is the todo-8 team contract vocabulary (`running`, `collision`,
+/// `escalation`, `file_touched`, `success`, `failed`, `quarantined`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkerCell {
-    /// Queue the worker claimed.
-    pub queue: String,
-    /// Worker id.
-    pub worker: String,
-    /// False once the claim healed back.
-    pub alive: bool,
+pub struct ChildCell {
+    /// Child session id (`{launch}-child-{task}`).
+    pub child: String,
+    /// Task label.
+    pub task: String,
+    /// Latest phase/state.
+    pub state: String,
 }
 
 /// Reduced view of everything the UI shows for one session.
@@ -77,7 +79,7 @@ pub struct SessionView {
     tools: Vec<ToolEntry>,
     turns: Vec<TurnState>,
     diffs: Vec<DiffEntry>,
-    workers: HashMap<String, WorkerCell>,
+    children: HashMap<String, ChildCell>,
     notes: Vec<String>,
 }
 
@@ -141,19 +143,33 @@ impl SessionView {
                 self.entries
                     .push(Entry::Notice(format!("{kind}: {message}")));
             }
-            SessionEvent::WorkerClaimed { queue, worker } => {
-                self.workers.insert(
-                    queue.clone(),
-                    WorkerCell {
-                        queue: queue.clone(),
-                        worker: worker.clone(),
-                        alive: true,
+            SessionEvent::ChildStarted { child, task, .. } => {
+                self.children.insert(
+                    child.clone(),
+                    ChildCell {
+                        child: child.clone(),
+                        task: task.clone(),
+                        state: "running".to_owned(),
                     },
                 );
             }
-            SessionEvent::WorkerHealed { queue } => {
-                if let Some(cell) = self.workers.get_mut(queue) {
-                    cell.alive = false;
+            SessionEvent::ChildProgress { child, phase, .. } => {
+                if let Some(cell) = self.children.get_mut(child) {
+                    cell.state = phase.clone();
+                } else {
+                    self.children.insert(
+                        child.clone(),
+                        ChildCell {
+                            child: child.clone(),
+                            task: String::new(),
+                            state: phase.clone(),
+                        },
+                    );
+                }
+            }
+            SessionEvent::ChildFinished { child, state, .. } => {
+                if let Some(cell) = self.children.get_mut(child) {
+                    cell.state = state.clone();
                 }
             }
         }
@@ -214,7 +230,7 @@ impl SessionView {
         self.tools.clear();
         self.turns.clear();
         self.diffs.clear();
-        self.workers.clear();
+        self.children.clear();
         self.last_event_id = 0;
         for frame in frames {
             self.apply_frame(frame);
@@ -246,10 +262,10 @@ impl SessionView {
         &self.diffs
     }
 
-    /// Worker cells for the team grid.
+    /// Child cells for the team grid.
     #[must_use]
-    pub fn workers(&self) -> Vec<&WorkerCell> {
-        self.workers.values().collect()
+    pub fn children(&self) -> Vec<&ChildCell> {
+        self.children.values().collect()
     }
 
     /// Total transcript characters (HUD context estimate input).
@@ -390,24 +406,38 @@ mod tests {
     }
 
     #[test]
-    fn worker_claim_and_heal_drive_team_cells() {
+    fn child_events_drive_team_cells() {
         let mut view = SessionView::new();
         view.apply_frame(&Frame {
             id: 1,
-            event: SessionEvent::WorkerClaimed {
-                queue: "build".into(),
-                worker: "w1".into(),
+            event: SessionEvent::ChildStarted {
+                child: "l-child-build".into(),
+                task: "build".into(),
+                role: "worker".into(),
+                model: "gpt-5-5".into(),
             },
         });
-        assert_eq!(view.workers().len(), 1);
-        assert!(view.workers()[0].alive);
+        assert_eq!(view.children().len(), 1);
+        assert_eq!(view.children()[0].state, "running");
         view.apply_frame(&Frame {
             id: 2,
-            event: SessionEvent::WorkerHealed {
-                queue: "build".into(),
+            event: SessionEvent::ChildProgress {
+                child: "l-child-build".into(),
+                phase: "collision".into(),
+                detail: "src/** overlaps".into(),
             },
         });
-        assert!(view.workers().iter().all(|w| !w.alive));
+        assert_eq!(view.children()[0].state, "collision");
+        view.apply_frame(&Frame {
+            id: 3,
+            event: SessionEvent::ChildFinished {
+                child: "l-child-build".into(),
+                task: "build".into(),
+                state: "quarantined".into(),
+                detail: "src/** overlaps".into(),
+            },
+        });
+        assert_eq!(view.children()[0].state, "quarantined");
     }
 
     #[test]

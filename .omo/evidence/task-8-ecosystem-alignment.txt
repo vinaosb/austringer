@@ -1,0 +1,220 @@
+TASK 8 â€” Orchestration wiring: launch path, children events, outposts decision
+Plan: .omo/plans/ecosystem-alignment.md todo 8 (Wave F)
+Session: opencode:ses_ea774e945ffe45I9Wp629UGOW1
+Machine: all cargo via `cmd /c %TEMP%\opencode\cargo-env.cmd`, test runs with CARGO_BUILD_JOBS=3
+
+================================================================================
+0. TREE STATE (start)
+================================================================================
+git status --short â†’ only .omo state (boulder.json, run-continuation, start-work
+ledger, drafts, notepads, plans). No harness-* paths dirty. Proceeded.
+
+================================================================================
+1. RED-FIRST (acceptance tests written before any implementation)
+================================================================================
+Wrote harness-daemon/tests/team_events_tests.rs (5 tests) BEFORE touching src:
+
+  1. compat_downgrades_child_events_to_v1_notifications
+  2. v1_shaped_enum_errors_decoding_child_events
+  3. overlapping_write_sets_alert_and_quarantine_second_child
+  4. disjoint_write_sets_complete_as_child_sessions
+  5. team_events_visible_over_sse_v2_typed_and_v1_downgraded
+
+Invocation:
+  cmd /c %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon team_events
+
+RED output (compile failure â€” the missing surface, verbatim):
+  error[E0432]: unresolved import `harness_daemon::launch`
+    --> harness-daemon\tests\team_events_tests.rs:19:21
+    use harness_daemon::launch::{LaunchServices, run_launch};
+  error[E0433]: cannot find module or crate `harness_orchestration`
+    --> harness-daemon\tests\team_events_tests.rs:352:19
+  error[E0599]: no variant named `ChildStarted` found for enum `SessionEvent`
+  error[E0599]: no variant named `ChildProgress` found for enum `SessionEvent`
+  error[E0599]: no variant named `ChildFinished` found for enum `SessionEvent`
+  (+ the same E0599 at every construction/match site â€” the whole contract absent)
+
+================================================================================
+2. OUTPOSTS DECISION (recorded per task rule: smaller path wins)
+================================================================================
+DECISION: DELETE harness-daemon/src/outposts.rs (dead code) and REMOVE the
+never-emitted SessionEvent::WorkerClaimed/WorkerHealed variants, replaced by
+the real Child* team events.
+
+RATIONALE:
+- The scheduler (scheduler.rs) is a pure cron engine: JobAction::{Notify,
+  RunPack} only. It has NO worker-claim path â€” grep for WorkerClaimed|
+  WorkerHealed shows ZERO emission sites anywhere (declaration in events.rs:55-
+  65, render arms in cli render.rs + tui transcript.rs, one TUI test fixture â€”
+  consumers of a fact nobody produces).
+- outposts.rs ClaimLedger has exactly one reference outside its own tests:
+  `pub mod outposts;` in lib.rs. Wiring it into the scheduler would mean
+  INVENTING a named-queue worker-subsystem (enqueue sites, claim sites, sweep
+  scheduling) that no todo in this plan asks for â€” a new feature, not wiring.
+- The replacement events (ChildStarted/ChildProgress/ChildFinished) are the
+  contract todo 15 consumes; deleting the dead Worker* vocabulary is strictly
+  smaller than resurrecting it through a subsystem nothing drives.
+- The ClaimLedger DESIGN (expiring claims, self-heal re-enqueue) stays
+  recoverable from git history should a remote-worker queue ever land.
+
+================================================================================
+3. IMPLEMENTATION LOG (every edit in order)
+================================================================================
+(pending â€” appended below as edits land)
+
+================================================================================
+3. IMPLEMENTATION LOG (every edit in order)
+================================================================================
+1. harness-daemon/src/events.rs — REMOVED SessionEvent::WorkerClaimed /
+   WorkerHealed (declared, never emitted anywhere); ADDED ChildStarted
+   {child, task, role, model}, ChildProgress {child, phase, detail},
+   ChildFinished {child, task, state, detail} — payloads chosen for
+   todo-15's status aggregator (child id + task label + phase/state +
+   budget/collision context; Warp-precedence mappable).
+2. harness-daemon/src/compat.rs — REPLACED the let-else pass-through in
+   downgrade_frame with an EXHAUSTIVE match over SessionEvent (returns
+   Option<Frame>): Recorded ? media rewrite; TurnStarted/TurnFinished/
+   Diff/Notification ? pass-through; Child* ? DOWN-GRADED onto the
+   v1-decodable Notification lane (kinds child_started/child_progress/
+   child_finished) with the frame id preserved (gap-free ids for v1
+   clients; team activity stays visible on v1 wires — the rewritten
+   equivalent the plan text allows). ServerMsg::Event arm flattens the
+   Option; Snapshot arm filter_maps. The match IS the compile gate: a
+   future SessionEvent variant fails the build until classified.
+3. DELETED harness-daemon/src/outposts.rs; removed `pub mod outposts;`
+   from lib.rs (decision in section 2).
+4. harness-daemon/Cargo.toml — added workspace-internal dep
+   harness-orchestration (the crate this todo exists to wire; zero new
+   external dependencies).
+5. NEW harness-daemon/src/launch/ (module dir; single-file draft hit
+   344 pure LOC > the 250 ceiling, split by responsibility):
+     - mod.rs     (159 pure LOC): LaunchServices, LaunchRefusal,
+       task_of, quarantine (transitive dependency cascade), run_launch
+       (resolve-retry loop quarantining OverlappingWrites declarers,
+       clamp notices, on-disk TeamJournal at
+       {sessions_root}/{launch}-launch.jsonl, fresh-grant minting for
+       the /launch operator step, SpecSource staleness wiring),
+       sanitize_stem, start_launch (sync intake + background run).
+     - sink.rs    (85): HubTeamSink — TeamEvent ? Child*/Notification
+       mapping, exhaustive over TeamEvent.
+     - children.rs(134): SessionChildExecutor — per-child real
+       SessionHost (per-session dir under sessions_root, standard
+       stages over the injected executor factory, inference from the
+       injected factory), one engine turn, TurnFinished awaited bounded
+       (30s), outcome ? ChildReport/ChildFailure; lag-recovery via hub
+       snapshot. Writes take the normal permission path — write-sets
+       are never consulted for allow decisions.
+6. harness-daemon/src/attach.rs — additive: `launcher` OnceLock (4th
+   seam, todo-6 precedent), CommandRejected::LaunchRefused(LaunchRefusal),
+   `/launch [ <spec-file> ]` interception in handle_command (consumed
+   submit, no engine turn; bare /launch is a typed usage refusal);
+   handle_command receiver widened to `self: &Arc<Self>` (call sites
+   auto-deref; pump_event_sink precedent in the same file).
+7. harness-daemon/src/server.rs — non-route wiring: DaemonState field
+   launch_services built in ::new from the same factories/policy the
+   session factory uses; session_with_config binds it into every host.
+8. harness-cli/src/render.rs — human_event sibling arms for the three
+   Child* variants (Worker arms removed).
+9. harness-tui/src/transcript.rs — WorkerCell/workers ? ChildCell
+   (child/task/state) with children() accessor; ChildStarted inserts
+   running, ChildProgress updates state (inserts if unseen),
+   ChildFinished sets terminal state; unit test rewritten
+   (child_events_drive_team_cells). harness-tui/src/render.rs team_rows
+   renders task/child/state; app.rs doc word updated.
+10. harness-tui/tests/screens.rs — fixture event ChildStarted; snapshot
+    screens__expanded_transcript_tools_and_team_render.snap updated via
+    INSTA_UPDATE=always then reviewed (team row: "build  l-child-build
+    running").
+11. NEW harness-daemon/tests/team_events_tests.rs (382 LOC incl. docs).
+
+================================================================================
+4. GREEN — every verification invocation + result
+================================================================================
+[a] cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd
+    cargo nextest run -p harness-daemon team_events child"
+    ? 6 tests run: 6 passed (5 new acceptance + 1 incidental name match):
+       team_events_tests compat_downgrades_child_events_to_v1_notifications
+       team_events_tests v1_shaped_enum_errors_decoding_child_events
+       team_events_tests overlapping_write_sets_alert_and_quarantine_second_child
+       team_events_tests disjoint_write_sets_complete_as_child_sessions
+       team_events_tests team_events_visible_over_sse_v2_typed_and_v1_downgraded
+    (one intermediate RED-along-the-way: SSE POST hit /s/{sid}/command ?
+     404; the route is /s/{sid}/cmd — fixed the TEST, nextest run ID
+     ac3ad61b shows the green after; reqwest .json() unavailable —
+     todo-6 learning — content-type header + body used instead)
+
+[b] cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd
+    cargo nextest run -p harness-orchestration -p harness-daemon"
+    ? Summary: 277 tests run: 277 passed, 1 skipped (pre-existing skip)
+    Including the strongest wire-compat regression signal:
+    v1_replay_tests v1_ws_corpus_replays_byte_identically_against_current_daemon
+    (the SessionEvent gate change did not alter any existing v1 wire byte)
+
+[c] cmd /c "set CARGO_BUILD_JOBS=3&& set INSTA_UPDATE=always&&
+    %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-tui -p harness-cli"
+    ? 120 tests run: 120 passed (snapshot reviewed post-update)
+
+[d] cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd
+    cargo clippy --workspace --all-targets -- -D warnings"
+    ? Finished, zero warnings (run twice: after initial impl and again
+    after the launch/ module split — both clean)
+
+QA SCENARIOS (plan-mapped):
+- HAPPY: disjoint_write_sets_complete_as_child_sessions — both children
+  run as real child sessions (per-session dirs under sessions_root,
+  {launch}-child-{task} hidden namespace via is_child_session), both
+  ChildFinished success, zero ChildProgress collision phases.
+- FAILURE: overlapping_write_sets_alert_and_quarantine_second_child —
+  declared overlap (src/** vs src/lib/**) produces ChildProgress
+  phase=collision + ChildFinished state=quarantined for the second
+  declarer BEFORE it launches (no ChildStarted, no session dir, not a
+  launcher failure); the first declarer completes normally. Quarantine
+  cascades transitively to dependent tasks.
+- SSE: v2 attach sees typed frames ("type":"child_started"/
+  "child_finished"); v1 attach (default version, post-hoc snapshot
+  replay) sees the downgraded notifications ("kind":"child_started") —
+  proving BOTH the Event and Snapshot downgrade paths at the pump.
+
+================================================================================
+5. ACCEPTANCE CRITERIA ? TEST MAP
+================================================================================
+AC1  2-child launch, collision alert + quarantine
+     ? overlapping_write_sets_alert_and_quarantine_second_child
+AC2  team events visible to attached client (SSE)
+     ? team_events_visible_over_sse_v2_typed_and_v1_downgraded
+AC3  v1 withholding/downgrade + truncated-v1 decode-ERROR
+     ? compat_downgrades_child_events_to_v1_notifications (rewritten-
+       equivalent form: downgraded Notification, id preserved)
+     + v1_shaped_enum_errors_decoding_child_events (decode error on all
+       three variants against the pre-todo-8 enum shape)
+AC4  clippy --workspace --all-targets -D warnings green (sibling arms
+     patched) ? [d] clean; render.rs + transcript.rs arms in-scope
+
+DESIGN NOTES / DEVIATIONS:
+- Downgrade chosen over withhold for Child* (plan text: "== None (or
+  the rewritten equivalent)"): preserves v1 frame-id monotonicity and
+  keeps team activity visible on v1 wires — the orchestration crate's
+  Notification-string-channel design. The decode-ERROR test proves the
+  un-downgraded payload still breaks a v1 client (the gate is real).
+- run_launch/quarantine take 4-5 params (context pair + request
+  triple); specific justification: the five inputs are two independent
+  context arcs (host, services) plus the launch request (text, path,
+  id) at the crate's single orchestration entrypoint — a wrapper struct
+  would have exactly one construction site per caller and no second
+  semantic home (axiom-0 rung 6).
+- Child sessions are real hosts + dirs but NOT registered in the
+  DaemonState hosts map (hidden-from-main-list by design, matching the
+  crate's {launch}-child-{task} namespace contract); registry surfacing
+  belongs to todo 13/15.
+- No commit made (task rule). Tree: code changes unstaged, .omo
+  evidence/notepads updated.
+
+RESIDUAL RISKS:
+- Child engine turns inherit the daemon's ask policy; with no client
+  attached to a child, a permission ask times out ? deny (safe, but a
+  child needing approval stalls to its 30s bound). Future: escalation
+  bubbling (crate has the EscalationSink) is todo-13/15 surface.
+- ChildTelemetry token/cost fields are zero for scripted providers
+  (honest absence — usage:None turns report nothing); per-child cost
+  ledger aggregation is todo 33, not precluded (rollup flows through
+  the launcher unchanged).

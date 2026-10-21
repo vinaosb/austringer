@@ -100,7 +100,7 @@ impl From<crate::client::ClientEvent> for UiEvent {
 
 /// The whole interface state.
 pub struct App {
-    /// Reduced session view (entries, tools, turns, diffs, workers).
+    /// Reduced session view (entries, tools, turns, diffs, children).
     pub view: transcript::SessionView,
     /// HUD aggregates (context gauge, cache, per-model cost).
     pub hud: hud::Hud,
