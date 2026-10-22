@@ -38,8 +38,9 @@ interprocess.workspace = true
 # The WS attach carrier: tokio-tungstenite is the daemon's own tested
 # client-side WS stack (its ws_e2e suite), already in the workspace
 # lockfile. Default features (connect+handshake, no TLS) are sufficient
-# for the loopback-only auth model.
-tokio-tungstenite = "0.28"
+# for the loopback-only auth model. Workspace-pinned (todo 28): the
+# same single major the daemon's axum ws surface and the TUI ride.
+tokio-tungstenite.workspace = true
 # Driving the split WS sink/source halves (SinkExt/StreamExt).
 futures-util.workspace = true
 # CLI-added features over the workspace tokio baseline (sync/time/

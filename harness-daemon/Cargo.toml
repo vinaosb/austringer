@@ -109,6 +109,7 @@ harness-mcp = { path = "../harness-mcp", version = "0.1.0" }
 # M32: cassette SSE scripts + scripted in-memory provider transports.
 harness-test-support = { path = "../harness-test-support", version = "0.1.0" }
 # WS client for integration tests against the real axum WebSocket transport
-# (axum is server-side only). Pure Rust, dev-only.
-tokio-tungstenite = "0.28"
+# (axum is server-side only). Pure Rust, dev-only. Workspace-pinned (todo
+# 28): one major shared with axum's ws feature, the TUI, and the CLI.
+tokio-tungstenite.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util", "process"] }
