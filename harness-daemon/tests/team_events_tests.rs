@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use harness_core::agent_loop::Inference;
+use harness_daemon::attach::SessionHost;
 use harness_daemon::compat::downgrade_for_v1;
 use harness_daemon::config::DaemonConfig;
 use harness_daemon::launch::{LaunchServices, run_launch};
@@ -21,7 +22,6 @@ use harness_daemon::mediation::MediationPolicy;
 use harness_daemon::protocol::{Frame, ServerMsg, SessionEvent};
 use harness_daemon::server::{DaemonState, build_router};
 use harness_daemon::usage::ComposedInference;
-use harness_daemon::attach::SessionHost;
 
 use common::CompleteOnlyInference;
 
@@ -54,9 +54,7 @@ task t2:
 
 fn services_in(dir: &std::path::Path) -> Arc<LaunchServices> {
     Arc::new(LaunchServices {
-        inference_factory: Arc::new(|| {
-            ComposedInference::plain(Box::new(CompleteOnlyInference))
-        }),
+        inference_factory: Arc::new(|| ComposedInference::plain(Box::new(CompleteOnlyInference))),
         executor_factory: Arc::new(|_session_dir, _event_sink| {
             Box::new(harness_core::agent_loop::stages::defaults::NoToolExecutor)
         }),
@@ -157,7 +155,8 @@ fn compat_downgrades_child_events_to_v1_notifications() {
     ];
     for (event, expected_kind) in frames {
         let frame = Frame { id: 7, event };
-        let downgraded = downgrade_for_v1(ServerMsg::Event { frame }).expect("downgraded, not withheld");
+        let downgraded =
+            downgrade_for_v1(ServerMsg::Event { frame }).expect("downgraded, not withheld");
         let ServerMsg::Event { frame } = downgraded else {
             panic!("shape");
         };
@@ -282,7 +281,11 @@ async fn overlapping_write_sets_alert_and_quarantine_second_child() {
     .expect("launch runs with quarantine");
 
     // The first declarer ran to completion; the second never launched.
-    assert_eq!(report.children.len(), 1, "only the non-overlapping child ran");
+    assert_eq!(
+        report.children.len(),
+        1,
+        "only the non-overlapping child ran"
+    );
     assert_eq!(report.children[0].child_id, "l-child-t1");
     assert!(report.failures.is_empty(), "quarantine is not a failure");
 
@@ -348,8 +351,14 @@ async fn disjoint_write_sets_complete_as_child_sessions() {
     let events = drain(&mut rx);
     assert!(child_started(&events, "l-child-t1"), "{events:?}");
     assert!(child_started(&events, "l-child-t2"), "{events:?}");
-    assert!(child_finished(&events, "l-child-t1", "success"), "{events:?}");
-    assert!(child_finished(&events, "l-child-t2", "success"), "{events:?}");
+    assert!(
+        child_finished(&events, "l-child-t1", "success"),
+        "{events:?}"
+    );
+    assert!(
+        child_finished(&events, "l-child-t2", "success"),
+        "{events:?}"
+    );
     assert!(
         !events
             .iter()
@@ -359,10 +368,12 @@ async fn disjoint_write_sets_complete_as_child_sessions() {
 
     // Child ids are in the hidden {launch}-child-{task} namespace and
     // each owns a real per-session dir.
-    assert!(report
-        .child_ids
-        .iter()
-        .all(|id| harness_orchestration::journal::is_child_session(id)));
+    assert!(
+        report
+            .child_ids
+            .iter()
+            .all(|id| harness_orchestration::journal::is_child_session(id))
+    );
     for child in ["l-child-t1", "l-child-t2"] {
         assert!(
             services.sessions_root.join(child).exists(),
@@ -414,9 +425,8 @@ async fn team_events_visible_over_sse_v2_typed_and_v1_downgraded() {
     };
     let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
         Arc::new(|| Box::new(CompleteOnlyInference));
-    let state = Arc::new(
-        DaemonState::new(config, factory).unwrap_or_else(|e| panic!("state: {e}")),
-    );
+    let state =
+        Arc::new(DaemonState::new(config, factory).unwrap_or_else(|e| panic!("state: {e}")));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -479,7 +489,13 @@ async fn team_events_visible_over_sse_v2_typed_and_v1_downgraded() {
 
     // v1 client attaches AFTER the fact: the snapshot replay downgrades
     // the same frames onto the Notification lane.
-    let v1 = read_sse_until(&base, &token, "/s/s-team/events", "\"kind\":\"child_started\"").await;
+    let v1 = read_sse_until(
+        &base,
+        &token,
+        "/s/s-team/events",
+        "\"kind\":\"child_started\"",
+    )
+    .await;
     assert!(
         v1.contains("\"kind\":\"child_started\""),
         "v1 SSE carries the downgraded notification: {v1}"

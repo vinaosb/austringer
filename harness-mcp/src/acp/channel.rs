@@ -64,7 +64,9 @@ impl ChannelImpl {
         let (tx, rx) = tokio::sync::oneshot::channel();
         {
             let Ok(mut pending) = self.state.pending_permissions.lock() else {
-                return Err(AcpError::Transport("permission registry poisoned".to_owned()));
+                return Err(AcpError::Transport(
+                    "permission registry poisoned".to_owned(),
+                ));
             };
             pending.insert(request_id, tx);
         }

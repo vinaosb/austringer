@@ -190,7 +190,15 @@ impl Shape {
         let all_finite = |numbers: &[f64]| numbers.iter().all(|number| number.is_finite());
         let non_negative = |number: &f64| number.is_finite() && *number >= 0.0;
         let (numbers, nonneg): (Vec<f64>, Vec<f64>) = match self {
-            Self::Rect { x, y, width, height, rx, ry, .. } => (
+            Self::Rect {
+                x,
+                y,
+                width,
+                height,
+                rx,
+                ry,
+                ..
+            } => (
                 [*x, *y].into(),
                 [*width, *height, rx.unwrap_or(0.0), ry.unwrap_or(0.0)].into(),
             ),
@@ -215,10 +223,9 @@ impl Shape {
                 }
                 return self.validate_common();
             }
-            Self::Text { x, y, font_size, .. } => (
-                [*x, *y].into(),
-                [font_size.unwrap_or(1.0)].into(),
-            ),
+            Self::Text {
+                x, y, font_size, ..
+            } => ([*x, *y].into(), [font_size.unwrap_or(1.0)].into()),
         };
         if !all_finite(&numbers) || nonneg.iter().any(|number| !non_negative(number)) {
             return Err(invalid());
@@ -229,13 +236,25 @@ impl Shape {
     fn validate_common(&self) -> Result<(), MediaError> {
         let invalid = || MediaError::InvalidSpec;
         let common = self.common();
-        if common.stroke_width.is_some_and(|value| !value.is_finite() || value < 0.0) {
+        if common
+            .stroke_width
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
             return Err(invalid());
         }
-        if common.opacity.is_some_and(|value| !(0.0..=1.0).contains(&value)) {
+        if common
+            .opacity
+            .is_some_and(|value| !(0.0..=1.0).contains(&value))
+        {
             return Err(invalid());
         }
-        for optional in [&common.id, &common.class, &common.fill, &common.stroke, &common.transform] {
+        for optional in [
+            &common.id,
+            &common.class,
+            &common.fill,
+            &common.stroke,
+            &common.transform,
+        ] {
             if optional.as_is_some_and_empty() {
                 return Err(invalid());
             }

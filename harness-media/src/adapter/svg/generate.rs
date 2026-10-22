@@ -6,13 +6,13 @@
 //! presentation attributes are emitted - no SVG 2 constructs, so no
 //! fallback is owed (digest 3.2: SVG 2 is still CR; target 1.1).
 
+use quick_xml::Writer;
 use quick_xml::escape::partial_escape;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
-use quick_xml::Writer;
 
-use super::shapes::{CommonAttrs, Shape, DEFAULT_FONT_FAMILY};
-use super::spec::SvgSpec;
 use super::SVG_NAMESPACE;
+use super::shapes::{CommonAttrs, DEFAULT_FONT_FAMILY, Shape};
+use super::spec::SvgSpec;
 use crate::error::MediaError;
 use crate::generate::GenerationSpec;
 
@@ -61,7 +61,11 @@ fn number(value: f64) -> String {
 }
 
 fn coordinates(numbers: &[f64]) -> String {
-    numbers.iter().map(|value| number(*value)).collect::<Vec<_>>().join(" ")
+    numbers
+        .iter()
+        .map(|value| number(*value))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn push_common(start: &mut BytesStart<'_>, common: &CommonAttrs) {
@@ -97,16 +101,14 @@ fn empty_shape(writer: &mut Writer<Vec<u8>>, start: BytesStart<'_>) -> Result<()
         .map_err(|_| MediaError::ParseFailure)
 }
 
-fn text_element(
-    writer: &mut Writer<Vec<u8>>,
-    tag: &str,
-    content: &str,
-) -> Result<(), MediaError> {
+fn text_element(writer: &mut Writer<Vec<u8>>, tag: &str, content: &str) -> Result<(), MediaError> {
     writer
         .write_event(Event::Start(BytesStart::new(tag)))
         .map_err(|_| MediaError::ParseFailure)?;
     writer
-        .write_event(Event::Text(BytesText::from_escaped(partial_escape(content))))
+        .write_event(Event::Text(BytesText::from_escaped(partial_escape(
+            content,
+        ))))
         .map_err(|_| MediaError::ParseFailure)?;
     writer
         .write_event(Event::End(BytesEnd::new(tag)))
@@ -118,7 +120,15 @@ fn shape_element(writer: &mut Writer<Vec<u8>>, shape: &Shape) -> Result<(), Medi
     let mut start = BytesStart::new(shape.tag());
     push_common(&mut start, common);
     match shape {
-        Shape::Rect { x, y, width, height, rx, ry, .. } => {
+        Shape::Rect {
+            x,
+            y,
+            width,
+            height,
+            rx,
+            ry,
+            ..
+        } => {
             start.push_attribute(("x", number(*x).as_str()));
             start.push_attribute(("y", number(*y).as_str()));
             start.push_attribute(("width", number(*width).as_str()));
@@ -156,7 +166,14 @@ fn shape_element(writer: &mut Writer<Vec<u8>>, shape: &Shape) -> Result<(), Medi
         Shape::Path { d, .. } => {
             start.push_attribute(("d", d.as_str()));
         }
-        Shape::Text { x, y, content, font_size, font_family, .. } => {
+        Shape::Text {
+            x,
+            y,
+            content,
+            font_size,
+            font_family,
+            ..
+        } => {
             start.push_attribute(("x", number(*x).as_str()));
             start.push_attribute(("y", number(*y).as_str()));
             if let Some(font_size) = font_size {
@@ -169,7 +186,9 @@ fn shape_element(writer: &mut Writer<Vec<u8>>, shape: &Shape) -> Result<(), Medi
                 .write_event(Event::Start(start))
                 .map_err(|_| MediaError::ParseFailure)?;
             writer
-                .write_event(Event::Text(BytesText::from_escaped(partial_escape(content))))
+                .write_event(Event::Text(BytesText::from_escaped(partial_escape(
+                    content,
+                ))))
                 .map_err(|_| MediaError::ParseFailure)?;
             return writer
                 .write_event(Event::End(BytesEnd::new("text")))

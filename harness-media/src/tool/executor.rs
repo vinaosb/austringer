@@ -1,4 +1,4 @@
-﻿//! The subprocess-tier tool executor (plan M15): availability over the
+//! The subprocess-tier tool executor (plan M15): availability over the
 //! declarative manifests, the fail-closed sandbox policy gate, env
 //! redaction at the command seam, the bounded-output spawn with hard
 //! timeout and kernel kill-tree, and the SHA-256 install gate. Where
@@ -10,16 +10,17 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use harness_safety::policy::decl::{
-    SandboxPolicy, SandboxTier, ViolationEvent, ViolationKind,
-};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+use harness_safety::policy::decl::{SandboxPolicy, SandboxTier, ViolationEvent, ViolationKind};
 use harness_safety::scrub::EnvScrub;
 use harness_safety::supply::{self, ReleaseAsset};
 
 use crate::descriptor::Operation;
 use crate::error::{InstallFailure, MediaError};
 use crate::format::FormatId;
-use crate::tool::manifest::{self, render_args, ExternalToolSpec};
+use crate::tool::manifest::{self, ExternalToolSpec, render_args};
 use crate::tool::spawn::{argv_line, find_program, redacted_child_env, wait_bounded};
 use crate::tool::types::{ToolAvailability, ToolError, ToolRun};
 
@@ -161,12 +162,13 @@ impl ToolExecutor {
     /// Typed [`ToolError`] for every failure mode; a non-zero exit or
     /// timeout never yields a partial artifact.
     pub fn run(&self, call: &ToolCall<'_>) -> Result<ToolRun, ToolError> {
-        let spec = manifest::manifests().get(call.tool).ok_or_else(|| {
-            ToolError::ToolUnavailable {
-                tool: call.tool.to_owned(),
-                install_hint: format!("no manifest is registered for tool {}", call.tool),
-            }
-        })?;
+        let spec =
+            manifest::manifests()
+                .get(call.tool)
+                .ok_or_else(|| ToolError::ToolUnavailable {
+                    tool: call.tool.to_owned(),
+                    install_hint: format!("no manifest is registered for tool {}", call.tool),
+                })?;
         let ToolAvailability::Available {
             program,
             version_pin,
@@ -181,11 +183,9 @@ impl ToolExecutor {
         let argv = self.argv(spec, call);
         let command_line = argv_line(&program, &argv);
         let child_env = redacted_child_env(spec, call.env.or(Some(&self.config.env)));
-        std::fs::create_dir_all(&self.config.session_temp).map_err(|detail| {
-            ToolError::Spawn {
-                tool: call.tool.to_owned(),
-                detail: format!("session temp: {detail}"),
-            }
+        std::fs::create_dir_all(&self.config.session_temp).map_err(|detail| ToolError::Spawn {
+            tool: call.tool.to_owned(),
+            detail: format!("session temp: {detail}"),
         })?;
         let mut command = Command::new(&program);
         command
@@ -226,12 +226,12 @@ impl ToolExecutor {
         pin: &ReleaseAsset,
         bytes: &[u8],
     ) -> Result<PathBuf, ToolError> {
-        let spec = manifest::manifests().get(tool).ok_or_else(|| {
-            ToolError::ToolUnavailable {
+        let spec = manifest::manifests()
+            .get(tool)
+            .ok_or_else(|| ToolError::ToolUnavailable {
                 tool: tool.to_owned(),
                 install_hint: format!("no manifest is registered for tool {tool}"),
-            }
-        })?;
+            })?;
         if !self.config.install_enabled {
             return Err(ToolError::ToolUnavailable {
                 tool: tool.to_owned(),
@@ -240,8 +240,7 @@ impl ToolExecutor {
                     .into(),
             });
         }
-        let pin_ok =
-            pin.version == spec.version_pin && supply::verify_sha256(bytes, &pin.sha256);
+        let pin_ok = pin.version == spec.version_pin && supply::verify_sha256(bytes, &pin.sha256);
         if !pin_ok {
             return Err(ToolError::InstallFailed {
                 tool: tool.to_owned(),

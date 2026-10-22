@@ -10,10 +10,10 @@
 use std::time::Instant;
 
 use comrak::nodes::NodeValue;
-use comrak::{parse_document, Arena};
+use comrak::{Arena, parse_document};
 
-use super::tree::{self, HeadingEntry, MdTree, MAX_HEADINGS};
 use super::TEXT_PROJECTION_MAX_CHARS;
+use super::tree::{self, HeadingEntry, MAX_HEADINGS, MdTree};
 use crate::adapter::text::markdown::generate::gfm_options;
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
@@ -90,7 +90,11 @@ fn finish(tree: MdTree) -> Result<Extracted, MediaError> {
         TEXT_PROJECTION_MAX_CHARS,
     );
     let tree_value = serde_json::to_value(&tree).unwrap_or(serde_json::Value::Null);
-    Ok(Extracted { tree: tree_value, text_projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree: tree_value,
+        text_projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 #[derive(Default)]

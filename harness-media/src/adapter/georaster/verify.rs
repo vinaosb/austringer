@@ -11,9 +11,9 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use super::extract::extract;
 use super::TOOL;
-use crate::diff::{structural_diff, Change, RoundTripVerdict, StructuralDiff, Tolerances};
+use super::extract::extract;
+use crate::diff::{Change, RoundTripVerdict, StructuralDiff, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::executor::{OpOutput, Produced};
 use crate::extract::ExtractBudgets;
@@ -110,18 +110,18 @@ fn gdalinfo_diff(expected: &Value, census: &Value) -> StructuralDiff {
     let gt_ok = want_geo.as_array().is_some_and(|want| {
         actual_gt.as_array().is_some_and(|actual| {
             actual.len() == want.len()
-                && actual.iter().zip(want.iter()).all(|(a, w)| match (a.as_f64(), w.as_f64()) {
-                    (Some(a), Some(w)) => near(a, w),
-                    _ => false,
-                })
+                && actual
+                    .iter()
+                    .zip(want.iter())
+                    .all(|(a, w)| match (a.as_f64(), w.as_f64()) {
+                        (Some(a), Some(w)) => near(a, w),
+                        _ => false,
+                    })
         })
     });
     if !gt_ok {
-        diff.changed.push(change(
-            "/gdalinfo/geoTransform",
-            want_geo,
-            actual_gt,
-        ));
+        diff.changed
+            .push(change("/gdalinfo/geoTransform", want_geo, actual_gt));
     }
     let layout = census["metadata"]["IMAGE_STRUCTURE"]["LAYOUT"].clone();
     let want_cog = expected["layout"]["tiled"].as_bool().unwrap_or(false);

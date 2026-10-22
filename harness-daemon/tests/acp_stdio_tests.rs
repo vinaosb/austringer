@@ -10,10 +10,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use axum::Router;
 use axum::extract::State;
 use axum::http::header;
 use axum::routing::post;
-use axum::Router;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
@@ -108,10 +108,12 @@ async fn spawn_fixture(scripts: Vec<String>) -> (String, Arc<Fixture>) {
     let app = Router::new()
         .route(
             "/v1/chat/completions",
-            post(|State(fixture): State<Arc<Fixture>>, body: String| async move {
-                let script = fixture.answer(body).await;
-                ([(header::CONTENT_TYPE, "text/event-stream")], script)
-            }),
+            post(
+                |State(fixture): State<Arc<Fixture>>, body: String| async move {
+                    let script = fixture.answer(body).await;
+                    ([(header::CONTENT_TYPE, "text/event-stream")], script)
+                },
+            ),
         )
         .with_state(Arc::clone(&fixture));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -215,7 +217,11 @@ impl AcpChild {
     async fn respond(&mut self, id: Value, result: Value) {
         self.stdin
             .write_all(
-                format!("{}\n", json!({"jsonrpc": "2.0", "id": id, "result": result})).as_bytes(),
+                format!(
+                    "{}\n",
+                    json!({"jsonrpc": "2.0", "id": id, "result": result})
+                )
+                .as_bytes(),
             )
             .await
             .expect("write response");
@@ -290,8 +296,7 @@ impl AcpChild {
                 Some("session/update") => updates.push(message["params"]["update"].clone()),
                 _ => {}
             }
-            let is_response =
-                message.get("result").is_some() || message.get("error").is_some();
+            let is_response = message.get("result").is_some() || message.get("error").is_some();
             if is_response && message.get("id") == Some(&json!(id)) {
                 let reason = message["result"]["stopReason"]
                     .as_str()
@@ -305,7 +310,13 @@ impl AcpChild {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn acp_stdio_roundtrip_streams_updates_and_asks_permission() {
     let (base, fixture) = spawn_fixture(vec![
-        tool_call_turn("editing now", "call-1", "fixture.md", "old line", "new line"),
+        tool_call_turn(
+            "editing now",
+            "call-1",
+            "fixture.md",
+            "old line",
+            "new line",
+        ),
         text_turn("edit applied"),
     ])
     .await;
@@ -362,7 +373,13 @@ async fn acp_stdio_roundtrip_streams_updates_and_asks_permission() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn acp_stdio_denied_permission_fails_closed() {
     let (base, _fixture) = spawn_fixture(vec![
-        tool_call_turn("editing now", "call-1", "protected.md", "old line", "new line"),
+        tool_call_turn(
+            "editing now",
+            "call-1",
+            "protected.md",
+            "old line",
+            "new line",
+        ),
         text_turn("denied, moving on"),
     ])
     .await;
@@ -385,10 +402,7 @@ async fn acp_stdio_denied_permission_fails_closed() {
     // and the tool NEVER executed — deny-fails-closed.
     assert_eq!(reason, "end_turn", "updates: {updates:?}");
     let on_disk = std::fs::read_to_string(&protected).expect("read back");
-    assert_eq!(
-        on_disk, "old line\n",
-        "denied edit must not touch the file"
-    );
+    assert_eq!(on_disk, "old line\n", "denied edit must not touch the file");
     // The proposal itself streamed (the IDE saw what was refused).
     assert!(
         updates.iter().any(|u| u["sessionUpdate"] == "tool_call"),
@@ -438,7 +452,12 @@ async fn acp_stdio_cancel_lands_through_the_bridge() {
     };
     assert_eq!(reason, "end_turn", "turn 1 completes (cancel deferred)");
     let (reason2, _) = acp
-        .prompt_collect(4, &session, json!([{"type": "text", "text": "again"}]), None)
+        .prompt_collect(
+            4,
+            &session,
+            json!([{"type": "text", "text": "again"}]),
+            None,
+        )
         .await;
     assert_eq!(
         reason2, "cancelled",

@@ -5,13 +5,16 @@
 
 use harness_media::adapter::svg::{self, SvgSpec};
 use harness_media::diff::RoundTripVerdict;
-use harness_media::executor::{OpRequest, OpOutput};
+use harness_media::executor::{OpOutput, OpRequest};
 use harness_media::format::FormatId;
 use harness_media::generate::GenerationSpec;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn spec(params: Value) -> GenerationSpec {
-    GenerationSpec { format: FormatId::Svg, params }
+    GenerationSpec {
+        format: FormatId::Svg,
+        params,
+    }
 }
 
 /// The spec corpus: >= 10 specs covering viewBox/title/desc presence,
@@ -20,9 +23,18 @@ fn spec(params: Value) -> GenerationSpec {
 fn corpus() -> Vec<(&'static str, Value)> {
     vec![
         ("empty", json!({"shapes": []})),
-        ("viewbox-only", json!({"viewBox": [0.0, 0.0, 100.0, 50.0], "shapes": []})),
-        ("width-height", json!({"width": 640.0, "height": 480.0, "shapes": []})),
-        ("title-desc", json!({"title": "T", "desc": "D", "shapes": []})),
+        (
+            "viewbox-only",
+            json!({"viewBox": [0.0, 0.0, 100.0, 50.0], "shapes": []}),
+        ),
+        (
+            "width-height",
+            json!({"width": 640.0, "height": 480.0, "shapes": []}),
+        ),
+        (
+            "title-desc",
+            json!({"title": "T", "desc": "D", "shapes": []}),
+        ),
         (
             "single-rect",
             json!({"viewBox": [0.0, 0.0, 10.0, 10.0],
@@ -136,7 +148,10 @@ fn round_trip_passes_through_the_executor_dispatch_path() {
         let verified = registry
             .dispatch(
                 FormatId::Svg,
-                OpRequest::Verify { expected: &expected, bytes },
+                OpRequest::Verify {
+                    expected: &expected,
+                    bytes,
+                },
             )
             .unwrap_or_else(|error| panic!("{name}: dispatch verify: {error}"));
         let OpOutput::Verify(verdict) = verified.inner() else {
@@ -192,12 +207,18 @@ fn spec_tree_projection_is_independent_of_extraction() {
     let params = json!({"viewBox": [0.0, 0.0, 4.0, 4.0], "title": "X",
                         "shapes": [{"type": "circle", "cx": 1.0, "cy": 1.0, "r": 1.0, "id": "c"}]});
     let input = spec(params);
-    let first = SvgSpec::from_generation(&input).expect("spec").canonical_tree();
-    let second = SvgSpec::from_generation(&input).expect("spec").canonical_tree();
+    let first = SvgSpec::from_generation(&input)
+        .expect("spec")
+        .canonical_tree();
+    let second = SvgSpec::from_generation(&input)
+        .expect("spec")
+        .canonical_tree();
     assert_eq!(first, second, "deterministic projection");
     let changed = spec(json!({"viewBox": [0.0, 0.0, 8.0, 8.0], "title": "X",
                               "shapes": [{"type": "circle", "cx": 1.0, "cy": 1.0, "r": 1.0, "id": "c"}]}));
-    let other = SvgSpec::from_generation(&changed).expect("spec").canonical_tree();
+    let other = SvgSpec::from_generation(&changed)
+        .expect("spec")
+        .canonical_tree();
     assert_ne!(first, other, "spec changes move the projected tree");
 }
 

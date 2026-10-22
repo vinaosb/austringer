@@ -12,9 +12,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 /// A media format identity in the CORE slate.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FormatId {
     /// PNG raster image (with APNG).

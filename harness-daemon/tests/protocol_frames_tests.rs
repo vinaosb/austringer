@@ -122,8 +122,13 @@ async fn host_with_engine(
         host.event_sink(),
     );
     let inference = make(&host);
-    host.spawn_engine(session_dir, host.standard_stages(Box::new(executor)), inference, cmd_rx)
-        .ok();
+    host.spawn_engine(
+        session_dir,
+        host.standard_stages(Box::new(executor)),
+        inference,
+        cmd_rx,
+    )
+    .ok();
     (host, dir)
 }
 
@@ -184,7 +189,10 @@ async fn usage_frame_emitted_once_per_assistant_turn() {
     assert_eq!(*turn, 1);
     assert_eq!(*model, fake_model, "Usage must carry model identity");
     assert_eq!(effort.as_deref(), Some("high"));
-    assert_eq!((*input_tokens, *output_tokens, *cache_read, *cache_write), (120, 34, 10, 5));
+    assert_eq!(
+        (*input_tokens, *output_tokens, *cache_read, *cache_write),
+        (120, 34, 10, 5)
+    );
     assert_eq!(
         *cost_usd_micros, None,
         "unpriced fake identity must report absent cost, never zero"
@@ -315,9 +323,10 @@ fn memory_sink() -> (Arc<MemorySink>, Arc<Notifier>) {
 #[tokio::test]
 async fn verdict_frame_carries_non_empty_evidence() {
     let dir = tempfile::tempdir().ok();
-    let root = dir
-        .as_ref()
-        .map_or_else(|| std::env::temp_dir().join("s-verdict-root"), |d| d.path().to_owned());
+    let root = dir.as_ref().map_or_else(
+        || std::env::temp_dir().join("s-verdict-root"),
+        |d| d.path().to_owned(),
+    );
     let (_memory, notifier) = memory_sink();
     let sink = Arc::new(
         RunSink::open(
@@ -435,8 +444,13 @@ fn compat_withholds_v2_frames_from_v1_wires() {
 #[derive(serde::Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum V1ShapedServerMsg {
-    HelloAck { version: u32, last_event_id: u64 },
-    Event { frame: Frame },
+    HelloAck {
+        version: u32,
+        last_event_id: u64,
+    },
+    Event {
+        frame: Frame,
+    },
     PermissionAsk {
         ask: harness_daemon::protocol::AskPayload,
     },
@@ -444,8 +458,12 @@ enum V1ShapedServerMsg {
         ask_id: u64,
         resolution: harness_daemon::protocol::Resolution,
     },
-    StateResyncRequired { last_event_id: u64 },
-    Snapshot { frames: Vec<Frame> },
+    StateResyncRequired {
+        last_event_id: u64,
+    },
+    Snapshot {
+        frames: Vec<Frame>,
+    },
     Error {
         code: harness_daemon::protocol::ErrorCode,
         message: String,
@@ -456,7 +474,9 @@ enum V1ShapedServerMsg {
         diff_summary: String,
     },
     Pong,
-    Bye { reason: String },
+    Bye {
+        reason: String,
+    },
 }
 
 #[test]
@@ -631,8 +651,7 @@ fn fallback_answer_client_roundtrip() {
         chosen: identity("openai", "gpt-5-5"),
     };
     let encoded = encode_client(&msg).unwrap_or_default();
-    let decoded =
-        decode_server(encoded.as_bytes()).map(|_: ServerMsg| panic!("wrong direction"));
+    let decoded = decode_server(encoded.as_bytes()).map(|_: ServerMsg| panic!("wrong direction"));
     assert!(decoded.is_err(), "server decode must reject a client frame");
     let raw: ClientMsg = serde_json::from_str(&encoded).unwrap_or(ClientMsg::Ping);
     assert_eq!(raw, msg);
@@ -668,16 +687,15 @@ async fn production_factory_emits_real_provider_usage() {
         .unwrap_or_else(|e| panic!("resolve: {e}"));
     // The cassette reply carries usage on the wire: message_start
     // input_tokens=12, message_delta output_tokens=7.
-    let transport = CassetteTransport::new(vec![Cassette::Sse(anthropic_text_cassette(
-        model,
-        "done",
-    ))]);
+    let transport =
+        CassetteTransport::new(vec![Cassette::Sse(anthropic_text_cassette(model, "done"))]);
     let factory = resolved.compose_factory(transport);
 
     let dir = tempfile::tempdir().ok();
-    let root = dir
-        .as_ref()
-        .map_or_else(|| std::env::temp_dir().join("s-prod-usage"), |d| d.path().to_owned());
+    let root = dir.as_ref().map_or_else(
+        || std::env::temp_dir().join("s-prod-usage"),
+        |d| d.path().to_owned(),
+    );
     let config = DaemonConfig {
         data_dir: root,
         token: Some("t1-prod".into()),
@@ -734,7 +752,10 @@ async fn production_factory_emits_real_provider_usage() {
     assert_eq!(effort.as_deref(), None);
     // The cassette's REAL reported counts, parsed by the anthropic
     // adapter — never invented.
-    assert_eq!((*input_tokens, *output_tokens, *cache_read, *cache_write), (12, 7, 0, 0));
+    assert_eq!(
+        (*input_tokens, *output_tokens, *cache_read, *cache_write),
+        (12, 7, 0, 0)
+    );
     // Hand-computed from the builtin haiku table: 12 * 1_000_000/1e6 +
     // 7 * 5_000_000/1e6 = 12 + 35 = 47 micro-USD.
     assert_eq!(*cost_usd_micros, Some(47));

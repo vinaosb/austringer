@@ -22,21 +22,23 @@ use super::safety::{SafetyDecision, gate, render_block, render_report};
 const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 120_000;
 
 pub(crate) fn str_arg<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, ProviderError> {
-    arguments.get(key).and_then(Value::as_str).ok_or_else(|| {
-        ProviderError::InvalidArguments {
+    arguments
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProviderError::InvalidArguments {
             message: format!("arguments must include a string {key:?} field"),
-        }
-    })
+        })
 }
 
 pub(crate) fn optional_u64_arg(arguments: &Value, key: &str) -> Result<Option<u64>, ProviderError> {
     match arguments.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_u64().map(Some).ok_or_else(|| {
-            ProviderError::InvalidArguments {
+        Some(value) => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| ProviderError::InvalidArguments {
                 message: format!("{key:?} must be a non-negative integer"),
-            }
-        }),
+            }),
     }
 }
 
@@ -82,18 +84,18 @@ impl ToolProvider for EditLinesTool {
 
     async fn execute(&self, arguments: &Value) -> Result<Vec<u8>, ProviderError> {
         let path = str_arg(arguments, "path")?;
-        let raw_edits = arguments.get("edits").and_then(Value::as_array).ok_or_else(|| {
-            ProviderError::InvalidArguments {
+        let raw_edits = arguments
+            .get("edits")
+            .and_then(Value::as_array)
+            .ok_or_else(|| ProviderError::InvalidArguments {
                 message: "arguments must include an 'edits' array".to_owned(),
-            }
-        })?;
+            })?;
         let mut edits = Vec::with_capacity(raw_edits.len());
         for raw in raw_edits {
-            let line = optional_u64_arg(raw, "line")?.ok_or_else(|| {
-                ProviderError::InvalidArguments {
+            let line =
+                optional_u64_arg(raw, "line")?.ok_or_else(|| ProviderError::InvalidArguments {
                     message: "each edit needs a 1-based 'line'".to_owned(),
-                }
-            })?;
+                })?;
             if line == 0 {
                 return Err(ProviderError::InvalidArguments {
                     message: "'line' is 1-based; got 0".to_owned(),
@@ -126,11 +128,10 @@ pub(crate) fn shell_argv(command: &str) -> Result<(String, Vec<String>), Provide
     #[cfg(windows)]
     {
         use harness_exec::shell::{PathFinder, ShellKind, resolve_default_shell};
-        let resolved = resolve_default_shell(None, &PathFinder).map_err(|error| {
-            ProviderError::Execution {
+        let resolved =
+            resolve_default_shell(None, &PathFinder).map_err(|error| ProviderError::Execution {
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let program = resolved.path.to_string_lossy().into_owned();
         let args = match resolved.kind {
             ShellKind::Cmd => vec!["/d".into(), "/c".into(), command.to_owned()],

@@ -155,7 +155,10 @@ fn run_sync(
                     "cargo-nextest".to_owned(),
                     cargo.clone(),
                     vec!["nextest".into(), "run".into(), "--no-fail-fast".into()],
-                    argv_display(&cargo, &["nextest".into(), "run".into(), "--no-fail-fast".into()]),
+                    argv_display(
+                        &cargo,
+                        &["nextest".into(), "run".into(), "--no-fail-fast".into()],
+                    ),
                 )
             } else {
                 (

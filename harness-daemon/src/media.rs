@@ -15,8 +15,8 @@ use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
 use harness_core::event::{ContentHash, MediaStore, MimeType};
-use harness_media::probe::{probe, registry};
 use harness_media::ProbeResult;
+use harness_media::probe::{probe, registry};
 
 use crate::server::DaemonState;
 
@@ -118,7 +118,11 @@ pub(crate) async fn upload_media(
     }
     if aborted {
         let _ = tokio::fs::remove_file(&temp).await;
-        return typed_error(StatusCode::BAD_REQUEST, "upload_aborted", serde_json::json!({}));
+        return typed_error(
+            StatusCode::BAD_REQUEST,
+            "upload_aborted",
+            serde_json::json!({}),
+        );
     }
     if file.flush().await.is_err() || file.sync_all().await.is_err() {
         let _ = tokio::fs::remove_file(&temp).await;
@@ -188,7 +192,11 @@ pub(crate) async fn get_media(
     let bytes = match store.load(&hash) {
         Ok(Some(bytes)) => bytes,
         Ok(None) => {
-            return typed_error(StatusCode::NOT_FOUND, "unknown_media", serde_json::json!({}));
+            return typed_error(
+                StatusCode::NOT_FOUND,
+                "unknown_media",
+                serde_json::json!({}),
+            );
         }
         Err(error) => {
             return typed_error(
@@ -211,7 +219,12 @@ pub(crate) async fn get_media(
         Ok(value) => value,
         Err(_) => axum::http::HeaderValue::from_static("application/octet-stream"),
     };
-    (StatusCode::OK, [(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response()
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, content_type)],
+        bytes,
+    )
+        .into_response()
 }
 
 #[cfg(test)]

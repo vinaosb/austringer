@@ -51,20 +51,21 @@ impl TaskTool {
             return Err(ProviderError::Execution { message: refusal });
         }
         let category = crate::tools::providers::str_arg(arguments, "category")?;
-        let prompt = crate::tools::providers::str_arg(arguments, "prompt")?;        let escalate = match arguments.get("escalate_fan_out") {
+        let prompt = crate::tools::providers::str_arg(arguments, "prompt")?;
+        let escalate = match arguments.get("escalate_fan_out") {
             None | Some(Value::Null) => false,
             Some(Value::Bool(flag)) => *flag,
             Some(_) => {
                 return Err(ProviderError::InvalidArguments {
                     message: "'escalate_fan_out' must be a boolean".to_owned(),
-                })
+                });
             }
         };
-        let parent = (self.services.parent_resolver())(&self.session_id).ok_or_else(
-            || ProviderError::Execution {
+        let parent = (self.services.parent_resolver())(&self.session_id).ok_or_else(|| {
+            ProviderError::Execution {
                 message: self.refusal_text(TaskRefusal::ParentGone),
-            },
-        )?;
+            }
+        })?;
         let outcome = self
             .services
             .run_child(

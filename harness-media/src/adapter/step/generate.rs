@@ -4,9 +4,9 @@
 //! script itself). A non-zero exit or timeout yields NO partial
 //! artifact - the output file is read only after a zero-exit run.
 
+use super::TOOL;
 use super::script::builder_script;
 use super::spec::StepSpec;
-use super::TOOL;
 use crate::error::MediaError;
 use crate::executor::{OpOutput, Produced};
 use crate::generate::GenerationSpec;

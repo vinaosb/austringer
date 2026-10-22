@@ -106,8 +106,14 @@ mod tests {
 
     #[test]
     fn blocked_outranks_terminals_but_not_in_progress() {
-        assert_eq!(aggregate_of_states(["blocked", "failed"]), TeamStatus::Blocked);
-        assert_eq!(aggregate_of_states(["blocked", "blocked"]), TeamStatus::Blocked);
+        assert_eq!(
+            aggregate_of_states(["blocked", "failed"]),
+            TeamStatus::Blocked
+        );
+        assert_eq!(
+            aggregate_of_states(["blocked", "blocked"]),
+            TeamStatus::Blocked
+        );
         assert_eq!(
             aggregate_of_states(["blocked", "running"]),
             TeamStatus::InProgress

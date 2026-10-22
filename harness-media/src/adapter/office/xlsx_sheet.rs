@@ -3,9 +3,9 @@
 //! (never evaluated - stored `<v>` values are data), and the dimension
 //! from the part's declared range.
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
-use serde_json::{json, Value};
+use quick_xml::events::Event;
+use serde_json::{Value, json};
 
 use super::parts::{self, Ledger, truncate_chars};
 use crate::error::MediaError;
@@ -58,32 +58,28 @@ pub(super) fn sheet_tree(
             Event::Eof => break,
             // Stateful elements (c/f/v/is/t) open ONLY on Start (Empty
             // has no End); the stateless dimension attr reads both.
-            Event::Start(element) => {
-                match element.name().local_name().as_ref() {
-                    "dimension" => {
-                        if let Some(reference) = parts::attribute(&element, "ref") {
-                            dimension = dimension_of(&reference);
-                        }
+            Event::Start(element) => match element.name().local_name().as_ref() {
+                "dimension" => {
+                    if let Some(reference) = parts::attribute(&element, "ref") {
+                        dimension = dimension_of(&reference);
                     }
-                    "c" => {
-                        cell.reference = parts::attribute(&element, "r").unwrap_or_default();
-                        cell.kind_attr = parts::attribute(&element, "t");
-                        cell.formula.clear();
-                        cell.value.clear();
-                        cell.inline.clear();
-                        in_cell = true;
-                        in_inline = false;
-                    }
-                    "f" if in_cell => cell.capture = Some(Capture::Formula),
-                    "v" if in_cell => cell.capture = Some(Capture::Value),
-                    "is" if in_cell => in_inline = true,
-                    "t" if in_inline => cell.capture = Some(Capture::Inline),
-                    _ => {}
                 }
-            }
-            Event::Empty(element)
-                if element.name().local_name().as_ref() == "dimension" =>
-            {
+                "c" => {
+                    cell.reference = parts::attribute(&element, "r").unwrap_or_default();
+                    cell.kind_attr = parts::attribute(&element, "t");
+                    cell.formula.clear();
+                    cell.value.clear();
+                    cell.inline.clear();
+                    in_cell = true;
+                    in_inline = false;
+                }
+                "f" if in_cell => cell.capture = Some(Capture::Formula),
+                "v" if in_cell => cell.capture = Some(Capture::Value),
+                "is" if in_cell => in_inline = true,
+                "t" if in_inline => cell.capture = Some(Capture::Inline),
+                _ => {}
+            },
+            Event::Empty(element) if element.name().local_name().as_ref() == "dimension" => {
                 if let Some(reference) = parts::attribute(&element, "ref") {
                     dimension = dimension_of(&reference);
                 }
@@ -101,22 +97,20 @@ pub(super) fn sheet_tree(
                     target.push_str(&resolved);
                 }
             }
-            Event::End(element) => {
-                match element.name().local_name().as_ref() {
-                    "c" if in_cell => {
-                        in_cell = false;
-                        if let Some(cell_value) = finalize(&cell, shared, &mut formulas)? {
-                            if cells.len() >= MAX_CELLS {
-                                return Err(MediaError::ExtractTooLarge);
-                            }
-                            cells.push(cell_value);
+            Event::End(element) => match element.name().local_name().as_ref() {
+                "c" if in_cell => {
+                    in_cell = false;
+                    if let Some(cell_value) = finalize(&cell, shared, &mut formulas)? {
+                        if cells.len() >= MAX_CELLS {
+                            return Err(MediaError::ExtractTooLarge);
                         }
+                        cells.push(cell_value);
                     }
-                    "is" => in_inline = false,
-                    "f" | "v" | "t" => cell.capture = None,
-                    _ => {}
                 }
-            }
+                "is" => in_inline = false,
+                "f" | "v" | "t" => cell.capture = None,
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -162,12 +156,18 @@ fn finalize(
     }
     let (kind, value): (&str, String) = match cell.kind_attr.as_deref() {
         Some("s") => {
-            let index = cell.value.parse::<usize>().map_err(|_| MediaError::ParseFailure)?;
+            let index = cell
+                .value
+                .parse::<usize>()
+                .map_err(|_| MediaError::ParseFailure)?;
             let text = shared.get(index).ok_or(MediaError::ParseFailure)?;
             ("string", text.clone())
         }
         Some("inlineStr") => ("string", cell.inline.clone()),
-        Some("b") => ("bool", if cell.value == "1" { "true" } else { "false" }.to_owned()),
+        Some("b") => (
+            "bool",
+            if cell.value == "1" { "true" } else { "false" }.to_owned(),
+        ),
         Some("str") => ("string", cell.value.clone()),
         Some("e") => ("error", cell.value.clone()),
         _ => ("number", cell.value.clone()),
@@ -194,6 +194,7 @@ fn dimension_of(reference: &str) -> Option<(usize, usize)> {
 /// `C` -> 3.
 fn column_number(letters: &str) -> Option<usize> {
     letters.bytes().try_fold(0, |accumulator, byte| {
-        byte.is_ascii_uppercase().then(|| accumulator * 26 + usize::from(byte - b'A' + 1))
+        byte.is_ascii_uppercase()
+            .then(|| accumulator * 26 + usize::from(byte - b'A' + 1))
     })
 }

@@ -88,7 +88,13 @@ pub fn render_projection(tree: &MdTree) -> String {
     let outline: Vec<String> = tree
         .headings
         .iter()
-        .map(|heading| format!("{}{}", "#".repeat(heading.level.min(6) as usize), heading.text))
+        .map(|heading| {
+            format!(
+                "{}{}",
+                "#".repeat(heading.level.min(6) as usize),
+                heading.text
+            )
+        })
         .collect();
     let languages: Vec<String> = tree
         .code_languages

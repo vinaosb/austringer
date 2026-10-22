@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use lopdf::{Dictionary, Document, Object};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted, TEXT_PROJECTION_MAX_CHARS};
@@ -59,20 +59,26 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
             return Err(MediaError::ExtractTooLarge);
         }
 
-        let fonts = doc.get_page_fonts(*page_id).map_err(|_| MediaError::ParseFailure)?;
+        let fonts = doc
+            .get_page_fonts(*page_id)
+            .map_err(|_| MediaError::ParseFailure)?;
         let mut page_fonts = Vec::with_capacity(fonts.len());
         for font in fonts.values().copied() {
             let entry = font_entry(&doc, font)?;
             page_fonts.push(entry["base_font"].clone());
             let key = format!(
                 "{}|{}|{}",
-                entry["base_font"], entry["subtype"],
+                entry["base_font"],
+                entry["subtype"],
                 entry.get("encoding").cloned().unwrap_or(Value::Null)
             );
             font_table.insert(key, entry);
         }
         page_fonts.dedup();
-        let images = doc.get_page_images(*page_id).map(|images| images.len()).unwrap_or(0);
+        let images = doc
+            .get_page_images(*page_id)
+            .map(|images| images.len())
+            .unwrap_or(0);
         total_images += images;
 
         text_join.push_str(&text);
@@ -81,7 +87,10 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
 
     let fonts: Vec<Value> = font_table.into_values().collect();
     let font_count = fonts.len();
-    let embedded = fonts.iter().filter(|font| font["embedded"] == json!(true)).count();
+    let embedded = fonts
+        .iter()
+        .filter(|font| font["embedded"] == json!(true))
+        .count();
     let tree = json!({
         "embedded_images": total_images,
         "fonts": fonts,
@@ -100,7 +109,11 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
     let remaining = TEXT_PROJECTION_MAX_CHARS.saturating_sub(projection.chars().count());
     projection.push_str(&text_join.chars().take(remaining).collect::<String>());
 
-    Ok(Extracted { tree, text_projection: projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree,
+        text_projection: projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 fn field<'a>(dict: &'a Dictionary, key: &[u8]) -> Option<&'a Object> {
@@ -123,7 +136,12 @@ fn bounded_string(object: &Object) -> String {
     object
         .as_str()
         .ok()
-        .map(|raw| String::from_utf8_lossy(raw).chars().take(METADATA_MAX_CHARS).collect())
+        .map(|raw| {
+            String::from_utf8_lossy(raw)
+                .chars()
+                .take(METADATA_MAX_CHARS)
+                .collect()
+        })
         .unwrap_or_default()
 }
 

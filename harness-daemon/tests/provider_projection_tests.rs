@@ -135,12 +135,22 @@ async fn model_mediated_projection_composes_over_the_real_wire_with_provenance()
     let derived = DerivedStore::open(session_dir.path()).expect("derived store");
     let source = harness_core::event::ContentHash::from_bytes(PNG_BYTES);
     assert_eq!(
-        derived_cache(&derived, &source, &format!("model:{MODEL}:v1"), ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            &format!("model:{MODEL}:v1"),
+            ProjectionKind::SceneDescription
+        ),
         Some(PROJECTION_TEXT.as_bytes().to_vec()),
         "model-mediated result stored derived with model-id provenance"
     );
     assert_eq!(
-        derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            DELIVERY_CACHE_PRODUCER,
+            ProjectionKind::SceneDescription
+        ),
         Some(PROJECTION_TEXT.as_bytes().to_vec())
     );
 }

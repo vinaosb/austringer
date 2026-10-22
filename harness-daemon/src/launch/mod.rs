@@ -88,7 +88,13 @@ pub(crate) fn task_of(child_id: &str) -> &str {
 /// BEFORE launch: collision alert plus `quarantined` finish for each,
 /// stripped from the spec. The overlapping child never launches — it
 /// never receives any allow, auto or otherwise.
-fn quarantine(host: &SessionHost, launch_id: &str, spec: &mut LaunchSpec, task: &str, detail: String) {
+fn quarantine(
+    host: &SessionHost,
+    launch_id: &str,
+    spec: &mut LaunchSpec,
+    task: &str,
+    detail: String,
+) {
     let mut doomed = vec![task.to_owned()];
     let mut index = 0;
     while index < doomed.len() {
@@ -102,7 +108,8 @@ fn quarantine(host: &SessionHost, launch_id: &str, spec: &mut LaunchSpec, task: 
             }
         }
     }
-    spec.tasks.retain(|candidate| !doomed.contains(&candidate.id));
+    spec.tasks
+        .retain(|candidate| !doomed.contains(&candidate.id));
     for (position, id) in doomed.iter().enumerate() {
         let child = format!("{launch_id}-child-{id}");
         if position == 0 {
@@ -168,7 +175,9 @@ pub async fn run_launch(
             message: notice.clone(),
         });
     }
-    let journal_path = services.sessions_root.join(format!("{launch_id}-launch.jsonl"));
+    let journal_path = services
+        .sessions_root
+        .join(format!("{launch_id}-launch.jsonl"));
     let journal = TeamJournal::open(&journal_path).map_err(|e| LaunchRefusal::Io(e.to_string()))?;
     let sink = Arc::new(HubTeamSink::new(Arc::clone(&host)));
     let mut launcher = Launcher::new(config, sink, journal);
@@ -200,10 +209,20 @@ fn sanitize_stem(path: &Path) -> String {
         .and_then(|stem| stem.to_str())
         .unwrap_or("launch")
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let trimmed = stem.trim_matches('-');
-    if trimmed.is_empty() { "launch".to_owned() } else { trimmed.to_owned() }
+    if trimmed.is_empty() {
+        "launch".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
 }
 
 /// `/launch <spec-file>` intake: synchronous validation (typed
@@ -218,7 +237,11 @@ pub fn start_launch(host: &Arc<SessionHost>, argument: &str) -> Result<(), Launc
     if argument.is_empty() {
         return Err(LaunchRefusal::Spec("usage: /launch <spec-file>".to_owned()));
     }
-    let services = host.launcher.get().cloned().ok_or(LaunchRefusal::NotBound)?;
+    let services = host
+        .launcher
+        .get()
+        .cloned()
+        .ok_or(LaunchRefusal::NotBound)?;
     let path = PathBuf::from(argument);
     let text = std::fs::read_to_string(&path)
         .map_err(|e| LaunchRefusal::Io(format!("{}: {e}", path.display())))?;

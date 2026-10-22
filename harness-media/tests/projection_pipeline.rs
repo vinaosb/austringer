@@ -74,14 +74,15 @@ impl Inference for ScriptedModel {
         request: &InferenceRequest<'_>,
         _cancel: &CancelToken,
     ) -> Result<AssistantTurn, InferenceError> {
-        self.calls
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if let Ok(mut seen) = self.focus_seen.lock() {
             seen.push(request.focus_block.to_owned());
         }
         match self.answer.clone() {
             Answer::Text(text) => Ok(AssistantTurn {
-                blocks: vec![ContentBlock::Text { text: text.to_owned() }],
+                blocks: vec![ContentBlock::Text {
+                    text: text.to_owned(),
+                }],
                 tool_calls: Vec::new(),
                 usage: None,
             }),
@@ -99,9 +100,7 @@ impl Inference for ScriptedModel {
                 }],
                 usage: None,
             }),
-            Answer::Hang => {
-                std::future::pending::<Result<AssistantTurn, InferenceError>>().await
-            }
+            Answer::Hang => std::future::pending::<Result<AssistantTurn, InferenceError>>().await,
         }
     }
 }
@@ -119,8 +118,7 @@ impl ProjectionProvider for CountingProjector {
     }
 
     fn project(&self, _bytes: &[u8], _ctx: &ProjectionContext<'_>) -> Result<String, MediaError> {
-        self.calls
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok("deterministic: 3 bands, 8x8".to_owned())
     }
 }
@@ -224,11 +222,21 @@ async fn deterministic_projection_caches_second_submit_zero_recompute() {
     let derived = DerivedStore::open(fix.dir.path()).expect("derived store");
     let source = harness_core::event::ContentHash::from_bytes(b"\x89PNG\r\n\x1a\nfixture-payload");
     assert_eq!(
-        derived_cache(&derived, &source, "deterministic:png", ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            "deterministic:png",
+            ProjectionKind::SceneDescription
+        ),
         Some(b"deterministic: 3 bands, 8x8".to_vec())
     );
     assert_eq!(
-        derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            DELIVERY_CACHE_PRODUCER,
+            ProjectionKind::SceneDescription
+        ),
         Some(b"deterministic: 3 bands, 8x8".to_vec()),
         "the delivery alias must exist for request-build inlining"
     );
@@ -270,10 +278,11 @@ async fn no_projector_anywhere_is_typed_notice_and_nothing_stored() {
         ProjectionOutcome::Unprojectable { mime, reason, .. } => {
             assert!(matches!(reason, Unprojectable::NoProjector), "{reason:?}");
             assert_eq!(mime, "image/png");
-            let notice = outcome
-                .notice()
-                .expect("notice names what is missing");
-            assert!(notice.contains("image/png"), "notice names the mime: {notice}");
+            let notice = outcome.notice().expect("notice names what is missing");
+            assert!(
+                notice.contains("image/png"),
+                "notice names the mime: {notice}"
+            );
             assert!(
                 notice.contains("scene_description"),
                 "notice names the kind: {notice}"
@@ -284,7 +293,12 @@ async fn no_projector_anywhere_is_typed_notice_and_nothing_stored() {
     let derived = DerivedStore::open(fix.dir.path()).expect("derived store");
     let source = harness_core::event::ContentHash::from_bytes(b"\x89PNG\r\n\x1a\nfixture-payload");
     assert_eq!(
-        derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            DELIVERY_CACHE_PRODUCER,
+            ProjectionKind::SceneDescription
+        ),
         None,
         "nothing may be stored without a real projection"
     );
@@ -332,7 +346,12 @@ async fn audio_with_no_projector_anywhere_keeps_marker_and_never_invents_a_trans
     let derived = DerivedStore::open(fix.dir.path()).expect("derived store");
     let source = harness_core::event::ContentHash::from_bytes(b"RIFF----WAVEfmt fixture");
     assert_eq!(
-        derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::Transcript),
+        derived_cache(
+            &derived,
+            &source,
+            DELIVERY_CACHE_PRODUCER,
+            ProjectionKind::Transcript
+        ),
         None,
         "the transcript is never invented"
     );
@@ -369,7 +388,10 @@ async fn corrupt_media_is_typed_parse_failure_and_retries_for_repair() {
     match &outcomes[0] {
         ProjectionOutcome::Unprojectable { reason, .. } => {
             assert!(
-                matches!(reason, Unprojectable::Deterministic(MediaError::ParseFailure)),
+                matches!(
+                    reason,
+                    Unprojectable::Deterministic(MediaError::ParseFailure)
+                ),
                 "corrupt media must be typed, never fabricated: {reason:?}"
             );
         }
@@ -435,7 +457,12 @@ async fn model_mediated_projection_lands_derived_with_provenance() {
         "provenance producer must carry model id + prompt params version"
     );
     assert_eq!(
-        derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            DELIVERY_CACHE_PRODUCER,
+            ProjectionKind::SceneDescription
+        ),
         Some(b"a red square with three bands".to_vec())
     );
 }
@@ -449,7 +476,9 @@ async fn incapable_session_falls_back_to_capable_utility_without_a_blind_call() 
         .clone()
         .mediation("text-only-session-model", text_only());
     let utility_model = ScriptedModel::new(Answer::Text("utility describes the image"));
-    let utility = utility_model.clone().mediation("utility-vision-model", vision());
+    let utility = utility_model
+        .clone()
+        .mediation("utility-vision-model", vision());
 
     let outcomes = ProjectionResolver::new(fix.dir.path(), &fix.registry)
         .resolve(
@@ -556,7 +585,11 @@ async fn no_capable_model_never_calls_any_model() {
         }
         other => panic!("no capable model must be unprojectable: {other:?}"),
     }
-    assert_eq!(session_model.calls(), 0, "capability gate must precede any call");
+    assert_eq!(
+        session_model.calls(),
+        0,
+        "capability gate must precede any call"
+    );
     assert_eq!(utility_model.calls(), 0);
 }
 
@@ -589,9 +622,15 @@ async fn empty_or_tool_call_answers_are_typed_never_fabricated() {
             other => panic!("no fabrication from empty answers: {other:?}"),
         }
         let derived = DerivedStore::open(fix.dir.path()).expect("derived store");
-        let source = harness_core::event::ContentHash::from_bytes(b"\x89PNG\r\n\x1a\nfixture-payload");
+        let source =
+            harness_core::event::ContentHash::from_bytes(b"\x89PNG\r\n\x1a\nfixture-payload");
         assert_eq!(
-            derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::SceneDescription),
+            derived_cache(
+                &derived,
+                &source,
+                DELIVERY_CACHE_PRODUCER,
+                ProjectionKind::SceneDescription
+            ),
             None
         );
     }
@@ -632,7 +671,12 @@ async fn hung_model_is_a_typed_timeout_and_the_marker_survives() {
     let derived = DerivedStore::open(fix.dir.path()).expect("derived store");
     let source = harness_core::event::ContentHash::from_bytes(b"\x89PNG\r\n\x1a\nfixture-payload");
     assert_eq!(
-        derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            DELIVERY_CACHE_PRODUCER,
+            ProjectionKind::SceneDescription
+        ),
         None,
         "nothing stored; the block keeps its marker"
     );
@@ -672,12 +716,20 @@ async fn cache_hit_wins_over_model_drift_same_media_never_projects_twice() {
         )
         .await
         .expect("second resolve");
-    assert!(resolved(&outcomes[0]), "cache hit must resolve: {outcomes:?}");
+    assert!(
+        resolved(&outcomes[0]),
+        "cache hit must resolve: {outcomes:?}"
+    );
     assert_eq!(second_model.calls(), 0, "same media never projects twice");
     let derived = DerivedStore::open(fix.dir.path()).expect("derived store");
     let source = harness_core::event::ContentHash::from_bytes(b"\x89PNG\r\n\x1a\nfixture-payload");
     assert_eq!(
-        derived_cache(&derived, &source, DELIVERY_CACHE_PRODUCER, ProjectionKind::SceneDescription),
+        derived_cache(
+            &derived,
+            &source,
+            DELIVERY_CACHE_PRODUCER,
+            ProjectionKind::SceneDescription
+        ),
         Some(b"the first description".to_vec()),
         "stale-state pin: the cached projection is byte-stable"
     );
@@ -725,14 +777,15 @@ async fn resolve_reports_io_error_when_the_session_dir_is_unopenable() {
     let registry = ProjectionRegistry::new();
     // A FILE where the session dir should be: open must fail typed io.
     let file = tempfile::NamedTempFile::new().expect("temp file");
-    let outcome: io::Result<Vec<ProjectionOutcome>> = ProjectionResolver::new(file.path(), &registry)
-        .resolve(
-            Submission {
-                blocks: &[],
-                caps: text_only(),
-            },
-            no_mediation(),
-        )
-        .await;
+    let outcome: io::Result<Vec<ProjectionOutcome>> =
+        ProjectionResolver::new(file.path(), &registry)
+            .resolve(
+                Submission {
+                    blocks: &[],
+                    caps: text_only(),
+                },
+                no_mediation(),
+            )
+            .await;
     assert!(outcome.is_err(), "unopenable session dir must be io-typed");
 }

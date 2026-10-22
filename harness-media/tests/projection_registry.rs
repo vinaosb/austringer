@@ -60,7 +60,12 @@ fn context() -> ProjectionContext<'static> {
 #[test]
 fn empty_registry_answers_typed_no_projector_never_a_guess() {
     let registry = ProjectionRegistry::new();
-    let outcome = registry.project(&FormatId::Png, ProjectionKind::SceneDescription, b"\x89PNG\r\n\x1a\n", &context());
+    let outcome = registry.project(
+        &FormatId::Png,
+        ProjectionKind::SceneDescription,
+        b"\x89PNG\r\n\x1a\n",
+        &context(),
+    );
     assert_eq!(outcome, Err(MediaError::NoProjector));
 }
 
@@ -73,10 +78,18 @@ fn registered_projector_dispatches_and_counts() {
         text: "png: 8x8 rgba",
     });
     registry
-        .register(FormatId::Png, Arc::clone(&projector) as Arc<dyn ProjectionProvider>)
+        .register(
+            FormatId::Png,
+            Arc::clone(&projector) as Arc<dyn ProjectionProvider>,
+        )
         .expect("first registration must succeed");
     let projected = registry
-        .project(&FormatId::Png, ProjectionKind::SceneDescription, b"\x89PNG\r\n\x1a\n", &context())
+        .project(
+            &FormatId::Png,
+            ProjectionKind::SceneDescription,
+            b"\x89PNG\r\n\x1a\n",
+            &context(),
+        )
         .expect("registered projector must dispatch");
     assert_eq!(projected, "png: 8x8 rgba");
     assert_eq!(projector.calls.load(Ordering::SeqCst), 1);
@@ -91,7 +104,10 @@ fn duplicate_registration_is_refused_typed_and_original_survives() {
         text: "first",
     });
     registry
-        .register(FormatId::Svg, Arc::clone(&first) as Arc<dyn ProjectionProvider>)
+        .register(
+            FormatId::Svg,
+            Arc::clone(&first) as Arc<dyn ProjectionProvider>,
+        )
         .expect("first registration must succeed");
     let second = Arc::new(CountingProjector {
         kind: ProjectionKind::TextProjection,
@@ -106,7 +122,12 @@ fn duplicate_registration_is_refused_typed_and_original_survives() {
         "duplicate must be typed: {refusal:?}"
     );
     let projected = registry
-        .project(&FormatId::Svg, ProjectionKind::TextProjection, b"<svg/>", &context())
+        .project(
+            &FormatId::Svg,
+            ProjectionKind::TextProjection,
+            b"<svg/>",
+            &context(),
+        )
         .expect("the original projector must keep answering");
     assert_eq!(projected, "first");
 }
@@ -124,7 +145,12 @@ fn kind_mismatch_is_typed_no_projector() {
             }) as Arc<dyn ProjectionProvider>,
         )
         .expect("registration must succeed");
-    let outcome = registry.project(&FormatId::Wav, ProjectionKind::Transcript, b"RIFF", &context());
+    let outcome = registry.project(
+        &FormatId::Wav,
+        ProjectionKind::Transcript,
+        b"RIFF",
+        &context(),
+    );
     assert_eq!(outcome, Err(MediaError::NoProjector));
 }
 
@@ -140,6 +166,11 @@ fn provider_failure_propagates_typed_never_fabricated() {
             }) as Arc<dyn ProjectionProvider>,
         )
         .expect("registration must succeed");
-    let outcome = registry.project(&FormatId::Png, ProjectionKind::SceneDescription, b"corrupt", &context());
+    let outcome = registry.project(
+        &FormatId::Png,
+        ProjectionKind::SceneDescription,
+        b"corrupt",
+        &context(),
+    );
     assert_eq!(outcome, Err(MediaError::ParseFailure));
 }

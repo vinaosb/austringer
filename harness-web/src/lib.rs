@@ -157,7 +157,9 @@ mod tests {
         // The entry document embeds CSS and JS verbatim; a literal
         // </style> or </script> inside a source would break out of the
         // inline context.
-        for source in [APP_CSS, APP_JS, PROTO_JS, GRAMMAR_JS, STORE_JS, SHARE_JS, UI_JS] {
+        for source in [
+            APP_CSS, APP_JS, PROTO_JS, GRAMMAR_JS, STORE_JS, SHARE_JS, UI_JS,
+        ] {
             assert!(!source.contains("</style>"));
             assert!(!source.contains("</script>"));
         }

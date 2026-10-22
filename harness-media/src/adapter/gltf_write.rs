@@ -23,12 +23,12 @@ use std::borrow::Cow;
 
 use base64::Engine as _;
 use gltf::binary::{Glb, Header};
+use gltf::json::validation::Validate;
 use gltf::json::validation::{Checked, USize64};
 use gltf::json::{Asset, Buffer, Index, Root, Scene};
-use gltf::json::validation::Validate;
 
-use crate::adapter::gltf_encode::{primitive_json, Layout};
-use crate::adapter::gltf_spec::{parse_spec, Container, GltfSpec, MaterialSpec, AlphaModeSpec};
+use crate::adapter::gltf_encode::{Layout, primitive_json};
+use crate::adapter::gltf_spec::{AlphaModeSpec, Container, GltfSpec, MaterialSpec, parse_spec};
 use crate::error::MediaError;
 use crate::format::FormatId;
 use crate::generate::GenerationSpec;
@@ -146,10 +146,10 @@ fn build_root(spec: &GltfSpec) -> Result<(Root, Vec<u8>), MediaError> {
         .iter()
         .map(|node| {
             let rotation = match node.rotation {
-                Some(quaternion) => {
-                    Some(crate::adapter::gltf_spec::normalized_rotation(quaternion)
-                        .ok_or(MediaError::InvalidSpec)?)
-                }
+                Some(quaternion) => Some(
+                    crate::adapter::gltf_spec::normalized_rotation(quaternion)
+                        .ok_or(MediaError::InvalidSpec)?,
+                ),
                 None => None,
             };
             Ok(gltf::json::Node {
@@ -166,7 +166,10 @@ fn build_root(spec: &GltfSpec) -> Result<(Root, Vec<u8>), MediaError> {
                         })
                         .collect()
                 }),
-                mesh: node.mesh.as_ref().and_then(|name| mesh_index.get(name.as_str()).copied()),
+                mesh: node
+                    .mesh
+                    .as_ref()
+                    .and_then(|name| mesh_index.get(name.as_str()).copied()),
                 name: Some(node.name.clone()),
                 rotation: rotation.map(gltf::json::scene::UnitQuaternion),
                 scale: node.scale,

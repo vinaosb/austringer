@@ -18,7 +18,7 @@
 //! python, unknown schema) is a non-zero exit with a stderr reason -
 //! the adapter surfaces that as the typed NonZeroExit.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::python::validate_python;
 
@@ -80,7 +80,8 @@ fn build(script: &str) -> Result<(), String> {
         .map_err(|e| format!("census serialize: {e}"))
         .and_then(|bytes| {
             fixture.extend_from_slice(&bytes);
-            std::fs::write("blend-build/out.blend", fixture).map_err(|e| format!("write blend: {e}"))
+            std::fs::write("blend-build/out.blend", fixture)
+                .map_err(|e| format!("write blend: {e}"))
         })
 }
 
@@ -98,8 +99,7 @@ pub fn dump_mode() -> i32 {
 }
 
 fn dump() -> Result<(), String> {
-    let bytes =
-        std::fs::read("blend-dump/in.blend").map_err(|e| format!("read blend: {e}"))?;
+    let bytes = std::fs::read("blend-dump/in.blend").map_err(|e| format!("read blend: {e}"))?;
     if !bytes.starts_with(BLEND_HEADER) {
         return Err("input does not carry the blend 12-byte header".into());
     }
@@ -172,12 +172,9 @@ fn census(spec: &Value) -> Value {
         .unwrap_or_default();
     let collection = spec["collection"].as_str().unwrap_or("Collection");
     let has_objects = !objects.is_empty();
-    let background = spec["world_background"].as_array().map_or(
-        json!(DEFAULT_WORLD),
-        |values| {
-            json!(values)
-        },
-    );
+    let background = spec["world_background"]
+        .as_array()
+        .map_or(json!(DEFAULT_WORLD), |values| json!(values));
     json!({
         "action_count": 0,
         "collections": {

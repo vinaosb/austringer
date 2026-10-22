@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use crate::protocol::{ServerMsg, MAX_SNAPSHOT_FRAMES};
+use crate::protocol::{MAX_SNAPSHOT_FRAMES, ServerMsg};
 
 /// Daemon-emitted session events on the typed event stream. `recorded`
 /// wraps the engine's own durable event; the rest are daemon-level.

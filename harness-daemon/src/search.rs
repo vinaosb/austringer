@@ -86,7 +86,10 @@ pub(crate) async fn sessions_search(
             json!({ "detail": "pass ?q=<fts5 query>" }),
         );
     };
-    let limit = params.limit.unwrap_or(DEFAULT_ROUTE_LIMIT).min(MAX_ROUTE_LIMIT);
+    let limit = params
+        .limit
+        .unwrap_or(DEFAULT_ROUTE_LIMIT)
+        .min(MAX_ROUTE_LIMIT);
     let scope: Vec<String> = params
         .sessions
         .map(|list| {
@@ -180,10 +183,15 @@ impl harness_core::tools::ToolProvider for SearchSessionsTool {
             .unwrap_or(u64::from(DEFAULT_TOOL_LIMIT))
             .clamp(1, u64::from(MAX_TOOL_LIMIT)) as u32;
         let mut scope: Vec<String> = Vec::new();
-        if let Some(ids) = arguments.get("session_ids").filter(|value| !value.is_null()) {
-            let ids = ids.as_array().ok_or_else(|| ProviderError::InvalidArguments {
-                message: "'session_ids' must be an array of session id strings".to_owned(),
-            })?;
+        if let Some(ids) = arguments
+            .get("session_ids")
+            .filter(|value| !value.is_null())
+        {
+            let ids = ids
+                .as_array()
+                .ok_or_else(|| ProviderError::InvalidArguments {
+                    message: "'session_ids' must be an array of session id strings".to_owned(),
+                })?;
             for id in ids {
                 scope.push(
                     id.as_str()
@@ -198,11 +206,10 @@ impl harness_core::tools::ToolProvider for SearchSessionsTool {
             scope.push(self.session_id.clone());
         }
         let refs: Vec<&str> = scope.iter().map(String::as_str).collect();
-        let store = SessionStore::open(&self.store_root).map_err(|error| {
-            ProviderError::Execution {
+        let store =
+            SessionStore::open(&self.store_root).map_err(|error| ProviderError::Execution {
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let hits = store
             .search_events_in_sessions(query, &refs, limit)
             .map_err(|error| match error {

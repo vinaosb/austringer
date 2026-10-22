@@ -22,7 +22,10 @@ fn empty_graph_with_focus_degrades_to_typed_empty_map() {
             ..MapOptions::default()
         },
     );
-    assert_eq!(output.focus_matched, 0, "unknown focus is counted, not fatal");
+    assert_eq!(
+        output.focus_matched, 0,
+        "unknown focus is counted, not fatal"
+    );
     assert_eq!(
         (output.text.as_str(), output.tokens, output.density),
         ("", 0, 0),
@@ -55,7 +58,10 @@ fn self_loop_only_repo_drops_intra_file_refs_and_ranks_uniformly() {
         vec![
             (
                 PathBuf::from("src/b.rs"),
-                table(&[("beta", SymbolKind::Function)], &["beta", "beta", "std_ghost"]),
+                table(
+                    &[("beta", SymbolKind::Function)],
+                    &["beta", "beta", "std_ghost"],
+                ),
             ),
             (
                 PathBuf::from("src/a.rs"),
@@ -76,13 +82,15 @@ fn self_loop_only_repo_drops_intra_file_refs_and_ranks_uniformly() {
 
     let values = &output.ranking.values;
     assert_eq!(values.len(), 2);
-    assert_eq!(values[0], values[1], "symmetric all-dangling graph is bit-uniform");
+    assert_eq!(
+        values[0], values[1],
+        "symmetric all-dangling graph is bit-uniform"
+    );
     assert!((values[0] - 0.5).abs() < 1e-9, "uniform ranks: {values:?}");
     assert!(output.ranking.converged);
 
     assert_eq!(
-        output.text,
-        "src/a.rs:\n    alpha:struct\nsrc/b.rs:\n    beta:function",
+        output.text, "src/a.rs:\n    alpha:struct\nsrc/b.rs:\n    beta:function",
         "uniform ranks => pure path order; definitions still render"
     );
 }
@@ -97,7 +105,10 @@ fn self_loops_coexist_with_cross_edges_without_false_adjacency() {
         vec![
             (
                 PathBuf::from("src/hub.rs"),
-                table(&[("connect", SymbolKind::Function)], &["connect", "connect"]),
+                table(
+                    &[("connect", SymbolKind::Function)],
+                    &["connect", "connect"],
+                ),
             ),
             (
                 PathBuf::from("src/user.rs"),
@@ -115,18 +126,23 @@ fn self_loops_coexist_with_cross_edges_without_false_adjacency() {
         .graph
         .node_id(Path::new("src/user.rs"))
         .unwrap_or_else(|| panic!("user missing"));
-    assert_eq!(output.graph.edge_weight(hub, hub), None, "no self adjacency");
-    assert_eq!(output.graph.edge_weight(user, user), None, "no self adjacency");
+    assert_eq!(
+        output.graph.edge_weight(hub, hub),
+        None,
+        "no self adjacency"
+    );
+    assert_eq!(
+        output.graph.edge_weight(user, user),
+        None,
+        "no self adjacency"
+    );
     assert_eq!(
         output.graph.edge_weight(hub, user),
         Some(3.0),
         "cross-file references keep their full count as weight"
     );
     assert_eq!(output.graph.stats().edges, 1);
-    assert!(
-        output.ranking.values.iter().all(|v| v.is_finite())
-            && output.ranking.converged
-    );
+    assert!(output.ranking.values.iter().all(|v| v.is_finite()) && output.ranking.converged);
 }
 
 #[test]
@@ -158,7 +174,10 @@ fn symbol_less_source_renders_bare_header_and_stays_focusable() {
         .node_id(Path::new("src/empty.rs"))
         .unwrap_or_else(|| panic!("symbol-less source dropped from the graph"));
     assert!(output.graph.definitions_of(empty).is_empty());
-    assert_eq!(output.focus_matched, 1, "symbol-less file is still focusable");
+    assert_eq!(
+        output.focus_matched, 1,
+        "symbol-less file is still focusable"
+    );
 
     // Focused empty.rs holds all personalization mass (all-dangling
     // returns to p), so it renders first; the data↔user pair ties at

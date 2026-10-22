@@ -90,7 +90,9 @@ pub(super) fn data_record(tokens: &[Tok], census: &mut Census) -> Result<(), Med
 fn first_reference(tokens: &[Tok]) -> Option<u64> {
     let args = tokens.iter().position(|tok| *tok == Tok::Paren('('))? + 1;
     tokens[args..].iter().find_map(|token| match token {
-        Tok::Word(word) => word.strip_prefix('#').and_then(|digits| digits.parse().ok()),
+        Tok::Word(word) => word
+            .strip_prefix('#')
+            .and_then(|digits| digits.parse().ok()),
         _ => None,
     })
 }
@@ -197,4 +199,3 @@ fn numeric_tuple(tokens: &[Tok]) -> Option<[f64; 3]> {
     }
     best
 }
-

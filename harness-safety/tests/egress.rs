@@ -188,7 +188,10 @@ fn guard_blocks_egress_program_with_no_parsable_destination() {
 fn guard_blocks_unsegmentable_commands_fail_closed() {
     // unbalanced quoting: the guard cannot judge what it cannot segment.
     assert!(matches!(
-        guard_command("echo \"unclosed && curl https://x.invalid/", &EgressPolicy::none()),
+        guard_command(
+            "echo \"unclosed && curl https://x.invalid/",
+            &EgressPolicy::none()
+        ),
         CommandEgress::Denied { .. }
     ));
 }
@@ -205,7 +208,10 @@ fn guard_judges_every_compound_segment_independently() {
         "curl $(echo https://x.invalid/)",
     ] {
         assert!(
-            matches!(guard_command(command, &policy), CommandEgress::Denied { .. }),
+            matches!(
+                guard_command(command, &policy),
+                CommandEgress::Denied { .. }
+            ),
             "{command} must be denied: the egress segment stands alone"
         );
     }

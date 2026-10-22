@@ -7,7 +7,7 @@
 //! structural roots).
 
 use crate::format::FormatId;
-use crate::probe::{find_sub, hit, likely, unknown, ProbeResult};
+use crate::probe::{ProbeResult, find_sub, hit, likely, unknown};
 use serde_json::Value;
 
 const WINDOW: usize = 8 * 1024;
@@ -65,7 +65,10 @@ fn xml_root(bytes: &[u8], hint: Option<FormatId>) -> Option<ProbeResult> {
         };
     }
     if tag.contains(SVG_NS) {
-        return Some(hit(FormatId::Svg, "svg namespace on the root element".into()));
+        return Some(hit(
+            FormatId::Svg,
+            "svg namespace on the root element".into(),
+        ));
     }
     None
 }
@@ -154,8 +157,9 @@ fn heuristics(bytes: &[u8], hint: Option<FormatId>) -> Option<ProbeResult> {
         ),
     ];
     if let Some(hinted) = hint
-        && let Some(&(_, format, note)) =
-            fired.iter().find(|(on, format, _)| *on && *format == hinted)
+        && let Some(&(_, format, note)) = fired
+            .iter()
+            .find(|(on, format, _)| *on && *format == hinted)
     {
         return Some(likely(format, note.into()));
     }
@@ -192,7 +196,9 @@ fn csv_signal(window: &str) -> bool {
             .iter()
             .map(|line| line.bytes().filter(|&b| b == delimiter).count())
             .collect();
-        counts.first().is_some_and(|&first| first >= 1 && counts.iter().all(|&c| c == first))
+        counts
+            .first()
+            .is_some_and(|&first| first >= 1 && counts.iter().all(|&c| c == first))
     })
 }
 

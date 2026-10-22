@@ -10,7 +10,7 @@
 
 use harness_media::adapter::office;
 use harness_media::error::MediaError;
-use harness_media::executor::{OpRequest, OpOutput};
+use harness_media::executor::{OpOutput, OpRequest};
 use harness_media::extract::ExtractBudgets;
 use harness_media::format::FormatId;
 use harness_media::projection::{ProjectionContext, ProjectionRegistry};
@@ -66,10 +66,7 @@ fn docx_projection_is_bounded_markdownish_text() {
     );
     assert!(extracted.text_projection.contains("- bullet"));
     assert!(extracted.text_projection.contains("table: 2 rows x 2 cols"));
-    assert!(
-        extracted.text_projection.chars().count()
-            <= office::TEXT_PROJECTION_MAX_CHARS
-    );
+    assert!(extracted.text_projection.chars().count() <= office::TEXT_PROJECTION_MAX_CHARS);
 }
 
 #[test]
@@ -175,14 +172,14 @@ fn pptx_projection_names_slides_shapes_and_texts() {
 #[test]
 fn macro_bearing_fixture_discloses_macros_without_executing() {
     // Given: the docx fixture plus a word/vbaProject.bin part.
-    let extracted =
-        office::docx::extract(&fixture("docx-macro.docx"), ExtractBudgets::default())
-            .expect("docx-macro extract must succeed");
+    let extracted = office::docx::extract(&fixture("docx-macro.docx"), ExtractBudgets::default())
+        .expect("docx-macro extract must succeed");
     // Then: macro presence is LISTED (counted, disclosed) and the
     // projection reports it verbatim - never executed, never extracted.
     assert_eq!(extracted.tree["macros"], json!({"present": 1}));
     assert!(
-        extracted.text_projection
+        extracted
+            .text_projection
             .contains("macros present: 1, not executed"),
         "disclosure line verbatim: {}",
         extracted.text_projection
@@ -226,11 +223,8 @@ fn corrupt_zip_fails_typed_parse_failure() {
 fn missing_document_part_is_parse_failure() {
     // Given: a package whose content types claim wordprocessingml but
     // which carries no word/document.xml part.
-    let error = office::docx::extract(
-        &fixture("docx-no-document.docx"),
-        ExtractBudgets::default(),
-    )
-    .expect_err("missing document part must refuse");
+    let error = office::docx::extract(&fixture("docx-no-document.docx"), ExtractBudgets::default())
+        .expect_err("missing document part must refuse");
     assert!(matches!(error, MediaError::ParseFailure));
 }
 

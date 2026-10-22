@@ -83,11 +83,15 @@ fn f64_at(bytes: &[u8], at: usize) -> Option<f64> {
 }
 
 fn doubles_at(bytes: &[u8], at: usize, count: usize) -> Option<Vec<f64>> {
-    (0..count).map(|index| f64_at(bytes, at + 8 * index)).collect()
+    (0..count)
+        .map(|index| f64_at(bytes, at + 8 * index))
+        .collect()
 }
 
 fn longs_at(bytes: &[u8], at: usize, count: usize) -> Option<Vec<u32>> {
-    (0..count).map(|index| u32_at(bytes, at + 4 * index)).collect()
+    (0..count)
+        .map(|index| u32_at(bytes, at + 4 * index))
+        .collect()
 }
 
 fn type_size(kind: u16) -> usize {

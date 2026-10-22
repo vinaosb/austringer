@@ -4,19 +4,23 @@
 //! extractor, deterministic, canonical). Hermetic throughout.
 
 use harness_media::diff::{
-    spec_tree, structural_diff, verify_roundtrip, RoundTripVerdict, Tolerances,
+    RoundTripVerdict, Tolerances, spec_tree, structural_diff, verify_roundtrip,
 };
 use harness_media::error::MediaError;
 use harness_media::extract::Extracted;
 use harness_media::format::FormatId;
 use harness_media::generate::GenerationSpec;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Honest generic extractor: parses produced bytes as canonical JSON, the
 /// shape a real adapter's extract has (bytes -> canonical tree).
 fn json_extract(bytes: &[u8]) -> Result<Extracted, MediaError> {
     let tree: Value = serde_json::from_slice(bytes).map_err(|_| MediaError::ParseFailure)?;
-    Ok(Extracted { tree, text_projection: "[json]".into(), thumbnails: vec![] })
+    Ok(Extracted {
+        tree,
+        text_projection: "[json]".into(),
+        thumbnails: vec![],
+    })
 }
 
 #[test]
@@ -25,8 +29,8 @@ fn verify_roundtrip_passes_when_extracted_tree_matches_expected() {
     let expected = json!({"asset": {"version": "2.0"}, "meshes": 2});
     let produced = serde_json::to_vec(&expected).unwrap();
     // When: verified through the composition helper.
-    let verdict = verify_roundtrip(&expected, &produced, json_extract, &Tolerances::default())
-        .unwrap();
+    let verdict =
+        verify_roundtrip(&expected, &produced, json_extract, &Tolerances::default()).unwrap();
     // Then: PASS - empty diff is the round-trip gate (semantic equivalence).
     assert_eq!(verdict, RoundTripVerdict::Pass);
     assert!(verdict.is_pass());
@@ -40,8 +44,8 @@ fn verify_roundtrip_fails_with_exact_pointer_on_one_token_change() {
     actual["pages"][0]["text"] = json!("hallo");
     let produced = serde_json::to_vec(&actual).unwrap();
     // When: verified.
-    let verdict = verify_roundtrip(&expected, &produced, json_extract, &Tolerances::default())
-        .unwrap();
+    let verdict =
+        verify_roundtrip(&expected, &produced, json_extract, &Tolerances::default()).unwrap();
     // Then: Fail carrying the exact pointer (never a bare boolean).
     match verdict {
         RoundTripVerdict::Fail(diff) => {
@@ -58,7 +62,12 @@ fn verify_roundtrip_fails_with_exact_pointer_on_one_token_change() {
 fn extract_failure_propagates_typed_never_a_fake_pass() {
     // Given: produced bytes that do not parse.
     // When: verified.
-    let verdict = verify_roundtrip(&json!({}), b"not json at all", json_extract, &Tolerances::default());
+    let verdict = verify_roundtrip(
+        &json!({}),
+        b"not json at all",
+        json_extract,
+        &Tolerances::default(),
+    );
     // Then: the extractor's typed error propagates - no silent Pass.
     assert!(matches!(verdict, Err(MediaError::ParseFailure)));
 }
@@ -76,7 +85,10 @@ fn spec_tree_projection_is_deterministic_canonical_and_spec_faithful() {
     assert_eq!(first, second);
     // And canonical: object keys serialize sorted (format < params).
     let wire = serde_json::to_string(&first).unwrap();
-    assert!(wire.starts_with("{\"format\":\"svg\",\"params\":"), "got: {wire}");
+    assert!(
+        wire.starts_with("{\"format\":\"svg\",\"params\":"),
+        "got: {wire}"
+    );
     // And spec-faithful: format identity and params carry through.
     assert_eq!(first["format"], json!("svg"));
     assert_eq!(first["params"], spec.params);
@@ -95,23 +107,37 @@ fn provenance_rule_catches_extractor_watermark_a_circle_would_hide() {
     // its own output. An extractor that watermarks its output would be
     // invisible to a circular expected tree; the independent projection
     // catches the extra key at its exact pointer.
-    let spec = GenerationSpec { format: FormatId::Json, params: json!({"rows": 2}) };
+    let spec = GenerationSpec {
+        format: FormatId::Json,
+        params: json!({"rows": 2}),
+    };
     let expected = spec_tree(&spec);
     let watermarking_extract = |bytes: &[u8]| -> Result<Extracted, MediaError> {
-        let mut tree: Value = serde_json::from_slice(bytes).map_err(|_| MediaError::ParseFailure)?;
+        let mut tree: Value =
+            serde_json::from_slice(bytes).map_err(|_| MediaError::ParseFailure)?;
         tree["extractor_watermark"] = json!("acme-v1");
-        Ok(Extracted { tree, text_projection: String::new(), thumbnails: vec![] })
+        Ok(Extracted {
+            tree,
+            text_projection: String::new(),
+            thumbnails: vec![],
+        })
     };
     let produced = serde_json::to_vec(&json!({"format": "json", "params": {"rows": 2}})).unwrap();
-    let verdict =
-        verify_roundtrip(&expected, &produced, watermarking_extract, &Tolerances::default())
-            .unwrap();
+    let verdict = verify_roundtrip(
+        &expected,
+        &produced,
+        watermarking_extract,
+        &Tolerances::default(),
+    )
+    .unwrap();
     match verdict {
         RoundTripVerdict::Fail(diff) => {
             assert_eq!(diff.added.len(), 1);
             assert_eq!(diff.added[0].path, "/extractor_watermark");
         }
-        RoundTripVerdict::Pass => panic!("the watermark must be caught by the independent projection"),
+        RoundTripVerdict::Pass => {
+            panic!("the watermark must be caught by the independent projection")
+        }
     }
 }
 

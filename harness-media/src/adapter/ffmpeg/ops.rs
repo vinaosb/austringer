@@ -24,7 +24,7 @@ use crate::tool::{ToolCall, ToolError, ToolExecutor};
 
 use super::argv::target_argv;
 use super::census::AvProbe;
-use super::policy::{TranscodeSpec, FFMPEG_TOOL, FFPROBE_TOOL};
+use super::policy::{FFMPEG_TOOL, FFPROBE_TOOL, TranscodeSpec};
 
 static STAGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -137,7 +137,8 @@ impl<'a> Adapter<'a> {
         env: &BTreeMap<String, String>,
     ) -> Result<(AvProbe, ProducerInfo), MediaError> {
         let mut call = ToolCall::new(FFPROBE_TOOL, "probe-av");
-        call.vars.insert("input".to_owned(), Self::child_name(input));
+        call.vars
+            .insert("input".to_owned(), Self::child_name(input));
         call.env = Some(env);
         let run = self.tools.run(&call)?;
         let census = AvProbe::parse(&String::from_utf8_lossy(&run.stdout))?;
@@ -193,11 +194,10 @@ impl<'a> Adapter<'a> {
         call.env = Some(&env);
         let run = self.tools.run(&call).map_err(MediaError::from);
         let artifact = run.and_then(|run| {
-            self.read_output(&output)
-                .map(|bytes| TranscodeArtifact {
-                    bytes,
-                    producer: run.producer(),
-                })
+            self.read_output(&output).map(|bytes| TranscodeArtifact {
+                bytes,
+                producer: run.producer(),
+            })
         });
         cleanup(&input);
         cleanup(&output);
@@ -222,7 +222,8 @@ impl<'a> Adapter<'a> {
         let output = self.stage_path("out", "png");
         let env = self.stage_env(&input, Some(&output));
         let mut call = ToolCall::new(FFMPEG_TOOL, "thumbnail");
-        call.vars.insert("input".to_owned(), Self::child_name(&input));
+        call.vars
+            .insert("input".to_owned(), Self::child_name(&input));
         call.vars
             .insert("output".to_owned(), Self::child_name(&output));
         call.env = Some(&env);
@@ -250,7 +251,8 @@ impl<'a> Adapter<'a> {
         let input = self.stage_in(bytes, FFMPEG_TOOL)?;
         let env = self.stage_env(&input, None);
         let mut call = ToolCall::new(FFMPEG_TOOL, "pcm-md5");
-        call.vars.insert("input".to_owned(), Self::child_name(&input));
+        call.vars
+            .insert("input".to_owned(), Self::child_name(&input));
         call.env = Some(&env);
         let run = self.tools.run(&call);
         cleanup(&input);

@@ -13,8 +13,8 @@ use std::io::Cursor;
 
 use serde_json::json;
 
-use super::spec::GeoRasterSpec;
 use super::TOOL;
+use super::spec::GeoRasterSpec;
 use crate::error::MediaError;
 use crate::executor::{OpOutput, Produced};
 use crate::generate::GenerationSpec;
@@ -78,7 +78,11 @@ fn stage_contract(raster: &GeoRasterSpec) -> String {
 /// command line; exercised by the `#[ignore]` real-tool tier):
 /// attach the CRS and the upper-left/lower-right ground extent, pin
 /// the 1-band u8 output, and convert to COG when the spec flags it.
-fn translate_argv(raster: &GeoRasterSpec, input: &std::path::Path, output: &std::path::Path) -> Vec<String> {
+fn translate_argv(
+    raster: &GeoRasterSpec,
+    input: &std::path::Path,
+    output: &std::path::Path,
+) -> Vec<String> {
     let [origin_x, origin_y] = raster.geotransform.origin;
     let [pixel_x, pixel_y] = raster.geotransform.pixel_size;
     let max_x = origin_x + f64::from(raster.width) * pixel_x;

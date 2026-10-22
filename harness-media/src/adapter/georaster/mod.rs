@@ -67,11 +67,7 @@ impl ProjectionProvider for GeoRasterProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         let extracted = extract::extract(bytes, context.budgets)?;
         Ok(extracted.text_projection)
     }
@@ -85,7 +81,10 @@ impl ProjectionProvider for GeoRasterProjector {
 pub fn register_projections(
     registry: &mut ProjectionRegistry,
 ) -> Result<(), crate::projection::ProjectionWiringError> {
-    registry.register(crate::format::FormatId::Geotiff, std::sync::Arc::new(GeoRasterProjector))
+    registry.register(
+        crate::format::FormatId::Geotiff,
+        std::sync::Arc::new(GeoRasterProjector),
+    )
 }
 
 /// The plan's default-disabled gate shared by generate and verify:

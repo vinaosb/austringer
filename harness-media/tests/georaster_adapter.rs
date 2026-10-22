@@ -53,8 +53,11 @@ fn gdal_exec(mode: &str, temp: &Path) -> harness_media::tool::ToolExecutor {
 }
 
 fn fixture(name: &str) -> Vec<u8> {
-    std::fs::read(format!(concat!(env!("CARGO_MANIFEST_DIR"), "\\fixtures\\", "{}"), name))
-        .unwrap_or_else(|error| panic!("committed fixture {name}: {error}"))
+    std::fs::read(format!(
+        concat!(env!("CARGO_MANIFEST_DIR"), "\\fixtures\\", "{}"),
+        name
+    ))
+    .unwrap_or_else(|error| panic!("committed fixture {name}: {error}"))
 }
 
 fn spec_4x4() -> GeoRasterSpec {
@@ -104,9 +107,8 @@ fn generate_bytes(produced: &Produced) -> Vec<u8> {
 /// 0.5/0.25 -> bounds [10, 49, 12, 50] in the FILE's CRS).
 #[test]
 fn fixture_extracts_epsg_and_bounds_pinned() {
-    let extracted =
-        georaster::extract(&fixture("geotiff-geo.tif"), Default::default())
-            .unwrap_or_else(|error| panic!("extract: {error:?}"));
+    let extracted = georaster::extract(&fixture("geotiff-geo.tif"), Default::default())
+        .unwrap_or_else(|error| panic!("extract: {error:?}"));
     let tree = &extracted.tree;
     assert_eq!(tree["width"], 4);
     assert_eq!(tree["height"], 4);
@@ -131,17 +133,20 @@ fn fixture_extracts_epsg_and_bounds_pinned() {
         "projection names the CRS: {}",
         extracted.text_projection
     );
-    assert!(
-        extracted.text_projection.len()
-            <= harness_media::extract::TEXT_PROJECTION_MAX_CHARS
-    );
+    assert!(extracted.text_projection.len() <= harness_media::extract::TEXT_PROJECTION_MAX_CHARS);
 }
 
 /// ACCEPTANCE (plan M21): a plain TIFF without geo keys is NOT
 /// mislabeled GeoTIFF - the honest typed note names what is missing.
 #[test]
 fn plain_tiff_reports_the_no_geo_keys_note() {
-    let plain = plain_tiff_bytes(4, 4, &[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160]);
+    let plain = plain_tiff_bytes(
+        4,
+        4,
+        &[
+            10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160,
+        ],
+    );
     let extracted = georaster::extract(&plain, Default::default())
         .unwrap_or_else(|error| panic!("plain tiff extracts structurally: {error:?}"));
     assert!(extracted.tree["geo"].is_null(), "no geo block");
@@ -241,9 +246,15 @@ fn spec_corpus_roundtrips_through_the_mock_lane() {
         if spec.cog {
             assert_eq!(extracted.tree["layout"]["tiled"], true, "{name}: tiled");
             if spec.width > 512 {
-                assert_eq!(extracted.tree["layout"]["ifd_order"], "overviews-leading", "{name}");
+                assert_eq!(
+                    extracted.tree["layout"]["ifd_order"], "overviews-leading",
+                    "{name}"
+                );
                 assert!(
-                    extracted.tree["layout"]["overview_count"].as_u64().unwrap_or(0) >= 1,
+                    extracted.tree["layout"]["overview_count"]
+                        .as_u64()
+                        .unwrap_or(0)
+                        >= 1,
                     "{name}: overview built"
                 );
             }
@@ -301,8 +312,8 @@ fn default_config_generate_refuses_extract_stays_pure() {
 #[test]
 fn dispatch_generate_carries_gdal_producer_disclosure() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let registry = harness_media::executor::registry()
-        .with_tools(gdal_exec("gdaltranslate", temp.path()));
+    let registry =
+        harness_media::executor::registry().with_tools(gdal_exec("gdaltranslate", temp.path()));
     let produced = registry
         .dispatch(
             FormatId::Geotiff,
@@ -418,9 +429,8 @@ fn garbage_bytes_and_budget_trips_are_typed() {
 #[test]
 #[ignore = "real-tool tier: needs gdal_translate + gdalinfo via GDAL_TRANSLATE_BIN/GDALINFO_BIN; never CI"]
 fn real_gdal_translate_and_info_round_trip() {
-    let translate_bin = std::env::var_os("GDAL_TRANSLATE_BIN").unwrap_or_else(|| {
-        panic!("set GDAL_TRANSLATE_BIN to a gdal_translate executable")
-    });
+    let translate_bin = std::env::var_os("GDAL_TRANSLATE_BIN")
+        .unwrap_or_else(|| panic!("set GDAL_TRANSLATE_BIN to a gdal_translate executable"));
     let info_bin = std::env::var_os("GDALINFO_BIN")
         .unwrap_or_else(|| panic!("set GDALINFO_BIN to a gdalinfo executable"));
     let spec = spec_4x4();
@@ -469,8 +479,20 @@ fn real_gdal_translate_and_info_round_trip() {
 }
 
 fn minimal_child_env() -> BTreeMap<String, String> {
-    ["PATH", "SYSTEMROOT", "SYSTEMDRIVE", "TEMP", "TMP", "PROJ_LIB", "GDAL_DATA"]
-        .iter()
-        .filter_map(|key| std::env::var(key).ok().map(|value| ((*key).to_owned(), value)))
-        .collect()
+    [
+        "PATH",
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "TEMP",
+        "TMP",
+        "PROJ_LIB",
+        "GDAL_DATA",
+    ]
+    .iter()
+    .filter_map(|key| {
+        std::env::var(key)
+            .ok()
+            .map(|value| ((*key).to_owned(), value))
+    })
+    .collect()
 }

@@ -19,11 +19,7 @@ struct HttpSurface<'a> {
 /// Resolve the HTTP surface every sessions verb needs, or fail with
 /// the typed transport hint.
 fn http_surface(spec: &TargetSpec) -> Result<HttpSurface<'_>, CliError> {
-    let Some(base) = spec
-        .url
-        .as_deref()
-        .map(|url| url.trim_end_matches('/'))
-    else {
+    let Some(base) = spec.url.as_deref().map(|url| url.trim_end_matches('/')) else {
         return Err(CliError::Unreachable {
             detail: "sessions commands need the HTTP transport; pass \
                      --url http://127.0.0.1:PORT (the daemon prints its URL at startup)"
@@ -33,9 +29,9 @@ fn http_surface(spec: &TargetSpec) -> Result<HttpSurface<'_>, CliError> {
     let token = match (&spec.token, &spec.data_dir) {
         (Some(token), _) => Some(token.clone()),
         (None, Some(dir)) => crate::target::read_token(dir),
-        (None, None) => crate::target::read_token(std::path::Path::new(
-            crate::target::DEFAULT_DATA_DIR,
-        )),
+        (None, None) => {
+            crate::target::read_token(std::path::Path::new(crate::target::DEFAULT_DATA_DIR))
+        }
     };
     Ok(HttpSurface { base, token })
 }
@@ -43,9 +39,12 @@ fn http_surface(spec: &TargetSpec) -> Result<HttpSurface<'_>, CliError> {
 /// Send one authenticated request: 200 returns the body text, 401/403
 /// maps to auth, anything else to the daemon's typed error detail.
 async fn send_typed(request: reqwest::RequestBuilder) -> Result<String, CliError> {
-    let response = request.send().await.map_err(|error| CliError::Unreachable {
-        detail: error.to_string(),
-    })?;
+    let response = request
+        .send()
+        .await
+        .map_err(|error| CliError::Unreachable {
+            detail: error.to_string(),
+        })?;
     match response.status().as_u16() {
         200 => response.text().await.map_err(|error| CliError::Protocol {
             detail: error.to_string(),
@@ -153,11 +152,10 @@ fn render_search(body: &str, query: &str) -> Result<i32, CliError> {
 /// Render the list route's `{"sessions": [...]}` body as one line per
 /// session id.
 fn render_list(body: &str) -> Result<i32, CliError> {
-    let list = serde_json::from_str::<serde_json::Value>(body).map_err(|error| {
-        CliError::Protocol {
+    let list =
+        serde_json::from_str::<serde_json::Value>(body).map_err(|error| CliError::Protocol {
             detail: format!("malformed session list: {error}"),
-        }
-    })?;
+        })?;
     let ids = list
         .get("sessions")
         .and_then(serde_json::Value::as_array)

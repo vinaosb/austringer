@@ -104,10 +104,7 @@ fn mcp_serve_answers_initialize_over_stdio_then_exits() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap_or_else(|e| panic!("spawn mcp serve: {e}"));
-    let mut stdin = child
-        .stdin
-        .take()
-        .unwrap_or_else(|| panic!("serve stdin"));
+    let mut stdin = child.stdin.take().unwrap_or_else(|| panic!("serve stdin"));
     let request = concat!(
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":"#,
         r#"{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli-smoke","version":"0.0.0"}}}"#,

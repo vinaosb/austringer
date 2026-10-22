@@ -79,11 +79,9 @@ impl Inference for TwoStepInference {
 /// Identity-bearing factory: the daemon wraps the stack with the
 /// Usage-frame decorator, so attached v2 clients see per-turn cost.
 pub(crate) fn factory() -> InferenceFactory {
-    Arc::new(|| {
-        ComposedInference {
-            inference: Box::new(TwoStepInference { used: false.into() }),
-            identity: Some(ModelIdentity::new(FIXTURE_IDENTITY.0, FIXTURE_IDENTITY.1)),
-        }
+    Arc::new(|| ComposedInference {
+        inference: Box::new(TwoStepInference { used: false.into() }),
+        identity: Some(ModelIdentity::new(FIXTURE_IDENTITY.0, FIXTURE_IDENTITY.1)),
     })
 }
 

@@ -180,7 +180,9 @@ async fn ipc_send(
 }
 
 async fn ipc_drain_until(
-    reader: &mut tokio::io::BufReader<tokio::io::ReadHalf<interprocess::local_socket::tokio::Stream>>,
+    reader: &mut tokio::io::BufReader<
+        tokio::io::ReadHalf<interprocess::local_socket::tokio::Stream>,
+    >,
     marker: &str,
     out: &mut Vec<String>,
 ) {

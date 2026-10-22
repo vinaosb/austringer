@@ -74,9 +74,9 @@ pub mod probe;
 pub mod projection;
 pub mod tool;
 
-pub use descriptor::{FormatDescriptor, FormatRegistry, Operation, OpSupport};
+pub use descriptor::{FormatDescriptor, FormatRegistry, OpSupport, Operation};
 pub use diff::{
-    spec_tree, structural_diff, verify_roundtrip, RoundTripVerdict, StructuralDiff, Tolerances,
+    RoundTripVerdict, StructuralDiff, Tolerances, spec_tree, structural_diff, verify_roundtrip,
 };
 pub use error::MediaError;
 pub use executor::{
@@ -90,7 +90,7 @@ pub use pipeline::{
     DELIVERY_CACHE_PRODUCER, MediatedProjection, Mediation, ProjectionOutcome, ProjectionResolver,
     Submission, Unprojectable,
 };
-pub use probe::{probe, Confidence, ProbeResult};
+pub use probe::{Confidence, ProbeResult, probe};
 pub use projection::{
     ProjectionContext, ProjectionProvider, ProjectionRegistry, ProjectionWiringError,
 };

@@ -12,14 +12,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64ct::{Base64, Encoding};
-use harness_daemon::gate::CriteriaGate;
-use harness_daemon::notify::{
-    Notification, NotificationKind, NotificationSink, Notifier,
-};
-use harness_daemon::osc::OscSink;
-use harness_daemon::bridge::RunSink;
 use harness_daemon::attach::SessionHost;
+use harness_daemon::bridge::RunSink;
+use harness_daemon::gate::CriteriaGate;
 use harness_daemon::mediation::MediationPolicy;
+use harness_daemon::notify::{Notification, NotificationKind, NotificationSink, Notifier};
+use harness_daemon::osc::OscSink;
 
 /// Shared capture buffer: the raw stdout bytes the sink writes.
 #[derive(Clone, Default)]
@@ -248,12 +246,8 @@ async fn permission_ask_flips_status_to_blocked_within_one_event_loop_turn() {
     let mut notifier = Notifier::new();
     notifier.add(Arc::new(OscSink::new(buf.clone(), "harness")));
     let sink = Arc::new(
-        RunSink::open(
-            dir.path(),
-            Arc::new(CriteriaGate),
-            Arc::new(notifier),
-        )
-        .unwrap_or_else(|e| panic!("sink: {e}")),
+        RunSink::open(dir.path(), Arc::new(CriteriaGate), Arc::new(notifier))
+            .unwrap_or_else(|e| panic!("sink: {e}")),
     );
     let (host, _cmd_rx) = SessionHost::new(
         "s-osc-ask",
@@ -353,9 +347,7 @@ fn esc_payload_produces_exactly_the_framing_esc_bytes() {
 
     let text = String::from_utf8_lossy(&bytes).into_owned();
     // The 7501 msg must decode to control-free single-line text.
-    let start = text
-        .find("\x1b]7501;")
-        .expect("7501 report present");
+    let start = text.find("\x1b]7501;").expect("7501 report present");
     let body = &text[start + "\x1b]7501;".len()..];
     let body = &body[..body.find(ST).expect("ST terminator")];
     let msg = body
@@ -368,7 +360,10 @@ fn esc_payload_produces_exactly_the_framing_esc_bytes() {
         decoded.chars().all(|c| !c.is_control()),
         "decoded msg carries control characters: {decoded:?}"
     );
-    assert!(decoded.starts_with("ok"), "payload text survives: {decoded:?}");
+    assert!(
+        decoded.starts_with("ok"),
+        "payload text survives: {decoded:?}"
+    );
 
     // The structured 777 JSON body carries the SANITIZED session id.
     let frame = text
@@ -430,11 +425,8 @@ fn real_binary_pty_session_emits_program_status() {
         "network": "online",
         "enabled": true,
     }]);
-    std::fs::write(
-        data.path().join("automations.json"),
-        automation.to_string(),
-    )
-    .expect("automations");
+    std::fs::write(data.path().join("automations.json"), automation.to_string())
+        .expect("automations");
 
     // Compat fixture provider on a background tokio runtime: one
     // task_completed tool-call turn completes the scheduled session.
@@ -500,7 +492,10 @@ fn real_binary_pty_session_emits_program_status() {
     command.env("HARNESS_MODEL", "fixture-model");
     command.env("HARNESS_PROVIDER_BASE_URL", &base_url);
     command.env_remove("HARNESS_PROVIDER_KEY_ENV");
-    let mut child = pty.slave.spawn_command(command).expect("spawn daemon on pty");
+    let mut child = pty
+        .slave
+        .spawn_command(command)
+        .expect("spawn daemon on pty");
     let mut reader = pty.master.try_clone_reader().expect("master reader");
     let mut writer = pty.master.take_writer().expect("master writer");
     // Reader thread: the master read blocks indefinitely when the

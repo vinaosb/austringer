@@ -164,7 +164,11 @@ impl SessionView {
                     },
                 );
             }
-            SessionEvent::ChildProgress { child, phase, detail } => {
+            SessionEvent::ChildProgress {
+                child,
+                phase,
+                detail,
+            } => {
                 if let Some(cell) = self.children.get_mut(child) {
                     cell.state = phase.clone();
                     cell.detail = detail.clone();
@@ -180,7 +184,12 @@ impl SessionView {
                     );
                 }
             }
-            SessionEvent::ChildFinished { child, state, detail, .. } => {
+            SessionEvent::ChildFinished {
+                child,
+                state,
+                detail,
+                ..
+            } => {
                 if let Some(cell) = self.children.get_mut(child) {
                     cell.state = state.clone();
                     cell.detail = detail.clone();
@@ -204,19 +213,26 @@ impl SessionView {
                     "team budget exhausted: {spent} of {budget} tokens; further task spawns refused"
                 )));
             }
-            SessionEvent::CostWarning { consumed_micros, cap_micros } => {
+            SessionEvent::CostWarning {
+                consumed_micros,
+                cap_micros,
+            } => {
                 self.entries.push(Entry::Notice(format!(
                     "cost warning: {consumed_micros} of {cap_micros} micro-USD (80% of cap)"
                 )));
             }
-            SessionEvent::CostStop { consumed_micros, cap_micros } => {
+            SessionEvent::CostStop {
+                consumed_micros,
+                cap_micros,
+            } => {
                 self.entries.push(Entry::Notice(format!(
                     "cost stop: cap reached ({consumed_micros} of {cap_micros} micro-USD); further turns refused"
                 )));
             }
             SessionEvent::PlanModeEntered { plan } => {
-                self.entries
-                    .push(Entry::Notice(format!("plan mode entered (plan {plan}); writes gated until approval")));
+                self.entries.push(Entry::Notice(format!(
+                    "plan mode entered (plan {plan}); writes gated until approval"
+                )));
             }
             SessionEvent::PlanModeExited { plan } => {
                 self.entries.push(Entry::Notice(format!(
@@ -238,8 +254,9 @@ impl SessionView {
                 )));
             }
             SessionEvent::PlanApproved { plan } => {
-                self.entries
-                    .push(Entry::Notice(format!("plan {plan} approved; writes re-armed")));
+                self.entries.push(Entry::Notice(format!(
+                    "plan {plan} approved; writes re-armed"
+                )));
             }
             SessionEvent::PlanRejected { plan } => {
                 self.entries.push(Entry::Notice(format!(

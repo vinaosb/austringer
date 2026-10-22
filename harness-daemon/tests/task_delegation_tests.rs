@@ -16,7 +16,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::sync::broadcast;
 
-use harness_core::agent_loop::inference::{InferenceError, InferenceRequest, PendingCall, TurnUsage};
+use harness_core::agent_loop::inference::{
+    InferenceError, InferenceRequest, PendingCall, TurnUsage,
+};
 use harness_core::agent_loop::{AssistantTurn, CancelToken, Inference};
 use harness_core::event::{ContentBlock, Event};
 use harness_core::inspectors::store::AskRequest;
@@ -30,7 +32,7 @@ use harness_daemon::protocol::{ServerMsg, SessionEvent};
 use harness_daemon::routing::{ModelSource, RoutingIntake};
 use harness_daemon::server::DaemonState;
 use harness_daemon::task::{
-    DelegationBudget, TaskRefusal, TaskRequest, TaskServices, TaskTool, DEFAULT_FAN_OUT_CAP,
+    DEFAULT_FAN_OUT_CAP, DelegationBudget, TaskRefusal, TaskRequest, TaskServices, TaskTool,
 };
 use harness_daemon::tools::{ExecutorFactory, RegistryToolExecutor};
 use harness_daemon::usage::{ComposedInference, InferenceFactory};
@@ -317,7 +319,9 @@ fn quick_request(prompt: &str) -> TaskRequest {
 
 /// `expect_err` for results whose success type is not `Debug`
 /// (`TaskChildOutcome` carries a live session host).
-fn expect_refusal(result: Result<harness_daemon::task::TaskChildOutcome, TaskRefusal>) -> TaskRefusal {
+fn expect_refusal(
+    result: Result<harness_daemon::task::TaskChildOutcome, TaskRefusal>,
+) -> TaskRefusal {
     match result {
         Err(refusal) => refusal,
         Ok(_) => panic!("expected a typed refusal"),
@@ -326,7 +330,10 @@ fn expect_refusal(result: Result<harness_daemon::task::TaskChildOutcome, TaskRef
 
 /// Frames of one host's hub snapshot, event payloads only.
 fn hub_events(host: &SessionHost) -> Vec<SessionEvent> {
-    host.snapshot().into_iter().map(|frame| frame.event).collect()
+    host.snapshot()
+        .into_iter()
+        .map(|frame| frame.event)
+        .collect()
 }
 
 fn child_texts(host: &SessionHost) -> Vec<String> {
@@ -361,7 +368,10 @@ async fn task_child_routes_to_category_model_and_returns_labeled_summary() {
     // a one-turn child script for it.
     let kit = task_kit(
         Duration::from_secs(30),
-        vec![("claude-sonnet-4-6", vec![Step::Turn(usage_turn("quick answer"))])],
+        vec![(
+            "claude-sonnet-4-6",
+            vec![Step::Turn(usage_turn("quick answer"))],
+        )],
         false,
     );
     let parent = kit.state.session("parent-a");
@@ -390,7 +400,9 @@ async fn task_child_routes_to_category_model_and_returns_labeled_summary() {
     drop(log);
     // And: the child session received the prompt verbatim.
     assert!(
-        child_texts(&outcome.child).iter().any(|text| text.contains("quick answer")),
+        child_texts(&outcome.child)
+            .iter()
+            .any(|text| text.contains("quick answer")),
         "child transcript: {:?}",
         child_texts(&outcome.child)
     );
@@ -446,8 +458,14 @@ async fn task_two_parallel_category_children_both_return_summaries() {
     let kit = task_kit(
         Duration::from_secs(30),
         vec![
-            ("claude-sonnet-4-6", vec![Step::Turn(usage_turn("quick says 1"))]),
-            ("claude-opus-4-7", vec![Step::Turn(usage_turn("deep says 2"))]),
+            (
+                "claude-sonnet-4-6",
+                vec![Step::Turn(usage_turn("quick says 1"))],
+            ),
+            (
+                "claude-opus-4-7",
+                vec![Step::Turn(usage_turn("deep says 2"))],
+            ),
         ],
         false,
     );
@@ -579,13 +597,15 @@ async fn task_fan_out_cap_aggregates_across_calls_and_needs_escalation() {
     kit.services.set_fan_out_cap(2);
     let parent = kit.state.session("parent-fan");
     // When: three task() calls run on ONE parent session.
-    kit.services.run_child(&parent, quick_request("1")).await.expect("first");
-    kit.services.run_child(&parent, quick_request("2")).await.expect("second");
-    let third = expect_refusal(
-        kit.services
-            .run_child(&parent, quick_request("3"))
-            .await,
-    );
+    kit.services
+        .run_child(&parent, quick_request("1"))
+        .await
+        .expect("first");
+    kit.services
+        .run_child(&parent, quick_request("2"))
+        .await
+        .expect("second");
+    let third = expect_refusal(kit.services.run_child(&parent, quick_request("3")).await);
     // Then: the third is refused with the typed fan-out error naming
     // the cap and the escalation criteria — no child spawned.
     match third {
@@ -649,11 +669,7 @@ async fn task_token_budget_aggregates_per_parent_session_across_calls() {
     // Then: the aggregate (50 of 35) is exhausted — the NEXT call on
     // this parent refuses typed, while a DIFFERENT parent session
     // (per-parent keying, not a global guard) still spawns.
-    let refused = expect_refusal(
-        kit.services
-            .run_child(&parent_a, quick_request("3"))
-            .await,
-    );
+    let refused = expect_refusal(kit.services.run_child(&parent_a, quick_request("3")).await);
     match refused {
         TaskRefusal::Tokens(BudgetBreach::TokensExhausted { spent, budget }) => {
             assert_eq!(spent, 50);
@@ -705,7 +721,11 @@ async fn task_child_session_invoking_task_is_refused_depth_exceeded() {
         other => panic!("expected typed depth refusal, got {other:?}"),
     }
     let log = kit.log.lock().expect("log");
-    assert!(log.lookups.is_empty(), "no child may spawn: {:?}", log.lookups);
+    assert!(
+        log.lookups.is_empty(),
+        "no child may spawn: {:?}",
+        log.lookups
+    );
 }
 
 // ------------------------------------------------------------------
@@ -784,7 +804,10 @@ async fn task_children_spawn_with_fresh_grant_state() {
         } => blocks.iter().any(|block| matches!(block, ContentBlock::Text { text } if text.contains("denied by approval stage"))),
         _ => false,
     });
-    assert!(denied, "child transcript must show the denial: {transcript:#?}");
+    assert!(
+        denied,
+        "child transcript must show the denial: {transcript:#?}"
+    );
     assert_eq!(outcome.summary, "child saw the denial");
 }
 
@@ -849,7 +872,10 @@ async fn task_chain_hop_mid_task_surfaces_fallback_ask_never_substitutes() {
     assert_eq!(log.lookups, vec!["claude-sonnet-4-6".to_owned()]);
     assert_eq!(
         log.infer_calls,
-        vec!["claude-sonnet-4-6".to_owned(), "claude-sonnet-4-6".to_owned()]
+        vec![
+            "claude-sonnet-4-6".to_owned(),
+            "claude-sonnet-4-6".to_owned()
+        ]
     );
     drop(log);
     // And: the parent's team events carry the failed child.
@@ -876,7 +902,10 @@ async fn task_tool_result_is_labeled_child_output_clamped_at_summary_budget() {
     // delegation role's summary budget (worker: 2048 bytes).
     let kit = task_kit(
         Duration::from_secs(30),
-        vec![("claude-sonnet-4-6", vec![Step::Turn(usage_turn(&"x".repeat(3000)))])],
+        vec![(
+            "claude-sonnet-4-6",
+            vec![Step::Turn(usage_turn(&"x".repeat(3000)))],
+        )],
         false,
     );
     // The parent host must exist for the tool's resolver to find it.
@@ -900,7 +929,8 @@ async fn task_tool_result_is_labeled_child_output_clamped_at_summary_budget() {
     // never a bare truncation (worker role budget: 2048 bytes).
     assert!(
         text.ends_with(" [truncated]"),
-        "clamp marker: {}…", &text[text.len().saturating_sub(40)..]
+        "clamp marker: {}…",
+        &text[text.len().saturating_sub(40)..]
     );
     let label_len = text.find("] ").map(|end| end + 2).expect("label");
     assert!(
@@ -922,7 +952,10 @@ async fn budget_exhaustion_halts_further_spawns_with_typed_event() {
         Duration::from_secs(30),
         vec![(
             "claude-sonnet-4-6",
-            vec![Step::Turn(usage_turn("one")), Step::Turn(usage_turn("never"))],
+            vec![
+                Step::Turn(usage_turn("one")),
+                Step::Turn(usage_turn("never")),
+            ],
         )],
         false,
     );
@@ -940,10 +973,22 @@ async fn budget_exhaustion_halts_further_spawns_with_typed_event() {
         .filter(|event| matches!(event, SessionEvent::TeamBudget { .. }))
         .cloned()
         .collect::<Vec<_>>();
-    assert_eq!(budget_events.len(), 2, "spawn + spend budget events: {budget_events:?}");
+    assert_eq!(
+        budget_events.len(),
+        2,
+        "spawn + spend budget events: {budget_events:?}"
+    );
     match &budget_events[1] {
-        SessionEvent::TeamBudget { spawned, tokens_spent, fan_out_cap, token_budget } => {
-            assert_eq!((*spawned, *tokens_spent, *fan_out_cap, *token_budget), (1, 25, 4, 25));
+        SessionEvent::TeamBudget {
+            spawned,
+            tokens_spent,
+            fan_out_cap,
+            token_budget,
+        } => {
+            assert_eq!(
+                (*spawned, *tokens_spent, *fan_out_cap, *token_budget),
+                (1, 25, 4, 25)
+            );
         }
         other => panic!("expected TeamBudget, got {other:?}"),
     }
@@ -956,9 +1001,15 @@ async fn budget_exhaustion_halts_further_spawns_with_typed_event() {
         }
         other => panic!("expected TokensExhausted, got {other:?}"),
     }
-    let exhausted = hub_events(&parent).iter().any(
-        |event| matches!(event, SessionEvent::TeamBudgetExhausted { spent: 25, budget: 25 }),
-    );
+    let exhausted = hub_events(&parent).iter().any(|event| {
+        matches!(
+            event,
+            SessionEvent::TeamBudgetExhausted {
+                spent: 25,
+                budget: 25
+            }
+        )
+    });
     assert!(
         exhausted,
         "typed exhaustion event on the hub: {:?}",
@@ -1010,30 +1061,30 @@ async fn blocked_child_surfaces_its_ask_on_the_parent_stream() {
     // ChildProgress naming the tool — the aggregation vocabulary a
     // team panel renders.
     let events = hub_events(&parent);
-    let blocked = events.iter().any(
-        |event| matches!(
+    let blocked = events.iter().any(|event| {
+        matches!(
             event,
             SessionEvent::ChildProgress { phase, detail, .. }
                 if phase == "blocked" && detail.contains("edit_lines")
-        ),
-    );
+        )
+    });
     assert!(blocked, "blocked ask on the parent stream: {events:?}");
     // And: the resolution surfaced too (the child resumed)…
-    let resumed = events.iter().any(
-        |event| matches!(
+    let resumed = events.iter().any(|event| {
+        matches!(
             event,
             SessionEvent::ChildProgress { phase, .. } if phase == "running"
-        ),
-    );
+        )
+    });
     assert!(resumed, "ask resolution surfaces: {events:?}");
     // …the child finished successfully after the denial, and the
     // fresh-grant contract still holds (nobody answered, nothing ran).
     assert_eq!(outcome.summary, "resumed after the ask");
     assert!(kit.edits_fired.lock().expect("fired").is_empty());
     assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, SessionEvent::ChildFinished { state, .. } if state == "success")),
+        events.iter().any(
+            |event| matches!(event, SessionEvent::ChildFinished { state, .. } if state == "success")
+        ),
         "child finished: {events:?}"
     );
 }
@@ -1083,7 +1134,10 @@ async fn task_tool_e2e_child_summary_reaches_parent_transcript() {
                     Step::Turn(usage_turn("parent done")),
                 ],
             ),
-            ("claude-sonnet-4-6", vec![Step::Turn(usage_turn("e2e child answer"))]),
+            (
+                "claude-sonnet-4-6",
+                vec![Step::Turn(usage_turn("e2e child answer"))],
+            ),
         ],
         false,
     );
@@ -1134,10 +1188,9 @@ async fn task_tool_e2e_child_summary_reaches_parent_transcript() {
         })
         .collect::<Vec<_>>();
     assert!(
-        tool_results
-            .iter()
-            .any(|text| text.contains("[task child e2e-parent-child-task1 category=quick]")
-                && text.contains("e2e child answer")),
+        tool_results.iter().any(|text| text
+            .contains("[task child e2e-parent-child-task1 category=quick]")
+            && text.contains("e2e child answer")),
         "parent tool results: {tool_results:?}"
     );
     // And: the delegation was routed — the parent served on its role
@@ -1145,9 +1198,6 @@ async fn task_tool_e2e_child_summary_reaches_parent_transcript() {
     let log = kit.log.lock().expect("log");
     assert_eq!(
         log.lookups,
-        vec![
-            "claude-opus-4-7".to_owned(),
-            "claude-sonnet-4-6".to_owned()
-        ]
+        vec!["claude-opus-4-7".to_owned(), "claude-sonnet-4-6".to_owned()]
     );
 }

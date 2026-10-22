@@ -326,11 +326,11 @@ impl SessionHost {
             crate::skills::SubmitRouting::Refused(refusal) => {
                 Err(CommandRejected::SkillRefused(refusal))
             }
-            crate::skills::SubmitRouting::Activate(skill) => Ok(HostCommand::SubmitBlocks(
-                vec![ContentBlock::Text {
+            crate::skills::SubmitRouting::Activate(skill) => {
+                Ok(HostCommand::SubmitBlocks(vec![ContentBlock::Text {
                     text: crate::skills::SkillsRuntime::render_context(&skill, args),
-                }],
-            )),
+                }]))
+            }
         }
     }
 
@@ -372,9 +372,8 @@ impl SessionHost {
             let (mime, format_note) = crate::media::probe_mime(&bytes);
             let mut meta = std::collections::BTreeMap::new();
             meta.insert("format".to_owned(), format_note);
-            let block = MediaBlock::new(mime, *reference, meta).map_err(|_| {
-                CommandRejected::UnknownMedia(reference.hash.to_ref())
-            })?;
+            let block = MediaBlock::new(mime, *reference, meta)
+                .map_err(|_| CommandRejected::UnknownMedia(reference.hash.to_ref()))?;
             blocks.push(ContentBlock::Media(block));
         }
         Ok(blocks)

@@ -264,10 +264,7 @@ impl PermissionMediator {
                 return Ok(None);
             }
             match (&self.policy, decision) {
-                (
-                    MediationPolicy::ConsensusQuorum { quorum },
-                    PlanDecision::Approve,
-                ) => {
+                (MediationPolicy::ConsensusQuorum { quorum }, PlanDecision::Approve) => {
                     let allows = plan
                         .votes
                         .iter()
@@ -510,12 +507,7 @@ impl PermissionMediator {
     /// [`PlanOutcome::Timeout`] and the plan stays pending (the
     /// Antigravity v1.3.2 skip-permissions receipt: no surface
     /// auto-approves a plan).
-    pub async fn mediate_plan(
-        &self,
-        plan_id: u64,
-        revision: u64,
-        artifact: &str,
-    ) -> PlanOutcome {
+    pub async fn mediate_plan(&self, plan_id: u64, revision: u64, artifact: &str) -> PlanOutcome {
         let (ask_id, payload, rx) = {
             let mut state = self.lock();
             let ask_id = state.next_ask_id.saturating_add(1);
@@ -565,9 +557,9 @@ impl PermissionMediator {
 /// [`ServerMsg::PlanResolved`]).
 fn resolution_of_plan(outcome: &PlanOutcome) -> Resolution {
     match outcome {
-        PlanOutcome::Approved { by } | PlanOutcome::Edited { by, .. } => Resolution::Allowed {
-            by: by.clone(),
-        },
+        PlanOutcome::Approved { by } | PlanOutcome::Edited { by, .. } => {
+            Resolution::Allowed { by: by.clone() }
+        }
         PlanOutcome::Rejected { by } => Resolution::Denied { by: by.clone() },
         PlanOutcome::Cancelled { by } => Resolution::Cancelled { by: by.clone() },
         PlanOutcome::Timeout => Resolution::Timeout,
@@ -882,12 +874,7 @@ mod tests {
         let resolved = m
             .answer_plan(ask_id, "tui", PlanDecision::Approve)
             .unwrap_or(None);
-        assert_eq!(
-            resolved,
-            Some(PlanOutcome::Approved {
-                by: "tui".into()
-            })
-        );
+        assert_eq!(resolved, Some(PlanOutcome::Approved { by: "tui".into() }));
         assert_eq!(
             m.answer_plan(ask_id, "web", PlanDecision::Reject)
                 .unwrap_or(None),
@@ -899,9 +886,7 @@ mod tests {
         ));
         assert_eq!(
             rx.await.unwrap_or(PlanOutcome::Timeout),
-            PlanOutcome::Approved {
-                by: "tui".into()
-            }
+            PlanOutcome::Approved { by: "tui".into() }
         );
         let mut resolved_frames = 0;
         while let Ok(msg) = watch.try_recv() {
@@ -926,17 +911,10 @@ mod tests {
         let res = m
             .answer_plan(ask_id, "local", PlanDecision::Approve)
             .unwrap_or(None);
-        assert_eq!(
-            res,
-            Some(PlanOutcome::Approved {
-                by: "local".into()
-            })
-        );
+        assert_eq!(res, Some(PlanOutcome::Approved { by: "local".into() }));
         assert_eq!(
             rx.await.unwrap_or(PlanOutcome::Timeout),
-            PlanOutcome::Approved {
-                by: "local".into()
-            }
+            PlanOutcome::Approved { by: "local".into() }
         );
     }
 
@@ -946,9 +924,13 @@ mod tests {
         let (ask_id, rx) = begin_plan(&m, 7).await;
         let artifact = "# Revised plan\n- task one".to_owned();
         let res = m
-            .answer_plan(ask_id, "web", PlanDecision::Edit {
-                artifact: artifact.clone(),
-            })
+            .answer_plan(
+                ask_id,
+                "web",
+                PlanDecision::Edit {
+                    artifact: artifact.clone(),
+                },
+            )
             .unwrap_or(None);
         assert_eq!(
             res,
@@ -972,17 +954,10 @@ mod tests {
         let res = m
             .answer_plan(ask_id, "web", PlanDecision::Reject)
             .unwrap_or(None);
-        assert_eq!(
-            res,
-            Some(PlanOutcome::Rejected {
-                by: "web".into()
-            })
-        );
+        assert_eq!(res, Some(PlanOutcome::Rejected { by: "web".into() }));
         assert_eq!(
             rx.await.unwrap_or(PlanOutcome::Timeout),
-            PlanOutcome::Rejected {
-                by: "web".into()
-            }
+            PlanOutcome::Rejected { by: "web".into() }
         );
     }
 
@@ -1027,9 +1002,13 @@ mod tests {
             "one approve is below quorum"
         );
         assert_eq!(
-            m.answer_plan(ask_id, "b", PlanDecision::Edit {
-                artifact: "x".into()
-            })
+            m.answer_plan(
+                ask_id,
+                "b",
+                PlanDecision::Edit {
+                    artifact: "x".into()
+                }
+            )
             .unwrap_or(None),
             None,
             "an edit under quorum records without resolving"
@@ -1037,12 +1016,7 @@ mod tests {
         let res = m
             .answer_plan(ask_id, "c", PlanDecision::Approve)
             .unwrap_or(None);
-        assert_eq!(
-            res,
-            Some(PlanOutcome::Approved {
-                by: "c".into()
-            })
-        );
+        assert_eq!(res, Some(PlanOutcome::Approved { by: "c".into() }));
         drop(rx.await);
 
         let (ask_id2, _rx2) = begin_plan(&m, 5).await;
@@ -1052,9 +1026,7 @@ mod tests {
             .unwrap_or(None);
         assert_eq!(
             res,
-            Some(PlanOutcome::Rejected {
-                by: "b".into()
-            }),
+            Some(PlanOutcome::Rejected { by: "b".into() }),
             "any reject fails closed even below quorum"
         );
     }
@@ -1087,15 +1059,11 @@ mod tests {
         assert_eq!(
             m.answer_plan(ask_id, "web", PlanDecision::Approve)
                 .unwrap_or(None),
-            Some(PlanOutcome::Approved {
-                by: "web".into()
-            })
+            Some(PlanOutcome::Approved { by: "web".into() })
         );
         assert_eq!(
             mediating.await.unwrap_or(PlanOutcome::Timeout),
-            PlanOutcome::Approved {
-                by: "web".into()
-            }
+            PlanOutcome::Approved { by: "web".into() }
         );
     }
 }

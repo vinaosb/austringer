@@ -49,7 +49,9 @@ pub trait ProjectionProvider: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProjectionWiringError {
     /// Two projectors claimed one format.
-    #[error("two projection providers claimed format {format}: one format, one projector - fix the wiring")]
+    #[error(
+        "two projection providers claimed format {format}: one format, one projector - fix the wiring"
+    )]
     DuplicateProjector {
         /// The contested format.
         format: FormatId,
@@ -66,7 +68,10 @@ pub struct ProjectionRegistry {
 
 impl fmt::Debug for ProjectionRegistry {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_list().entries(self.providers.keys()).finish()
+        formatter
+            .debug_list()
+            .entries(self.providers.keys())
+            .finish()
     }
 }
 

@@ -57,11 +57,7 @@ impl ProjectionProvider for HtmlProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         extract::extract(bytes, context.budgets).map(|extracted| extracted.text_projection)
     }
 }

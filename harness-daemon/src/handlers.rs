@@ -270,7 +270,8 @@ pub(crate) async fn list_packs(State(state): State<Arc<DaemonState>>) -> Respons
     Json(state.skills.packs_json()).into_response()
 }
 
-pub(crate) async fn reload_endpoint(State(state): State<Arc<DaemonState>>) -> Response {    let Ok(exe) = std::env::current_exe() else {
+pub(crate) async fn reload_endpoint(State(state): State<Arc<DaemonState>>) -> Response {
+    let Ok(exe) = std::env::current_exe() else {
         return (StatusCode::INTERNAL_SERVER_ERROR, "no exe").into_response();
     };
     let listener = match state.listener.lock() {

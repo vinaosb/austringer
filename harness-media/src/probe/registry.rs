@@ -142,7 +142,12 @@ pub fn registry() -> FormatRegistry {
                      (M18 extract + the M5 structural diff)",
                 ),
             ] {
-                entry.ops.insert(op, OpSupport::Unsupported { reason: reason.into() });
+                entry.ops.insert(
+                    op,
+                    OpSupport::Unsupported {
+                        reason: reason.into(),
+                    },
+                );
             }
         }
         // M16 blend: all three ops are decided and dispatched through
@@ -184,7 +189,12 @@ pub fn registry() -> FormatRegistry {
                      lossy duration tolerance max(1 frame, 1%))",
                 ),
             ] {
-                entry.ops.insert(op, OpSupport::Unsupported { reason: reason.into() });
+                entry.ops.insert(
+                    op,
+                    OpSupport::Unsupported {
+                        reason: reason.into(),
+                    },
+                );
             }
         }
         registry.register(entry);

@@ -8,10 +8,10 @@
 
 use std::time::Instant;
 
-use html5gum::{Tokenizer, Token};
+use html5gum::{Token, Tokenizer};
 
-use super::tree::{self, HtmlTree, MAX_TAGS};
 use super::TEXT_PROJECTION_MAX_CHARS;
+use super::tree::{self, HtmlTree, MAX_TAGS};
 use crate::adapter::text::{collapse, truncate_chars};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
@@ -38,9 +38,9 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
         };
         match token {
             Token::Doctype(_) => walk.tree.doctype = true,
-            Token::StartTag(tag) => walk.start(
-                String::from_utf8_lossy(&tag.name).to_ascii_lowercase(),
-            )?,
+            Token::StartTag(tag) => {
+                walk.start(String::from_utf8_lossy(&tag.name).to_ascii_lowercase())?
+            }
             Token::EndTag(tag) => {
                 walk.end(String::from_utf8_lossy(&tag.name).to_ascii_lowercase());
             }
@@ -117,10 +117,15 @@ impl Walk {
             text.push_str(&collapsed);
         }
         self.tree.text = truncate_chars(text, TEXT_PROJECTION_MAX_CHARS);
-        let text_projection =
-            truncate_chars(tree::render_projection(&self.tree), TEXT_PROJECTION_MAX_CHARS);
-        let tree_value =
-            serde_json::to_value(&self.tree).unwrap_or(serde_json::Value::Null);
-        Ok(Extracted { tree: tree_value, text_projection, thumbnails: Vec::new() })
+        let text_projection = truncate_chars(
+            tree::render_projection(&self.tree),
+            TEXT_PROJECTION_MAX_CHARS,
+        );
+        let tree_value = serde_json::to_value(&self.tree).unwrap_or(serde_json::Value::Null);
+        Ok(Extracted {
+            tree: tree_value,
+            text_projection,
+            thumbnails: Vec::new(),
+        })
     }
 }

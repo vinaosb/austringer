@@ -5,8 +5,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use harness_providers::transport::{
-    Body, ByteSource, ByteStream, Transport, TransportFailure, TransportRequest,
-    TransportResponse,
+    Body, ByteSource, ByteStream, Transport, TransportFailure, TransportRequest, TransportResponse,
 };
 use harness_test_support::sse::{SseByteStream, SseScript};
 
@@ -64,11 +63,11 @@ impl Transport for CassetteTransport {
             .ok()
             .and_then(|mut queue| queue.pop_front());
         match staged {
-            Some(Cassette::Sse(script)) => Ok(TransportResponse::ok(Body::Stream(
-                ByteStream::new(Box::new(CassetteSource(SseByteStream::from_script(
-                    &script,
-                )))),
-            ))),
+            Some(Cassette::Sse(script)) => {
+                Ok(TransportResponse::ok(Body::Stream(ByteStream::new(
+                    Box::new(CassetteSource(SseByteStream::from_script(&script))),
+                ))))
+            }
             Some(Cassette::Hang) => futures_util::future::pending().await,
             None => Err(TransportFailure::Connect("cassette exhausted".to_owned())),
         }
@@ -79,8 +78,9 @@ impl Transport for CassetteTransport {
 /// delta, end_turn finish, stop. The distinctive answer text is what
 /// e2e assertions pin on the wire.
 pub fn anthropic_text_cassette(model: &str, answer: &str) -> SseScript {
-    let frame =
-        |event: &str, data: serde_json::Value| harness_test_support::sse::SseEvent::new(event, data);
+    let frame = |event: &str, data: serde_json::Value| {
+        harness_test_support::sse::SseEvent::new(event, data)
+    };
     SseScript::from_events([
         frame(
             "message_start",

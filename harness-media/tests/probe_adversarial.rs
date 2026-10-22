@@ -4,7 +4,7 @@
 //! a wrong format, never a panic. Hermetic: no network, no tools.
 
 use harness_media::format::FormatId;
-use harness_media::probe::{probe, Confidence, ProbeResult};
+use harness_media::probe::{Confidence, ProbeResult, probe};
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!("{}/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -70,11 +70,19 @@ fn bytes_win_over_name_hint_when_extensions_lie() {
     // Then: bytes decide - svg and png, Certain.
     assert!(matches!(
         svg_result,
-        ProbeResult::Identified { format: FormatId::Svg, confidence: Confidence::Certain, .. }
+        ProbeResult::Identified {
+            format: FormatId::Svg,
+            confidence: Confidence::Certain,
+            ..
+        }
     ));
     assert!(matches!(
         png_result,
-        ProbeResult::Identified { format: FormatId::Png, confidence: Confidence::Certain, .. }
+        ProbeResult::Identified {
+            format: FormatId::Png,
+            confidence: Confidence::Certain,
+            ..
+        }
     ));
 }
 
@@ -91,11 +99,19 @@ fn hint_selects_only_among_fired_candidates_never_adds_one() {
     // identification.
     assert!(matches!(
         md_result,
-        ProbeResult::Identified { format: FormatId::Markdown, confidence: Confidence::Likely, .. }
+        ProbeResult::Identified {
+            format: FormatId::Markdown,
+            confidence: Confidence::Likely,
+            ..
+        }
     ));
     assert!(matches!(
         json_result,
-        ProbeResult::Identified { format: FormatId::Json, confidence: Confidence::Likely, .. }
+        ProbeResult::Identified {
+            format: FormatId::Json,
+            confidence: Confidence::Likely,
+            ..
+        }
     ));
 }
 
@@ -109,7 +125,11 @@ fn namespace_less_kml_root_needs_hint_to_identify() {
     // Then: the hint breaks the tie at Likely; without it, typed Unknown.
     assert!(matches!(
         hinted,
-        ProbeResult::Identified { format: FormatId::Kml, confidence: Confidence::Likely, .. }
+        ProbeResult::Identified {
+            format: FormatId::Kml,
+            confidence: Confidence::Likely,
+            ..
+        }
     ));
     assert!(matches!(unhinted, ProbeResult::Unknown { .. }));
 }
@@ -124,7 +144,11 @@ fn ebml_without_doctype_needs_hint_to_disambiguate() {
     // Then: webm at Likely via hint; typed Unknown without one.
     assert!(matches!(
         hinted,
-        ProbeResult::Identified { format: FormatId::Webm, confidence: Confidence::Likely, .. }
+        ProbeResult::Identified {
+            format: FormatId::Webm,
+            confidence: Confidence::Likely,
+            ..
+        }
     ));
     assert!(matches!(unhinted, ProbeResult::Unknown { .. }));
 }
@@ -144,7 +168,10 @@ fn zip_without_ooxml_content_types_probes_typed_unknown() {
     let plain = fixture("zip-plain.zip");
     let garbage = b"PK\x03\x04not-really-a-zip";
     // When/Then: both stay typed Unknown.
-    assert!(matches!(probe(&plain, Some("a.zip")), ProbeResult::Unknown { .. }));
+    assert!(matches!(
+        probe(&plain, Some("a.zip")),
+        ProbeResult::Unknown { .. }
+    ));
     assert!(matches!(probe(garbage, None), ProbeResult::Unknown { .. }));
 }
 

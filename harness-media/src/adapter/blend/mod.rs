@@ -69,7 +69,7 @@ mod verify;
 pub use extract::extract;
 pub use generate::generate;
 pub use script::builder_script;
-pub use spec::{BlendSpec, MaterialSpec, ObjectSpec, Primitive, Transform, MAX_OBJECTS};
+pub use spec::{BlendSpec, MAX_OBJECTS, MaterialSpec, ObjectSpec, Primitive, Transform};
 pub use verify::{profile, verify};
 
 /// The subprocess lane's tool (the M15 manifest key).
@@ -89,11 +89,7 @@ impl ProjectionProvider for BlendProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         let tools = ToolExecutor::default();
         let produced = extract(&tools, bytes, context.budgets)?;
         match produced.inner() {
@@ -114,5 +110,8 @@ impl ProjectionProvider for BlendProjector {
 pub fn register_projections(
     registry: &mut crate::projection::ProjectionRegistry,
 ) -> Result<(), crate::projection::ProjectionWiringError> {
-    registry.register(crate::format::FormatId::Blend, std::sync::Arc::new(BlendProjector))
+    registry.register(
+        crate::format::FormatId::Blend,
+        std::sync::Arc::new(BlendProjector),
+    )
 }

@@ -16,7 +16,7 @@ use std::time::Instant;
 use gltf::Document;
 use serde_json::{Map, Value};
 
-use crate::adapter::gltf_container::{glb_chunks, GlbChunks};
+use crate::adapter::gltf_container::{GlbChunks, glb_chunks};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
@@ -41,7 +41,10 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
     let deadline = Instant::now() + budgets.deadline;
     let (json, container) = if bytes.starts_with(b"glTF") {
         let GlbChunks { json, bin_len } = glb_chunks(bytes)?;
-        (json, serde_json::json!({"bin_bytes": bin_len, "kind": "glb"}))
+        (
+            json,
+            serde_json::json!({"bin_bytes": bin_len, "kind": "glb"}),
+        )
     } else {
         (bytes, serde_json::json!({"kind": "gltf"}))
     };
@@ -64,7 +67,8 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
 /// parse rejects unknown required extensions with a far less actionable
 /// error.)
 fn refuse_compressed(json: &[u8]) -> Result<(), MediaError> {
-    let Value::Object(root) = serde_json::from_slice::<Value>(json).map_err(|_| MediaError::ParseFailure)?
+    let Value::Object(root) =
+        serde_json::from_slice::<Value>(json).map_err(|_| MediaError::ParseFailure)?
     else {
         return Err(MediaError::ParseFailure);
     };
@@ -104,7 +108,12 @@ fn outline(tree: &Value, max_chars: usize) -> String {
     }
     let names: Vec<&str> = tree["nodes"]
         .as_array()
-        .map(|nodes| nodes.iter().filter_map(|node| node["name"].as_str()).collect())
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|node| node["name"].as_str())
+                .collect()
+        })
         .unwrap_or_default();
     if !names.is_empty() {
         lines.push(format!("nodes: {}", names.join(", ")));
@@ -112,10 +121,17 @@ fn outline(tree: &Value, max_chars: usize) -> String {
     let materials: Vec<&str> = tree["materials"]
         .as_array()
         .map(|materials| {
-            materials.iter().filter_map(|material| material["name"].as_str()).collect()
+            materials
+                .iter()
+                .filter_map(|material| material["name"].as_str())
+                .collect()
         })
         .unwrap_or_default();
-    lines.push(format!("materials: {} ({})", materials.len(), materials.join(", ")));
+    lines.push(format!(
+        "materials: {} ({})",
+        materials.len(),
+        materials.join(", ")
+    ));
     lines.push(format!(
         "animations: {}; accessors: {}; views: {}",
         tree["animations"].as_u64().unwrap_or_default(),
@@ -159,10 +175,15 @@ fn tree(document: &Document, container: Value, deadline: Instant) -> Result<Valu
             })
         })
         .collect();
-    let accessor_sizes: Vec<usize> =
-        document.accessors().map(|accessor| accessor.size() * accessor.count()).collect();
-    let buffer_view_sizes: Vec<u64> =
-        root.buffer_views.iter().map(|view| view.byte_length.0).collect();
+    let accessor_sizes: Vec<usize> = document
+        .accessors()
+        .map(|accessor| accessor.size() * accessor.count())
+        .collect();
+    let buffer_view_sizes: Vec<u64> = root
+        .buffer_views
+        .iter()
+        .map(|view| view.byte_length.0)
+        .collect();
     let mut nodes = Vec::new();
     let scene = match document.default_scene() {
         Some(scene) => {
@@ -177,13 +198,22 @@ fn tree(document: &Document, container: Value, deadline: Instant) -> Result<Valu
         None => Value::Null,
     };
     let mut tree = Map::new();
-    tree.insert("accessor_sizes".into(), serde_json::to_value(accessor_sizes).map_err(|_| MediaError::ParseFailure)?);
-    tree.insert("animations".into(), Value::from(document.animations().count()));
+    tree.insert(
+        "accessor_sizes".into(),
+        serde_json::to_value(accessor_sizes).map_err(|_| MediaError::ParseFailure)?,
+    );
+    tree.insert(
+        "animations".into(),
+        Value::from(document.animations().count()),
+    );
     tree.insert(
         "asset".into(),
         serde_json::json!({"generator": root.asset.generator, "version": root.asset.version}),
     );
-    tree.insert("buffer_view_sizes".into(), serde_json::to_value(buffer_view_sizes).map_err(|_| MediaError::ParseFailure)?);
+    tree.insert(
+        "buffer_view_sizes".into(),
+        serde_json::to_value(buffer_view_sizes).map_err(|_| MediaError::ParseFailure)?,
+    );
     tree.insert("container".into(), container);
     tree.insert("materials".into(), Value::Array(materials));
     tree.insert("nodes".into(), Value::Array(nodes));
@@ -192,7 +222,8 @@ fn tree(document: &Document, container: Value, deadline: Instant) -> Result<Valu
 }
 
 fn name_of(node: &gltf::scene::Node<'_>) -> String {
-    node.name().map_or_else(|| format!("#{}", node.index()), str::to_string)
+    node.name()
+        .map_or_else(|| format!("#{}", node.index()), str::to_string)
 }
 
 /// Depth-capped recursive node view; the cap doubles as the cycle guard
@@ -210,7 +241,10 @@ fn node_tree(
     if Instant::now() > deadline {
         return Err(MediaError::ExtractTooLarge);
     }
-    let json_node = root.nodes.get(node.index()).ok_or(MediaError::ParseFailure)?;
+    let json_node = root
+        .nodes
+        .get(node.index())
+        .ok_or(MediaError::ParseFailure)?;
     let primitives: Vec<Value> = node.mesh().map_or_else(Vec::new, |mesh| {
         mesh.primitives()
             .map(|primitive| {
@@ -253,7 +287,7 @@ fn node_tree(
 
 /// Canonical semantic names, set-suffixed (`POSITION`, `TEXCOORD_1`, ...).
 fn semantic_name(semantic: &gltf::mesh::Semantic) -> String {
-    use gltf::mesh::Semantic::{Colors, Joints, Positions, Normals, Tangents, TexCoords, Weights};
+    use gltf::mesh::Semantic::{Colors, Joints, Normals, Positions, Tangents, TexCoords, Weights};
     match semantic {
         Positions => "POSITION".into(),
         Normals => "NORMAL".into(),

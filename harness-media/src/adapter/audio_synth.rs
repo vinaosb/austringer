@@ -164,10 +164,12 @@ fn wave_sample(wave: Waveform, freq: f64, t: f64) -> f64 {
 pub(super) fn synth(parsed: &SynthSpec, frames: u64) -> SynthOutput {
     let rate = parsed.sample_rate;
     let channels = parsed.channels as usize;
-    let mut noise_streams: Vec<Option<Noise>> =
-        parsed.tones.iter().enumerate().map(|(index, tone)| {
-            (tone.wave == Waveform::Noise).then(|| Noise::new(index))
-        }).collect();
+    let mut noise_streams: Vec<Option<Noise>> = parsed
+        .tones
+        .iter()
+        .enumerate()
+        .map(|(index, tone)| (tone.wave == Waveform::Noise).then(|| Noise::new(index)))
+        .collect();
     let mut samples = Vec::with_capacity((frames as usize).saturating_mul(channels));
     for frame in 0..frames {
         let t = frame as f64 / rate as f64;
@@ -189,5 +191,10 @@ pub(super) fn synth(parsed: &SynthSpec, frames: u64) -> SynthOutput {
             samples.push(clamped);
         }
     }
-    SynthOutput { samples, channels: channels as u16, sample_rate: rate as u32, frames }
+    SynthOutput {
+        samples,
+        channels: channels as u16,
+        sample_rate: rate as u32,
+        frames,
+    }
 }

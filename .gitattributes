@@ -1,0 +1,7 @@
+# Byte-pinned text artifact under test: harness-daemon's grammar.rs
+# byte-compares include_str!("grammar.json") against serde_json's
+# \n-serialized output, so a CRLF checkout (git autocrlf on Windows,
+# the CI runner default) must not rewrite its line endings. eol=lf
+# overrides autocrlf on every platform; the committed blob is LF.
+# (Same discipline as harness-media/.gitattributes for binary fixtures.)
+harness-daemon/src/grammar.json text eol=lf

@@ -5,10 +5,10 @@
 //! files - `include_str!` keeps the python reviewable as python while
 //! the Rust side stays a thin, deterministic renderer.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::spec::StepSpec;
 use super::BUILD_SCHEMA;
+use super::spec::StepSpec;
 use crate::generate::DETERMINISM_EPOCH;
 
 const BUILD_TEMPLATE: &str = include_str!("build_script.py");

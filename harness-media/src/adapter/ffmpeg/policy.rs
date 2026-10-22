@@ -39,7 +39,14 @@ pub const FFPROBE_TOOL: &str = "ffprobe";
 
 /// RED codec_names (ffprobe vocabulary + their encoder names).
 pub const RED_CODEC_NAMES: &[&str] = &[
-    "h264", "libx264", "hevc", "h265", "libx265", "aac", "libfdk_aac", "theora",
+    "h264",
+    "libx264",
+    "hevc",
+    "h265",
+    "libx265",
+    "aac",
+    "libfdk_aac",
+    "theora",
 ];
 
 /// Spec strings that name a RED or deferred target: parsed into the
@@ -118,9 +125,7 @@ impl Target {
     pub fn extension(self) -> &'static str {
         match self {
             Self::RemuxWebm | Self::WebmVp9Opus | Self::WebpLossy => "webm",
-            Self::RemuxMkv | Self::MkvSvtav1Opus | Self::MkvAomAv1Opus | Self::MkvFfv1Flac => {
-                "mkv"
-            }
+            Self::RemuxMkv | Self::MkvSvtav1Opus | Self::MkvAomAv1Opus | Self::MkvFfv1Flac => "mkv",
             Self::Opus => "opus",
             Self::Flac => "flac",
             Self::Wav => "wav",
@@ -295,4 +300,3 @@ impl TranscodeSpec {
         }
     }
 }
-

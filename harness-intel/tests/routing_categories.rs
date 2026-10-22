@@ -42,10 +42,7 @@ fn category_request_resolves_the_configured_model_and_effort() {
     assert_eq!(quick.model.model, "claude-sonnet-4-6");
     assert_eq!(quick.model.provider, "anthropic");
     assert_eq!(quick.effort.to_string(), "low");
-    assert_eq!(
-        quick.source,
-        ResolutionSource::Category("quick".to_owned())
-    );
+    assert_eq!(quick.source, ResolutionSource::Category("quick".to_owned()));
     assert!(!quick.auto_routed);
 
     let deep = table

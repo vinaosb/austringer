@@ -106,9 +106,7 @@ fn manifests_cover_the_plan_tools_all_disabled_by_default() {
 fn disabled_tool_is_typed_unavailable_with_manifest_hint() {
     let executor = ToolExecutor::new(ToolConfig::default());
     let error = executor
-        .run(
-            &ToolCall::new("blender", OP_VERSION_CHECK).env(&env_map(&[("PATH", "C:\\bin")])),
-        )
+        .run(&ToolCall::new("blender", OP_VERSION_CHECK).env(&env_map(&[("PATH", "C:\\bin")])))
         .expect_err("disabled tool refuses");
     match error {
         ToolError::ToolUnavailable { tool, install_hint } => {
@@ -132,7 +130,11 @@ fn disabled_tool_is_typed_unavailable_with_manifest_hint() {
 #[test]
 fn enabled_mocktool_runs_and_serves_the_real_golden_capture() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let executor = executor_with("ffprobe", mocktool_override(None), temp.path().to_path_buf());
+    let executor = executor_with(
+        "ffprobe",
+        mocktool_override(None),
+        temp.path().to_path_buf(),
+    );
     let env = env_map(&[
         ("PATH", "C:\\Windows"),
         ("HARNESS_MOCKTOOL_ARGV", "golden ffprobe/probe-av-json"),
@@ -142,8 +144,8 @@ fn enabled_mocktool_runs_and_serves_the_real_golden_capture() {
         .run(&ToolCall::new("ffprobe", OP_VERSION_CHECK).env(&env))
         .expect("mocktool lifecycle is green");
     assert_eq!(run.exit_code, 0);
-    let probe: serde_json::Value = serde_json::from_str(&payload(&run.stdout))
-        .expect("real ffprobe JSON capture parses");
+    let probe: serde_json::Value =
+        serde_json::from_str(&payload(&run.stdout)).expect("real ffprobe JSON capture parses");
     assert_eq!(probe["streams"][0]["codec_name"], "pcm_s16le");
     let producer = run.producer();
     assert_eq!(producer.engine, "ffprobe");
@@ -154,10 +156,12 @@ fn enabled_mocktool_runs_and_serves_the_real_golden_capture() {
             .expect("ffprobe manifest")
             .version_pin
     );
-    assert!(producer
-        .command
-        .as_deref()
-        .is_some_and(|command| command.contains("--exact")));
+    assert!(
+        producer
+            .command
+            .as_deref()
+            .is_some_and(|command| command.contains("--exact"))
+    );
 }
 
 /// ENV REDACTION: ANTHROPIC_API_KEY never reaches the child; the rest of
@@ -404,14 +408,13 @@ fn registry_routes_subprocess_bindings_through_the_tool_executor() {
     }
 
     let temp = tempfile::tempdir().expect("tempdir");
-    let enabled_registry = harness_media::executor::registry().with_tools(ToolExecutor::new(
-        ToolConfig {
+    let enabled_registry =
+        harness_media::executor::registry().with_tools(ToolExecutor::new(ToolConfig {
             enabled: [("ffmpeg".to_owned(), mocktool_override(None))].into(),
             install_enabled: false,
             session_temp: temp.path().to_path_buf(),
             env: BTreeMap::new(),
-        },
-    ));
+        }));
     let error = enabled_registry
         .dispatch(
             FormatId::Webm,

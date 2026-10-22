@@ -22,8 +22,8 @@ fn audio_blocks(dir: &std::path::Path) -> Vec<ContentBlock> {
     let store = MediaStore::open(dir).expect("media store");
     let reference = store.store_media(WAV).expect("store wav bytes");
     let mime = harness_core::event::MimeType::new("audio/wav").expect("audio/wav mime");
-    let block = MediaBlock::new(mime, reference, std::collections::BTreeMap::new())
-        .expect("media block");
+    let block =
+        MediaBlock::new(mime, reference, std::collections::BTreeMap::new()).expect("media block");
     vec![ContentBlock::Media(block)]
 }
 
@@ -47,7 +47,12 @@ async fn deterministic_text_projection_registers_for_the_audio_family() {
     }
     // And: opus never registers (its decode is the M17 ffmpeg lane).
     assert!(matches!(
-        registry.project(&FormatId::Opus, ProjectionKind::TextProjection, WAV, &context),
+        registry.project(
+            &FormatId::Opus,
+            ProjectionKind::TextProjection,
+            WAV,
+            &context
+        ),
         Err(harness_media::error::MediaError::NoProjector)
     ));
     // And: a second registration attempt is the typed wiring error.

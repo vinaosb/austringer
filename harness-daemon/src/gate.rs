@@ -138,15 +138,13 @@ impl CompletionGate for CriteriaGate {
         let mut refutations: Vec<String> = Vec::new();
         for criterion in &bundle.criteria {
             match parse_test_criterion(criterion) {
-                Some(suite) => {
-                    match bundle.test_runs.iter().rev().find(|run| run.suite == suite) {
-                        Some(run) if run.report.summary.failed == 0 => {
-                            covered.push(criterion.clone());
-                        }
-                        Some(run) => refutations.push(refute_run(suite, &run.report)),
-                        None => {}
+                Some(suite) => match bundle.test_runs.iter().rev().find(|run| run.suite == suite) {
+                    Some(run) if run.report.summary.failed == 0 => {
+                        covered.push(criterion.clone());
                     }
-                }
+                    Some(run) => refutations.push(refute_run(suite, &run.report)),
+                    None => {}
+                },
                 None => {
                     let claimed = bundle
                         .links
@@ -401,10 +399,7 @@ mod tests {
             vec![link("session:events", &["tests: cargo-nextest green"])],
             vec![],
         );
-        assert!(matches!(
-            gate.review(&b),
-            GateVerdict::Inconclusive { .. }
-        ));
+        assert!(matches!(gate.review(&b), GateVerdict::Inconclusive { .. }));
     }
 
     #[test]
@@ -441,10 +436,7 @@ mod tests {
             vec![],
             vec![suite_run(4, "cargo-nextest", &[], &["rtfx_a passes"])],
         );
-        assert!(matches!(
-            gate.review(&b),
-            GateVerdict::Inconclusive { .. }
-        ));
+        assert!(matches!(gate.review(&b), GateVerdict::Inconclusive { .. }));
     }
 
     #[test]

@@ -40,7 +40,7 @@ mod verify;
 
 pub use extract::extract;
 pub use generate::{generate, render_html};
-pub use spec::{Block, MdSpec, MAX_BLOCKS};
+pub use spec::{Block, MAX_BLOCKS, MdSpec};
 pub use tree::MdTree;
 pub use verify::{profile, verify};
 
@@ -63,11 +63,7 @@ impl ProjectionProvider for MarkdownProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         extract::extract(bytes, context.budgets).map(|extracted| extracted.text_projection)
     }
 }

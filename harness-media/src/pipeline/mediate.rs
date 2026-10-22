@@ -16,8 +16,10 @@
 use harness_core::agent_loop::{AssistantTurn, CancelToken, InferenceRequest};
 use harness_core::event::{ContentBlock, Event, ProjectionKind, RecordedEvent, Sequence};
 
-use super::{MediatedProjection, Mediation, Pending, ProjectionOutcome, SessionStores, Unprojectable};
 use super::PROJECTION_PROMPT_VERSION;
+use super::{
+    MediatedProjection, Mediation, Pending, ProjectionOutcome, SessionStores, Unprojectable,
+};
 
 pub(super) async fn mediate(
     stores: &SessionStores,
@@ -55,9 +57,11 @@ pub(super) async fn mediate(
         focus_block: instruction(pending.kind),
     };
     let mut inference = (candidate.factory)();
-    let answer =
-        tokio::time::timeout(candidate.timeout, inference.infer(&request, &CancelToken::new()))
-            .await;
+    let answer = tokio::time::timeout(
+        candidate.timeout,
+        inference.infer(&request, &CancelToken::new()),
+    )
+    .await;
     let text = match answer {
         Err(_elapsed) => return pending.unprojectable(Unprojectable::Timeout),
         Ok(Err(error)) => {

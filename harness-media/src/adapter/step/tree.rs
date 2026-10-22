@@ -17,10 +17,10 @@
 //! analytic formulas; the verify profile's tolerance covers OCCT's
 //! numeric-integration and bounding-box gap on the real lane.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::spec::{SolidShape, StepSpec};
 use super::DUMP_SCHEMA;
+use super::spec::{SolidShape, StepSpec};
 
 /// (faces, edges, vertices) per primitive - pinned table (see module
 /// docs).
@@ -39,10 +39,10 @@ pub fn topology(shape: &SolidShape) -> (u64, u64, u64) {
 pub fn volume(shape: &SolidShape) -> f64 {
     match shape {
         SolidShape::Box { size } => size[0] * size[1] * size[2],
-        SolidShape::Cylinder { radius, height } => {
-            std::f64::consts::PI * radius * radius * height
+        SolidShape::Cylinder { radius, height } => std::f64::consts::PI * radius * radius * height,
+        SolidShape::Sphere { radius } => {
+            4.0 / 3.0 * std::f64::consts::PI * radius * radius * radius
         }
-        SolidShape::Sphere { radius } => 4.0 / 3.0 * std::f64::consts::PI * radius * radius * radius,
     }
 }
 
@@ -141,17 +141,19 @@ fn rotation_matrix(euler: &[f64; 3]) -> [[f64; 3]; 3] {
     ]
 }
 
-fn apply(
-    rotation: &[[f64; 3]; 3],
-    point: [f64; 3],
-    location: &[f64; 3],
-) -> [f64; 3] {
+fn apply(rotation: &[[f64; 3]; 3], point: [f64; 3], location: &[f64; 3]) -> [f64; 3] {
     [
-        rotation[0][0] * point[0] + rotation[0][1] * point[1] + rotation[0][2] * point[2]
+        rotation[0][0] * point[0]
+            + rotation[0][1] * point[1]
+            + rotation[0][2] * point[2]
             + location[0],
-        rotation[1][0] * point[0] + rotation[1][1] * point[1] + rotation[1][2] * point[2]
+        rotation[1][0] * point[0]
+            + rotation[1][1] * point[1]
+            + rotation[1][2] * point[2]
             + location[1],
-        rotation[2][0] * point[0] + rotation[2][1] * point[1] + rotation[2][2] * point[2]
+        rotation[2][0] * point[0]
+            + rotation[2][1] * point[1]
+            + rotation[2][2] * point[2]
             + location[2],
     ]
 }

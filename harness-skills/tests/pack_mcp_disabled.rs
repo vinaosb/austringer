@@ -13,7 +13,8 @@ use tempfile::TempDir;
 
 fn install_pack_with_mcp(dir: &Path, server_value: serde_json::Value) -> TempDir {
     let registry = TempDir::new().unwrap();
-    let skill_md = "---\nname: probe-pack\ndescription: \"Probe.\"\nversion: \"1.0.0\"\n---\n\nprobe body\n";
+    let skill_md =
+        "---\nname: probe-pack\ndescription: \"Probe.\"\nversion: \"1.0.0\"\n---\n\nprobe body\n";
     let mut files = BTreeMap::new();
     files.insert("SKILL.md".to_string(), skill_md.to_string());
     let mut mcp = BTreeMap::new();

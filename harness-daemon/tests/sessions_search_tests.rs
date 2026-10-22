@@ -155,7 +155,11 @@ fn seed_store(dir: &Path, id: &str, texts: &[&str]) {
 
 /// The ranked fixture: s1 mentions the needle once, s2 three times.
 fn seed_ranked_fixture(dir: &Path) {
-    seed_store(dir, "s1", &["unrelated opener", "the needle appears once here"]);
+    seed_store(
+        dir,
+        "s1",
+        &["unrelated opener", "the needle appears once here"],
+    );
     seed_store(
         dir,
         "s2",
@@ -176,9 +180,8 @@ fn seed_ranked_fixture(dir: &Path) {
 async fn sessions_search_route_ranks_hits_across_sessions() {
     let dir = tempfile::tempdir().unwrap();
     seed_ranked_fixture(dir.path());
-    let complete: Factory = Arc::new(|| {
-        Box::new(ScriptedInference::from_steps(vec![completion_turn()]))
-    });
+    let complete: Factory =
+        Arc::new(|| Box::new(ScriptedInference::from_steps(vec![completion_turn()])));
     let (base, token) = spawn_in(dir.path(), complete).await;
 
     let (status, body) = get(&base, &token, "/sessions/search?q=needle").await;
@@ -189,7 +192,9 @@ async fn sessions_search_route_ranks_hits_across_sessions() {
     // first.
     let mut previous = f64::NEG_INFINITY;
     for hit in hits {
-        let bm25 = hit["bm25"].as_f64().unwrap_or_else(|| panic!("bm25: {body}"));
+        let bm25 = hit["bm25"]
+            .as_f64()
+            .unwrap_or_else(|| panic!("bm25: {body}"));
         assert!(bm25 >= previous, "ranked best-first: {body}");
         previous = bm25;
         assert!(hit["session_id"].is_string(), "{body}");
@@ -203,9 +208,8 @@ async fn sessions_search_route_ranks_hits_across_sessions() {
 async fn sessions_search_route_scopes_to_listed_sessions() {
     let dir = tempfile::tempdir().unwrap();
     seed_ranked_fixture(dir.path());
-    let complete: Factory = Arc::new(|| {
-        Box::new(ScriptedInference::from_steps(vec![completion_turn()]))
-    });
+    let complete: Factory =
+        Arc::new(|| Box::new(ScriptedInference::from_steps(vec![completion_turn()])));
     let (base, token) = spawn_in(dir.path(), complete).await;
 
     let (status, body) = get(&base, &token, "/sessions/search?q=needle&sessions=s1").await;
@@ -219,9 +223,8 @@ async fn sessions_search_route_scopes_to_listed_sessions() {
 async fn sessions_search_route_empty_result_is_200_empty_array() {
     let dir = tempfile::tempdir().unwrap();
     seed_ranked_fixture(dir.path());
-    let complete: Factory = Arc::new(|| {
-        Box::new(ScriptedInference::from_steps(vec![completion_turn()]))
-    });
+    let complete: Factory =
+        Arc::new(|| Box::new(ScriptedInference::from_steps(vec![completion_turn()])));
     let (base, token) = spawn_in(dir.path(), complete).await;
 
     // A single bareword: hyphenated strings parse as FTS5 column
@@ -235,9 +238,8 @@ async fn sessions_search_route_empty_result_is_200_empty_array() {
 async fn sessions_search_route_fts_syntax_error_is_typed_400_not_500() {
     let dir = tempfile::tempdir().unwrap();
     seed_ranked_fixture(dir.path());
-    let complete: Factory = Arc::new(|| {
-        Box::new(ScriptedInference::from_steps(vec![completion_turn()]))
-    });
+    let complete: Factory =
+        Arc::new(|| Box::new(ScriptedInference::from_steps(vec![completion_turn()])));
     let (base, token) = spawn_in(dir.path(), complete).await;
 
     let (status, body) = get(&base, &token, "/sessions/search?q=%22unbalanced").await;
@@ -256,9 +258,8 @@ async fn sessions_search_route_fts_syntax_error_is_typed_400_not_500() {
 #[tokio::test]
 async fn sessions_search_route_missing_query_is_typed_400() {
     let dir = tempfile::tempdir().unwrap();
-    let complete: Factory = Arc::new(|| {
-        Box::new(ScriptedInference::from_steps(vec![completion_turn()]))
-    });
+    let complete: Factory =
+        Arc::new(|| Box::new(ScriptedInference::from_steps(vec![completion_turn()])));
     let (base, token) = spawn_in(dir.path(), complete).await;
 
     let (status, body) = get(&base, &token, "/sessions/search").await;
@@ -293,7 +294,9 @@ async fn read_live_until_finished(mut live: broadcast::Receiver<ServerMsg>) -> V
 /// Answers every permission ask with AllowOnce (aux tools like
 /// search_sessions ask per call; subscribe happens BEFORE the spawn so
 /// the engine's ask can never race ahead of the subscription).
-fn spawn_answerer(mediator: Arc<harness_daemon::mediation::PermissionMediator>) -> tokio::task::JoinHandle<()> {
+fn spawn_answerer(
+    mediator: Arc<harness_daemon::mediation::PermissionMediator>,
+) -> tokio::task::JoinHandle<()> {
     let mut watch = mediator.subscribe();
     tokio::spawn(async move {
         while let Ok(msg) = watch.recv().await {

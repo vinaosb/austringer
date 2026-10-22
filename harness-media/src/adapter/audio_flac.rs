@@ -41,9 +41,15 @@ const BITS_PER_SAMPLE: usize = 16;
 /// [`MediaError::InvalidSpec`] if flacenc refuses the configuration or
 /// the stream (unreachable for in-range pcm16 input; the pdf lane's
 /// write-error mapping precedent).
-pub fn encode_flac(samples: &[f32], channels: u16, sample_rate: u32) -> Result<Vec<u8>, MediaError> {
-    let interleaved: Vec<i32> =
-        samples.iter().map(|sample| i32::from(quantize_i16(*sample))).collect();
+pub fn encode_flac(
+    samples: &[f32],
+    channels: u16,
+    sample_rate: u32,
+) -> Result<Vec<u8>, MediaError> {
+    let interleaved: Vec<i32> = samples
+        .iter()
+        .map(|sample| i32::from(quantize_i16(*sample)))
+        .collect();
     let source = MemSource::from_samples(
         &interleaved,
         usize::from(channels),
@@ -61,6 +67,8 @@ pub fn encode_flac(samples: &[f32], channels: u16, sample_rate: u32) -> Result<V
         .set_block_sizes(nominal, nominal)
         .map_err(|_| MediaError::InvalidSpec)?;
     let mut sink = ByteSink::new();
-    stream.write(&mut sink).map_err(|_| MediaError::InvalidSpec)?;
+    stream
+        .write(&mut sink)
+        .map_err(|_| MediaError::InvalidSpec)?;
     Ok(sink.into_inner())
 }

@@ -24,7 +24,7 @@ use harness_core::event::ProjectionKind;
 use serde_json::Value;
 
 use crate::adapter::text::{tolerances, truncate_chars};
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
@@ -70,10 +70,12 @@ impl JsonSpec {
         let invalid = || MediaError::InvalidSpec;
         let object = spec.params.as_object().ok_or_else(invalid)?;
         match (object.get("value"), object.get("rows")) {
-            (Some(value), None) => Ok(Self { lane: Lane::Value(value.clone()) }),
-            (None, Some(Value::Array(rows))) if !rows.is_empty() => {
-                Ok(Self { lane: Lane::Rows(rows.clone()) })
-            }
+            (Some(value), None) => Ok(Self {
+                lane: Lane::Value(value.clone()),
+            }),
+            (None, Some(Value::Array(rows))) if !rows.is_empty() => Ok(Self {
+                lane: Lane::Rows(rows.clone()),
+            }),
             _ => Err(invalid()),
         }
     }
@@ -127,8 +129,7 @@ fn extract_jsonl(
         if started.elapsed() >= budgets.deadline || collected > budgets.max_total_bytes {
             return Err(MediaError::ExtractTooLarge);
         }
-        let value = serde_json::from_str::<Value>(trimmed)
-            .map_err(|_| MediaError::ParseFailure)?;
+        let value = serde_json::from_str::<Value>(trimmed).map_err(|_| MediaError::ParseFailure)?;
         collected += trimmed.len() as u64;
         rows.push(value);
     }
@@ -143,9 +144,12 @@ fn extract_jsonl(
 }
 
 fn finish(projection_source: &str, tree: Value) -> Result<Extracted, MediaError> {
-    let text_projection =
-        truncate_chars(projection_source.to_owned(), TEXT_PROJECTION_MAX_CHARS);
-    Ok(Extracted { tree, text_projection, thumbnails: Vec::new() })
+    let text_projection = truncate_chars(projection_source.to_owned(), TEXT_PROJECTION_MAX_CHARS);
+    Ok(Extracted {
+        tree,
+        text_projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 /// Generate deterministic canonical bytes from a validated spec:
@@ -213,11 +217,7 @@ impl ProjectionProvider for JsonProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         extract(bytes, context.budgets).map(|extracted| extracted.text_projection)
     }
 }

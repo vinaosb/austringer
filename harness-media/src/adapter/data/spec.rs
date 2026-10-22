@@ -95,9 +95,7 @@ impl ColumnType {
     fn accepts(self, value: &Value) -> bool {
         let typed = match (self, value) {
             (Self::Bool, Value::Bool(_)) => true,
-            (Self::Int32, Value::Number(n)) => {
-                n.as_i64().is_some_and(|v| i32::try_from(v).is_ok())
-            }
+            (Self::Int32, Value::Number(n)) => n.as_i64().is_some_and(|v| i32::try_from(v).is_ok()),
             (Self::Int64, Value::Number(n)) => n.as_i64().is_some(),
             (Self::Double, Value::Number(_)) => true,
             (Self::Utf8, Value::String(_)) => true,
@@ -172,10 +170,16 @@ impl TabularSpec {
             }
             let token = entry["type"].as_str().ok_or_else(invalid)?;
             let ctype = ColumnType::parse(token).ok_or_else(invalid)?;
-            if columns.iter().any(|existing: &Column| existing.name == name) {
+            if columns
+                .iter()
+                .any(|existing: &Column| existing.name == name)
+            {
                 return Err(invalid());
             }
-            columns.push(Column { name: name.to_owned(), ctype });
+            columns.push(Column {
+                name: name.to_owned(),
+                ctype,
+            });
         }
         let rows_json = object["rows"].as_array().ok_or_else(invalid)?;
         if rows_json.len() > MAX_ROWS {
@@ -218,7 +222,12 @@ impl TabularSpec {
     /// The canonical normalized rows (doubles as f64 numbers).
     #[must_use]
     pub fn rows_json(&self) -> Value {
-        Value::Array(self.rows.iter().map(|row| Value::Array(row.clone())).collect())
+        Value::Array(
+            self.rows
+                .iter()
+                .map(|row| Value::Array(row.clone()))
+                .collect(),
+        )
     }
 
     /// The independent per-column statistics projection, computed from

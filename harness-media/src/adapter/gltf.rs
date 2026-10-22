@@ -37,7 +37,7 @@ use serde_json::Value;
 
 use crate::adapter::gltf_container::{GlbChunks, GlbFormatError};
 use crate::adapter::{gltf_extract, gltf_spec, gltf_write};
-use crate::diff::{verify_roundtrip, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, verify_roundtrip};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
@@ -122,8 +122,6 @@ impl ProjectionProvider for GltfOutline {
 
 /// Register the deterministic projector alongside the adapter (one
 /// format, one projector; contention is the typed wiring error).
-pub fn register_projection(
-    registry: &mut ProjectionRegistry,
-) -> Result<(), ProjectionWiringError> {
+pub fn register_projection(registry: &mut ProjectionRegistry) -> Result<(), ProjectionWiringError> {
     registry.register(FormatId::Gltf, std::sync::Arc::new(GltfOutline))
 }

@@ -70,18 +70,16 @@ impl ResolvedProvider {
         let provider = self.compose_provider(transport);
         let timeout = self.inference_timeout;
         let identity = self.identity();
-        Arc::new(move || {
-            ComposedInference {
-                inference: Box::new(DeadlineInference {
-                    inner: Box::new(InferenceAdapter::new(
-                        Arc::clone(&provider),
-                        daemon_recovery_config(),
-                        0x5EED_0000_0032,
-                    )),
-                    deadline: timeout,
-                }),
-                identity: Some(identity.clone()),
-            }
+        Arc::new(move || ComposedInference {
+            inference: Box::new(DeadlineInference {
+                inner: Box::new(InferenceAdapter::new(
+                    Arc::clone(&provider),
+                    daemon_recovery_config(),
+                    0x5EED_0000_0032,
+                )),
+                deadline: timeout,
+            }),
+            identity: Some(identity.clone()),
         })
     }
 
@@ -91,9 +89,9 @@ impl ResolvedProvider {
         let base = self.base_url.as_deref();
         match self.family {
             ProviderFamily::Anthropic => match base {
-                Some(base) => Arc::new(AnthropicAdapter::custom(
-                    transport, auth, model, base, 4096,
-                )),
+                Some(base) => {
+                    Arc::new(AnthropicAdapter::custom(transport, auth, model, base, 4096))
+                }
                 None => Arc::new(AnthropicAdapter::new(transport, auth, model)),
             },
             ProviderFamily::OpenAi => match base {

@@ -131,9 +131,7 @@ impl StepSpec {
             }
             let (dims, transform) = match solid.shape {
                 SolidShape::Box { size } => (size.to_vec(), &solid.transform),
-                SolidShape::Cylinder { radius, height } => {
-                    (vec![radius, height], &solid.transform)
-                }
+                SolidShape::Cylinder { radius, height } => (vec![radius, height], &solid.transform),
                 SolidShape::Sphere { radius } => (vec![radius], &solid.transform),
             };
             let finite = transform

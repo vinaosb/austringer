@@ -254,7 +254,9 @@ fn spawn_plan_ask(host: Arc<SessionHost>, plan_id: u64, revision: u64, artifact:
                     host.plan_gate().reject(&host, plan_id);
                     break;
                 }
-                PlanOutcome::Edited { artifact: edited, .. } => {
+                PlanOutcome::Edited {
+                    artifact: edited, ..
+                } => {
                     let Some((next_revision, next_artifact)) =
                         host.plan_gate().apply_edit(&host, plan_id, edited)
                     else {
@@ -416,9 +418,14 @@ mod tests {
             .plan_gate()
             .check_write(&host, &edit_call("edit_lines"))
             .expect("gated");
-        assert!(reason.contains("plan 1"), "reason names the plan id: {reason}");
+        assert!(
+            reason.contains("plan 1"),
+            "reason names the plan id: {reason}"
+        );
         assert_eq!(blocked_events(&host), vec![1]);
-        let read = host.plan_gate().check_write(&host, &edit_call("view_window"));
+        let read = host
+            .plan_gate()
+            .check_write(&host, &edit_call("view_window"));
         assert!(read.is_none(), "reads stay open in plan mode");
         // The fired ask times out (paused clock) and the plan stays
         // pending — the ask loop keeps running until advanced past the
@@ -434,10 +441,17 @@ mod tests {
             .plan_gate()
             .check_write(&host, &edit_call("edit_lines"))
             .expect("gated");
-        assert!(reason.contains("plan 1"), "re-entering keeps plan 1: {reason}");
+        assert!(
+            reason.contains("plan 1"),
+            "re-entering keeps plan 1: {reason}"
+        );
         set_plan_mode(&host, false);
         assert!(!host.plan_gate().is_active());
-        assert!(host.plan_gate().check_write(&host, &edit_call("edit_lines")).is_none());
+        assert!(
+            host.plan_gate()
+                .check_write(&host, &edit_call("edit_lines"))
+                .is_none()
+        );
         let kinds: Vec<&str> = host
             .snapshot()
             .iter()
@@ -454,13 +468,24 @@ mod tests {
     async fn approve_ends_the_mode_and_reject_stays() {
         let host = host();
         set_plan_mode(&host, true);
-        let _ = host.plan_gate().check_write(&host, &edit_call("edit_lines"));
+        let _ = host
+            .plan_gate()
+            .check_write(&host, &edit_call("edit_lines"));
         host.plan_gate().approve(&host, 1);
-        assert!(!host.plan_gate().is_active(), "approval flips autonomy back");
-        assert!(host.plan_gate().check_write(&host, &edit_call("edit_lines")).is_none());
+        assert!(
+            !host.plan_gate().is_active(),
+            "approval flips autonomy back"
+        );
+        assert!(
+            host.plan_gate()
+                .check_write(&host, &edit_call("edit_lines"))
+                .is_none()
+        );
 
         set_plan_mode(&host, true); // plan 2
-        let _ = host.plan_gate().check_write(&host, &edit_call("edit_lines"));
+        let _ = host
+            .plan_gate()
+            .check_write(&host, &edit_call("edit_lines"));
         host.plan_gate().reject(&host, 2);
         assert!(host.plan_gate().is_active(), "rejection keeps plan mode on");
         let reason = host
@@ -479,7 +504,9 @@ mod tests {
     async fn edit_bumps_revision_and_the_stale_edit_is_ignored() {
         let host = host();
         set_plan_mode(&host, true);
-        let _ = host.plan_gate().check_write(&host, &edit_call("edit_lines"));
+        let _ = host
+            .plan_gate()
+            .check_write(&host, &edit_call("edit_lines"));
         let (revision, artifact) = host
             .plan_gate()
             .apply_edit(&host, 1, "# Revised plan".to_owned())
@@ -494,7 +521,9 @@ mod tests {
         set_plan_mode(&host, false);
         set_plan_mode(&host, true); // plan 2 now active
         assert!(
-            host.plan_gate().apply_edit(&host, 1, "stale".to_owned()).is_none(),
+            host.plan_gate()
+                .apply_edit(&host, 1, "stale".to_owned())
+                .is_none(),
             "an edit for an exited plan applies nothing"
         );
         let revisions: Vec<u64> = host

@@ -169,7 +169,10 @@ impl SessionRouter {
     /// model when the request is unrouted (explicit fallback, never a
     /// hop).
     fn resolve_dispatch(&mut self) -> Result<ActiveDispatch, InferenceError> {
-        match self.dispatcher.dispatch_turn(&self.task, self.request.clone()) {
+        match self
+            .dispatcher
+            .dispatch_turn(&self.task, self.request.clone())
+        {
             Ok(dispatch) => Ok(ActiveDispatch::Routed(Box::new(dispatch))),
             Err(ResolutionError::UnconfiguredRole { .. }) => {
                 Ok(ActiveDispatch::Configured(self.configured.clone()))
@@ -241,7 +244,7 @@ impl Inference for SessionRouter {
                 None => {
                     return Err(InferenceError::Failure(
                         "routing stack cache invariant broken".to_owned(),
-                    ))
+                    ));
                 }
             };
             let outcome = match &attempt {
@@ -254,9 +257,7 @@ impl Inference for SessionRouter {
                     failure: dispatch_failure(error),
                 },
             };
-            let decision = self
-                .dispatcher
-                .observe_turn(&self.task, &identity, outcome);
+            let decision = self.dispatcher.observe_turn(&self.task, &identity, outcome);
             match decision {
                 FallbackDecision::Proceed => return attempt,
                 FallbackDecision::Retry { .. } => continue,
@@ -279,7 +280,7 @@ impl Inference for SessionRouter {
                             Err(rejected) => {
                                 return Err(InferenceError::Failure(format!(
                                     "fallback acknowledgement rejected: {rejected}"
-                                )))
+                                )));
                             }
                         }
                     }
@@ -297,7 +298,7 @@ impl Inference for SessionRouter {
                     continue;
                 }
                 FallbackDecision::Fail(failure) => {
-                    return Err(InferenceError::Failure(failure.to_string()))
+                    return Err(InferenceError::Failure(failure.to_string()));
                 }
             }
         }
@@ -311,8 +312,7 @@ impl Inference for SessionRouter {
 fn dispatch_failure(error: &InferenceError) -> DispatchFailure {
     let InferenceError::Failure(message) = error;
     let lowered = message.to_ascii_lowercase();
-    if lowered.contains("429") || lowered.contains("rate limit") || lowered.contains("rate_limit")
-    {
+    if lowered.contains("429") || lowered.contains("rate limit") || lowered.contains("rate_limit") {
         DispatchFailure::RateLimit { retry_after: None }
     } else {
         DispatchFailure::Outage
@@ -332,9 +332,7 @@ mod tests {
             DispatchFailure::RateLimit { retry_after: None }
         );
         assert_eq!(
-            dispatch_failure(&InferenceError::Failure(
-                "Rate Limit exceeded".to_owned()
-            )),
+            dispatch_failure(&InferenceError::Failure("Rate Limit exceeded".to_owned())),
             DispatchFailure::RateLimit { retry_after: None }
         );
     }

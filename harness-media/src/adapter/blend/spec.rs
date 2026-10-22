@@ -168,7 +168,10 @@ impl BlendSpec {
                     && material.roughness.is_finite()
                     && (0.0..=1.0).contains(&material.metallic)
                     && (0.0..=1.0).contains(&material.roughness)
-                    && material.base_color.iter().all(|value| (0.0..=1.0).contains(value)))
+                    && material
+                        .base_color
+                        .iter()
+                        .all(|value| (0.0..=1.0).contains(value)))
             {
                 return Err(invalid());
             }

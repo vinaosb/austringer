@@ -1,4 +1,4 @@
-﻿//! `/rewind` log truncation: the session store's reset-to-head contract
+//! `/rewind` log truncation: the session store's reset-to-head contract
 //! (plan todo 5). One transaction must drop events, FTS rows, and turn
 //! index rows above the head and reset `last_seq`/`event_count`/
 //! `turn_count`/`payload_bytes` so the next append continues at head+1
@@ -76,7 +76,9 @@ fn truncate_drops_fts_above_head_and_resets_counters() {
     assert_eq!(meta.turn_count, 2, "turn 3 (start seq 5) is gone");
     let payload_bytes: u64 = {
         let ro = store.open_session("s").unwrap();
-        let events = ro.events_range(Sequence(1), Sequence(1_000_000_000)).unwrap();
+        let events = ro
+            .events_range(Sequence(1), Sequence(1_000_000_000))
+            .unwrap();
         assert_eq!(events.len(), 3, "no events survive above the head");
         assert_eq!(events.last().unwrap().seq, Sequence(3));
         events
@@ -116,12 +118,18 @@ fn next_append_continues_at_head_plus_one_without_gaps() {
         assert_eq!(handle.last_sequence(), Sequence(3));
         let first = handle.append(user("needle after rewind")).unwrap();
         assert_eq!(first, Sequence(4), "next append is head+1");
-        let second = handle.append(Event::System { text: "again".into() }).unwrap();
+        let second = handle
+            .append(Event::System {
+                text: "again".into(),
+            })
+            .unwrap();
         assert_eq!(second, Sequence(5), "the sequence never skips or repeats");
     }
 
     let ro = store.open_session("s").unwrap();
-    let events = ro.events_range(Sequence(1), Sequence(1_000_000_000)).unwrap();
+    let events = ro
+        .events_range(Sequence(1), Sequence(1_000_000_000))
+        .unwrap();
     let seqs: Vec<u64> = events.iter().map(|recorded| recorded.seq.0).collect();
     assert_eq!(seqs, vec![1, 2, 3, 4, 5]);
     // verify() ran at open: index agrees with the truncated + extended log.
@@ -147,10 +155,20 @@ fn fork_at_post_rewind_head_copies_only_surviving_events() {
     assert_eq!(fork_meta.last_seq, 3);
     assert_eq!(fork_meta.event_count, 3);
 
-    let (source, forked) = (store.open_session("s").unwrap(), store.open_session("f").unwrap());
-    let source_events = source.events_range(Sequence(1), Sequence(1_000_000_000)).unwrap();
-    let fork_events = forked.events_range(Sequence(1), Sequence(1_000_000_000)).unwrap();
-    assert_eq!(source_events, fork_events, "fork copies only events <= head");
+    let (source, forked) = (
+        store.open_session("s").unwrap(),
+        store.open_session("f").unwrap(),
+    );
+    let source_events = source
+        .events_range(Sequence(1), Sequence(1_000_000_000))
+        .unwrap();
+    let fork_events = forked
+        .events_range(Sequence(1), Sequence(1_000_000_000))
+        .unwrap();
+    assert_eq!(
+        source_events, fork_events,
+        "fork copies only events <= head"
+    );
 }
 
 #[test]
@@ -184,10 +202,17 @@ fn truncate_to_zero_empties_the_log_and_index() {
     }
 
     let meta = store.open_session("s").unwrap().meta().clone();
-    assert_eq!((meta.last_seq, meta.event_count, meta.turn_count), (0, 0, 0));
+    assert_eq!(
+        (meta.last_seq, meta.event_count, meta.turn_count),
+        (0, 0, 0)
+    );
     assert!(store.search_events("needle", 50).unwrap().is_empty());
     let ro = store.open_session("s").unwrap();
-    assert!(ro.events_range(Sequence(1), Sequence(1_000_000_000)).unwrap().is_empty());
+    assert!(
+        ro.events_range(Sequence(1), Sequence(1_000_000_000))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

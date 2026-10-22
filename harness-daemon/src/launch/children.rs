@@ -49,7 +49,11 @@ impl SubagentExecutor for SessionChildExecutor {
         let started = std::time::Instant::now();
         let session_dir = self.services.sessions_root.join(&job.child_id);
         std::fs::create_dir_all(&session_dir).map_err(|e| {
-            child_failure(&job.child_id, ChildFailureClass::Tool, format!("session dir: {e}"))
+            child_failure(
+                &job.child_id,
+                ChildFailureClass::Tool,
+                format!("session dir: {e}"),
+            )
         })?;
         let (host, cmd_rx) = SessionHost::new(
             &job.child_id,
@@ -61,7 +65,10 @@ impl SubagentExecutor for SessionChildExecutor {
             None,
         );
         let executor = (self.services.executor_factory)(&session_dir, host.event_sink());
-        let ComposedInference { inference, identity } = (self.services.inference_factory)();
+        let ComposedInference {
+            inference,
+            identity,
+        } = (self.services.inference_factory)();
         // Identity-bearing child stacks carry the SAME accounting as
         // parent sessions — Usage frames on the child's own hub, priced
         // spend into the PARENT ledger (warning/stop events surface on
@@ -85,10 +92,19 @@ impl SubagentExecutor for SessionChildExecutor {
             }
             _ => inference,
         };
-        host.spawn_engine(session_dir, host.standard_stages(executor), inference, cmd_rx)
-            .map_err(|e| {
-                child_failure(&job.child_id, ChildFailureClass::Tool, format!("engine spawn: {e}"))
-            })?;
+        host.spawn_engine(
+            session_dir,
+            host.standard_stages(executor),
+            inference,
+            cmd_rx,
+        )
+        .map_err(|e| {
+            child_failure(
+                &job.child_id,
+                ChildFailureClass::Tool,
+                format!("engine spawn: {e}"),
+            )
+        })?;
         let mut live = host.hub_subscribe();
         host.commands()
             .send(HostCommand::Submit(job.objective.clone()))
@@ -166,12 +182,15 @@ async fn await_turn_finished(
                 ));
             }
             Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
-                if let Some(outcome) = host.snapshot().iter().rev().find_map(|frame| {
-                    match &frame.event {
-                        SessionEvent::TurnFinished { outcome, .. } => Some(outcome.clone()),
-                        _ => None,
-                    }
-                }) {
+                if let Some(outcome) =
+                    host.snapshot()
+                        .iter()
+                        .rev()
+                        .find_map(|frame| match &frame.event {
+                            SessionEvent::TurnFinished { outcome, .. } => Some(outcome.clone()),
+                            _ => None,
+                        })
+                {
                     return Ok(outcome);
                 }
             }

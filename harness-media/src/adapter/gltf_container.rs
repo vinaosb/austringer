@@ -59,7 +59,9 @@ pub enum GlbFormatError {
         offset: usize,
     },
     /// A chunk declares more payload than the bytes hold.
-    #[error("glb chunk at byte {offset} declares {declared} payload bytes but only {actual} present")]
+    #[error(
+        "glb chunk at byte {offset} declares {declared} payload bytes but only {actual} present"
+    )]
     ChunkLength {
         /// Offset of the chunk header.
         offset: usize,
@@ -164,4 +166,3 @@ pub fn glb_chunks(bytes: &[u8]) -> Result<GlbChunks<'_>, GlbFormatError> {
         bin_len: bin_len.unwrap_or(0),
     })
 }
-

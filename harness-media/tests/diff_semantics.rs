@@ -5,8 +5,8 @@
 
 use std::collections::BTreeSet;
 
-use harness_media::diff::{structural_diff, StructuralDiff, Tolerances};
-use serde_json::{json, Value};
+use harness_media::diff::{StructuralDiff, Tolerances, structural_diff};
+use serde_json::{Value, json};
 
 /// Diff helper (tests may unwrap; house rule bans it in src only).
 fn diff(expected: &Value, actual: &Value, tolerances: &Tolerances) -> StructuralDiff {
@@ -89,7 +89,10 @@ fn null_is_distinguished_from_missing_and_from_other_types() {
     assert_eq!(out.added[0].actual, Value::Null);
     // And: both null is equality; null vs 0 is a type change.
     assert!(diff(&json!({"a": null}), &json!({"a": null}), &exact()).is_empty());
-    assert_eq!(diff(&json!({"a": null}), &json!({"a": 0}), &exact()).changed[0].path, "/a");
+    assert_eq!(
+        diff(&json!({"a": null}), &json!({"a": 0}), &exact()).changed[0].path,
+        "/a"
+    );
 }
 
 #[test]
@@ -97,10 +100,14 @@ fn negative_numbers_compare_exactly_and_minus_zero_equals_zero() {
     // Given: matching negatives.
     assert!(diff(&json!({"t": -5}), &json!({"t": -5}), &exact()).is_empty());
     // When: -5 drifts to -4 (epsilon cannot absorb a gross step).
-    let out = diff(&json!({"t": -5}), &json!({"t": -4}), &Tolerances {
-        float_epsilon: 1e-9,
-        ..exact()
-    });
+    let out = diff(
+        &json!({"t": -5}),
+        &json!({"t": -4}),
+        &Tolerances {
+            float_epsilon: 1e-9,
+            ..exact()
+        },
+    );
     // Then: exact pointer with both signed values.
     assert_eq!(out.changed[0].path, "/t");
     assert_eq!(out.changed[0].expected, json!(-5));
@@ -115,22 +122,46 @@ fn float_epsilon_absorbs_print_cycle_error_at_1e_9() {
     let expected = json!({"factor": 0.3});
     let actual = json!({"factor": 0.1 + 0.2});
     // Then: passes at eps 1e-9 (plan acceptance) ...
-    assert!(diff(&expected, &actual, &Tolerances { float_epsilon: 1e-9, ..exact() }).is_empty());
+    assert!(
+        diff(
+            &expected,
+            &actual,
+            &Tolerances {
+                float_epsilon: 1e-9,
+                ..exact()
+            }
+        )
+        .is_empty()
+    );
     // ... and the plan's literal pair - 0.1+0.2 vs the spelled-out
     // 0.30000000000000004 - is the SAME f64, so it passes at eps 1e-9 AND
     // at exact epsilon.
     let spelled = json!({"factor": 0.30000000000000004});
-    assert!(diff(&spelled, &actual, &Tolerances { float_epsilon: 1e-9, ..exact() }).is_empty());
+    assert!(
+        diff(
+            &spelled,
+            &actual,
+            &Tolerances {
+                float_epsilon: 1e-9,
+                ..exact()
+            }
+        )
+        .is_empty()
+    );
     assert!(diff(&spelled, &actual, &exact()).is_empty());
     // But 0.3 vs 0.1+0.2 at eps 0 is a real changed entry at the pointer.
     let out = diff(&expected, &actual, &exact());
     assert_eq!(out.changed.len(), 1);
     assert_eq!(out.changed[0].path, "/factor");
     // And epsilon never hides a gross mismatch.
-    let out = diff(&json!({"f": 0.3}), &json!({"f": 0.9}), &Tolerances {
-        float_epsilon: 1e-9,
-        ..exact()
-    });
+    let out = diff(
+        &json!({"f": 0.3}),
+        &json!({"f": 0.9}),
+        &Tolerances {
+            float_epsilon: 1e-9,
+            ..exact()
+        },
+    );
     assert_eq!(out.changed.len(), 1);
 }
 
@@ -139,10 +170,14 @@ fn integer_and_float_representations_compare_semantically() {
     // Given: 1 vs 1.0 - same semantic number in different representations.
     assert!(diff(&json!({"n": 1}), &json!({"n": 1.0}), &exact()).is_empty());
     // When: 2 vs 3.
-    let out = diff(&json!({"n": 2}), &json!({"n": 3}), &Tolerances {
-        float_epsilon: 1e-9,
-        ..exact()
-    });
+    let out = diff(
+        &json!({"n": 2}),
+        &json!({"n": 3}),
+        &Tolerances {
+            float_epsilon: 1e-9,
+            ..exact()
+        },
+    );
     // Then: changed (u64/i64/f64 all meet in f64 space).
     assert_eq!(out.changed.len(), 1);
 }
@@ -155,11 +190,31 @@ fn type_mismatches_report_changed_with_both_subtrees() {
     assert_eq!(out.changed[0].expected, json!("text"));
     assert_eq!(out.changed[0].actual, json!(5));
     // And container-vs-scalar, container-vs-container-kind, bool-vs-number.
-    assert_eq!(diff(&json!({"v": [1]}), &json!({"v": 1}), &exact()).changed.len(), 1);
-    assert_eq!(diff(&json!({"v": [1]}), &json!({"v": {"1": 1}}), &exact()).changed.len(), 1);
-    assert_eq!(diff(&json!({"v": true}), &json!({"v": 1}), &exact()).changed.len(), 1);
+    assert_eq!(
+        diff(&json!({"v": [1]}), &json!({"v": 1}), &exact())
+            .changed
+            .len(),
+        1
+    );
+    assert_eq!(
+        diff(&json!({"v": [1]}), &json!({"v": {"1": 1}}), &exact())
+            .changed
+            .len(),
+        1
+    );
+    assert_eq!(
+        diff(&json!({"v": true}), &json!({"v": 1}), &exact())
+            .changed
+            .len(),
+        1
+    );
     // And unequal strings.
-    assert_eq!(diff(&json!({"v": "a"}), &json!({"v": "b"}), &exact()).changed.len(), 1);
+    assert_eq!(
+        diff(&json!({"v": "a"}), &json!({"v": "b"}), &exact())
+            .changed
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -195,7 +250,11 @@ fn canonical_key_order_means_insertion_order_cannot_matter() {
 #[test]
 fn arrays_are_ordered_exact_by_default() {
     // Given: a reordered array with NO unordered tolerance.
-    let out = diff(&json!({"row": [1, 2, 3]}), &json!({"row": [3, 2, 1]}), &exact());
+    let out = diff(
+        &json!({"row": [1, 2, 3]}),
+        &json!({"row": [3, 2, 1]}),
+        &exact(),
+    );
     // Then: positions 0 and 2 changed; position 1 matched.
     let paths: Vec<&str> = out.changed.iter().map(|c| c.path.as_str()).collect();
     assert_eq!(paths, ["/row/0", "/row/2"]);
@@ -215,10 +274,14 @@ fn nonfinite_floats_cannot_enter_trees_and_surface_as_null() {
     assert_eq!(serde_json::Number::from_f64(f64::NAN), None);
     assert_eq!(Value::from(f64::NAN), Value::Null);
     assert_eq!(json!(f64::INFINITY), Value::Null);
-    let out = diff(&json!({"f": 0.3}), &json!({"f": f64::NAN}), &Tolerances {
-        float_epsilon: 1e-9,
-        ..exact()
-    });
+    let out = diff(
+        &json!({"f": 0.3}),
+        &json!({"f": f64::NAN}),
+        &Tolerances {
+            float_epsilon: 1e-9,
+            ..exact()
+        },
+    );
     assert_eq!(out.changed.len(), 1);
     assert_eq!(out.changed[0].path, "/f");
     assert_eq!(out.changed[0].actual, Value::Null);

@@ -26,7 +26,7 @@ impl MentionKind {
     }
 }
 
-pub use crate::commands::{parse, Parsed, COMMANDS};
+pub use crate::commands::{COMMANDS, Parsed, parse};
 
 /// Provider of completion candidates. The binary wires a real one;
 /// tests wire fixtures.

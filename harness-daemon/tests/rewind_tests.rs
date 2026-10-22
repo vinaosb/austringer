@@ -1,4 +1,4 @@
-﻿//! `/rewind` acceptance (plan todo 5): ClientMsg::Rewind restores a
+//! `/rewind` acceptance (plan todo 5): ClientMsg::Rewind restores a
 //! harness-snapshots restore point, truncates the persisted session log
 //! to the restore head (search never sees un-happened events), and
 //! broadcasts a System "restored to <label>" event on the normal
@@ -9,8 +9,8 @@ mod common;
 use futures_util::{SinkExt, StreamExt};
 
 use harness_core::event::{ContentBlock, Event};
-use harness_sessions::lease::LeaseOwner;
 use harness_sessions::SessionStore;
+use harness_sessions::lease::LeaseOwner;
 use harness_snapshots::ids::{SessionId, Turn};
 use harness_snapshots::{SnapshotOptions, SnapshotStore};
 
@@ -81,15 +81,16 @@ async fn fixture(sid: &str) -> RewindFixture {
     for (turn, content) in [(1u32, "v1"), (2, "v2"), (3, "v3")] {
         std::fs::write(&notes, content).unwrap();
         snapshots
-            .snapshot(&session, Turn::new(turn).unwrap(), &SnapshotOptions::default())
+            .snapshot(
+                &session,
+                Turn::new(turn).unwrap(),
+                &SnapshotOptions::default(),
+            )
             .unwrap();
     }
     drop(snapshots);
 
-    RewindFixture {
-        daemon,
-        notes,
-    }
+    RewindFixture { daemon, notes }
 }
 
 /// Attach, send `ClientMsg::Rewind { steps }`, and collect frames until
@@ -107,7 +108,9 @@ async fn send_rewind(
         .unwrap_or_else(|e| panic!("attach: {e}"));
     socket
         .send(tokio_tungstenite::tungstenite::Message::Text(
-            serde_json::json!({"type": "rewind", "steps": steps}).to_string().into(),
+            serde_json::json!({"type": "rewind", "steps": steps})
+                .to_string()
+                .into(),
         ))
         .await
         .unwrap();
@@ -188,5 +191,8 @@ async fn rewind_beyond_oldest_snapshot_is_typed_error_naming_oldest() {
     // Nothing happened: the workspace and the log are untouched.
     assert_eq!(std::fs::read_to_string(&fixture.notes).unwrap(), "v3");
     let store = SessionStore::open(&fixture.daemon.state.config.data_dir).unwrap();
-    assert_eq!(store.open_session("rewind-fail").unwrap().meta().last_seq, 6);
+    assert_eq!(
+        store.open_session("rewind-fail").unwrap().meta().last_seq,
+        6
+    );
 }

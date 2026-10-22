@@ -4,12 +4,12 @@
 //! "where naive parsers fail" note) - the census is per slide part
 //! only. Projection: slide/shape/text summary.
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
-use serde_json::{json, Value};
+use quick_xml::events::Event;
+use serde_json::{Value, json};
 
-use super::parts::{self, Ledger, collapse, truncate_chars};
 use super::TEXT_PROJECTION_MAX_CHARS;
+use super::parts::{self, Ledger, collapse, truncate_chars};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 
@@ -80,7 +80,11 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
         "slide_count": count,
         "slides": slides,
     });
-    Ok(Extracted { tree, text_projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree,
+        text_projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 /// The presentation's slide relationship ids in document order.
@@ -99,8 +103,7 @@ fn slide_ids(presentation: &str, ledger: &mut Ledger) -> Result<Vec<String>, Med
                 // r:id (relationship) - matched by full prefixed key;
                 // the unprefixed `id` is the numeric slide id.
                 ids.push(
-                    parts::prefixed_attribute(&element, "r:id")
-                        .ok_or(MediaError::ParseFailure)?,
+                    parts::prefixed_attribute(&element, "r:id").ok_or(MediaError::ParseFailure)?,
                 );
             }
             _ => {}
@@ -124,26 +127,22 @@ fn slide_tree(part: &str, ledger: &mut Ledger) -> Result<Value, MediaError> {
             Event::Eof => break,
             // Census elements count both Start and Empty forms; text
             // runs open only on Start (Empty has no matching End).
-            Event::Start(element) => {
-                match element.name().local_name().as_ref() {
-                    "t" => {
-                        in_text = true;
-                        current.clear();
-                    }
-                    "sp" => counted(&mut sp)?,
-                    "pic" => counted(&mut pic)?,
-                    "graphicFrame" => counted(&mut graphic_frame)?,
-                    _ => {}
+            Event::Start(element) => match element.name().local_name().as_ref() {
+                "t" => {
+                    in_text = true;
+                    current.clear();
                 }
-            }
-            Event::Empty(element) => {
-                match element.name().local_name().as_ref() {
-                    "sp" => counted(&mut sp)?,
-                    "pic" => counted(&mut pic)?,
-                    "graphicFrame" => counted(&mut graphic_frame)?,
-                    _ => {}
-                }
-            }
+                "sp" => counted(&mut sp)?,
+                "pic" => counted(&mut pic)?,
+                "graphicFrame" => counted(&mut graphic_frame)?,
+                _ => {}
+            },
+            Event::Empty(element) => match element.name().local_name().as_ref() {
+                "sp" => counted(&mut sp)?,
+                "pic" => counted(&mut pic)?,
+                "graphicFrame" => counted(&mut graphic_frame)?,
+                _ => {}
+            },
             Event::Text(chunk) if in_text => current.push_str(&chunk),
             Event::GeneralRef(reference) if in_text => {
                 let resolved = parts::reference_char(&reference)
@@ -151,9 +150,7 @@ fn slide_tree(part: &str, ledger: &mut Ledger) -> Result<Value, MediaError> {
                     .to_string();
                 current.push_str(&resolved);
             }
-            Event::End(element)
-                if element.name().local_name().as_ref() == "t" && in_text =>
-            {
+            Event::End(element) if element.name().local_name().as_ref() == "t" && in_text => {
                 in_text = false;
                 let run = collapse(&current);
                 if !run.is_empty() {

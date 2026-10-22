@@ -30,7 +30,9 @@ impl TeamEventSink for HubTeamSink {
     fn emit(&self, event: TeamEvent) {
         let host = &self.host;
         match &event {
-            TeamEvent::Spawned { child, role, model, .. } => {
+            TeamEvent::Spawned {
+                child, role, model, ..
+            } => {
                 host.publish(SessionEvent::ChildStarted {
                     child: child.clone(),
                     task: task_of(child).to_owned(),

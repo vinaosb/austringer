@@ -7,19 +7,49 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use harness_core::event::{ContentHash, MediaRef};
-use harness_media::descriptor::{FormatDescriptor, FormatRegistry, Operation, OpSupport};
+use harness_media::descriptor::{FormatDescriptor, FormatRegistry, OpSupport, Operation};
 use harness_media::error::MediaError;
 use harness_media::extract::{ExtractBudgets, Extracted, TEXT_PROJECTION_MAX_CHARS};
 use harness_media::format::FormatId;
-use harness_media::generate::{GenerationSpec, DETERMINISM_EPOCH, DETERMINISM_EPOCH_UNIX};
+use harness_media::generate::{DETERMINISM_EPOCH, DETERMINISM_EPOCH_UNIX, GenerationSpec};
 use serde_json::json;
 
 /// The 34-format slate in plan declaration order.
 const SLATE: &[&str] = &[
-    "png", "jpeg", "gif", "webp", "avif", "jxl", "svg", "gltf", "blend", "pdf", "wav", "flac",
-    "opus", "mp3", "ogg", "webm", "mkv", "docx", "xlsx", "pptx", "markdown", "html", "json",
-    "csv", "toml", "step", "geotiff", "geopackage", "geojson", "kml", "sqlite", "hdf5",
-    "parquet", "arrow",
+    "png",
+    "jpeg",
+    "gif",
+    "webp",
+    "avif",
+    "jxl",
+    "svg",
+    "gltf",
+    "blend",
+    "pdf",
+    "wav",
+    "flac",
+    "opus",
+    "mp3",
+    "ogg",
+    "webm",
+    "mkv",
+    "docx",
+    "xlsx",
+    "pptx",
+    "markdown",
+    "html",
+    "json",
+    "csv",
+    "toml",
+    "step",
+    "geotiff",
+    "geopackage",
+    "geojson",
+    "kml",
+    "sqlite",
+    "hdf5",
+    "parquet",
+    "arrow",
 ];
 
 /// Every MediaError variant, at least one instance each.
@@ -109,13 +139,26 @@ fn format_id_serde_roundtrips_when_canonical_snake_case_name_used() {
 fn format_id_rejects_malformed_strings_when_deserialized() {
     // Given: strings that are not canonical variant names.
     let malformed = [
-        "", "PNG", "png ", " png", "png\n", "not-a-format", "geotiff2", "hdf-5", "parquet/",
-        "\u{1f980}", "0", "p n g",
+        "",
+        "PNG",
+        "png ",
+        " png",
+        "png\n",
+        "not-a-format",
+        "geotiff2",
+        "hdf-5",
+        "parquet/",
+        "\u{1f980}",
+        "0",
+        "p n g",
     ];
     for name in malformed {
         // When/Then: deserialization is a typed error, never a panic.
         let parsed: Result<FormatId, _> = serde_json::from_value(json!(name));
-        assert!(parsed.is_err(), "{name:?} must not deserialize as a FormatId");
+        assert!(
+            parsed.is_err(),
+            "{name:?} must not deserialize as a FormatId"
+        );
     }
 }
 
@@ -242,7 +285,8 @@ fn descriptor_serializes_ops_with_sorted_keys_when_roundtripped() {
 fn descriptor_rejects_unknown_operation_names_when_deserialized() {
     // Given: a structurally valid descriptor JSON naming an op outside the
     // four-operation contract.
-    let wire = r#"{"id":"png","mime":"image/png","extensions":["png"],"ops":{"transcode":"Supported"}}"#;
+    let wire =
+        r#"{"id":"png","mime":"image/png","extensions":["png"],"ops":{"transcode":"Supported"}}"#;
     // When/Then: deserialization is a typed serde error.
     assert!(serde_json::from_str::<FormatDescriptor>(wire).is_err());
 }
@@ -266,7 +310,11 @@ fn generation_spec_roundtrips_and_epoch_constants_are_pinned() {
 #[test]
 fn generation_spec_rejects_malformed_json_when_deserialized() {
     // Given: broken JSON and an unknown format name.
-    for wire in ["{ nope", r#"{"format":"definitely-not","params":{}}"#, "null_x"] {
+    for wire in [
+        "{ nope",
+        r#"{"format":"definitely-not","params":{}}"#,
+        "null_x",
+    ] {
         // When/Then: typed serde errors, never panics.
         assert!(serde_json::from_str::<GenerationSpec>(wire).is_err());
     }

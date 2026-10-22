@@ -5,7 +5,7 @@
 //! readability.
 
 use crate::format::FormatId;
-use crate::probe::{hit, ProbeResult};
+use crate::probe::{ProbeResult, hit};
 
 const PNG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 const JXL_CONTAINER: &[u8] = &[
@@ -29,7 +29,9 @@ pub(super) fn sniff(bytes: &[u8]) -> Option<ProbeResult> {
         return Some(hit(FormatId::Webp, "RIFF container, WEBP form".into()));
     }
     if bytes.get(4..8) == Some(b"ftyp".as_slice())
-        && bytes.get(8..12).is_some_and(|brand| brand == b"avif" || brand == b"avis")
+        && bytes
+            .get(8..12)
+            .is_some_and(|brand| brand == b"avif" || brand == b"avis")
     {
         return Some(hit(FormatId::Avif, "ftyp box with avif/avis brand".into()));
     }
@@ -40,7 +42,10 @@ pub(super) fn sniff(bytes: &[u8]) -> Option<ProbeResult> {
         return Some(hit(FormatId::Jxl, "JXL container magic".into()));
     }
     if bytes.starts_with(b"glTF") && bytes.get(4..8) == Some(&[0x02, 0x00, 0x00, 0x00][..]) {
-        return Some(hit(FormatId::Gltf, "GLB container magic + version 2".into()));
+        return Some(hit(
+            FormatId::Gltf,
+            "GLB container magic + version 2".into(),
+        ));
     }
     if bytes.starts_with(b"%PDF-") {
         return Some(hit(FormatId::Pdf, "%PDF- magic".into()));
@@ -58,7 +63,10 @@ pub(super) fn sniff(bytes: &[u8]) -> Option<ProbeResult> {
         return Some(hit(FormatId::Parquet, "PAR1 magic at head and foot".into()));
     }
     if bytes.starts_with(b"ARROW1") && bytes.get(6) == Some(&0xFF) {
-        return Some(hit(FormatId::Arrow, "ARROW1 magic + 0xFF continuation".into()));
+        return Some(hit(
+            FormatId::Arrow,
+            "ARROW1 magic + 0xFF continuation".into(),
+        ));
     }
     if let Some(result) = tiff(bytes) {
         return Some(result);
@@ -91,7 +99,9 @@ fn blend(bytes: &[u8]) -> Option<ProbeResult> {
         || bytes.len() < 12
         || !matches!(bytes.get(7), Some(b'_') | Some(b'-'))
         || !matches!(bytes.get(8), Some(b'v') | Some(b'V'))
-        || !bytes.get(9..12).is_some_and(|v| v.iter().all(u8::is_ascii_digit))
+        || !bytes
+            .get(9..12)
+            .is_some_and(|v| v.iter().all(u8::is_ascii_digit))
     {
         return None;
     }

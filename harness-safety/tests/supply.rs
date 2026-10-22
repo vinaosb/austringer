@@ -7,9 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use harness_safety::supply::{
-    DEFAULT_REDACT_PATTERNS, ReleaseAsset, redact_env, verify_sha256,
-};
+use harness_safety::supply::{DEFAULT_REDACT_PATTERNS, ReleaseAsset, redact_env, verify_sha256};
 
 /// The promoted module keeps the pinned-asset shape (url + sha + version).
 #[test]

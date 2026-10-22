@@ -22,7 +22,9 @@ use harness_core::event::{ContentBlock, ContentHash, Event, ProjectionKind};
 use harness_core::media_delivery::DeliveryCapabilities;
 use harness_daemon::attach::HostCommand;
 use harness_daemon::config::DaemonConfig;
-use harness_daemon::projection::{IntakeFactory, ResolvedMediation, compose_intake_factory, utility_route};
+use harness_daemon::projection::{
+    IntakeFactory, ResolvedMediation, compose_intake_factory, utility_route,
+};
 use harness_daemon::protocol::{ServerMsg, SessionEvent};
 use harness_daemon::provider::{ProviderFamily, ProviderSelection};
 use harness_daemon::server::DaemonState;
@@ -181,7 +183,10 @@ async fn submit_with_media_to_a_vision_session_model_delivers_natively_no_projec
 async fn submit_with_media_without_any_projector_appends_the_typed_notice_and_stores_nothing() {
     let root = tempfile::tempdir().expect("root");
     let transport = CassetteTransport::new(vec![]);
-    let state = daemon_state(root.path(), compose_intake_factory(transport.clone(), None, None));
+    let state = daemon_state(
+        root.path(),
+        compose_intake_factory(transport.clone(), None, None),
+    );
     let (events, session_dir) = submit_png(&state, "s-proj-none").await;
 
     let notices = system_notices(&events);
@@ -210,7 +215,7 @@ async fn submit_with_media_without_any_projector_appends_the_typed_notice_and_st
 
 #[tokio::test]
 async fn submit_with_media_falls_back_to_the_capable_utility_route_when_the_session_model_is_text_only()
-{
+ {
     let root = tempfile::tempdir().expect("root");
     let transport = CassetteTransport::new(vec![Cassette::Sse(anthropic_text_cassette(
         "claude-opus-4-6",
@@ -271,7 +276,8 @@ fn utility_route_resolves_the_summarizer_role_from_routing_json() {
 fn utility_route_is_a_typed_error_when_unconfigured_or_off_the_cheap_pool() {
     let catalog = harness_intel::catalog::Catalog::seeded();
     let unconfigured =
-        serde_json::json!({ "provider": "anthropic", "cheap_pool": ["claude-opus-4-6"] }).to_string();
+        serde_json::json!({ "provider": "anthropic", "cheap_pool": ["claude-opus-4-6"] })
+            .to_string();
     assert!(
         utility_route(&unconfigured, &catalog).is_err(),
         "no summarizer route configured"

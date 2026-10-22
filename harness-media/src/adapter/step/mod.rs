@@ -73,7 +73,7 @@ mod verify;
 pub use extract::extract;
 pub use generate::generate;
 pub use script::builder_script;
-pub use spec::{SolidShape, SolidSpec, StepSpec, Transform, MAX_SOLIDS};
+pub use spec::{MAX_SOLIDS, SolidShape, SolidSpec, StepSpec, Transform};
 pub use verify::{profile, read_topology_census, verify};
 
 /// The pure tokenizer engine name (producer disclosure).
@@ -96,11 +96,7 @@ impl ProjectionProvider for StepProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         extract(bytes, context.budgets).map(|extracted| extracted.text_projection)
     }
 }
@@ -113,5 +109,8 @@ impl ProjectionProvider for StepProjector {
 pub fn register_projections(
     registry: &mut crate::projection::ProjectionRegistry,
 ) -> Result<(), crate::projection::ProjectionWiringError> {
-    registry.register(crate::format::FormatId::Step, std::sync::Arc::new(StepProjector))
+    registry.register(
+        crate::format::FormatId::Step,
+        std::sync::Arc::new(StepProjector),
+    )
 }

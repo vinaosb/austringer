@@ -494,7 +494,10 @@ fn data_extract_binding(id: FormatId) -> OpBinding<ExtractHandler> {
         ),
         _ => return pending(id),
     };
-    OpBinding::Pure { engine: engine.to_owned(), handler }
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
 }
 
 #[cfg(feature = "data")]
@@ -510,7 +513,10 @@ fn data_generate_binding(id: FormatId) -> OpBinding<GenerateHandler> {
         ),
         _ => return pending(id),
     };
-    OpBinding::Pure { engine: engine.to_owned(), handler }
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
 }
 
 #[cfg(feature = "data")]
@@ -526,7 +532,10 @@ fn data_verify_binding(id: FormatId) -> OpBinding<VerifyHandler> {
         ),
         _ => return pending(id),
     };
-    OpBinding::Pure { engine: engine.to_owned(), handler }
+    OpBinding::Pure {
+        engine: engine.to_owned(),
+        handler,
+    }
 }
 
 // M21 georaster lane: the pure extract handler bound under the

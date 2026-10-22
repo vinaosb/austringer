@@ -5,10 +5,10 @@
 //! `include_str!` keeps the python reviewable as python while the Rust
 //! side stays a thin, deterministic renderer.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::spec::BlendSpec;
 use super::BUILD_SCHEMA;
+use super::spec::BlendSpec;
 
 const BUILD_TEMPLATE: &str = include_str!("build_script.py");
 const DUMP_TEMPLATE: &str = include_str!("dump_script.py");

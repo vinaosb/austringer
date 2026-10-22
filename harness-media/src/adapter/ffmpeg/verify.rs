@@ -5,9 +5,9 @@
 
 use std::collections::BTreeSet;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 
 use super::census::AvProbe;

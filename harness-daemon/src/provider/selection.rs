@@ -81,7 +81,9 @@ pub enum ProviderSetupError {
         family: &'static str,
     },
     /// The compat family was configured without a base URL.
-    #[error("provider compat requires HARNESS_PROVIDER_BASE_URL (everything up to, but excluding, /chat/completions)")]
+    #[error(
+        "provider compat requires HARNESS_PROVIDER_BASE_URL (everything up to, but excluding, /chat/completions)"
+    )]
     MissingBaseUrl,
     /// The named key variable is not set in the environment.
     #[error(
@@ -176,7 +178,7 @@ impl ProviderSelection {
                     None => {
                         return Err(ProviderSetupError::KeyEnvUnset {
                             env_var: env_var.clone(),
-                        })
+                        });
                     }
                 }
             }

@@ -176,7 +176,12 @@ mod tests {
             parse("/vote-cancel 7"),
             Parsed::VoteCancel { ask_id: Some(7) }
         );
-        assert_eq!(parse("/exit"), Parsed::CliOnly { word: "exit".into() });
+        assert_eq!(
+            parse("/exit"),
+            Parsed::CliOnly {
+                word: "exit".into()
+            }
+        );
         assert_eq!(
             parse("/image pic.png"),
             Parsed::CliOnly {
@@ -217,10 +222,7 @@ mod tests {
     fn todo_23_completion_list_is_pinned_to_the_shared_grammar() {
         let expected: Vec<String> = harness_daemon::grammar::core_command_words();
         assert_eq!(
-            COMMANDS
-                .iter()
-                .map(|s| (*s).to_owned())
-                .collect::<Vec<_>>(),
+            COMMANDS.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
             expected
         );
     }

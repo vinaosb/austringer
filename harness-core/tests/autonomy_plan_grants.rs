@@ -8,12 +8,19 @@ mod common;
 use std::sync::Arc;
 
 use common::autonomykit::{ScriptedIntent, ScriptedRisk};
-use harness_core::autonomy::{AutonomyHandle, AutonomyMatrix, AutonomyMode, AutonomyParts, autonomy_chain};
+use harness_core::autonomy::{
+    AutonomyHandle, AutonomyMatrix, AutonomyMode, AutonomyParts, autonomy_chain,
+};
 use harness_core::inspectors::chain::{ChainOutcome, InspectorChain, InspectorConfig};
-use harness_core::inspectors::store::{Grant, GrantScope, MemoryStore, PermissionStore, RefuseAsks};
+use harness_core::inspectors::store::{
+    Grant, GrantScope, MemoryStore, PermissionStore, RefuseAsks,
+};
 use serde_json::json;
 
-fn chain_over(matrix: AutonomyMatrix, store: Arc<dyn PermissionStore>) -> (AutonomyHandle, InspectorChain) {
+fn chain_over(
+    matrix: AutonomyMatrix,
+    store: Arc<dyn PermissionStore>,
+) -> (AutonomyHandle, InspectorChain) {
     let handle = AutonomyHandle::new(matrix);
     let chain = autonomy_chain(AutonomyParts {
         matrix: handle.shared(),
@@ -40,7 +47,9 @@ async fn entering_plan_mode_suspends_session_grants() {
     // Chat mode (read toggle off) + a session grant on view_window:
     // the grant is authoritative until plan mode suspends it.
     let store: Arc<dyn PermissionStore> = Arc::new(MemoryStore::new());
-    store.record(&session_grant("view_window", "src/lib.rs")).expect("record");
+    store
+        .record(&session_grant("view_window", "src/lib.rs"))
+        .expect("record");
     let (handle, mut chain) = chain_over(AutonomyMatrix::for_mode(AutonomyMode::Chat), store);
 
     let read = common::inspectorkit::call("view_window", json!({"path": "src/lib.rs"}));
@@ -52,7 +61,10 @@ async fn entering_plan_mode_suspends_session_grants() {
     handle.write(|matrix| matrix.enter_plan());
     match chain.evaluate(&read).await.expect("plan suspension") {
         ChainOutcome::Block { feedback } => {
-            assert!(feedback.contains("ask was refused"), "suspension falls to the mode ask: {feedback}");
+            assert!(
+                feedback.contains("ask was refused"),
+                "suspension falls to the mode ask: {feedback}"
+            );
         }
         other => panic!("plan mode must suspend the session grant, got {other:?}"),
     }
@@ -61,7 +73,9 @@ async fn entering_plan_mode_suspends_session_grants() {
 #[tokio::test]
 async fn approval_restores_the_suspended_session_grant() {
     let store: Arc<dyn PermissionStore> = Arc::new(MemoryStore::new());
-    store.record(&session_grant("view_window", "src/lib.rs")).expect("record");
+    store
+        .record(&session_grant("view_window", "src/lib.rs"))
+        .expect("record");
     let (handle, mut chain) = chain_over(AutonomyMatrix::for_mode(AutonomyMode::Chat), store);
 
     handle.write(|matrix| matrix.enter_plan());
@@ -102,8 +116,17 @@ fn matrix_honors_grant_encodes_the_suspension() {
     assert!(matrix.honors_grant(GrantScope::Session));
     assert!(matrix.honors_grant(GrantScope::Forever));
     matrix.enter_plan();
-    assert!(!matrix.honors_grant(GrantScope::Session), "session grants suspend in plan mode");
-    assert!(matrix.honors_grant(GrantScope::Forever), "forever grants never suspend");
+    assert!(
+        !matrix.honors_grant(GrantScope::Session),
+        "session grants suspend in plan mode"
+    );
+    assert!(
+        matrix.honors_grant(GrantScope::Forever),
+        "forever grants never suspend"
+    );
     matrix.set_mode(AutonomyMode::Approve);
-    assert!(matrix.honors_grant(GrantScope::Session), "approval restores session grants");
+    assert!(
+        matrix.honors_grant(GrantScope::Session),
+        "approval restores session grants"
+    );
 }

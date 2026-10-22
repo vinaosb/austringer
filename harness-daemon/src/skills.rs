@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use harness_skills::consent::ConsentGate;
-use harness_skills::loader::{InvokedSkill, LockMode, SkillLoader, SkillIndex};
+use harness_skills::loader::{InvokedSkill, LockMode, SkillIndex, SkillLoader};
 use harness_skills::routing::RouteQuery;
 use serde_json::{Value, json};
 
@@ -109,15 +109,14 @@ impl SkillsRuntime {
                 SkillIndex::empty()
             }
         };
-        let gate: Arc<dyn PackGate> = match crate::automations::FilePackGate::open(
-            &data_dir.join("pack-tiers.json"),
-        ) {
-            Ok(gate) => Arc::new(gate),
-            Err(e) => {
-                eprintln!("harness-daemon: pack tiers unreadable; every pack draft: {e}");
-                Arc::new(FixedPackGate::new(Vec::new()))
-            }
-        };
+        let gate: Arc<dyn PackGate> =
+            match crate::automations::FilePackGate::open(&data_dir.join("pack-tiers.json")) {
+                Ok(gate) => Arc::new(gate),
+                Err(e) => {
+                    eprintln!("harness-daemon: pack tiers unreadable; every pack draft: {e}");
+                    Arc::new(FixedPackGate::new(Vec::new()))
+                }
+            };
         let consent = std::fs::read(data_dir.join("skill-consent.json"))
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -248,10 +247,8 @@ impl SkillsRuntime {
         servers
             .iter()
             .map(|(server, entry)| {
-                let disabled = entry
-                    .get("trusted_autostart")
-                    .and_then(Value::as_bool)
-                    != Some(true);
+                let disabled =
+                    entry.get("trusted_autostart").and_then(Value::as_bool) != Some(true);
                 json!({ "server": server, "disabled": disabled })
             })
             .collect()

@@ -5,12 +5,12 @@
 //! positions, normals, indices per primitive, meshes in spec order.
 
 use gltf::json::{
+    Index,
     accessor::{GenericComponentType, Type as AccessorType},
     validation::{Checked, USize64},
-    Index,
 };
 
-use crate::adapter::gltf_spec::{indices_byte_width, PrimitiveSpec};
+use crate::adapter::gltf_spec::{PrimitiveSpec, indices_byte_width};
 use crate::error::MediaError;
 
 /// Buffer layout state consumed by [`gltf_write`]'s Root assembly.
@@ -24,7 +24,11 @@ pub(super) struct Layout {
 }
 
 impl Layout {
-    fn push(&mut self, bytes: &[u8], target: Option<Checked<gltf::json::buffer::Target>>) -> Index<gltf::json::buffer::View> {
+    fn push(
+        &mut self,
+        bytes: &[u8],
+        target: Option<Checked<gltf::json::buffer::Target>>,
+    ) -> Index<gltf::json::buffer::View> {
         while !self.bin.len().is_multiple_of(4) {
             self.bin.push(0);
         }
@@ -81,7 +85,11 @@ pub(super) fn primitive_json(
     layout: &mut Layout,
     materials: &std::collections::BTreeMap<&str, Index<gltf::json::Material>>,
 ) -> Result<gltf::json::mesh::Primitive, MediaError> {
-    let float = || Checked::Valid(GenericComponentType(gltf::json::accessor::ComponentType::F32));
+    let float = || {
+        Checked::Valid(GenericComponentType(
+            gltf::json::accessor::ComponentType::F32,
+        ))
+    };
     let mut bytes = Vec::with_capacity(primitive.positions.len() * 12);
     for position in &primitive.positions {
         for axis in position {
@@ -116,7 +124,10 @@ pub(super) fn primitive_json(
             Some(Checked::Valid(gltf::json::buffer::Target::ArrayBuffer)),
             &bytes,
         );
-        attributes.push((Checked::Valid(gltf::json::mesh::Semantic::Normals), accessor));
+        attributes.push((
+            Checked::Valid(gltf::json::mesh::Semantic::Normals),
+            accessor,
+        ));
     }
     let indices = primitive.indices.as_ref().map(|values| {
         let width = indices_byte_width(values);
@@ -136,7 +147,9 @@ pub(super) fn primitive_json(
             })),
             Checked::Valid(AccessorType::Scalar),
             None,
-            Some(Checked::Valid(gltf::json::buffer::Target::ElementArrayBuffer)),
+            Some(Checked::Valid(
+                gltf::json::buffer::Target::ElementArrayBuffer,
+            )),
             &bytes,
         )
     });

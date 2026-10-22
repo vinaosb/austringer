@@ -6,7 +6,7 @@
 use std::io::Cursor;
 use std::time::Instant;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tiff::decoder::Decoder;
 use tiff::tags::Tag;
 
@@ -181,7 +181,9 @@ impl GeoTags {
         let scale = decoder.get_tag_f64_vec(Tag::Unknown(TAG_PIXEL_SCALE)).ok();
         let tiepoint = decoder.get_tag_f64_vec(Tag::Unknown(TAG_TIEPOINT)).ok();
         let keys = decoder.get_tag_u16_vec(Tag::Unknown(TAG_GEOKEYS)).ok();
-        let ascii = decoder.get_tag_ascii_string(Tag::Unknown(TAG_GEO_ASCII)).ok();
+        let ascii = decoder
+            .get_tag_ascii_string(Tag::Unknown(TAG_GEO_ASCII))
+            .ok();
         (scale.is_some() || tiepoint.is_some() || keys.is_some()).then_some(Self {
             scale,
             tiepoint,
@@ -213,7 +215,14 @@ impl GeoTags {
             Some(code) => (Some(u32::from(code)), "geokey"),
             None => match key(KEY_GEOGRAPHIC_TYPE).filter(|value| *value != KEY_UNDEFINED) {
                 Some(code) => (Some(u32::from(code)), "geokey"),
-                None => (None, if key(KEY_CITATION).is_some() { "citation" } else { "unknown" }),
+                None => (
+                    None,
+                    if key(KEY_CITATION).is_some() {
+                        "citation"
+                    } else {
+                        "unknown"
+                    },
+                ),
             },
         };
         let citation = key(KEY_CITATION).and_then(|count| {
@@ -272,7 +281,11 @@ fn projection(tree: &Value) -> String {
             tree["geo"]["bounds"]["maxx"],
             tree["geo"]["bounds"]["maxy"],
             tree["geo"]["epsg"],
-            if tree["layout"]["tiled"].as_bool().unwrap_or(false) { "tiled" } else { "stripped" },
+            if tree["layout"]["tiled"].as_bool().unwrap_or(false) {
+                "tiled"
+            } else {
+                "stripped"
+            },
             tree["layout"]["overview_count"],
         )
     };

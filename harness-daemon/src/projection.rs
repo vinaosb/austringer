@@ -135,11 +135,7 @@ pub fn compose_intake_factory(
         let candidate = |mediation: &ResolvedMediation| {
             mediation
                 .resolved
-                .compose_projection_factory(
-                    Arc::clone(&transport),
-                    mediation.caps,
-                    session_dir,
-                )
+                .compose_projection_factory(Arc::clone(&transport), mediation.caps, session_dir)
                 .ok()
                 .map(|factory| MediatedProjection {
                     model_id: mediation.model_id.clone(),

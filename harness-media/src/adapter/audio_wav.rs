@@ -45,7 +45,12 @@ pub fn encode_wav(
         WavDepth::Pcm16 | WavDepth::Pcm32 => (depth.bits_per_sample(), SampleFormat::Int),
         WavDepth::F32 => (depth.bits_per_sample(), SampleFormat::Float),
     };
-    let spec = WavSpec { channels, sample_rate, bits_per_sample: bits, sample_format: format };
+    let spec = WavSpec {
+        channels,
+        sample_rate,
+        bits_per_sample: bits,
+        sample_format: format,
+    };
     let mut cursor = Cursor::new(Vec::new());
     {
         let mut writer = WavWriter::new(&mut cursor, spec).map_err(|_| MediaError::InvalidSpec)?;
@@ -63,7 +68,9 @@ pub fn encode_wav(
                         .map_err(|_| MediaError::InvalidSpec)?;
                 }
                 WavDepth::F32 => {
-                    writer.write_sample(*sample).map_err(|_| MediaError::InvalidSpec)?;
+                    writer
+                        .write_sample(*sample)
+                        .map_err(|_| MediaError::InvalidSpec)?;
                 }
             }
         }

@@ -58,7 +58,7 @@
 //!   typed ExtractTooLarge refusal (honest), never silent truncation.
 
 use harness_core::event::ProjectionKind;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::MediaError;
 use crate::generate::GenerationSpec;
@@ -100,7 +100,11 @@ pub fn spec_tree(spec: &GenerationSpec) -> Result<Value, MediaError> {
         .pages
         .iter()
         .map(|page| {
-            let joined: Vec<&str> = page.blocks.iter().map(|block| block.text.as_str()).collect();
+            let joined: Vec<&str> = page
+                .blocks
+                .iter()
+                .map(|block| block.text.as_str())
+                .collect();
             json!({"text": normalize_ws(&joined.join("\n"))})
         })
         .collect();

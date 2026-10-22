@@ -27,7 +27,10 @@ fn write_skill(dir: &Path, name: &str, trigger: &str) {
         "---\nname: {name}\ndescription: \"Fixture {name} pack.\"\nversion: \"1.0.0\"\ntriggers:\n  - {trigger}\n---\n\nfixture skill body marker {name}-body\n"
     );
     write_file(
-        &dir.join(".harness").join("skills").join(name).join("SKILL.md"),
+        &dir.join(".harness")
+            .join("skills")
+            .join(name)
+            .join("SKILL.md"),
         &skill,
     );
 }
@@ -41,9 +44,8 @@ async fn spawn_in(dir: &Path) -> (String, String, Arc<DaemonState>) {
     };
     let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
         Arc::new(|| Box::new(CompleteOnlyInference));
-    let state = Arc::new(
-        DaemonState::new(config, factory).unwrap_or_else(|e| panic!("state: {e}")),
-    );
+    let state =
+        Arc::new(DaemonState::new(config, factory).unwrap_or_else(|e| panic!("state: {e}")));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -194,8 +196,7 @@ async fn quarantined_trigger_in_second_session_refuses_like_skill_path() {
     let (base, token, _state) = spawn_in(dir.path()).await;
 
     // The /skill path refusal (session 1)…
-    let (skill_status, skill_text) =
-        post_submit(&base, &token, "first", "/skill draft-pack").await;
+    let (skill_status, skill_text) = post_submit(&base, &token, "first", "/skill draft-pack").await;
     assert_eq!(skill_status, 400);
 
     // …and the TRIGGER path refusal in a SECOND fixture session: the
@@ -312,7 +313,9 @@ async fn mcp_pack_install_lands_disabled_declaration_and_renders_disabled() {
     // pack-tiers.json).
     let packs = body["packs"].as_array().expect("packs");
     assert!(
-        packs.iter().any(|p| p["name"] == "mcp-pack" && p["tier"] == "draft"),
+        packs
+            .iter()
+            .any(|p| p["name"] == "mcp-pack" && p["tier"] == "draft"),
         "installed pack listed with its tier: {body}"
     );
 }

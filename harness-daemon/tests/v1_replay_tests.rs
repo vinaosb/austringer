@@ -146,9 +146,7 @@ fn expect_next(observed: &str, expected: &mut std::collections::VecDeque<String>
 async fn ws_read(socket: &mut WsSocket) -> Option<String> {
     let deadline = Duration::from_secs(5);
     match tokio::time::timeout(deadline, socket.next()).await {
-        Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text)))) => {
-            Some(text.to_string())
-        }
+        Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text)))) => Some(text.to_string()),
         _ => None,
     }
 }
@@ -181,7 +179,9 @@ async fn v1_ws_corpus_replays_byte_identically_against_current_daemon() {
         .await
         .expect("spawn");
     let url = format!("ws://{}/s/v1-ws/attach?token={}", daemon.base, daemon.token);
-    let (mut socket, _) = tokio_tungstenite::connect_async(&url).await.expect("ws connect");
+    let (mut socket, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("ws connect");
 
     // Cumulative observation: a c2s barrier only waits when the marker
     // was not already seen (earlier s2c records may have satisfied it).
@@ -226,7 +226,10 @@ async fn v1_ws_corpus_replays_byte_identically_against_current_daemon() {
     if let Some(extra) = ws_read(&mut socket).await {
         panic!("unexpected extra frame after transcript: {extra}");
     }
-    assert!(expected.is_empty(), "transcript frames never sent: {expected:?}");
+    assert!(
+        expected.is_empty(),
+        "transcript frames never sent: {expected:?}"
+    );
 }
 
 #[tokio::test]
@@ -291,7 +294,10 @@ async fn v1_ipc_corpus_replays_byte_identically_against_current_daemon() {
                     }
                 }
                 let raw = record.raw.as_deref().unwrap_or_default();
-                write_half.write_all(raw.as_bytes()).await.expect("ipc write");
+                write_half
+                    .write_all(raw.as_bytes())
+                    .await
+                    .expect("ipc write");
                 write_half.write_all(b"\n").await.expect("ipc newline");
                 write_half.flush().await.expect("ipc flush");
             }
@@ -309,7 +315,10 @@ async fn v1_ipc_corpus_replays_byte_identically_against_current_daemon() {
         }
     }
     server.abort();
-    assert!(expected.is_empty(), "transcript frames never sent: {expected:?}");
+    assert!(
+        expected.is_empty(),
+        "transcript frames never sent: {expected:?}"
+    );
 }
 
 /// The v1 image-block recorded frame stays byte-stable through the

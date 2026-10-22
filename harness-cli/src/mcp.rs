@@ -42,9 +42,7 @@ pub async fn run(command: &McpCommand) -> Result<i32, CliError> {
 /// Scan roots: the `--dir` overrides, or the working directory.
 fn scan_roots(dirs: &[PathBuf]) -> Vec<PathBuf> {
     if dirs.is_empty() {
-        vec![
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-        ]
+        vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))]
     } else {
         dirs.to_vec()
     }

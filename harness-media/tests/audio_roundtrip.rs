@@ -61,10 +61,13 @@ fn synth_wav_probes_and_round_trips_the_independent_tree() {
     // And: the same verdict through the executor dispatch, with the synth
     // producer disclosure.
     let produced = harness_media::executor::registry()
-        .dispatch(FormatId::Wav, OpRequest::Verify {
-            expected: &expected,
-            bytes: &bytes,
-        })
+        .dispatch(
+            FormatId::Wav,
+            OpRequest::Verify {
+                expected: &expected,
+                bytes: &bytes,
+            },
+        )
         .expect("verify dispatches");
     assert_eq!(produced.producer().engine, audio::ENGINE);
     assert!(
@@ -118,10 +121,22 @@ fn invalid_synth_specs_fail_the_typed_invalid_spec() {
     // Given: specs outside the adapter contract (no tones, zero rate,
     // out-of-range gain, over-length program).
     let cases: [GenerationSpec; 4] = [
-        GenerationSpec { format: FormatId::Wav, params: json!({"tones": [], "sample_rate": 16_000, "channels": 1}) },
-        GenerationSpec { format: FormatId::Wav, params: json!({"tones": [{"freq": 440.0, "start": 0.0, "dur": 0.1, "gain": 0.5, "wave": "sine"}], "sample_rate": 0, "channels": 1}) },
-        GenerationSpec { format: FormatId::Wav, params: json!({"tones": [{"freq": 440.0, "start": 0.0, "dur": 0.1, "gain": 2.0, "wave": "sine"}], "sample_rate": 16_000, "channels": 1}) },
-        GenerationSpec { format: FormatId::Wav, params: json!({"tones": [{"freq": 440.0, "start": 0.0, "dur": 3_600.0, "gain": 0.5, "wave": "sine"}], "sample_rate": 16_000, "channels": 1}) },
+        GenerationSpec {
+            format: FormatId::Wav,
+            params: json!({"tones": [], "sample_rate": 16_000, "channels": 1}),
+        },
+        GenerationSpec {
+            format: FormatId::Wav,
+            params: json!({"tones": [{"freq": 440.0, "start": 0.0, "dur": 0.1, "gain": 0.5, "wave": "sine"}], "sample_rate": 0, "channels": 1}),
+        },
+        GenerationSpec {
+            format: FormatId::Wav,
+            params: json!({"tones": [{"freq": 440.0, "start": 0.0, "dur": 0.1, "gain": 2.0, "wave": "sine"}], "sample_rate": 16_000, "channels": 1}),
+        },
+        GenerationSpec {
+            format: FormatId::Wav,
+            params: json!({"tones": [{"freq": 440.0, "start": 0.0, "dur": 3_600.0, "gain": 0.5, "wave": "sine"}], "sample_rate": 16_000, "channels": 1}),
+        },
     ];
     for spec in cases {
         // When: generated. Then: the typed InvalidSpec, never a panic,
@@ -159,19 +174,32 @@ fn wav_pcm16_transcode_is_bit_exact_and_byte_deterministic() {
         .map(|sample| (sample.clamp(-1.0, 1.0) * 32_768.0).round() as i16 as f32 / 32_768.0)
         .collect();
     // When: written as pcm16 wav and read back via hound.
-    let wav = audio::encode_wav(&synthesized.samples, synthesized.channels as u16, synthesized.sample_rate, WavDepth::Pcm16)
-        .expect("wav encode");
+    let wav = audio::encode_wav(
+        &synthesized.samples,
+        synthesized.channels as u16,
+        synthesized.sample_rate,
+        WavDepth::Pcm16,
+    )
+    .expect("wav encode");
     let decoded = audio::decode_wav(&wav).expect("wav decode");
     // Then: EXACT sample equality with the quantization (tolerance is
     // owed only across bit-depth conversion, and this is lossless within
     // the depth).
-    assert_eq!(decoded.samples, quantized, "pcm16 wav round trip is bit-exact");
+    assert_eq!(
+        decoded.samples, quantized,
+        "pcm16 wav round trip is bit-exact"
+    );
     assert_eq!(decoded.sample_rate, 16_000);
     assert_eq!(decoded.channels, 2);
     // And: re-encoding the decoded samples reproduces the same bytes
     // (byte-determinism of the writer).
-    let reencoded = audio::encode_wav(&decoded.samples, decoded.channels as u16, decoded.sample_rate, WavDepth::Pcm16)
-        .expect("wav re-encode");
+    let reencoded = audio::encode_wav(
+        &decoded.samples,
+        decoded.channels as u16,
+        decoded.sample_rate,
+        WavDepth::Pcm16,
+    )
+    .expect("wav re-encode");
     assert_eq!(wav, reencoded, "repeat encode is byte-identical");
 }
 
@@ -188,8 +216,13 @@ fn wav_f32_transcode_is_bit_exact() {
         }),
     };
     let synthesized = audio::synth(&spec).expect("synth");
-    let wav = audio::encode_wav(&synthesized.samples, synthesized.channels as u16, synthesized.sample_rate, WavDepth::F32)
-        .expect("f32 wav encode");
+    let wav = audio::encode_wav(
+        &synthesized.samples,
+        synthesized.channels as u16,
+        synthesized.sample_rate,
+        WavDepth::F32,
+    )
+    .expect("f32 wav encode");
     let decoded = audio::decode_wav(&wav).expect("f32 wav decode");
     // Then: exact f32 equality - the float lane never quantizes.
     assert_eq!(decoded.samples, synthesized.samples);
@@ -213,8 +246,12 @@ fn flac_encode_round_trips_losslessly_through_symphonia() {
         .iter()
         .map(|sample| (sample.clamp(-1.0, 1.0) * 32_768.0).round() as i16 as f32 / 32_768.0)
         .collect();
-    let flac = audio::encode_flac(&synthesized.samples, synthesized.channels as u16, synthesized.sample_rate)
-        .expect("flac encode");
+    let flac = audio::encode_flac(
+        &synthesized.samples,
+        synthesized.channels as u16,
+        synthesized.sample_rate,
+    )
+    .expect("flac encode");
     // When: decoded through the symphonia decode lane.
     let decoded = audio::decode(&flac, harness_media::extract::ExtractBudgets::default())
         .expect("flac decode");
@@ -227,9 +264,7 @@ fn flac_encode_round_trips_losslessly_through_symphonia() {
     // And: the same generated spec, through the executor's generate
     // dispatch, produces the identical bytes (determinism + disclosure).
     let produced = harness_media::executor::registry()
-        .dispatch(FormatId::Flac, OpRequest::Generate {
-            spec: &spec,
-        })
+        .dispatch(FormatId::Flac, OpRequest::Generate { spec: &spec })
         .expect("flac generate dispatches");
     assert_eq!(produced.producer().engine, audio::SYNTH_ENGINE);
     assert!(
@@ -247,7 +282,11 @@ fn lossy_encode_is_typed_redirect_to_the_m17_ffmpeg_lane() {
         let error = audio::lossy_encode_redirect(format);
         // Then: typed UnsupportedOperation naming ffmpeg and M17.
         match error {
-            MediaError::UnsupportedOperation { format: refused, op, reason } => {
+            MediaError::UnsupportedOperation {
+                format: refused,
+                op,
+                reason,
+            } => {
                 assert_eq!(refused, format);
                 assert_eq!(op, harness_media::descriptor::Operation::Generate);
                 assert!(
@@ -266,9 +305,7 @@ fn lossy_encode_is_typed_redirect_to_the_m17_ffmpeg_lane() {
             params: json!({}),
         };
         let error = harness_media::executor::registry()
-            .dispatch(format, OpRequest::Generate {
-                spec: &spec,
-            })
+            .dispatch(format, OpRequest::Generate { spec: &spec })
             .expect_err("lossy generate must refuse");
         match error {
             MediaError::UnsupportedOperation { reason, .. } => assert!(

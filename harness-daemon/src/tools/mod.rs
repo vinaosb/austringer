@@ -115,14 +115,19 @@ impl CoreExecutors {
             .bind_executor("lsp_query", Arc::new(self.lsp.clone()))
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
-            .register(Arc::new(crate::search::SearchSessionsTool::new(session_dir)))
+            .register(Arc::new(crate::search::SearchSessionsTool::new(
+                session_dir,
+            )))
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
             .register(Arc::new(self.run_tests.clone()))
             .map_err(|error| io::Error::other(error.to_string()))?;
         if let Some(services) = self.task.get() {
             registry
-                .register(Arc::new(crate::task::TaskTool::new(session_dir, Arc::clone(services))))
+                .register(Arc::new(crate::task::TaskTool::new(
+                    session_dir,
+                    Arc::clone(services),
+                )))
                 .map_err(|error| io::Error::other(error.to_string()))?;
         }
         Ok(registry)
@@ -135,8 +140,8 @@ impl CoreExecutors {
     #[must_use]
     pub fn executor_factory(self: &Arc<Self>) -> ExecutorFactory {
         let executors = Arc::clone(self);
-        Arc::new(move |session_dir, _event_sink| {
-            match executors.open_registry(session_dir) {
+        Arc::new(
+            move |session_dir, _event_sink| match executors.open_registry(session_dir) {
                 Ok(registry) => Box::new(RegistryToolExecutor::open(registry)),
                 Err(error) => {
                     eprintln!(
@@ -145,8 +150,8 @@ impl CoreExecutors {
                     );
                     Box::new(harness_core::agent_loop::stages::defaults::NoToolExecutor)
                 }
-            }
-        })
+            },
+        )
     }
 }
 

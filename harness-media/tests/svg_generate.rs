@@ -9,7 +9,10 @@ use harness_media::generate::GenerationSpec;
 use serde_json::json;
 
 fn spec(params: serde_json::Value) -> GenerationSpec {
-    GenerationSpec { format: FormatId::Svg, params }
+    GenerationSpec {
+        format: FormatId::Svg,
+        params,
+    }
 }
 
 #[test]
@@ -85,9 +88,15 @@ fn text_and_attributes_are_escaped() {
     assert!(text.contains("id=\"x&quot;y\""), "attr escaping: {text}");
     assert!(text.contains("class=\"a&amp;b\""), "attr escaping: {text}");
     // ...text content escapes angle brackets and ampersands...
-    assert!(text.contains("1 &lt; 2 &amp; 3 &gt; 2"), "text escaping: {text}");
+    assert!(
+        text.contains("1 &lt; 2 &amp; 3 &gt; 2"),
+        "text escaping: {text}"
+    );
     // ...title content is escaped too...
-    assert!(text.contains("<title>a&lt;b &amp; c&gt;d</title>"), "title escaping: {text}");
+    assert!(
+        text.contains("<title>a&lt;b &amp; c&gt;d</title>"),
+        "title escaping: {text}"
+    );
     // ...and the document round-trips: extraction unescapes back.
     let extracted = svg::extract(&bytes, Default::default()).expect("extract");
     assert_eq!(extracted.tree["title"], json!("a<b & c>d"));
@@ -117,14 +126,29 @@ fn every_shape_kind_emits_its_svg_1_1_element() {
     let text = std::str::from_utf8(&bytes).expect("utf-8");
     // Then: each SVG 1.1 basic-shape element appears with its geometry
     // (path carries the d attribute verbatim; text carries content).
-    assert!(text.contains("<rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/>"), "{text}");
-    assert!(text.contains("<circle cx=\"5\" cy=\"5\" r=\"1\"/>"), "{text}");
-    assert!(text.contains("<ellipse cx=\"8\" cy=\"8\" rx=\"2\" ry=\"1\"/>"), "{text}");
-    assert!(text.contains("<line x1=\"10\" y1=\"10\" x2=\"12\" y2=\"12\"/>"), "{text}");
+    assert!(
+        text.contains("<rect x=\"1\" y=\"1\" width=\"2\" height=\"2\"/>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<circle cx=\"5\" cy=\"5\" r=\"1\"/>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<ellipse cx=\"8\" cy=\"8\" rx=\"2\" ry=\"1\"/>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<line x1=\"10\" y1=\"10\" x2=\"12\" y2=\"12\"/>"),
+        "{text}"
+    );
     assert!(text.contains("<polyline points=\"1 2 3 4\"/>"), "{text}");
     assert!(text.contains("<polygon points=\"5 6 7 8 9 6\"/>"), "{text}");
     assert!(text.contains("<path d=\"M 1 1 L 2 2 Z\"/>"), "{text}");
-    assert!(text.contains("<text x=\"3\" y=\"3\" font-family=\"sans-serif\">hi</text>"), "{text}");
+    assert!(
+        text.contains("<text x=\"3\" y=\"3\" font-family=\"sans-serif\">hi</text>"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -183,21 +207,20 @@ fn default_text_font_stack_is_common() {
 fn invalid_specs_fail_typed_invalid_spec() {
     // Given: specs violating the contract in distinct ways.
     for params in [
-        json!({"shapes": [{"type": "hexagon", "x": 0.0}]}),          // unknown kind
+        json!({"shapes": [{"type": "hexagon", "x": 0.0}]}), // unknown kind
         json!({"shapes": [{"type": "rect", "x": 0.0, "y": 0.0, "width": -1.0, "height": 1.0}]}), // negative
-        json!({"shapes": [{"type": "circle", "cx": 0.0, "cy": 0.0, "r": -2.0}]}),                // negative
-        json!({"shapes": [{"type": "polyline", "points": [1.0, 2.0, 3.0]}]}),                    // odd points
-        json!({"shapes": [{"type": "polygon", "points": [1.0, 2.0]}]}),                          // < 3 points
-        json!({"shapes": [{"type": "path", "d": ""}]}),                                          // empty d
-        json!({"viewBox": [0.0, 0.0, 10.0]}),                                                     // 3 numbers
+        json!({"shapes": [{"type": "circle", "cx": 0.0, "cy": 0.0, "r": -2.0}]}), // negative
+        json!({"shapes": [{"type": "polyline", "points": [1.0, 2.0, 3.0]}]}),     // odd points
+        json!({"shapes": [{"type": "polygon", "points": [1.0, 2.0]}]}),           // < 3 points
+        json!({"shapes": [{"type": "path", "d": ""}]}),                           // empty d
+        json!({"viewBox": [0.0, 0.0, 10.0]}),                                     // 3 numbers
         json!({"shapes": [{"type": "text", "x": 0.0, "y": 0.0, "content": "x", "opacity": 2.0}]}), // opacity range
         json!({"shapes": [{"type": "rect", "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0, "id": "dup"},
                           {"type": "rect", "x": 2.0, "y": 2.0, "width": 1.0, "height": 1.0, "id": "dup"}]}), // dup id
-        json!({"width": -5.0, "shapes": []}),                                                     // negative width
+        json!({"width": -5.0, "shapes": []}), // negative width
     ] {
         // When: generated.
-        let error = svg::generate(&spec(params))
-            .expect_err("contract violation must refuse typed");
+        let error = svg::generate(&spec(params)).expect_err("contract violation must refuse typed");
         // Then: InvalidSpec - never a half-written document.
         assert!(matches!(error, MediaError::InvalidSpec), "got {error:?}");
     }
@@ -207,9 +230,10 @@ fn invalid_specs_fail_typed_invalid_spec() {
 fn non_finite_numbers_fail_typed_invalid_spec() {
     // Given: NaN smuggled through JSON (serde_json maps it to null, which
     // must fail required-field validation, not coerce).
-    let params: serde_json::Value =
-        serde_json::from_str(r#"{"shapes": [{"type": "circle", "cx": null, "cy": 0.0, "r": 1.0}]}"#)
-            .expect("json parses");
+    let params: serde_json::Value = serde_json::from_str(
+        r#"{"shapes": [{"type": "circle", "cx": null, "cy": 0.0, "r": 1.0}]}"#,
+    )
+    .expect("json parses");
     let error = svg::generate(&spec(params)).expect_err("null geometry must refuse");
     assert!(matches!(error, MediaError::InvalidSpec), "got {error:?}");
 }
@@ -217,7 +241,10 @@ fn non_finite_numbers_fail_typed_invalid_spec() {
 #[test]
 fn wrong_format_spec_fails_typed_invalid_spec() {
     // Given: a well-formed svg spec addressed to another format.
-    let mismatch = GenerationSpec { format: FormatId::Png, params: json!({"shapes": []}) };
+    let mismatch = GenerationSpec {
+        format: FormatId::Png,
+        params: json!({"shapes": []}),
+    };
     // When: generated through the svg adapter.
     let error = svg::generate(&mismatch).expect_err("format mismatch must refuse");
     // Then: typed InvalidSpec (the adapter owns one format).

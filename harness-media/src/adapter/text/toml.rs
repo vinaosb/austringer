@@ -23,7 +23,7 @@ use harness_core::event::ProjectionKind;
 use serde_json::{Map, Number, Value};
 
 use crate::adapter::text::{tolerances, truncate_chars};
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
@@ -59,10 +59,7 @@ impl TomlSpec {
             return Err(MediaError::InvalidSpec);
         }
         let object = spec.params.as_object().ok_or(MediaError::InvalidSpec)?;
-        let value = object
-            .get("value")
-            .ok_or(MediaError::InvalidSpec)?
-            .clone();
+        let value = object.get("value").ok_or(MediaError::InvalidSpec)?.clone();
         if !value.is_object() || !representable(&value) {
             return Err(MediaError::InvalidSpec);
         }
@@ -124,7 +121,11 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
     let tree = to_json(&toml::Value::Table(table));
     let head = serde_json::to_string(&tree).unwrap_or_default();
     let text_projection = truncate_chars(head, TEXT_PROJECTION_MAX_CHARS);
-    Ok(Extracted { tree, text_projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree,
+        text_projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 fn to_json(value: &toml::Value) -> Value {
@@ -136,9 +137,7 @@ fn to_json(value: &toml::Value) -> Value {
             .unwrap_or(Value::Null),
         toml::Value::Boolean(flag) => Value::Bool(*flag),
         toml::Value::Datetime(datetime) => Value::String(datetime.to_string()),
-        toml::Value::Array(items) => {
-            Value::Array(items.iter().map(to_json).collect())
-        }
+        toml::Value::Array(items) => Value::Array(items.iter().map(to_json).collect()),
         toml::Value::Table(table) => Value::Object(
             table
                 .iter()
@@ -192,11 +191,7 @@ impl ProjectionProvider for TomlProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         extract(bytes, context.budgets).map(|extracted| extracted.text_projection)
     }
 }

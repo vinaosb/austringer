@@ -25,9 +25,10 @@ async fn cassette_configured_daemon_answers_submit_over_ws() {
         base_url: None,
         inference_timeout: Duration::from_secs(30),
     };
-    let transport = CassetteTransport::new(vec![Cassette::Sse(
-        anthropic_text_cassette("claude-m32-cassette", ANSWER),
-    )]);
+    let transport = CassetteTransport::new(vec![Cassette::Sse(anthropic_text_cassette(
+        "claude-m32-cassette",
+        ANSWER,
+    ))]);
     let resolved = match selection.resolve_with(|_| Some("m32-fake-key".to_owned())) {
         Ok(resolved) => resolved,
         Err(failure) => panic!("resolve failed: {failure}"),
@@ -64,8 +65,7 @@ async fn cassette_configured_daemon_answers_submit_over_ws() {
     let mut outcome = String::new();
     let deadline = Duration::from_secs(30);
     while tokio::time::Instant::now().elapsed() < deadline {
-        let Ok(Some(Ok(msg))) =
-            tokio::time::timeout(Duration::from_secs(10), socket.next()).await
+        let Ok(Some(Ok(msg))) = tokio::time::timeout(Duration::from_secs(10), socket.next()).await
         else {
             break;
         };
@@ -81,7 +81,10 @@ async fn cassette_configured_daemon_answers_submit_over_ws() {
             break;
         }
     }
-    assert!(saw_answer, "the RESPONSE EVENT must carry the cassette text");
+    assert!(
+        saw_answer,
+        "the RESPONSE EVENT must carry the cassette text"
+    );
     assert!(
         outcome.contains("turn_complete"),
         "the turn must complete, not fail: {outcome}"

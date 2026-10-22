@@ -10,9 +10,9 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use super::script::{dump_script, DUMP_BEGIN, DUMP_END};
+use super::script::{DUMP_BEGIN, DUMP_END, dump_script};
 use super::{DUMP_SCHEMA, TOOL};
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::executor::{OpOutput, Produced, ProducerInfo};
 use crate::tool::{ToolCall, ToolExecutor};
@@ -40,7 +40,11 @@ pub fn profile() -> Tolerances {
 /// The routed tool/parse failures, or
 /// [`MediaError::DiffTooLarge`] when the diff caps trip. A non-empty
 /// diff is the [`RoundTripVerdict::Fail`] verdict, never an error.
-pub fn verify(tools: &ToolExecutor, expected: &Value, bytes: &[u8]) -> Result<Produced, MediaError> {
+pub fn verify(
+    tools: &ToolExecutor,
+    expected: &Value,
+    bytes: &[u8],
+) -> Result<Produced, MediaError> {
     let (census, producer) = dump_run(tools, bytes)?;
     let diff = structural_diff(expected, &census, &profile())?;
     let verdict = if diff.is_empty() {

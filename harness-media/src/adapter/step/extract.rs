@@ -4,10 +4,10 @@
 //! the tool absent (the plan's "probe still works pure" posture,
 //! extended to the whole census surface).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::tokenizer;
 use super::EXTRACT_SCHEMA;
+use super::tokenizer;
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted, TEXT_PROJECTION_MAX_CHARS};
 
@@ -138,5 +138,8 @@ fn unit_note(census: &tokenizer::Census) -> String {
     if census.units.is_empty() {
         return String::new();
     }
-    format!(", units: {}", census.units.iter().cloned().collect::<Vec<_>>().join(", "))
+    format!(
+        ", units: {}",
+        census.units.iter().cloned().collect::<Vec<_>>().join(", ")
+    )
 }

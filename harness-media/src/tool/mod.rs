@@ -53,7 +53,7 @@ pub(crate) mod spawn;
 mod types;
 
 pub use executor::{ToolCall, ToolConfig, ToolExecutor, ToolOverride};
-pub use manifest::{OP_VERSION_CHECK, ExternalToolSpec, ToolOpTemplate, manifests};
+pub use manifest::{ExternalToolSpec, OP_VERSION_CHECK, ToolOpTemplate, manifests};
 pub use types::{ToolAvailability, ToolError, ToolRun};
 
 // Shared error vocabulary re-exported so adapter consumers import the

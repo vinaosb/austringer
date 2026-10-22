@@ -34,7 +34,10 @@ pub struct HtmlTree {
 /// tokenizer.
 #[must_use]
 pub fn spec_tree(spec: &HtmlSpec) -> HtmlTree {
-    let mut tree = HtmlTree { doctype: true, ..HtmlTree::default() };
+    let mut tree = HtmlTree {
+        doctype: true,
+        ..HtmlTree::default()
+    };
     increment(&mut tree.census, "html");
     increment(&mut tree.census, "head");
     increment(&mut tree.census, "meta");

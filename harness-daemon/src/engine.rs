@@ -146,8 +146,13 @@ impl SessionHost {
             while let Some(command) = cmd_rx.recv().await {
                 match command {
                     HostCommand::Submit(text) => {
-                        host.run_turn(&mut engine, &cancel, TurnKickoff::Text(text), &mut published_through)
-                            .await;
+                        host.run_turn(
+                            &mut engine,
+                            &cancel,
+                            TurnKickoff::Text(text),
+                            &mut published_through,
+                        )
+                        .await;
                     }
                     HostCommand::SubmitMedia { .. } => {
                         // Intake resolves SubmitMedia to SubmitBlocks
@@ -272,7 +277,10 @@ impl SessionHost {
             )),
             Arc::clone(self),
         ));
-        stages.execution = Box::new(crate::plan::PlanGatedExecutor::new(executor, Arc::clone(self)));
+        stages.execution = Box::new(crate::plan::PlanGatedExecutor::new(
+            executor,
+            Arc::clone(self),
+        ));
         stages
     }
 

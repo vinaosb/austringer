@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use harness_core::event::MediaStore;
 use harness_media::adapter::ffmpeg::{
-    self, Caps, Target, TranscodeSpec, Trim, FFMPEG_TOOL, FFPROBE_TOOL,
+    self, Caps, FFMPEG_TOOL, FFPROBE_TOOL, Target, TranscodeSpec, Trim,
 };
 use harness_media::error::MediaError;
 use harness_media::format::FormatId;
@@ -70,7 +70,10 @@ fn lane(ffmpeg_mode: &str, ffprobe_mode: &str) -> Lane {
     let tools = ToolExecutor::new(ToolConfig {
         enabled: [
             (FFMPEG_TOOL.to_owned(), child_entry("mocktool_ffmpeg_child")),
-            (FFPROBE_TOOL.to_owned(), child_entry("mocktool_ffprobe_child")),
+            (
+                FFPROBE_TOOL.to_owned(),
+                child_entry("mocktool_ffprobe_child"),
+            ),
         ]
         .into(),
         install_enabled: false,
@@ -78,9 +81,18 @@ fn lane(ffmpeg_mode: &str, ffprobe_mode: &str) -> Lane {
         env: BTreeMap::new(),
     });
     let mut env = BTreeMap::new();
-    env.insert("HARNESS_MOCKTOOL_FFMPEG_ARGV".to_owned(), ffmpeg_mode.to_owned());
-    env.insert("HARNESS_MOCKTOOL_FFPROBE_ARGV".to_owned(), ffprobe_mode.to_owned());
-    env.insert("HARNESS_MOCKTOOL_GOLDEN_DIR".to_owned(), GOLDEN_DIR.to_owned());
+    env.insert(
+        "HARNESS_MOCKTOOL_FFMPEG_ARGV".to_owned(),
+        ffmpeg_mode.to_owned(),
+    );
+    env.insert(
+        "HARNESS_MOCKTOOL_FFPROBE_ARGV".to_owned(),
+        ffprobe_mode.to_owned(),
+    );
+    env.insert(
+        "HARNESS_MOCKTOOL_GOLDEN_DIR".to_owned(),
+        GOLDEN_DIR.to_owned(),
+    );
     Lane { tools, env }
 }
 
@@ -95,7 +107,10 @@ impl Lane {
 #[test]
 fn mock_probe_parses_to_pinned_tree() {
     let av = lane("sleep 0", "golden ffprobe/probe-av-json");
-    let probe = av.adapter().probe_av(&fixture("tiny.wav")).expect("wav census");
+    let probe = av
+        .adapter()
+        .probe_av(&fixture("tiny.wav"))
+        .expect("wav census");
     assert_eq!(probe.tree()["format"], "wav");
     assert_eq!(probe.tree()["duration_secs"], 0.2);
     assert_eq!(probe.tree()["streams"][0]["codec"], "pcm_s16le");
@@ -140,7 +155,10 @@ fn transcode_spec_mock_passthrough_probe_diff_pass() {
         .expect("clean transcode runs");
     assert_eq!(artifact.bytes, input, "mock pass-through echoes the input");
     assert_eq!(artifact.producer.engine, FFMPEG_TOOL);
-    assert_eq!(artifact.producer.tier, harness_media::executor::AdapterTier::Subprocess);
+    assert_eq!(
+        artifact.producer.tier,
+        harness_media::executor::AdapterTier::Subprocess
+    );
     // The mock lane's command line is the substitution triple, so the
     // codec-flag disclosure is pinned by target_argv (this suite) and
     // the real-tool tier, not by the mock run.
@@ -166,7 +184,9 @@ fn remux_clean_input_runs_with_copy_flags() {
         caps: Caps::default(),
         trim: None,
     };
-    let artifact = adapter.transcode(&input, &census, &spec).expect("clean remux");
+    let artifact = adapter
+        .transcode(&input, &census, &spec)
+        .expect("clean remux");
     assert_eq!(artifact.bytes, input);
 }
 
@@ -175,7 +195,10 @@ fn remux_clean_input_runs_with_copy_flags() {
 /// REFUSED as a stream-copy remux target.
 #[test]
 fn h264_input_decode_away_legal_stream_copy_refused() {
-    let av = lane("stagegolden ffmpeg/thumbnail-png", "golden ffprobe/probe-h264-mp4-json");
+    let av = lane(
+        "stagegolden ffmpeg/thumbnail-png",
+        "golden ffprobe/probe-h264-mp4-json",
+    );
     let input = fixture("tiny-h264.mp4");
     let adapter = av.adapter();
     let census = adapter.probe_av(&input).expect("h264 census");
@@ -208,10 +231,17 @@ fn h264_input_decode_away_legal_stream_copy_refused() {
         trim: None,
     };
     match adapter.transcode(&input, &census, &remux) {
-        Err(MediaError::UnsupportedFeature { format, feature, reason }) => {
+        Err(MediaError::UnsupportedFeature {
+            format,
+            feature,
+            reason,
+        }) => {
             assert_eq!(format, FormatId::Webm);
             assert_eq!(feature, "h264");
-            assert!(reason.contains("RED"), "reason cites the licensing anchor: {reason}");
+            assert!(
+                reason.contains("RED"),
+                "reason cites the licensing anchor: {reason}"
+            );
         }
         other => panic!("expected the typed RED remux refusal, got {other:?}"),
     }
@@ -221,7 +251,10 @@ fn h264_input_decode_away_legal_stream_copy_refused() {
 /// producer disclosure (the acceptance pin).
 #[test]
 fn extract_av_stores_thumbnail_in_media_store_with_producer() {
-    let av = lane("stagegolden ffmpeg/thumbnail-png", "golden ffprobe/probe-h264-mp4-json");
+    let av = lane(
+        "stagegolden ffmpeg/thumbnail-png",
+        "golden ffprobe/probe-h264-mp4-json",
+    );
     let input = fixture("tiny-h264.mp4");
     let session = tempfile::tempdir().expect("session tempdir");
     let store = MediaStore::open(session.path()).expect("media store");
@@ -266,7 +299,10 @@ fn injection_style_specs_are_rejected_typed() {
     ];
     for params in bad_specs {
         assert!(
-            matches!(TranscodeSpec::from_params(&params), Err(MediaError::InvalidSpec)),
+            matches!(
+                TranscodeSpec::from_params(&params),
+                Err(MediaError::InvalidSpec)
+            ),
             "injection-style spec rejected typed: {params}"
         );
     }
@@ -313,10 +349,41 @@ fn argv_word_universe_is_the_clean_table() {
         Target::WebpLossy,
     ];
     let literals = [
-        "-y", "-hide_banner", "-loglevel", "error", "-ss", "-t", "-i", "-c:v", "-c:a", "-c",
-        "copy", "-vn", "-vf", "-r", "-b:a", "-frames:v", "-quality", "-map", "0:a", "-f", "md5",
-        "-", "libvpx-vp9", "libsvtav1", "libaom-av1", "ffv1", "libopus", "flac", "pcm_s16le",
-        "libmp3lame", "libvorbis", "libwebp", "80", "{input}", "{output}",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        "-t",
+        "-i",
+        "-c:v",
+        "-c:a",
+        "-c",
+        "copy",
+        "-vn",
+        "-vf",
+        "-r",
+        "-b:a",
+        "-frames:v",
+        "-quality",
+        "-map",
+        "0:a",
+        "-f",
+        "md5",
+        "-",
+        "libvpx-vp9",
+        "libsvtav1",
+        "libaom-av1",
+        "ffv1",
+        "libopus",
+        "flac",
+        "pcm_s16le",
+        "libmp3lame",
+        "libvorbis",
+        "libwebp",
+        "80",
+        "{input}",
+        "{output}",
     ];
     let mut combos = Vec::new();
     for target in targets {
@@ -342,8 +409,7 @@ fn argv_word_universe_is_the_clean_table() {
         for word in argv {
             let ok = literals.contains(&word.as_str())
                 || word.parse::<f64>().is_ok()
-                || word.ends_with("k")
-                    && word.trim_end_matches('k').parse::<f64>().is_ok()
+                || word.ends_with("k") && word.trim_end_matches('k').parse::<f64>().is_ok()
                 || word.starts_with("scale=");
             assert!(
                 ok,
@@ -412,7 +478,9 @@ fn nonzero_exit_is_typed_and_staging_is_cleaned() {
         trim: None,
     };
     match adapter.transcode(&input, &census, &spec) {
-        Err(MediaError::NonZeroExit { code, stderr_head, .. }) => {
+        Err(MediaError::NonZeroExit {
+            code, stderr_head, ..
+        }) => {
             assert_eq!(code, 7);
             assert!(stderr_head.contains("boom"));
         }
@@ -494,7 +562,10 @@ fn video_target_on_audio_only_input_is_typed_refusal() {
     };
     match adapter.transcode(&input, &census, &spec) {
         Err(MediaError::UnsupportedOperation { reason, .. }) => {
-            assert!(reason.contains("video"), "names the missing video stream: {reason}");
+            assert!(
+                reason.contains("video"),
+                "names the missing video stream: {reason}"
+            );
         }
         other => panic!("expected the typed audio-only refusal, got {other:?}"),
     }

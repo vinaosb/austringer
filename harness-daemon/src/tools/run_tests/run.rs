@@ -167,7 +167,8 @@ struct TreeGuard {
 }
 
 impl TreeGuard {
-    fn attach(child: &std::process::Child) -> std::io::Result<Self> {        #[cfg(windows)]
+    fn attach(child: &std::process::Child) -> std::io::Result<Self> {
+        #[cfg(windows)]
         {
             use std::os::windows::io::AsRawHandle;
             let job = win32job::Job::create().map_err(std::io::Error::other)?;

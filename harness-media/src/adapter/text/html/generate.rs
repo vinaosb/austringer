@@ -2,7 +2,7 @@
 //! (compile-time templates, automatic text escaping, zero external
 //! assets). Byte-deterministic: html carries no clock fields.
 
-use maud::{html, DOCTYPE, Markup, Render};
+use maud::{DOCTYPE, Markup, Render, html};
 
 use super::spec::{HtmlBlock, HtmlSpec};
 use crate::error::MediaError;

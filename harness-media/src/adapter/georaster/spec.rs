@@ -6,7 +6,7 @@
 //! violations are the typed `InvalidSpec`, never a guessed default.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::MediaError;
 use crate::format::FormatId;
@@ -84,7 +84,11 @@ impl GeoRasterSpec {
             return Err(invalid());
         }
         let [x, y] = self.geotransform.pixel_size;
-        if !self.geotransform.origin.iter().all(|value| value.is_finite())
+        if !self
+            .geotransform
+            .origin
+            .iter()
+            .all(|value| value.is_finite())
             || !x.is_finite()
             || !y.is_finite()
             || x <= 0.0

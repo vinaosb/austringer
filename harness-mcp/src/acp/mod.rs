@@ -9,6 +9,6 @@ pub mod types;
 
 pub use agent::{AcpAgent, AcpEngine, AcpError, AcpPrompt, AcpWire, IdeChannel};
 pub use types::{
-    AcpContentBlock, PermissionOption, PermissionOptionKind, PermissionOutcome,
-    PROTOCOL_VERSION, SessionUpdate, StopReason, ToolCallContent,
+    AcpContentBlock, PROTOCOL_VERSION, PermissionOption, PermissionOptionKind, PermissionOutcome,
+    SessionUpdate, StopReason, ToolCallContent,
 };

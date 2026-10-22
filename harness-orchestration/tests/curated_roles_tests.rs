@@ -46,11 +46,17 @@ fn curated_agents_are_registered_with_read_only_allowlists() {
     for name in ["explore", "librarian"] {
         let def = registry.get(name).unwrap_or_else(|| panic!("{name}"));
         assert!(
-            def.tools.iter().all(|tool| !FORBIDDEN.contains(&tool.as_str())),
+            def.tools
+                .iter()
+                .all(|tool| !FORBIDDEN.contains(&tool.as_str())),
             "{name} allowlist must be read-only: {:?}",
             def.tools
         );
-        assert_eq!(def.model.as_deref(), Some("claude-haiku-5-5"), "{name} cheap bracket");
+        assert_eq!(
+            def.model.as_deref(),
+            Some("claude-haiku-5-5"),
+            "{name} cheap bracket"
+        );
     }
     // And: RoleDef::curated answers exactly the reserved pair.
     assert!(RoleDef::curated("explore").is_some());

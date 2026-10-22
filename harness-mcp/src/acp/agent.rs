@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 
 use super::channel::ChannelImpl;
 use super::types::{
-    AcpContentBlock, PermissionOption, PermissionOutcome, PROTOCOL_VERSION, SessionUpdate,
+    AcpContentBlock, PROTOCOL_VERSION, PermissionOption, PermissionOutcome, SessionUpdate,
     StopReason,
 };
 

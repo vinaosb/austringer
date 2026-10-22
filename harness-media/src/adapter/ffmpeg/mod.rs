@@ -40,9 +40,7 @@ mod policy;
 mod verify;
 
 pub use argv::target_argv;
-pub use census::{AvProbe, StreamCensus, MAX_CENSUS_STREAMS};
+pub use census::{AvProbe, MAX_CENSUS_STREAMS, StreamCensus};
 pub use ops::{Adapter, AvExtract, StoredThumb, TranscodeArtifact};
-pub use policy::{
-    Caps, Target, TranscodeSpec, Trim, FFMPEG_TOOL, FFPROBE_TOOL,
-};
+pub use policy::{Caps, FFMPEG_TOOL, FFPROBE_TOOL, Target, TranscodeSpec, Trim};
 pub use verify::verify_transcode;

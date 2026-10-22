@@ -4,9 +4,9 @@
 //! exact tolerances - empty diff is the PASS verdict (semantic
 //! equivalence of the text layer, never byte identity).
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::extract::ExtractBudgets;
 

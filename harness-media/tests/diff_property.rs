@@ -5,8 +5,8 @@
 
 use std::collections::BTreeSet;
 
-use harness_media::diff::{structural_diff, Tolerances};
-use serde_json::{json, Value};
+use harness_media::diff::{Tolerances, structural_diff};
+use serde_json::{Value, json};
 
 /// PINNED SEED - deterministic repro; do not change without re-recording.
 const SEED: u64 = 0x00C0_FFE0_0000_0005;
@@ -31,7 +31,11 @@ impl XorShift {
 }
 
 fn exact() -> Tolerances {
-    Tolerances { float_epsilon: 0.0, unordered_at: BTreeSet::new(), ignored_at: BTreeSet::new() }
+    Tolerances {
+        float_epsilon: 0.0,
+        unordered_at: BTreeSet::new(),
+        ignored_at: BTreeSet::new(),
+    }
 }
 
 fn scalar(rng: &mut XorShift, counter: &mut u64) -> Value {
@@ -51,7 +55,11 @@ fn build_tree(rng: &mut XorShift, depth: usize, counter: &mut u64) -> Value {
     }
     if rng.below(3) == 0 {
         let n = rng.below(3) + 1;
-        return Value::Array((0..n).map(|_| build_tree(rng, depth + 1, counter)).collect());
+        return Value::Array(
+            (0..n)
+                .map(|_| build_tree(rng, depth + 1, counter))
+                .collect(),
+        );
     }
     let mut map = serde_json::Map::new();
     for j in 0..rng.below(3) + 1 {
@@ -154,7 +162,10 @@ fn injected_differences_surface_at_the_exact_random_pointer() {
     for i in 0..ITERATIONS {
         let tree = random_document(&mut rng, &mut counter);
         let control = structural_diff(&tree, &tree.clone(), &exact()).unwrap();
-        assert!(control.is_empty(), "iter {i}: identical trees must diff empty");
+        assert!(
+            control.is_empty(),
+            "iter {i}: identical trees must diff empty"
+        );
 
         match i % 3 {
             0 => {
@@ -168,7 +179,11 @@ fn injected_differences_surface_at_the_exact_random_pointer() {
                     .insert(key.clone(), json!({"fresh": i}));
                 tokens.push(key);
                 let out = structural_diff(&tree, &actual, &exact()).unwrap();
-                assert_eq!(out.added.len() + out.removed.len() + out.changed.len(), 1, "iter {i}");
+                assert_eq!(
+                    out.added.len() + out.removed.len() + out.changed.len(),
+                    1,
+                    "iter {i}"
+                );
                 assert_eq!(out.added[0].path, pointer_string(&tokens), "iter {i}");
                 assert_eq!(out.added[0].actual, json!({"fresh": i}), "iter {i}");
             }
@@ -182,7 +197,11 @@ fn injected_differences_surface_at_the_exact_random_pointer() {
                 let value = node.as_object_mut().unwrap().remove(&key).unwrap();
                 tokens.push(key);
                 let out = structural_diff(&tree, &actual, &exact()).unwrap();
-                assert_eq!(out.added.len() + out.removed.len() + out.changed.len(), 1, "iter {i}");
+                assert_eq!(
+                    out.added.len() + out.removed.len() + out.changed.len(),
+                    1,
+                    "iter {i}"
+                );
                 assert_eq!(out.removed[0].path, pointer_string(&tokens), "iter {i}");
                 assert_eq!(out.removed[0].expected, value, "iter {i}");
             }
@@ -194,7 +213,11 @@ fn injected_differences_surface_at_the_exact_random_pointer() {
                 let old = node_at(&mut actual, &tokens).clone();
                 *node_at(&mut actual, &tokens) = sentinel.clone();
                 let out = structural_diff(&tree, &actual, &exact()).unwrap();
-                assert_eq!(out.added.len() + out.removed.len() + out.changed.len(), 1, "iter {i}");
+                assert_eq!(
+                    out.added.len() + out.removed.len() + out.changed.len(),
+                    1,
+                    "iter {i}"
+                );
                 assert_eq!(out.changed[0].path, pointer_string(&tokens), "iter {i}");
                 assert_eq!(out.changed[0].expected, old, "iter {i}");
                 assert_eq!(out.changed[0].actual, sentinel, "iter {i}");
@@ -221,8 +244,14 @@ fn shuffled_unordered_arrays_stay_empty_across_seeded_permutations() {
         }
         let expected = json!({"tags": original});
         let actual = json!({"tags": tags});
-        assert!(structural_diff(&expected, &actual, &t).unwrap().is_empty(), "shuffle {i}");
+        assert!(
+            structural_diff(&expected, &actual, &t).unwrap().is_empty(),
+            "shuffle {i}"
+        );
         let strict = structural_diff(&expected, &actual, &exact()).unwrap();
-        assert!(!strict.is_empty(), "shuffle {i}: permutation must differ without the escape");
+        assert!(
+            !strict.is_empty(),
+            "shuffle {i}: permutation must differ without the escape"
+        );
     }
 }

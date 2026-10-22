@@ -127,8 +127,12 @@ pub(super) fn projection_text(tree: &Value) -> String {
     if let Some(columns) = tree["row_groups"][0]["columns"].as_array() {
         for column in columns {
             if let Some(stats) = column.get("stats") {
-                let min = stats.get("min").map_or_else(|| "-".into(), |v| v.to_string());
-                let max = stats.get("max").map_or_else(|| "-".into(), |v| v.to_string());
+                let min = stats
+                    .get("min")
+                    .map_or_else(|| "-".into(), |v| v.to_string());
+                let max = stats
+                    .get("max")
+                    .map_or_else(|| "-".into(), |v| v.to_string());
                 column_parts.push(format!(
                     "{}[min {min}, max {max}, nulls {}]",
                     column["name"], stats["nulls"]

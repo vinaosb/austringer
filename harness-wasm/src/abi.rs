@@ -168,7 +168,7 @@ pub fn negotiate(declared: u8) -> Result<Interface, InterfaceError> {
             return Err(InterfaceError::TooNew {
                 declared,
                 max: INTERFACE_MAX,
-            })
+            });
         }
     })
 }

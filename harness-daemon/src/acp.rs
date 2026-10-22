@@ -28,12 +28,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use harness_core::event::{ContentBlock, Event};
 use harness_mcp::acp::types::{
     PermissionOption, PermissionOptionKind, PermissionOutcome, SessionUpdate, StopReason,
     ToolCallContent,
 };
 use harness_mcp::acp::{AcpEngine, AcpError, AcpPrompt, AcpWire, IdeChannel};
-use harness_core::event::{ContentBlock, Event};
 use serde_json::Value;
 
 use crate::attach::{HostCommand, SessionHost};
@@ -177,9 +177,13 @@ fn forward_event(event: &SessionEvent, ide: &dyn IdeChannel) -> Option<StopReaso
             None
         }
         SessionEvent::Recorded {
-            event: Event::ToolCall {
-                call_id, tool, arguments, ..
-            },
+            event:
+                Event::ToolCall {
+                    call_id,
+                    tool,
+                    arguments,
+                    ..
+                },
             ..
         } => {
             ide.send_update(tool_call_update(call_id, tool, arguments));

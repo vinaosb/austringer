@@ -16,9 +16,7 @@ use crate::error::MediaError;
 use crate::format::FormatId;
 
 /// The four adapter operations a format's contract is stated over.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Operation {
     /// Identify bytes/name (M2 magic sniffing).
@@ -106,13 +104,17 @@ impl FormatRegistry {
     /// Look up a format's descriptor; typed
     /// [`MediaError::UnsupportedFormat`] when nothing is registered for it.
     pub fn lookup(&self, id: &FormatId) -> Result<&FormatDescriptor, MediaError> {
-        self.descriptors.get(id).ok_or(MediaError::UnsupportedFormat)
+        self.descriptors
+            .get(id)
+            .ok_or(MediaError::UnsupportedFormat)
     }
 
     /// Iterate every registered (format, descriptor) pair in canonical
     /// order (the M6 executor wiring walks this; the honesty matrix is
     /// generated from it).
     pub fn iter(&self) -> impl Iterator<Item = (FormatId, &FormatDescriptor)> {
-        self.descriptors.iter().map(|(id, descriptor)| (*id, descriptor))
+        self.descriptors
+            .iter()
+            .map(|(id, descriptor)| (*id, descriptor))
     }
 }

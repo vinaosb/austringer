@@ -13,13 +13,13 @@
 //! anti-unembedded-font law. Document dates are pinned to the M1
 //! determinism epoch.
 
+use krilla::Document;
 use krilla::geom::Point;
 use krilla::metadata::DateTime;
 use krilla::metadata::Metadata;
 use krilla::page::PageSettings;
 use krilla::text::Font;
 use krilla::text::TextDirection;
-use krilla::Document;
 use serde::Deserialize;
 
 use crate::error::MediaError;
@@ -99,7 +99,10 @@ pub(crate) fn parse_spec(spec: &GenerationSpec) -> Result<PdfSpec, MediaError> {
         for block in &page.blocks {
             if block.text.chars().count() > MAX_BLOCK_CHARS
                 || !is_finite_in_range(block.size, MIN_FONT_SIZE, MAX_FONT_SIZE)
-                || block.font.as_deref().is_some_and(|font| !matches!(font, "latin" | "cjk"))
+                || block
+                    .font
+                    .as_deref()
+                    .is_some_and(|font| !matches!(font, "latin" | "cjk"))
             {
                 return Err(invalid());
             }

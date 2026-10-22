@@ -55,7 +55,9 @@
 mod types;
 mod walk;
 
-pub use types::{Addition, Change, Removal, StructuralDiff, Tolerances, MAX_DIFF_DEPTH, MAX_DIFF_NODES};
+pub use types::{
+    Addition, Change, MAX_DIFF_DEPTH, MAX_DIFF_NODES, Removal, StructuralDiff, Tolerances,
+};
 
 use serde_json::Value;
 

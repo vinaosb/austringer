@@ -287,14 +287,14 @@ async fn read_turns(
 
 /// Submits `turns` prompts on the session and returns what a client
 /// observed (bounded: a silent hang becomes a named failure).
-async fn drive_turns(
-    state: &DaemonState,
-    session: &str,
-    turns: usize,
-) -> TurnCapture {
+async fn drive_turns(state: &DaemonState, session: &str, turns: usize) -> TurnCapture {
     let host = state.session(session);
     let attachment = host.attach("tui", None).expect("attach");
-    let reader = tokio::spawn(read_turns(attachment.events.live, attachment.control, turns));
+    let reader = tokio::spawn(read_turns(
+        attachment.events.live,
+        attachment.control,
+        turns,
+    ));
     for _ in 0..turns {
         let _ = host
             .handle_command(HostCommand::Submit("hello".into()))
@@ -364,7 +364,10 @@ async fn dispatcher_live_stickiness_resume_keeps_pinned_model() {
         DISPATCH_ROUTING,
         Duration::from_secs(30),
         vec![
-            ("claude-opus-4-7", vec![Step::Turn(usage_turn("one")), Step::Turn(usage_turn("two"))]),
+            (
+                "claude-opus-4-7",
+                vec![Step::Turn(usage_turn("one")), Step::Turn(usage_turn("two"))],
+            ),
             ("grok-4-6", vec![Step::Turn(usage_turn("configured"))]),
         ],
     );
@@ -375,9 +378,12 @@ async fn dispatcher_live_stickiness_resume_keeps_pinned_model() {
     // moved, so no second model ever composed.
     assert_eq!(capture.finished, 2);
     assert_eq!(capture.usage.len(), 2);
-    assert!(capture.usage.iter().all(|(provider, model, _)| {
-        provider == "anthropic" && model == "claude-opus-4-7"
-    }));
+    assert!(
+        capture
+            .usage
+            .iter()
+            .all(|(provider, model, _)| { provider == "anthropic" && model == "claude-opus-4-7" })
+    );
     let log = log.lock().expect("log");
     assert_eq!(log.lookups, vec!["claude-opus-4-7".to_owned()]);
     assert_eq!(
@@ -412,7 +418,12 @@ async fn dispatcher_live_acknowledged_hop_revalidates_effort_grid() {
         .expect("reader task");
     // Then: exactly one ask surfaced, proposing the verbatim chain hop.
     assert_eq!(capture.finished, 1);
-    assert_eq!(capture.fallback_asks.len(), 1, "asks: {:?}", capture.fallback_asks);
+    assert_eq!(
+        capture.fallback_asks.len(),
+        1,
+        "asks: {:?}",
+        capture.fallback_asks
+    );
     assert_eq!(capture.fallback_asks[0].current.model, "claude-opus-4-7");
     assert_eq!(capture.fallback_asks[0].proposed.model, "gemini-3-pro");
     assert_eq!(
@@ -439,7 +450,10 @@ async fn dispatcher_live_acknowledged_hop_revalidates_effort_grid() {
         log.lookups,
         vec!["claude-opus-4-7".to_owned(), "gemini-3-pro".to_owned()]
     );
-    assert_eq!(log.infer_calls, vec!["claude-opus-4-7".to_owned(), "gemini-3-pro".to_owned()]);
+    assert_eq!(
+        log.infer_calls,
+        vec!["claude-opus-4-7".to_owned(), "gemini-3-pro".to_owned()]
+    );
 }
 
 #[tokio::test]
@@ -451,7 +465,10 @@ async fn fallback_no_silent_substitution_unacknowledged_ask_retries_same_model()
         DISPATCH_ROUTING,
         Duration::from_millis(200),
         vec![
-            ("claude-opus-4-7", vec![outage_step(), outage_step(), outage_step()]),
+            (
+                "claude-opus-4-7",
+                vec![outage_step(), outage_step(), outage_step()],
+            ),
             ("gemini-3-pro", vec![Step::Turn(usage_turn("never"))]),
         ],
     );
@@ -461,12 +478,19 @@ async fn fallback_no_silent_substitution_unacknowledged_ask_retries_same_model()
     // (two infer calls on the origin), and after the second
     // unacknowledged ask the turn failed typed instead of looping.
     assert_eq!(capture.finished, 1);
-    assert_eq!(capture.fallback_asks.len(), 2, "asks: {:?}", capture.fallback_asks);
-    assert!(capture
-        .fallback_asks
-        .iter()
-        .all(|ask| ask.current.model == "claude-opus-4-7"
-            && ask.proposed.model == "gemini-3-pro"));
+    assert_eq!(
+        capture.fallback_asks.len(),
+        2,
+        "asks: {:?}",
+        capture.fallback_asks
+    );
+    assert!(
+        capture
+            .fallback_asks
+            .iter()
+            .all(|ask| ask.current.model == "claude-opus-4-7"
+                && ask.proposed.model == "gemini-3-pro")
+    );
     // ZERO substitution events: the hop model never composed a stack,
     // never served, and no Usage frame cites it.
     let log = log.lock().expect("log");
@@ -478,10 +502,12 @@ async fn fallback_no_silent_substitution_unacknowledged_ask_retries_same_model()
     assert!(capture.usage.is_empty(), "usage: {:?}", capture.usage);
     // And: every resolution chose the CURRENT model (deny/cancel/
     // timeout all retry the SAME model — the T9 identity contract).
-    assert!(capture
-        .fallback_resolved
-        .iter()
-        .all(|chosen| chosen.model == "claude-opus-4-7"));
+    assert!(
+        capture
+            .fallback_resolved
+            .iter()
+            .all(|chosen| chosen.model == "claude-opus-4-7")
+    );
     // And: the v1-decodable degraded-mode notice carries the plan's
     // verbatim wording.
     assert_eq!(
@@ -512,11 +538,7 @@ async fn dispatcher_live_unrouted_role_falls_back_to_configured_model() {
     assert_eq!(capture.finished, 1);
     assert_eq!(
         capture.usage,
-        vec![(
-            "xai".to_owned(),
-            "grok-4-6".to_owned(),
-            None
-        )],
+        vec![("xai".to_owned(), "grok-4-6".to_owned(), None)],
         "usage must cite the configured model, got {:?}",
         capture.usage
     );

@@ -102,9 +102,7 @@ fn hit_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EventSearchHit> {
 /// which on a MATCH-only statement can only be a query error.
 fn is_query_error(error: &rusqlite::Error) -> bool {
     match error {
-        rusqlite::Error::SqliteFailure(ffi, _) => {
-            ffi.code == rusqlite::ErrorCode::Unknown
-        }
+        rusqlite::Error::SqliteFailure(ffi, _) => ffi.code == rusqlite::ErrorCode::Unknown,
         _ => error.to_string().contains("fts5"),
     }
 }

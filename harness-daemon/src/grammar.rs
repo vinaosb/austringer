@@ -219,6 +219,13 @@ mod tests {
 
     /// Byte pin: grammar.json (which the JS and TS ports deep-equal in
     /// their own suites) must be exactly this table serialized.
+    ///
+    /// Regression note: this test failed on windows CI (first Actions
+    /// contact) because git's autocrlf checkout rewrote grammar.json to
+    /// CRLF while serde emits `\n`. The root `.gitattributes` pins the
+    /// file to `eol=lf` (byte pin stays byte-exact; the committed blob
+    /// is LF); do NOT normalize line endings here instead — that would
+    /// weaken the drift guarantee.
     #[test]
     fn grammar_json_is_byte_pinned_to_the_const_table() {
         let serialized = serde_json::to_string_pretty(&doc()).expect("grammar doc serializes");
@@ -258,7 +265,13 @@ mod tests {
         assert_eq!(
             core_command_words(),
             vec![
-                "/help", "/steer", "/cancel", "/vote-cancel", "/mode", "/rewind", "/skill",
+                "/help",
+                "/steer",
+                "/cancel",
+                "/vote-cancel",
+                "/mode",
+                "/rewind",
+                "/skill",
             ]
         );
     }

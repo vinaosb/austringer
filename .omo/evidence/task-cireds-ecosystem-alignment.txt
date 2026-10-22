@@ -1,0 +1,218 @@
+TASK ci-reds - four pre-existing branch-wide reds surfaced by the first GitHub Actions contact
+================================================================================
+Date: 2026-10-22  Runner: Sisyphus-junior (task ci-reds, dispatched after todo-25)
+Shell note: cargo via cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo ..."
+(CARGO_TARGET_DIR=C:\ct per workspace .cargo config). NO commit made - the
+orchestrator commits (suggested: "fix(ci): branch-wide reds surfaced by first
+Actions contact").
+
+Context: todo-25's probe runs (39741424221 + 39745026154, see issues.md
+2026-10-22T08:23:10Z Task: todo-25) proved all four reds pre-date the branch's
+first push. This task fixes all four. Base HEAD during work: de4841e.
+
+================================================================
+RED 1 - grammar_json_is_byte_pinned_to_the_const_table (windows CI)
+================================================================
+ROOT CAUSE (reproduced, not assumed):
+  The test byte-compares serde_json::to_string_pretty (emits "\n") against
+  include_str!("grammar.json") (reads WORKING-TREE bytes at compile time).
+  The committed blob is LF (git ls-files --eol: i/lf), but windows CI
+  runners default core.autocrlf=true, so the checkout rewrites the file to
+  CRLF and include_str! bytes diverge. Repo had NO root .gitattributes.
+  RED reproduction (local, autocrlf=true): converted the working copy to
+  CRLF -> nextest FAIL with left: "...{\n..." right: "...{\r\n..." (exact
+  CI symptom); run captured in transcript, exit 100.
+
+FIX (chosen to keep the drift guarantee STRONG - byte-exact, not normalized):
+  New root .gitattributes: "harness-daemon/src/grammar.json text eol=lf".
+  Attribute eol=lf overrides autocrlf on EVERY platform, so every checkout
+  is LF and the byte pin stays a true byte pin. (Alternative rejected:
+  normalizing line endings inside the test would weaken the guarantee - a
+  lone line-ending change would stop failing. JS/TS ports need nothing:
+  they JSON.parse the file, whitespace-insensitive.) Test doc comment now
+  carries the regression note (do NOT normalize in the test instead).
+
+PROOF:
+  - git check-attr text eol -> "text: set, eol: lf".
+  - Deleted the working file, fresh `git checkout --` under local
+    core.autocrlf=true (CI-equivalent): 0 CR bytes in the 1557-byte file.
+  - Green: nextest grammar_json_is_byte_pinned -> 1 passed.
+  - MUTATION SANITY CHECK (drift guarantee still strong): appended "X" to
+    a help string in grammar.json -> test FAIL (exit 100) -> restored via
+    git checkout. Any real content change still fails.
+
+================================================================
+RED 2 - cargo fmt drift (branch-wide; ubuntu lint job)
+================================================================
+ROOT CAUSE: fmt was never run across the committed waves; rustfmt.toml
+(edition 2024, max_width 100) is the same locally as in CI.
+
+FIX: cargo fmt --all over the tree.
+
+DIFF REVIEW (mechanical-only, three layers of evidence):
+  1. PROVENANCE: the diff was produced by running `cargo fmt --all` on the
+     unmodified HEAD checkout and nothing else touched those files between
+     HEAD and the reformat (git status clean pre-run apart from .omo files).
+  2. TOKEN-CLASS ANALYSIS: byte-level whitespace-stripped comparison of
+     HEAD vs formatted for all 233 changed .rs files. Non-whitespace deltas
+     fall into exactly three rustfmt-mechanical classes: (a) trailing-comma
+     insertion, (b) statement-semicolon insertion after block-tail
+     expression statements (edition-2024 style; e.g. harness-wasm/abi.rs
+     "})}" -> "});}"), (c) use-item brace reordering ({parse, Parsed,
+     COMMANDS} -> {COMMANDS, Parsed, parse}; e.g. harness-tui/omnibar.rs).
+     All three are semantics-preserving rustfmt transforms by definition.
+     (My first two comparison passes reported 221/199 "mismatches" - that
+     was the naive stripper missing classes (a)-(c), then PowerShell
+     pipeline encoding/wrapping corruption; the byte-faithful rerun with a
+     real first-diff dump identified the classes above. No hunk outside
+     these classes was found in spot reviews across harness-cli, -daemon,
+     -media, -tui, -wasm, -web.)
+  3. BEHAVIORAL: full workspace clippy -D warnings clean + 922-test nextest
+     suite green on the reformatted tree (below).
+  Diffstat: 233 .rs files, +4523/-2239 (typical hunk: match-arm pattern
+  explosion at max_width, format!-arg wrapping). No file looked semantic;
+  nothing stopped the sweep.
+
+PROOF: cargo fmt --all -- --check -> exit 0 (re-verified after all other
+edits in this task, including the cfg fixes below).
+
+================================================================
+RED 3 - harness-media does not compile off-Windows (ubuntu/macos test matrix)
+================================================================
+ROOT CAUSE (reproduced by cross-check, not assumed):
+  cargo check -p harness-media --all-targets --target x86_64-unknown-linux-gnu
+  (target installed locally) reproduced the exact CI compile failure class:
+    error: unused import: `std::io`        -> harness-media/src/tool/guard.rs:16
+    error[E0599]: no method named `process_group` found for struct
+        `std::process::Command`            -> harness-media/src/tool/executor.rs:197
+    error: unused variable: `tool`         -> harness-media/src/tool/spawn.rs:83
+  (1) use std::io is only needed by the windows attach_child; (2) the
+  unix-only CommandExt trait was never imported, so the #[cfg(unix)]
+  process_group(0) call had no method - compiled on Windows only because
+  cfg strips the block; (3) the unix arm of attach_guard ignored `tool`
+  (windows lints deny unused).
+
+FIX (cfg-gated structure, matches the crate's existing per-OS pattern,
+  no #[allow]):
+  - guard.rs: io import moved fn-local into #[cfg(windows)] attach_child
+    (next to the existing fn-local AsRawHandle import).
+  - executor.rs: `#[cfg(unix)] use std::os::unix::process::CommandExt;`.
+  - spawn.rs: attach_guard split into two cfg'd functions (windows keeps
+    the tool-error mapping + param; unix takes only the child); call site
+    in wait_bounded cfg'd to match.
+
+PROOF (with an honestly-documented local verification harness):
+  - Local cross-check obstruction: blake3 (required dep via harness-safety)
+    builds unix .S assembly through cc-rs for the target triple; no linux
+    cross C toolchain exists on this Windows box (no zig, no
+    x86_64-linux-gnu-gcc; cargo-env.cmd's global CC=cl.exe cannot compile
+    ELF asm). WORKAROUND for check-only verification: CC for the target
+    pointed at a stub (%TEMP%\opencode\fakecc\cc.cmd) that creates empty
+    object files for the -o/-Fo argument and exits 0. This is sound for
+    `cargo check` ONLY because check performs no linking - the (empty)
+    archives are never consumed; every Rust unit (lib, every feature lane
+    via the dev-dep self-reference, all 39 integration test targets) is
+    fully type-checked for the linux target.
+  - cargo check -p harness-media --all-targets --target
+    x86_64-unknown-linux-gnu -> exit 0 (re-run after the final fmt pass,
+    40.8s, exit 0).
+  - cargo check -p harness-media (lib only, linux target) -> exit 0.
+  - Windows-side regression: full harness-media suite green in the 922-test
+    nextest run (tool_executor kill-tree incl. timeout_kills_the_whole_tree_
+    no_orphans PASS).
+
+RESIDUAL UNCERTAINTY (documented per task contract):
+  - The stub-CC harness proves COMPILATION (type-check + name resolution +
+    borrow check for the linux cfg surface), not linking; CI's native gcc
+    links for real. Any link-time issue (e.g. an extern symbol only a real
+    blake3 archive provides) is outside what this check can see - none is
+    expected (harness-media adds no externs of its own).
+  - Adjacent pre-existing unix BEHAVIOR bug found during the audit, NOT
+    fixed (out of scope: it compiles and CI's red was compile-only):
+    harness-media/src/tool/spawn.rs find_program splits PATH on ';' - on
+    unix the separator is ':' so PATH lookup can never resolve a bare tool
+    name there (explicit-path overrides and the mocktool lane are
+    unaffected). std::env::split_paths is the portable fix. Logged in
+    issues.md for a follow-up.
+
+================================================================
+RED 4 - dhat heap-profile budget breach (windows perf-gate job)
+================================================================
+INVESTIGATION (measured, not assumed):
+  cargo run --release -p harness-bench --bin heap-profile --features dhat
+  -- --check baselines/heap_profile.json -> "6 scenarios, 1 breaches,
+  verdict FAIL". Breaching metric exactly one:
+      tui.alloc_count  27,376 vs baseline 24,373  = +12.32% (tol 10%)
+  Non-breaching for context:
+      tui.alloc_bytes   9,005,350 vs  8,857,302  =  +1.67%
+      eviction.bytes +0.16%  prompt.bytes +0.20%  sessions.bytes +0.35%
+      pty/repomap exact (0.00%)
+  Signature: ~3,003 extra allocations at ~50 B average across 600 frames
+  (3 runs x 200 frames) = ~5 small allocations per frame - feature-shaped
+  (small strings), not bulk-growth-shaped.
+  Attribution: baseline was recorded AT c8926a4 (todo-43); git log
+  c8926a4..HEAD -- harness-tui/src shows the entire UI wave landed after
+  it: live HUD (context_line/cache_line/cost_line format every frame -
+  commit 1d85714), hunk panel + diffs accordion + reworked transcript
+  (panels.rs new, transcript.rs +360), grammar completions surface
+  (e8dfb32). The OLD render path (git show c8926a4:harness-tui/src/
+  render.rs) already composed Vec<Line<'static>> with per-frame format!
+  - per-frame composition is the crate's established architecture; the
+  delta is MORE composed content, not a new inefficiency class.
+  (dhat-heap.json stack attribution was unavailable: release build leaves
+  crate frames as raw addresses in ftbl - noted, differential code audit
+  used instead.)
+
+DECISION: growth is real and justified (named cause: post-c8926a4 UI wave
+  adding ~5 small per-frame allocations - live-HUD lines + panel headers +
+  completions popup probe); frame budgets all PASS (tui.p99 0.077 ms vs
+  16 ms budget, 0 frame breaches, 0 hangs) and alloc_bytes moved only
+  +1.67%, so there is no waste signal to fix within this task's scope.
+  Re-recorded per the ESTABLISHED procedure
+  (harness-bench/baselines/README.md):
+    cargo run --release -p harness-bench --bin heap-profile --features \
+      dhat -- --record harness-bench/baselines/heap_profile.json
+  -> "recorded", exit 0. Baseline diff (windows, release, same profile):
+      tui.alloc_count   24,373 -> 27,373   (the named cause)
+      tui.alloc_bytes 8,857,302 -> 9,004,302 (+1.7%)
+      eviction/prompt/sessions bytes: <= +0.35% re-archived; pty/repomap
+      and all alloc_counts unchanged.
+  Post-record verification: --check against the new archive ->
+  "6 scenarios, 0 breaches, verdict PASS", exit 0.
+  (Run-to-run noise ~3 blocks on tui.alloc_count; 10% tolerance absorbs.)
+  NOTE for the orchestrator's commit message: name the cause - "dhat:
+  re-record tui.alloc_count +12.3% - per-frame live-HUD/panel lines from
+  the post-todo-43 UI wave; bytes +1.7%, frame budgets unchanged-green".
+
+================================================================
+FINAL GATES (all local, all green, final code state)
+================================================================
+  cargo fmt --all -- --check                                  -> exit 0
+  cargo clippy --workspace --all-targets -- -D warnings       -> exit 0
+  cargo nextest run -p harness-daemon -p harness-tui
+                     -p harness-cli -p harness-media          -> 922 run:
+                                                                 922 passed,
+                                                                 9 skipped,
+                                                                 exit 0
+  cargo check -p harness-media --all-targets
+              --target x86_64-unknown-linux-gnu               -> exit 0
+  heap-profile --features dhat --check (new baseline)         -> PASS,
+                                                                 0 breaches,
+                                                                 exit 0
+  grammar pin: green + mutation-fail proof                    -> see RED 1
+  (Known pre-existing flakes NOT observed in this run: pty_live cargo-PATH,
+  provider_binary contention, dispatcher_live under-load, run_tests_e2e
+  parallel-load - none fired; 922/922 first try.)
+
+  CI probe NOT run: per task contract the orchestrator commits and may
+  probe afterwards (todo-25's probe pattern: extend the probe copy's
+  branch filter to ci-probe/**). Everything here is verified locally.
+
+CHANGED FILES (summary for the orchestrator's commit):
+  .gitattributes                                  NEW (grammar.json eol=lf)
+  harness-daemon/src/grammar.rs                   regression note (doc comment)
+  harness-media/src/tool/guard.rs                 cfg fix: io import scope
+  harness-media/src/tool/executor.rs              cfg fix: unix CommandExt import
+  harness-media/src/tool/spawn.rs                 cfg fix: split attach_guard
+  harness-bench/baselines/heap_profile.json       re-record (named cause)
+  233 .rs files                                   cargo fmt sweep (mechanical)

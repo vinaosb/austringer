@@ -18,12 +18,12 @@
 use std::io::Cursor;
 use std::time::Instant;
 
+use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::well_known::{
     CODEC_ID_FLAC, CODEC_ID_MP3, CODEC_ID_OPUS, CODEC_ID_PCM_F32LE, CODEC_ID_PCM_S16LE,
     CODEC_ID_PCM_S24LE, CODEC_ID_PCM_S32LE, CODEC_ID_VORBIS,
 };
 use symphonia::core::codecs::audio::{AudioCodecId, AudioDecoderOptions};
-use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
@@ -71,20 +71,30 @@ pub fn decode(bytes: &[u8], budgets: ExtractBudgets) -> Result<DecodedAudio, Med
     // The opus guard runs BEFORE symphonia touches the bytes: our own M2
     // sniff identifies opus payloads (OggS + OpusHead) that the pure lane
     // must never decode.
-    if let crate::probe::ProbeResult::Identified { format: FormatId::Opus, .. } =
-        crate::probe::probe(bytes, None)
+    if let crate::probe::ProbeResult::Identified {
+        format: FormatId::Opus,
+        ..
+    } = crate::probe::probe(bytes, None)
     {
         return Err(opus_redirect());
     }
     let start = Instant::now();
     let source = MediaSourceStream::new(Box::new(Cursor::new(bytes)), Default::default());
     let mut reader = get_probe()
-        .probe(&Hint::new(), source, FormatOptions::default(), MetadataOptions::default())
+        .probe(
+            &Hint::new(),
+            source,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
         .map_err(|_| MediaError::ParseFailure)?;
     let track = reader
         .default_track(TrackType::Audio)
         .ok_or(MediaError::ParseFailure)?;
-    let params = track.codec_params.as_ref().ok_or(MediaError::ParseFailure)?;
+    let params = track
+        .codec_params
+        .as_ref()
+        .ok_or(MediaError::ParseFailure)?;
     let CodecParameters::Audio(audio) = params else {
         return Err(MediaError::ParseFailure);
     };
@@ -143,7 +153,12 @@ pub fn decode(bytes: &[u8], budgets: ExtractBudgets) -> Result<DecodedAudio, Med
     if channels == 0 || samples.is_empty() || !samples.len().is_multiple_of(channels) {
         return Err(MediaError::ParseFailure);
     }
-    Ok(DecodedAudio { samples, channels, sample_rate, codec })
+    Ok(DecodedAudio {
+        samples,
+        channels,
+        sample_rate,
+        codec,
+    })
 }
 
 /// Canonical codec names for the family's four pure lanes (anything

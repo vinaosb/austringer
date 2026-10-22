@@ -8,7 +8,7 @@
 use comrak::nodes::{
     AstNode, NodeCodeBlock, NodeHeading, NodeList, NodeTable, NodeValue, TableAlignment,
 };
-use comrak::{format_commonmark, format_html, parse_document, Arena, Options};
+use comrak::{Arena, Options, format_commonmark, format_html, parse_document};
 
 use super::spec::{Block, MdSpec};
 use crate::error::MediaError;

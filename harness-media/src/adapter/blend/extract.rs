@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-use super::script::{dump_script, DUMP_BEGIN, DUMP_END};
+use super::script::{DUMP_BEGIN, DUMP_END, dump_script};
 use super::{DUMP_SCHEMA, TOOL};
 use crate::error::MediaError;
 use crate::executor::{OpOutput, Produced};
@@ -46,7 +46,8 @@ pub fn extract(
     std::fs::write(&input, bytes).map_err(spawn_failure)?;
     std::fs::write(&script, dump_script()).map_err(spawn_failure)?;
     let mut call = ToolCall::new(TOOL, "scene-dump");
-    call.vars.insert("input".to_owned(), input.display().to_string());
+    call.vars
+        .insert("input".to_owned(), input.display().to_string());
     call.vars
         .insert("script".to_owned(), script.display().to_string());
     let run = tools.run(&call).map_err(MediaError::from)?;
@@ -93,17 +94,14 @@ fn outline(tree: &Value) -> String {
         let stats = if mesh.is_null() {
             "no mesh".to_owned()
         } else {
-            format!(
-                "{}v/{}e/{}f",
-                mesh["verts"], mesh["edges"], mesh["faces"]
-            )
+            format!("{}v/{}e/{}f", mesh["verts"], mesh["edges"], mesh["faces"])
         };
-        let materials = object["material_slots"]
-            .as_array()
-            .map_or(0, Vec::len);
+        let materials = object["material_slots"].as_array().map_or(0, Vec::len);
         lines.push(format!(
             "- {} ({}): {}, {} modifier(s), {} material slot(s)",
-            object["name"], object["type"], stats,
+            object["name"],
+            object["type"],
+            stats,
             object["modifiers"].as_array().map_or(0, Vec::len),
             materials,
         ));
@@ -125,11 +123,9 @@ fn spawn_failure(detail: std::io::Error) -> MediaError {
 pub(super) fn unavailable(tools: &ToolExecutor) -> Result<(), MediaError> {
     match tools.availability(TOOL) {
         ToolAvailability::Available { .. } => Ok(()),
-        ToolAvailability::Unavailable { install_hint } => {
-            Err(MediaError::ToolUnavailable {
-                tool: TOOL.to_owned(),
-                install_hint,
-            })
-        }
+        ToolAvailability::Unavailable { install_hint } => Err(MediaError::ToolUnavailable {
+            tool: TOOL.to_owned(),
+            install_hint,
+        }),
     }
 }

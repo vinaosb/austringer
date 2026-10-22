@@ -30,9 +30,7 @@
 
 use harness_safety::backends::platform_backend;
 use harness_safety::egress::{self, CommandEgress, DenyReason, EgressPolicy};
-use harness_safety::policy::decl::{
-    SandboxPolicy, SandboxTier, ViolationEvent, ViolationKind,
-};
+use harness_safety::policy::decl::{SandboxPolicy, SandboxTier, ViolationEvent, ViolationKind};
 use harness_safety::report::{EnforcedSummary, Isolation, IsolationReport, NetworkIsolation};
 use harness_safety::scrub::EnvScrub;
 
@@ -73,7 +71,11 @@ pub(crate) fn gate(command: &str) -> SafetyDecision {
     }
     match egress::guard_command(command, &policy.egress) {
         CommandEgress::NoEgress | CommandEgress::Allowed => {}
-        CommandEgress::Denied { segment, host, reason } => {
+        CommandEgress::Denied {
+            segment,
+            host,
+            reason,
+        } => {
             return SafetyDecision::Block {
                 violation: ViolationEvent::new(
                     ViolationKind::EgressDenied,
@@ -132,10 +134,7 @@ pub(crate) fn render_report(verdict: &SafetyVerdict) -> String {
     let egress = if verdict.policy.egress.is_empty() {
         "deny-all".to_owned()
     } else {
-        format!(
-            "allowlist({} hosts)",
-            verdict.policy.egress.allowed.len()
-        )
+        format!("allowlist({} hosts)", verdict.policy.egress.allowed.len())
     };
     let gaps = if verdict.report.gaps.is_empty() {
         "none".to_owned()
@@ -199,7 +198,10 @@ mod tests {
             gaps.contains(&"fs_write") && gaps.contains(&"fs_read"),
             "the PTY lane must name its fs gaps honestly: {gaps:?}"
         );
-        assert_eq!(verdict.report.enforced.network, NetworkIsolation::UserlandProxy);
+        assert_eq!(
+            verdict.report.enforced.network,
+            NetworkIsolation::UserlandProxy
+        );
         assert!(verdict.report.enforced.env_scrubbed);
     }
 

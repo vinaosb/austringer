@@ -84,24 +84,18 @@ pub enum ToolError {
 impl From<ToolError> for MediaError {
     fn from(error: ToolError) -> Self {
         match error {
-            ToolError::ToolUnavailable {
-                tool,
-                install_hint,
-            } => MediaError::ToolUnavailable { tool, install_hint },
+            ToolError::ToolUnavailable { tool, install_hint } => {
+                MediaError::ToolUnavailable { tool, install_hint }
+            }
             ToolError::InstallFailed { reason, .. } => MediaError::InstallFailed { reason },
             ToolError::SandboxDenied { .. } => MediaError::SandboxDenied,
             ToolError::Timeout { .. } => MediaError::Timeout,
             ToolError::NonZeroExit {
-                code,
-                stderr_head,
-                ..
+                code, stderr_head, ..
             } => MediaError::NonZeroExit { code, stderr_head },
             ToolError::Spawn { tool, detail } => {
                 let install_hint = format!("{tool} failed to spawn: {detail}");
-                MediaError::ToolUnavailable {
-                    tool,
-                    install_hint,
-                }
+                MediaError::ToolUnavailable { tool, install_hint }
             }
         }
     }

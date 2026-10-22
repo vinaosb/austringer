@@ -19,7 +19,7 @@
 //! census, broken python, unknown schema) is a non-zero exit with a
 //! stderr reason - the adapter surfaces that as the typed NonZeroExit.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::python::validate_python;
 
@@ -86,8 +86,7 @@ pub fn dump_mode() -> i32 {
 }
 
 fn dump() -> Result<(), String> {
-    let bytes =
-        std::fs::read("step-dump/in.step").map_err(|e| format!("read step: {e}"))?;
+    let bytes = std::fs::read("step-dump/in.step").map_err(|e| format!("read step: {e}"))?;
     if !bytes.starts_with(b"ISO-10303-21;") {
         return Err("input does not carry the STEP magic".into());
     }
@@ -119,7 +118,8 @@ fn step_document(spec: &Value, census: &Value, epoch: &str) -> String {
     let mut lines: Vec<String> = vec![
         "ISO-10303-21;".into(),
         "HEADER;".into(),
-        "FILE_DESCRIPTION(('harness-media mock freecadcmd (parameterized stand-in)'),'2;1');".into(),
+        "FILE_DESCRIPTION(('harness-media mock freecadcmd (parameterized stand-in)'),'2;1');"
+            .into(),
         format!(
             "FILE_NAME('out.step','{epoch}',('harness'),('harness'),'harness-media','harness','none');"
         ),
@@ -133,9 +133,15 @@ fn step_document(spec: &Value, census: &Value, epoch: &str) -> String {
     let application = context + 1;
     for (index, solid) in solids.iter().enumerate() {
         let base = index * 3 + 1;
-        let name = solid["name"].as_str().unwrap_or_default().replace('\'', "''");
+        let name = solid["name"]
+            .as_str()
+            .unwrap_or_default()
+            .replace('\'', "''");
         lines.push(format!("#{base} = PRODUCT('{name}','',(),());"));
-        lines.push(format!("#{} = PRODUCT_DEFINITION_FORMATION('','',#{base});", base + 1));
+        lines.push(format!(
+            "#{} = PRODUCT_DEFINITION_FORMATION('','',#{base});",
+            base + 1
+        ));
         lines.push(format!(
             "#{} = PRODUCT_DEFINITION('design','',#{},#{context});",
             base + 2,
@@ -175,50 +181,49 @@ fn solid_census(solid: &Value) -> Value {
     let shape = &solid["shape"];
     let location = coords(&solid["transform"]["location"]);
     let rotation = coords(&solid["transform"]["rotation_xyz"]);
-    let (faces, edges, vertices, volume, (min, max)) = if let Some(size) =
-        shape["box"]["size"].as_array()
-    {
-        let size = [cell(size, 0), cell(size, 1), cell(size, 2)];
-        let matrix = rotation_matrix(&rotation);
-        let mut min = [f64::INFINITY; 3];
-        let mut max = [f64::NEG_INFINITY; 3];
-        for x in [0.0, size[0]] {
-            for y in [0.0, size[1]] {
-                for z in [0.0, size[2]] {
-                    let world = apply(&matrix, [x, y, z], &location);
-                    for axis in 0..3 {
-                        min[axis] = min[axis].min(world[axis]);
-                        max[axis] = max[axis].max(world[axis]);
+    let (faces, edges, vertices, volume, (min, max)) =
+        if let Some(size) = shape["box"]["size"].as_array() {
+            let size = [cell(size, 0), cell(size, 1), cell(size, 2)];
+            let matrix = rotation_matrix(&rotation);
+            let mut min = [f64::INFINITY; 3];
+            let mut max = [f64::NEG_INFINITY; 3];
+            for x in [0.0, size[0]] {
+                for y in [0.0, size[1]] {
+                    for z in [0.0, size[2]] {
+                        let world = apply(&matrix, [x, y, z], &location);
+                        for axis in 0..3 {
+                            min[axis] = min[axis].min(world[axis]);
+                            max[axis] = max[axis].max(world[axis]);
+                        }
                     }
                 }
             }
-        }
-        (6, 12, 8, size[0] * size[1] * size[2], (min, max))
-    } else if let Some(radius) = shape["sphere"]["radius"].as_f64() {
-        (
-            1,
-            1,
-            2,
-            4.0 / 3.0 * std::f64::consts::PI * radius * radius * radius,
-            intervals(radius, 0.0, [0.0; 3], &location),
-        )
-    } else {
-        let radius = shape["cylinder"]["radius"].as_f64().unwrap_or_default();
-        let height = shape["cylinder"]["height"].as_f64().unwrap_or_default();
-        let matrix = rotation_matrix(&rotation);
-        (
-            3,
-            3,
-            2,
-            std::f64::consts::PI * radius * radius * height,
-            intervals(
-                radius,
-                height,
-                [matrix[0][2], matrix[1][2], matrix[2][2]],
-                &location,
-            ),
-        )
-    };
+            (6, 12, 8, size[0] * size[1] * size[2], (min, max))
+        } else if let Some(radius) = shape["sphere"]["radius"].as_f64() {
+            (
+                1,
+                1,
+                2,
+                4.0 / 3.0 * std::f64::consts::PI * radius * radius * radius,
+                intervals(radius, 0.0, [0.0; 3], &location),
+            )
+        } else {
+            let radius = shape["cylinder"]["radius"].as_f64().unwrap_or_default();
+            let height = shape["cylinder"]["height"].as_f64().unwrap_or_default();
+            let matrix = rotation_matrix(&rotation);
+            (
+                3,
+                3,
+                2,
+                std::f64::consts::PI * radius * radius * height,
+                intervals(
+                    radius,
+                    height,
+                    [matrix[0][2], matrix[1][2], matrix[2][2]],
+                    &location,
+                ),
+            )
+        };
     json!({
         "bbox_max": max,
         "bbox_min": min,
@@ -275,11 +280,17 @@ fn rotation_matrix(euler: &[f64; 3]) -> [[f64; 3]; 3] {
 
 fn apply(rotation: &[[f64; 3]; 3], point: [f64; 3], location: &[f64; 3]) -> [f64; 3] {
     [
-        rotation[0][0] * point[0] + rotation[0][1] * point[1] + rotation[0][2] * point[2]
+        rotation[0][0] * point[0]
+            + rotation[0][1] * point[1]
+            + rotation[0][2] * point[2]
             + location[0],
-        rotation[1][0] * point[0] + rotation[1][1] * point[1] + rotation[1][2] * point[2]
+        rotation[1][0] * point[0]
+            + rotation[1][1] * point[1]
+            + rotation[1][2] * point[2]
             + location[1],
-        rotation[2][0] * point[0] + rotation[2][1] * point[1] + rotation[2][2] * point[2]
+        rotation[2][0] * point[0]
+            + rotation[2][1] * point[1]
+            + rotation[2][2] * point[2]
             + location[2],
     ]
 }

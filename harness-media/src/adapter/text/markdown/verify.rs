@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::extract::extract;
 use crate::adapter::text::tolerances;
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::extract::ExtractBudgets;
 

@@ -73,7 +73,11 @@ pub fn target_argv(
         argv.push(format!("{kbps}k"));
     }
     if target == super::policy::Target::WebpLossy {
-        argv.extend(["-frames:v", "1", "-quality", "80"].iter().map(ToString::to_string));
+        argv.extend(
+            ["-frames:v", "1", "-quality", "80"]
+                .iter()
+                .map(ToString::to_string),
+        );
     }
     argv.push("{output}".into());
     Ok(argv)

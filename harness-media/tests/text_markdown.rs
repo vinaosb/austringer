@@ -7,15 +7,18 @@ use std::time::Duration;
 
 use harness_media::adapter::text::markdown::{self, MdSpec};
 use harness_media::error::MediaError;
-use harness_media::executor::{OpRequest, OpOutput};
+use harness_media::executor::{OpOutput, OpRequest};
 use harness_media::extract::ExtractBudgets;
 use harness_media::format::FormatId;
 use harness_media::generate::GenerationSpec;
 use harness_media::projection::{ProjectionContext, ProjectionProvider, ProjectionRegistry};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn spec(params: Value) -> GenerationSpec {
-    GenerationSpec { format: FormatId::Markdown, params }
+    GenerationSpec {
+        format: FormatId::Markdown,
+        params,
+    }
 }
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -28,7 +31,10 @@ fn fixture(name: &str) -> Vec<u8> {
 fn corpus() -> Vec<(&'static str, Value)> {
     vec![
         ("empty", json!({"blocks": []})),
-        ("single-heading", json!({"blocks": [{"type": "heading", "level": 1, "text": "T"}]})),
+        (
+            "single-heading",
+            json!({"blocks": [{"type": "heading", "level": 1, "text": "T"}]}),
+        ),
         (
             "heading-levels",
             json!({"blocks": [
@@ -36,16 +42,28 @@ fn corpus() -> Vec<(&'static str, Value)> {
                 {"type": "heading", "level": 3, "text": "two"},
                 {"type": "heading", "level": 6, "text": "six"}]}),
         ),
-        ("paragraphs", json!({"blocks": [
+        (
+            "paragraphs",
+            json!({"blocks": [
             {"type": "paragraph", "text": "first body"},
-            {"type": "paragraph", "text": "second body"}]})),
+            {"type": "paragraph", "text": "second body"}]}),
+        ),
         (
             "code-fence-language",
             json!({"blocks": [{"type": "code_fence", "language": "rust", "code": "fn main() {}"}]}),
         ),
-        ("code-fence-bare", json!({"blocks": [{"type": "code_fence", "code": "bare\ncode"}]})),
-        ("bullet-list", json!({"blocks": [{"type": "list", "ordered": false, "items": ["a", "b"]}]})),
-        ("ordered-list", json!({"blocks": [{"type": "list", "ordered": true, "items": ["x", "y"]}]})),
+        (
+            "code-fence-bare",
+            json!({"blocks": [{"type": "code_fence", "code": "bare\ncode"}]}),
+        ),
+        (
+            "bullet-list",
+            json!({"blocks": [{"type": "list", "ordered": false, "items": ["a", "b"]}]}),
+        ),
+        (
+            "ordered-list",
+            json!({"blocks": [{"type": "list", "ordered": true, "items": ["x", "y"]}]}),
+        ),
         (
             "gfm-table",
             json!({"blocks": [{"type": "table", "header": ["H1", "H2"], "rows": [["a", "b"], ["c", "d"]]}]}),
@@ -72,7 +90,10 @@ fn corpus() -> Vec<(&'static str, Value)> {
                 {"type": "paragraph", "text": "# not a heading"},
                 {"type": "paragraph", "text": "1 < 2 & 3 > 2"}]}),
         ),
-        ("empty-code-fence", json!({"blocks": [{"type": "code_fence", "code": ""}]})),
+        (
+            "empty-code-fence",
+            json!({"blocks": [{"type": "code_fence", "code": ""}]}),
+        ),
     ]
 }
 
@@ -90,8 +111,8 @@ fn round_trip_is_empty_diff_on_the_whole_corpus() {
             .unwrap_or_else(|error| panic!("{name}: spec must parse: {error}"))
             .canonical_tree();
         // When: generated then verified (comrak reparse + M5 diff).
-        let bytes = markdown::generate(&input)
-            .unwrap_or_else(|error| panic!("{name}: generate: {error}"));
+        let bytes =
+            markdown::generate(&input).unwrap_or_else(|error| panic!("{name}: generate: {error}"));
         let verdict = markdown::verify(&expected, &bytes)
             .unwrap_or_else(|error| panic!("{name}: verify errored: {error}"));
         // Then: PASS on every corpus row.
@@ -123,7 +144,10 @@ fn round_trip_passes_through_the_executor_dispatch_path() {
         let verified = registry
             .dispatch(
                 FormatId::Markdown,
-                OpRequest::Verify { expected: &expected, bytes },
+                OpRequest::Verify {
+                    expected: &expected,
+                    bytes,
+                },
             )
             .unwrap_or_else(|error| panic!("{name}: dispatch verify: {error}"));
         let OpOutput::Verify(verdict) = verified.inner() else {
@@ -137,7 +161,9 @@ fn round_trip_passes_through_the_executor_dispatch_path() {
 fn mutated_expected_tree_fails_with_the_exact_pointer() {
     // PROVENANCE: the gate must be non-vacuous.
     let input = spec(json!({"blocks": [{"type": "heading", "level": 1, "text": "T"}]}));
-    let mut expected = MdSpec::from_generation(&input).expect("spec").canonical_tree();
+    let mut expected = MdSpec::from_generation(&input)
+        .expect("spec")
+        .canonical_tree();
     let bytes = markdown::generate(&input).expect("generate");
     expected["headings"][0]["level"] = json!(2);
     match markdown::verify(&expected, &bytes).expect("verify runs") {
@@ -171,8 +197,7 @@ fn minimal_fixture_extracts_the_pinned_census() {
 #[test]
 fn rich_fixture_extracts_the_pinned_census() {
     let extracted =
-        markdown::extract(&fixture("markdown-doc.md"), ExtractBudgets::default())
-            .expect("extract");
+        markdown::extract(&fixture("markdown-doc.md"), ExtractBudgets::default()).expect("extract");
     assert_eq!(
         extracted.tree,
         json!({
@@ -200,8 +225,8 @@ fn setext_and_atx_headings_extract_identically() {
     // byte comparison).
     let setext = markdown::extract(b"Title\n=====\n\nbody\n", ExtractBudgets::default())
         .expect("setext extracts");
-    let atx = markdown::extract(b"# Title\n\nbody\n", ExtractBudgets::default())
-        .expect("atx extracts");
+    let atx =
+        markdown::extract(b"# Title\n\nbody\n", ExtractBudgets::default()).expect("atx extracts");
     assert_eq!(setext.tree, atx.tree);
 }
 
@@ -234,12 +259,24 @@ fn non_utf8_is_typed_parse_failure() {
 #[test]
 fn budget_trips_are_typed_extract_too_large() {
     let bytes = fixture("markdown-doc.md");
-    let zero_deadline = ExtractBudgets { deadline: Duration::ZERO, ..ExtractBudgets::default() };
+    let zero_deadline = ExtractBudgets {
+        deadline: Duration::ZERO,
+        ..ExtractBudgets::default()
+    };
     let error = markdown::extract(&bytes, zero_deadline).expect_err("zero deadline");
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
-    let tiny = ExtractBudgets { max_total_bytes: 16, ..ExtractBudgets::default() };
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
+    let tiny = ExtractBudgets {
+        max_total_bytes: 16,
+        ..ExtractBudgets::default()
+    };
     let error = markdown::extract(&bytes, tiny).expect_err("tiny cap");
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
 }
 
 #[test]
@@ -281,7 +318,10 @@ fn invalid_specs_are_typed() {
         assert!(matches!(error, MediaError::InvalidSpec), "got {error:?}");
     }
     // Wrong format is refused before params are even read.
-    let foreign = GenerationSpec { format: FormatId::Html, params: json!({"blocks": []}) };
+    let foreign = GenerationSpec {
+        format: FormatId::Html,
+        params: json!({"blocks": []}),
+    };
     assert!(matches!(
         markdown::generate(&foreign),
         Err(MediaError::InvalidSpec)
@@ -292,8 +332,13 @@ fn invalid_specs_are_typed() {
 fn projector_is_a_thin_wrap_over_the_extractor() {
     let bytes = fixture("markdown-doc.md");
     let extracted = markdown::extract(&bytes, ExtractBudgets::default()).expect("extract");
-    let context = ProjectionContext { budgets: ExtractBudgets::default(), name_hint: None };
-    let projected = markdown::MarkdownProjector.project(&bytes, &context).expect("project");
+    let context = ProjectionContext {
+        budgets: ExtractBudgets::default(),
+        name_hint: None,
+    };
+    let projected = markdown::MarkdownProjector
+        .project(&bytes, &context)
+        .expect("project");
     assert_eq!(projected, extracted.text_projection);
 
     let mut registry = ProjectionRegistry::new();
@@ -308,5 +353,8 @@ fn projector_is_a_thin_wrap_over_the_extractor() {
             &context,
         )
         .expect_err("kind mismatch is typed");
-    assert!(matches!(mismatch, MediaError::NoProjector), "got {mismatch:?}");
+    assert!(
+        matches!(mismatch, MediaError::NoProjector),
+        "got {mismatch:?}"
+    );
 }

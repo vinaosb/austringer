@@ -84,9 +84,15 @@ fn search_ranked_hits_carry_session_ids_and_seq_across_three_sessions() {
     assert_ranked(&hits);
     // Term frequency decides: s2 (3 events with "needle") ranks above
     // s1 (1 event), and s3 never appears.
-    assert_eq!(hits[0].session_id, "s2", "tf-rich session ranks first: {hits:?}");
+    assert_eq!(
+        hits[0].session_id, "s2",
+        "tf-rich session ranks first: {hits:?}"
+    );
     let sessions: Vec<&str> = hits.iter().map(|h| h.session_id.as_str()).collect();
-    assert!(sessions.contains(&"s1") && sessions.contains(&"s2"), "{hits:?}");
+    assert!(
+        sessions.contains(&"s1") && sessions.contains(&"s2"),
+        "{hits:?}"
+    );
     assert!(!sessions.contains(&"s3"), "{hits:?}");
     // Every hit names a real event position (seq is 1-based).
     for hit in &hits {
@@ -116,8 +122,7 @@ fn scoped_search_limits_results_to_the_listed_session_ids() {
         .unwrap();
     assert_ranked(&both);
     assert!(
-        both.iter().any(|h| h.session_id == "s1")
-            && both.iter().any(|h| h.session_id == "s2"),
+        both.iter().any(|h| h.session_id == "s1") && both.iter().any(|h| h.session_id == "s2"),
         "both scopes are searched: {both:?}"
     );
 
@@ -141,7 +146,9 @@ fn scoped_search_with_an_empty_scope_matches_nothing() {
 #[test]
 fn scoped_search_limit_bounds_the_result_count() {
     let store = three_session_store();
-    let hits = store.search_events_in_sessions("needle", &["s1", "s2"], 1).unwrap();
+    let hits = store
+        .search_events_in_sessions("needle", &["s1", "s2"], 1)
+        .unwrap();
     assert_eq!(hits.len(), 1, "limit applies to the scoped query too");
 }
 
@@ -156,7 +163,9 @@ fn unparseable_fts_syntax_is_a_typed_bad_query() {
             matches!(err, SessionError::BadQuery { .. }),
             "cross-session {bad:?} must be BadQuery, got {err:?}"
         );
-        let err = store.search_events_in_sessions(bad, &["s1"], 10).unwrap_err();
+        let err = store
+            .search_events_in_sessions(bad, &["s1"], 10)
+            .unwrap_err();
         assert!(
             matches!(err, SessionError::BadQuery { .. }),
             "scoped {bad:?} must be BadQuery, got {err:?}"

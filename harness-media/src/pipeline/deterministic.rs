@@ -12,10 +12,7 @@ use crate::probe::{ProbeResult, probe};
 use crate::projection::{ProjectionContext, ProjectionRegistry};
 
 pub(super) enum Determination {
-    Projected {
-        producer: String,
-        text: String,
-    },
+    Projected { producer: String, text: String },
     Refused(MediaError),
     FallThrough,
 }

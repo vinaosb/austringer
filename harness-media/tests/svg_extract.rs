@@ -20,8 +20,8 @@ fn minimal_fixture_extracts_pinned_tree() {
     // Given: the M2 minimal fixture (root attrs + one rect).
     let bytes = fixture("svg.svg");
     // When: extracted under default budgets.
-    let extracted = svg::extract(&bytes, ExtractBudgets::default())
-        .expect("minimal svg must extract");
+    let extracted =
+        svg::extract(&bytes, ExtractBudgets::default()).expect("minimal svg must extract");
     // Then: the canonical tree is the pinned bounded summary (this
     // fixture carries width/height but no viewBox - absent stays absent).
     assert_eq!(
@@ -47,8 +47,7 @@ fn rich_fixture_extracts_census_ids_classes_text_rasters_animations() {
     // elements).
     let bytes = fixture("svg-rich.svg");
     // When: extracted.
-    let extracted = svg::extract(&bytes, ExtractBudgets::default())
-        .expect("rich svg must extract");
+    let extracted = svg::extract(&bytes, ExtractBudgets::default()).expect("rich svg must extract");
     // Then: every bounded field is pinned.
     assert_eq!(
         extracted.tree,
@@ -96,9 +95,18 @@ fn text_projection_is_bounded_deterministic_and_informative() {
     // ...and informative enough for a text-only model to answer structure
     // questions (dimensions, census, text content).
     let projection = first.text_projection;
-    assert!(projection.contains("100"), "viewBox width surfaces: {projection}");
-    assert!(projection.contains("rect=3"), "census surfaces: {projection}");
-    assert!(projection.contains("Quarter & year"), "text content surfaces: {projection}");
+    assert!(
+        projection.contains("100"),
+        "viewBox width surfaces: {projection}"
+    );
+    assert!(
+        projection.contains("rect=3"),
+        "census surfaces: {projection}"
+    );
+    assert!(
+        projection.contains("Quarter & year"),
+        "text content surfaces: {projection}"
+    );
 }
 
 #[test]
@@ -109,8 +117,7 @@ fn oversized_text_content_is_truncated_within_the_char_bound() {
         "<svg xmlns=\"http://www.w3.org/2000/svg\"><text x=\"0\" y=\"10\">{huge}</text></svg>"
     );
     // When: extracted.
-    let extracted =
-        svg::extract(bytes.as_bytes(), ExtractBudgets::default()).expect("extract");
+    let extracted = svg::extract(bytes.as_bytes(), ExtractBudgets::default()).expect("extract");
     // Then: projection and tree text stay within the bound (chars, at a
     // char boundary - never a panicked half-codepoint).
     assert!(extracted.text_projection.chars().count() <= svg::TEXT_PROJECTION_MAX_CHARS);
@@ -193,10 +200,12 @@ fn size_budget_trip_is_typed_extract_too_large() {
         max_total_bytes: 64,
     };
     // When: extracted under the tiny cap.
-    let error = svg::extract(bytes.as_bytes(), budgets)
-        .expect_err("cap must trip typed");
+    let error = svg::extract(bytes.as_bytes(), budgets).expect_err("cap must trip typed");
     // Then: ExtractTooLarge - the typed budget error, never a hang.
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
 }
 
 #[test]
@@ -210,7 +219,10 @@ fn deadline_trip_is_typed_extract_too_large() {
     // When: extracted.
     let error = svg::extract(&bytes, budgets).expect_err("deadline must trip typed");
     // Then: ExtractTooLarge (the M1 contract covers both budget axes).
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
 }
 
 #[test]

@@ -66,7 +66,9 @@ fn submit_media_decodes_and_enforces_bounds() {
     let raw = encode_client(&too_many).expect("encode");
     assert_eq!(
         harness_daemon::protocol::decode_client(raw.as_bytes()),
-        Err(harness_daemon::protocol::ProtocolError::OutOfBounds("media"))
+        Err(harness_daemon::protocol::ProtocolError::OutOfBounds(
+            "media"
+        ))
     );
 
     // A malformed hash string fails decode typed, never panics.
@@ -185,13 +187,22 @@ async fn upload(
 #[tokio::test]
 async fn upload_stores_dedups_and_probes() {
     let daemon = complete_only_daemon().await;
-    let response = upload(&daemon.base, &daemon.token, "m9-up", PNG_BYTES, Some("corpus.png"))
-        .await
-        .expect("upload");
+    let response = upload(
+        &daemon.base,
+        &daemon.token,
+        "m9-up",
+        PNG_BYTES,
+        Some("corpus.png"),
+    )
+    .await
+    .expect("upload");
     assert_eq!(response.status(), 201, "first upload stores");
     let body = json_of(response).await;
     assert_eq!(body["media"]["hash"].as_str(), Some(png_hash().as_str()));
-    assert_eq!(body["media"]["bytes"].as_u64(), Some(PNG_BYTES.len() as u64));
+    assert_eq!(
+        body["media"]["bytes"].as_u64(),
+        Some(PNG_BYTES.len() as u64)
+    );
     assert_eq!(body["probe"]["outcome"].as_str(), Some("identified"));
     assert_eq!(body["probe"]["format"].as_str(), Some("png"));
 
@@ -282,9 +293,7 @@ async fn upload_abort_mid_stream_cleans_temp_and_daemon_survives() {
         let temps: usize = std::fs::read_dir(&media_dir)
             .map(|dir| {
                 dir.filter_map(Result::ok)
-                    .filter(|entry| {
-                        entry.file_name().to_string_lossy().starts_with(".upload")
-                    })
+                    .filter(|entry| entry.file_name().to_string_lossy().starts_with(".upload"))
                     .count()
             })
             .unwrap_or(0);
@@ -310,22 +319,33 @@ async fn upload_abort_mid_stream_cleans_temp_and_daemon_survives() {
 #[tokio::test]
 async fn get_media_serves_bytes_with_probed_content_type() {
     let daemon = complete_only_daemon().await;
-    let stored = upload(&daemon.base, &daemon.token, "m9-get", PNG_BYTES, Some("corpus.png"))
-        .await
-        .expect("upload");
+    let stored = upload(
+        &daemon.base,
+        &daemon.token,
+        "m9-get",
+        PNG_BYTES,
+        Some("corpus.png"),
+    )
+    .await
+    .expect("upload");
     assert_eq!(stored.status(), 201);
     let hash = png_hash();
     let colon = hash.strip_prefix("blake3:").expect("prefix");
 
     let ok = http()
-        .get(format!("http://{}/s/m9-get/media/blake3:{colon}", daemon.base))
+        .get(format!(
+            "http://{}/s/m9-get/media/blake3:{colon}",
+            daemon.base
+        ))
         .bearer_auth(&daemon.token)
         .send()
         .await
         .expect("get");
     assert_eq!(ok.status(), 200);
     assert_eq!(
-        ok.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()),
+        ok.headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok()),
         Some("image/png"),
         "content type comes from the probed mime"
     );
@@ -333,7 +353,10 @@ async fn get_media_serves_bytes_with_probed_content_type() {
     assert_eq!(&bytes[..], PNG_BYTES);
 
     let no_token = http()
-        .get(format!("http://{}/s/m9-get/media/blake3:{colon}", daemon.base))
+        .get(format!(
+            "http://{}/s/m9-get/media/blake3:{colon}",
+            daemon.base
+        ))
         .send()
         .await
         .expect("get");
@@ -352,7 +375,10 @@ async fn get_media_serves_bytes_with_probed_content_type() {
     let unknown = ContentHash::from_bytes(b"never-uploaded-anywhere").to_ref();
     let unknown_hash = unknown.strip_prefix("blake3:").expect("prefix");
     let missing = http()
-        .get(format!("http://{}/s/m9-get/media/blake3:{unknown_hash}", daemon.base))
+        .get(format!(
+            "http://{}/s/m9-get/media/blake3:{unknown_hash}",
+            daemon.base
+        ))
         .bearer_auth(&daemon.token)
         .send()
         .await
@@ -369,9 +395,17 @@ async fn get_media_serves_bytes_with_probed_content_type() {
 type WsSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-async fn ws_attach(base: &str, token: &str, session: &str, version: u32, client_id: &str) -> WsSocket {
+async fn ws_attach(
+    base: &str,
+    token: &str,
+    session: &str,
+    version: u32,
+    client_id: &str,
+) -> WsSocket {
     let url = format!("ws://{base}/s/{session}/attach?token={token}");
-    let (mut socket, _) = tokio_tungstenite::connect_async(&url).await.expect("ws connect");
+    let (mut socket, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("ws connect");
     let hello = encode_client(&ClientMsg::Hello {
         version,
         token: token.to_owned(),
@@ -388,9 +422,7 @@ async fn ws_attach(base: &str, token: &str, session: &str, version: u32, client_
 
 async fn ws_read(socket: &mut WsSocket) -> Option<String> {
     match tokio::time::timeout(Duration::from_secs(5), socket.next()).await {
-        Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text)))) => {
-            Some(text.to_string())
-        }
+        Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text)))) => Some(text.to_string()),
         _ => None,
     }
 }
@@ -399,7 +431,9 @@ async fn collect_until(socket: &mut WsSocket, marker: &str) -> Vec<String> {
     let mut frames = Vec::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     while tokio::time::Instant::now() < deadline {
-        let Some(frame) = ws_read(socket).await else { break };
+        let Some(frame) = ws_read(socket).await else {
+            break;
+        };
         let hit = frame.contains(marker);
         frames.push(frame);
         if hit {
@@ -412,9 +446,15 @@ async fn collect_until(socket: &mut WsSocket, marker: &str) -> Vec<String> {
 #[tokio::test]
 async fn v2_submit_media_round_trips_blocks_log_and_media_result() {
     let daemon = complete_only_daemon().await;
-    let stored = upload(&daemon.base, &daemon.token, "m9-v2", PNG_BYTES, Some("corpus.png"))
-        .await
-        .expect("upload");
+    let stored = upload(
+        &daemon.base,
+        &daemon.token,
+        "m9-v2",
+        PNG_BYTES,
+        Some("corpus.png"),
+    )
+    .await
+    .expect("upload");
     assert_eq!(stored.status(), 201);
     let body = json_of(stored).await;
     let hash_str = body["media"]["hash"].as_str().expect("hash").to_owned();
@@ -426,7 +466,10 @@ async fn v2_submit_media_round_trips_blocks_log_and_media_result() {
         .iter()
         .find(|frame| frame.contains("hello_ack"))
         .expect("hello ack seen");
-    assert!(ack.contains("\"version\":2"), "v2 hello echoes version 2: {ack}");
+    assert!(
+        ack.contains("\"version\":2"),
+        "v2 hello echoes version 2: {ack}"
+    );
 
     let submit = encode_client(&ClientMsg::Command {
         command: SessionCommand::SubmitMedia {
@@ -458,7 +501,11 @@ async fn v2_submit_media_round_trips_blocks_log_and_media_result() {
     );
 
     // The durable log keeps the typed form.
-    let log_path = daemon.state.sessions_root.join("m9-v2").join("events.jsonl");
+    let log_path = daemon
+        .state
+        .sessions_root
+        .join("m9-v2")
+        .join("events.jsonl");
     let log = std::fs::read_to_string(log_path).expect("durable log");
     assert!(
         log.contains("\"type\":\"media\""),
@@ -473,9 +520,15 @@ async fn v1_connection_receives_no_media_variant_byte_audit() {
     let mut v1 = ws_attach(&daemon.base, &daemon.token, "m9-v1", 1, "v1-client").await;
     let _ = collect_until(&mut v1, "hello_ack").await;
 
-    let stored = upload(&daemon.base, &daemon.token, "m9-v1", PNG_BYTES, Some("corpus.png"))
-        .await
-        .expect("upload");
+    let stored = upload(
+        &daemon.base,
+        &daemon.token,
+        "m9-v1",
+        PNG_BYTES,
+        Some("corpus.png"),
+    )
+    .await
+    .expect("upload");
     assert_eq!(stored.status(), 201);
     let body = json_of(stored).await;
     let hash_str = body["media"]["hash"].as_str().expect("hash").to_owned();
@@ -520,9 +573,15 @@ async fn ipc_v1_connection_byte_audit() {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     let daemon = complete_only_daemon().await;
-    let stored = upload(&daemon.base, &daemon.token, "m9-ipc", PNG_BYTES, Some("corpus.png"))
-        .await
-        .expect("upload");
+    let stored = upload(
+        &daemon.base,
+        &daemon.token,
+        "m9-ipc",
+        PNG_BYTES,
+        Some("corpus.png"),
+    )
+    .await
+    .expect("upload");
     assert_eq!(stored.status(), 201);
     let body = json_of(stored).await;
     let hash_str = body["media"]["hash"].as_str().expect("hash").to_owned();

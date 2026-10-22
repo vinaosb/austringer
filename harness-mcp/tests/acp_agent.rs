@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_mcp::acp::types::{
-    AcpContentBlock, PermissionOption, PermissionOptionKind, PermissionOutcome,
-    PROTOCOL_VERSION, StopReason,
+    AcpContentBlock, PROTOCOL_VERSION, PermissionOption, PermissionOptionKind, PermissionOutcome,
+    StopReason,
 };
 use harness_mcp::acp::{
     AcpAgent, AcpEngine, AcpError, AcpPrompt, AcpWire, IdeChannel, SessionUpdate,

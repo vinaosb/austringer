@@ -134,7 +134,9 @@ fn destination_host(token: &str) -> Option<(String, u16)> {
         None => (0, token),
     };
     let authority = rest.split(['/', '\\', '?', '#']).next()?;
-    let hostport = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+    let hostport = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
     if hostport.is_empty() {
         return None;
     }

@@ -12,11 +12,11 @@
 use std::collections::BTreeSet;
 use std::time::Instant;
 
-use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
 
-use super::tree::{self, SvgTree, ViewBox, ANIMATION_TAGS};
 use super::TEXT_PROJECTION_MAX_CHARS;
+use super::tree::{self, ANIMATION_TAGS, SvgTree, ViewBox};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 
@@ -119,9 +119,7 @@ impl Walk {
                 }
                 "class" => {
                     for token in value.split_whitespace() {
-                        if self.classes.len() >= MAX_LIST_ENTRIES
-                            && !self.classes.contains(token)
-                        {
+                        if self.classes.len() >= MAX_LIST_ENTRIES && !self.classes.contains(token) {
                             return Err(MediaError::ExtractTooLarge);
                         }
                         self.classes.insert(token.to_owned());
@@ -240,21 +238,26 @@ impl Walk {
         self.tree.ids = self.ids.into_iter().collect();
         self.tree.classes = self.classes.into_iter().collect();
         self.tree.embedded_rasters = self.rasters.into_iter().collect();
-        self.tree.text =
-            tree::truncate_chars(self.texts.join(" "), TEXT_PROJECTION_MAX_CHARS);
+        self.tree.text = tree::truncate_chars(self.texts.join(" "), TEXT_PROJECTION_MAX_CHARS);
         if let Some(title) = self.tree.title.take() {
             self.tree.title = Some(tree::truncate_chars(title, TEXT_PROJECTION_MAX_CHARS));
         }
         if let Some(desc) = self.tree.desc.take() {
             self.tree.desc = Some(tree::truncate_chars(desc, TEXT_PROJECTION_MAX_CHARS));
         }
-        let text_projection =
-            tree::truncate_chars(tree::render_projection(&self.tree), TEXT_PROJECTION_MAX_CHARS);
+        let text_projection = tree::truncate_chars(
+            tree::render_projection(&self.tree),
+            TEXT_PROJECTION_MAX_CHARS,
+        );
         let tree_value = match serde_json::to_value(&self.tree) {
             Ok(value) => value,
             Err(_) => serde_json::Value::Null,
         };
-        Ok(Extracted { tree: tree_value, text_projection, thumbnails: Vec::new() })
+        Ok(Extracted {
+            tree: tree_value,
+            text_projection,
+            thumbnails: Vec::new(),
+        })
     }
 }
 
@@ -262,5 +265,7 @@ impl Walk {
 fn char_reference(name: &str) -> Option<char> {
     let digits = name.strip_prefix("#x").or_else(|| name.strip_prefix('#'))?;
     let radix = if name.starts_with("#x") { 16 } else { 10 };
-    u32::from_str_radix(digits, radix).ok().and_then(char::from_u32)
+    u32::from_str_radix(digits, radix)
+        .ok()
+        .and_then(char::from_u32)
 }

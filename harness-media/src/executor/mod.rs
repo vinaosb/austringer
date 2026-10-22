@@ -53,8 +53,8 @@ mod types;
 mod wiring;
 
 pub use binding::{
-    AdapterEntry, AdapterOps, ExtractHandler, GenerateHandler, OpBinding, ProbeHandler,
-    SubHandler, VerifyHandler,
+    AdapterEntry, AdapterOps, ExtractHandler, GenerateHandler, OpBinding, ProbeHandler, SubHandler,
+    VerifyHandler,
 };
 pub use registry::{ExecutorRegistry, ExecutorRegistryBuilder, ExecutorWiringError};
 pub use types::{AdapterTier, OpOutput, OpRequest, Produced, ProducerInfo};

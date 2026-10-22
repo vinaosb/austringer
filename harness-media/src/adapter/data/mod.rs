@@ -36,11 +36,11 @@
 //! `ExtractTooLarge`, never a hang.
 
 pub mod arrow;
-mod parquet_census;
 pub mod parquet;
+mod parquet_census;
 pub mod spec;
 
-pub use spec::{Column, ColumnType, TabularSpec, MAX_COLUMNS, MAX_ROWS};
+pub use spec::{Column, ColumnType, MAX_COLUMNS, MAX_ROWS, TabularSpec};
 
 use std::sync::Arc;
 
@@ -57,7 +57,9 @@ use serde_json::Value;
 use crate::error::MediaError;
 use crate::extract::ExtractBudgets;
 use crate::format::FormatId;
-use crate::projection::{ProjectionContext, ProjectionProvider, ProjectionRegistry, ProjectionWiringError};
+use crate::projection::{
+    ProjectionContext, ProjectionProvider, ProjectionRegistry, ProjectionWiringError,
+};
 
 /// Truncate to at most `max` CHARS, at a char boundary (the M1
 /// text-projection bound discipline; local because the text module is
@@ -141,7 +143,9 @@ pub(crate) fn cell_value(
             .map_or(Value::Null, Value::Number),
         ColumnType::Utf8 => any
             .downcast_ref::<StringArray>()
-            .map_or(Value::Null, |array| Value::String(array.value(row).to_owned())),
+            .map_or(Value::Null, |array| {
+                Value::String(array.value(row).to_owned())
+            }),
     };
     Ok(value)
 }

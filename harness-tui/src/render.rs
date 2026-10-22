@@ -18,7 +18,9 @@ fn body_lines(app: &App, height: u16) -> Vec<Line<'static>> {
     let mut lines = panels::compose_body(app);
     let height = usize::from(height);
     if lines.len() > height {
-        let end = lines.len().saturating_sub(app.scroll_offset().min(lines.len()));
+        let end = lines
+            .len()
+            .saturating_sub(app.scroll_offset().min(lines.len()));
         let start = end.saturating_sub(height);
         lines.drain(..start);
         lines.truncate(end - start);

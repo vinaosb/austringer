@@ -3,7 +3,7 @@
 //! crate and is therefore gated behind the `office` feature - without it
 //! a zip is honestly Unknown with a note naming the feature.
 
-use crate::probe::{unknown, ProbeResult};
+use crate::probe::{ProbeResult, unknown};
 
 const ZIP_LOCAL_HEADER: &[u8] = b"PK\x03\x04";
 
@@ -28,11 +28,20 @@ pub(super) fn sniff(bytes: &[u8]) -> Option<ProbeResult> {
         return Some(unknown("zip container; [Content_Types].xml unreadable"));
     }
     if content.contains("wordprocessingml") {
-        Some(hit(FormatId::Docx, "OOXML content types: wordprocessingml".into()))
+        Some(hit(
+            FormatId::Docx,
+            "OOXML content types: wordprocessingml".into(),
+        ))
     } else if content.contains("spreadsheetml") {
-        Some(hit(FormatId::Xlsx, "OOXML content types: spreadsheetml".into()))
+        Some(hit(
+            FormatId::Xlsx,
+            "OOXML content types: spreadsheetml".into(),
+        ))
     } else if content.contains("presentationml") {
-        Some(hit(FormatId::Pptx, "OOXML content types: presentationml".into()))
+        Some(hit(
+            FormatId::Pptx,
+            "OOXML content types: presentationml".into(),
+        ))
     } else {
         Some(unknown(
             "zip with [Content_Types].xml but no office document flavor",

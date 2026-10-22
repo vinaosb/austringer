@@ -106,9 +106,15 @@ pub enum Unprojectable {
 impl fmt::Display for Unprojectable {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoProjector => formatter.write_str("no projector registered and no capable model"),
-            Self::Deterministic(error) => write!(formatter, "deterministic projector failed: {error}"),
-            Self::ModelMediation(detail) => write!(formatter, "model-mediated projection failed: {detail}"),
+            Self::NoProjector => {
+                formatter.write_str("no projector registered and no capable model")
+            }
+            Self::Deterministic(error) => {
+                write!(formatter, "deterministic projector failed: {error}")
+            }
+            Self::ModelMediation(detail) => {
+                write!(formatter, "model-mediated projection failed: {detail}")
+            }
             Self::Timeout => formatter.write_str("model-mediated projection timed out"),
             Self::MissingSource => formatter.write_str("media bytes missing from the store"),
             Self::Store(detail) => write!(formatter, "derived store write failed: {detail}"),
@@ -149,7 +155,9 @@ impl ProjectionOutcome {
     pub fn notice(&self) -> Option<String> {
         match self {
             Self::Resolved { .. } => None,
-            Self::Unprojectable { mime, kind, reason, .. } => Some(format!(
+            Self::Unprojectable {
+                mime, kind, reason, ..
+            } => Some(format!(
                 "media projection unavailable: {mime} needs {} but was not projected ({reason}); \
                  the block keeps its deterministic marker",
                 kind.as_slug()
@@ -331,7 +339,10 @@ struct DeliveryAlias<'a> {
 
 impl ProjectionCache for DeliveryAlias<'_> {
     fn cached_projection(&self, source: &ContentHash, kind: ProjectionKind) -> Option<String> {
-        match self.derived.load_derived(source, DELIVERY_CACHE_PRODUCER, kind) {
+        match self
+            .derived
+            .load_derived(source, DELIVERY_CACHE_PRODUCER, kind)
+        {
             Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
             Ok(None) | Err(_) => None,
         }

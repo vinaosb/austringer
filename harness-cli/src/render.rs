@@ -84,9 +84,10 @@ pub fn human(msg: &ServerMsg) -> Option<String> {
             "model fallback proposed: {} -> {} — {} (answer over WS/IPC)",
             ask.current.model, ask.proposed.model, ask.reason
         )),
-        ServerMsg::FallbackResolved { ask_id, chosen } => {
-            Some(format!("fallback {ask_id} resolved: next model {}", chosen.model))
-        }
+        ServerMsg::FallbackResolved { ask_id, chosen } => Some(format!(
+            "fallback {ask_id} resolved: next model {}",
+            chosen.model
+        )),
         ServerMsg::Verdict {
             turn,
             verdict,
@@ -137,16 +138,24 @@ fn human_event(event: &SessionEvent) -> Option<String> {
         }
         SessionEvent::Diff { path, .. } => Some(format!("diff: {path}")),
         SessionEvent::Notification { message, .. } => Some(format!("notice: {message}")),
-        SessionEvent::ChildStarted { child, task, role, .. } => {
-            Some(format!("child started: {child} ({task}, {role})"))
-        }
-        SessionEvent::ChildProgress { child, phase, detail } => {
-            Some(format!("child {child} {phase}: {detail}"))
-        }
-        SessionEvent::ChildFinished { child, task, state, detail } => {
-            Some(format!("child {child} ({task}) finished {state}: {detail}"))
-        }
-        SessionEvent::CostWarning { consumed_micros, cap_micros } => {
+        SessionEvent::ChildStarted {
+            child, task, role, ..
+        } => Some(format!("child started: {child} ({task}, {role})")),
+        SessionEvent::ChildProgress {
+            child,
+            phase,
+            detail,
+        } => Some(format!("child {child} {phase}: {detail}")),
+        SessionEvent::ChildFinished {
+            child,
+            task,
+            state,
+            detail,
+        } => Some(format!("child {child} ({task}) finished {state}: {detail}")),
+        SessionEvent::CostWarning {
+            consumed_micros,
+            cap_micros,
+        } => {
             let pct = if *cap_micros == 0 {
                 100
             } else {
@@ -156,7 +165,10 @@ fn human_event(event: &SessionEvent) -> Option<String> {
                 "cost warning: {pct}% of session cap ({consumed_micros} of {cap_micros} micro-USD)"
             ))
         }
-        SessionEvent::CostStop { consumed_micros, cap_micros } => Some(format!(
+        SessionEvent::CostStop {
+            consumed_micros,
+            cap_micros,
+        } => Some(format!(
             "cost stop: session cap reached ({consumed_micros} of {cap_micros} micro-USD) — further turns refused"
         )),
         SessionEvent::TeamBudget {
@@ -170,9 +182,9 @@ fn human_event(event: &SessionEvent) -> Option<String> {
         SessionEvent::TeamBudgetExhausted { spent, budget } => Some(format!(
             "agents budget exhausted: {spent} of {budget} tokens — further task spawns refused"
         )),
-        SessionEvent::PlanModeEntered { plan } => {
-            Some(format!("plan mode entered (plan {plan}); writes gated until approval"))
-        }
+        SessionEvent::PlanModeEntered { plan } => Some(format!(
+            "plan mode entered (plan {plan}); writes gated until approval"
+        )),
         SessionEvent::PlanModeExited { plan } => {
             Some(format!("plan mode exited without approval (plan {plan})"))
         }
@@ -185,7 +197,9 @@ fn human_event(event: &SessionEvent) -> Option<String> {
         SessionEvent::PlanUpdated { plan, revision } => Some(format!(
             "plan {plan} edited (revision {revision}); writes re-gated"
         )),
-        SessionEvent::PlanApproved { plan } => Some(format!("plan {plan} approved; writes re-armed")),
+        SessionEvent::PlanApproved { plan } => {
+            Some(format!("plan {plan} approved; writes re-armed"))
+        }
         SessionEvent::PlanRejected { plan } => {
             Some(format!("plan {plan} rejected; plan mode stays active"))
         }
@@ -201,7 +215,10 @@ fn human_core_event(event: &Event) -> Option<String> {
             Some(format!("tool result {call_id}: {}", blocks_text(blocks)))
         }
         Event::System { text } => Some(format!("system: {text}")),
-        Event::Condensation { summary, through_seq } => Some(format!(
+        Event::Condensation {
+            summary,
+            through_seq,
+        } => Some(format!(
             "~ condensed through seq {} — {}",
             through_seq.0,
             summary.lines().next().unwrap_or_default()
@@ -318,7 +335,10 @@ mod tests {
             budget: 1000,
         })
         .unwrap_or_default();
-        assert!(exhausted.starts_with("agents budget exhausted"), "{exhausted}");
+        assert!(
+            exhausted.starts_with("agents budget exhausted"),
+            "{exhausted}"
+        );
         let replayed = human(&ServerMsg::Snapshot { frames: Vec::new() }).unwrap_or_default();
         assert_eq!(replayed, "— state replayed —");
     }
@@ -452,8 +472,8 @@ mod tests {
             "cost_usd_micros": null
         }))
         .unwrap();
-        let value: serde_json::Value = serde_json::from_str(&ndjson_line(&usage))
-            .unwrap_or_else(|e| panic!("json: {e}"));
+        let value: serde_json::Value =
+            serde_json::from_str(&ndjson_line(&usage)).unwrap_or_else(|e| panic!("json: {e}"));
         assert_eq!(value["type"], serde_json::json!("usage"));
         assert_eq!(value["input_tokens"], serde_json::json!(10));
         assert_eq!(value["model"]["model"], serde_json::json!("mock-1"));

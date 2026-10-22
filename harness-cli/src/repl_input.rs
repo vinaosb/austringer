@@ -89,7 +89,10 @@ mod tests {
 
     #[test]
     fn plain_text_and_every_core_command_parse_typed() {
-        assert_eq!(parse_line("fix the bug"), ReplLine::Turn("fix the bug".into()));
+        assert_eq!(
+            parse_line("fix the bug"),
+            ReplLine::Turn("fix the bug".into())
+        );
         assert_eq!(parse_line("/help"), ReplLine::Help);
         assert_eq!(parse_line("/steer hurry"), ReplLine::Steer("hurry".into()));
         assert_eq!(parse_line("/cancel"), ReplLine::Cancel);
@@ -131,7 +134,10 @@ mod tests {
 
     #[test]
     fn unknown_words_carry_the_shared_help_string() {
-        assert_eq!(parse_line("/model sonnet"), ReplLine::Unknown("model".into()));
+        assert_eq!(
+            parse_line("/model sonnet"),
+            ReplLine::Unknown("model".into())
+        );
         assert_eq!(
             harness_daemon::grammar::unknown_help("model"),
             "unknown command /model — /help lists commands"

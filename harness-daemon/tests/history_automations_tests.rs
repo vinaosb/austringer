@@ -35,9 +35,8 @@ async fn spawn_in(dir: &std::path::Path) -> (String, String, Arc<DaemonState>) {
     };
     let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
         Arc::new(|| Box::new(CompleteOnlyInference));
-    let state = Arc::new(
-        DaemonState::new(config, factory).unwrap_or_else(|e| panic!("state: {e}")),
-    );
+    let state =
+        Arc::new(DaemonState::new(config, factory).unwrap_or_else(|e| panic!("state: {e}")));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -102,8 +101,7 @@ fn fixture_def(id: &str, cron: &str, criteria: &[&str]) -> AutomationDefinition 
 /// Write an approved pack-tiers file and register one fixture
 /// automation through the production store path.
 fn fixture_automation(dir: &std::path::Path, def: &AutomationDefinition) {
-    std::fs::write(dir.join("pack-tiers.json"), br#"{"review": "approved"}"#)
-        .expect("pack tiers");
+    std::fs::write(dir.join("pack-tiers.json"), br#"{"review": "approved"}"#).expect("pack tiers");
     let gate = FilePackGate::open(&dir.join("pack-tiers.json")).expect("gate");
     let mut store = AutomationStore::load(dir, &gate).expect("store");
     store.register(def, &gate).expect("register");
@@ -235,7 +233,10 @@ async fn sched_notification_surfaces_to_sse_client() {
         dir.path(),
         {
             let gate = FilePackGate::open(&dir.path().join("pack-tiers.json")).unwrap();
-            AutomationStore::load(dir.path(), &gate).unwrap().defs().to_vec()
+            AutomationStore::load(dir.path(), &gate)
+                .unwrap()
+                .defs()
+                .to_vec()
         },
         Arc::new(DaemonKicker::new(Arc::clone(&state))),
         Arc::clone(&sink),

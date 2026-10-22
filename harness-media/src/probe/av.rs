@@ -3,7 +3,7 @@
 //! typed Unknown), and the EBML webm/mkv dispatch.
 
 use crate::format::FormatId;
-use crate::probe::{find_sub, hit, likely, ProbeResult};
+use crate::probe::{ProbeResult, find_sub, hit, likely};
 
 const EBML: &[u8] = &[0x1A, 0x45, 0xDF, 0xA3];
 
@@ -14,9 +14,15 @@ pub(super) fn sniff(bytes: &[u8], hint: Option<FormatId>) -> Option<ProbeResult>
     if bytes.starts_with(b"OggS") {
         let window = bytes.get(..256).unwrap_or(bytes);
         if find_sub(window, b"OpusHead").is_some() {
-            return Some(hit(FormatId::Opus, "ogg first page carries OpusHead".into()));
+            return Some(hit(
+                FormatId::Opus,
+                "ogg first page carries OpusHead".into(),
+            ));
         }
-        return Some(hit(FormatId::Ogg, "ogg container (non-Opus codec header)".into()));
+        return Some(hit(
+            FormatId::Ogg,
+            "ogg container (non-Opus codec header)".into(),
+        ));
     }
     if bytes.starts_with(b"RIFF") {
         if bytes.get(8..12) == Some(b"WAVE".as_slice()) {
@@ -81,9 +87,10 @@ fn ebml(bytes: &[u8], hint: Option<FormatId>) -> ProbeResult {
                 FormatId::Webm,
                 "EBML magic, doctype not resolvable; name hint".into(),
             ),
-            Some(FormatId::Mkv) => {
-                likely(FormatId::Mkv, "EBML magic, doctype not resolvable; name hint".into())
-            }
+            Some(FormatId::Mkv) => likely(
+                FormatId::Mkv,
+                "EBML magic, doctype not resolvable; name hint".into(),
+            ),
             _ => ProbeResult::Unknown {
                 note: "EBML container; doctype not resolvable in the sniff window".into(),
             },

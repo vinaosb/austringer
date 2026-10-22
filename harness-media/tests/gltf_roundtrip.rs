@@ -16,13 +16,13 @@
 #![cfg(feature = "gltf")]
 
 use harness_media::adapter::gltf;
-use harness_media::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use harness_media::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use harness_media::error::MediaError;
 use harness_media::executor::OpRequest;
 use harness_media::extract::ExtractBudgets;
 use harness_media::format::FormatId;
 use harness_media::generate::GenerationSpec;
-use harness_media::probe::{probe, Confidence, ProbeResult};
+use harness_media::probe::{Confidence, ProbeResult, probe};
 
 /// The M12 tolerance profile: eps 1e-6; materials + name-keyed nodes
 /// unordered (the plan's only sanctioned reordering escapes).
@@ -128,7 +128,9 @@ fn generated_outputs_probe_certain_as_gltf() {
         let spec = spec(params);
         let bytes = gltf::generate(&spec).expect("generate");
         match probe(&bytes, None) {
-            ProbeResult::Identified { format, confidence, .. } => {
+            ProbeResult::Identified {
+                format, confidence, ..
+            } => {
                 assert_eq!(format, FormatId::Gltf);
                 assert_eq!(confidence, Confidence::Certain);
             }
@@ -155,7 +157,10 @@ fn writer_containers_agree_everywhere_but_the_container_node() {
     let diff = structural_diff(&gltf_tree, &glb_tree, &tolerances)
         .unwrap_or_else(|error| panic!("{name}: diff failed: {error}"));
     // Then: the trees agree everywhere but the container node.
-    assert!(diff.is_empty(), "{name}: container-agnostic diff not empty:\n{diff}");
+    assert!(
+        diff.is_empty(),
+        "{name}: container-agnostic diff not empty:\n{diff}"
+    );
 }
 
 #[test]
@@ -166,7 +171,10 @@ fn generation_is_byte_deterministic_across_runs() {
         let spec = spec(params.clone());
         let first = gltf::generate(&spec).expect("first generate");
         let second = gltf::generate(&spec).expect("second generate");
-        assert_eq!(first, second, "{name}: generation must be byte-deterministic");
+        assert_eq!(
+            first, second,
+            "{name}: generation must be byte-deterministic"
+        );
     }
 }
 
@@ -205,7 +213,10 @@ fn u32_indices_fall_back_when_vertices_exceed_u16() {
     let bytes = gltf::generate(&spec).expect("u32-index generate");
     let expected = gltf::spec_tree(&spec.params).expect("spec projects");
     let verdict = gltf::verify(&expected, &bytes).expect("u32-index verify");
-    assert!(matches!(verdict, RoundTripVerdict::Pass), "u32 indices: {verdict:?}");
+    assert!(
+        matches!(verdict, RoundTripVerdict::Pass),
+        "u32 indices: {verdict:?}"
+    );
     // And: the independent khronos reader still accepts it.
     assert!(gltf::reparse(&bytes).is_ok(), "u32-index re-parse");
 }
@@ -213,41 +224,64 @@ fn u32_indices_fall_back_when_vertices_exceed_u16() {
 #[test]
 fn invalid_specs_fail_typed_before_any_bytes_are_emitted() {
     let cases: Vec<(&str, serde_json::Value)> = vec![
-        ("duplicate node names", serde_json::json!({
-            "nodes": [{"name": "a"}, {"name": "a"}]
-        })),
-        ("dangling child ref", serde_json::json!({
-            "nodes": [{"name": "a", "children": ["ghost"]}]
-        })),
-        ("unknown mesh ref", serde_json::json!({
-            "nodes": [{"name": "a", "mesh": "ghost"}]
-        })),
-        ("unknown material ref", serde_json::json!({
-            "nodes": [{"name": "a"}],
-            "meshes": [{"name": "m", "primitives": [
-                {"positions": [[0.0, 0.0, 0.0]], "material": "ghost"}]}]
-        })),
-        ("normal count mismatch", serde_json::json!({
-            "nodes": [{"name": "a"}],
-            "meshes": [{"name": "m", "primitives": [
-                {"positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-                 "normals": [[0.0, 1.0, 0.0]]}]}]
-        })),
-        ("empty positions", serde_json::json!({
-            "nodes": [{"name": "a"}],
-            "meshes": [{"name": "m", "primitives": [{"positions": []}]}]
-        })),
-        ("bad container kind", serde_json::json!({"container": "obj"})),
+        (
+            "duplicate node names",
+            serde_json::json!({
+                "nodes": [{"name": "a"}, {"name": "a"}]
+            }),
+        ),
+        (
+            "dangling child ref",
+            serde_json::json!({
+                "nodes": [{"name": "a", "children": ["ghost"]}]
+            }),
+        ),
+        (
+            "unknown mesh ref",
+            serde_json::json!({
+                "nodes": [{"name": "a", "mesh": "ghost"}]
+            }),
+        ),
+        (
+            "unknown material ref",
+            serde_json::json!({
+                "nodes": [{"name": "a"}],
+                "meshes": [{"name": "m", "primitives": [
+                    {"positions": [[0.0, 0.0, 0.0]], "material": "ghost"}]}]
+            }),
+        ),
+        (
+            "normal count mismatch",
+            serde_json::json!({
+                "nodes": [{"name": "a"}],
+                "meshes": [{"name": "m", "primitives": [
+                    {"positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                     "normals": [[0.0, 1.0, 0.0]]}]}]
+            }),
+        ),
+        (
+            "empty positions",
+            serde_json::json!({
+                "nodes": [{"name": "a"}],
+                "meshes": [{"name": "m", "primitives": [{"positions": []}]}]
+            }),
+        ),
+        (
+            "bad container kind",
+            serde_json::json!({"container": "obj"}),
+        ),
         ("empty nodes", serde_json::json!({"nodes": []})),
-        ("index out of vertex range", serde_json::json!({
-            "nodes": [{"name": "a"}],
-            "meshes": [{"name": "m", "primitives": [
-                {"positions": [[0.0, 0.0, 0.0]], "indices": [7]}]}]
-        })),
+        (
+            "index out of vertex range",
+            serde_json::json!({
+                "nodes": [{"name": "a"}],
+                "meshes": [{"name": "m", "primitives": [
+                    {"positions": [[0.0, 0.0, 0.0]], "indices": [7]}]}]
+            }),
+        ),
     ];
     for (name, params) in cases {
-        let error = gltf::generate(&spec(params))
-            .expect_err(&format!("{name}: must be refused"));
+        let error = gltf::generate(&spec(params)).expect_err(&format!("{name}: must be refused"));
         assert!(
             matches!(error, MediaError::InvalidSpec),
             "{name}: expected InvalidSpec, got {error:?}"
@@ -269,7 +303,9 @@ fn verify_reports_exact_pointers_on_a_broken_round_trip() {
     match verdict {
         RoundTripVerdict::Fail(diff) => {
             assert!(
-                diff.changed.iter().any(|change| change.path.contains("/translation")),
+                diff.changed
+                    .iter()
+                    .any(|change| change.path.contains("/translation")),
                 "diff must name /translation, got:\n{diff}"
             );
         }
@@ -307,6 +343,9 @@ fn khronos_validator_reports_zero_errors_on_generated_glbs() {
         let report: serde_json::Value = serde_json::from_slice(&output.stdout)
             .unwrap_or_else(|error| panic!("{name}: report parse: {error}"));
         let errors = report["issues"]["numErrors"].as_u64().unwrap_or(u64::MAX);
-        assert_eq!(errors, 0, "{name}: Khronos validator errors=0 is pinned; report: {report}");
+        assert_eq!(
+            errors, 0,
+            "{name}: Khronos validator errors=0 is pinned; report: {report}"
+        );
     }
 }

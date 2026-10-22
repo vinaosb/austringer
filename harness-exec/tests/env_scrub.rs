@@ -40,9 +40,7 @@ fn env_scrub_removes_dropped_variables_from_the_child_environment() {
     let dir = tempfile::tempdir().expect("tempdir");
     let runner = runner_with_temp_spill(&dir);
 
-    let unscrubbed = runner
-        .run(&sentinel_spec(None))
-        .expect("unscrubbed run");
+    let unscrubbed = runner.run(&sentinel_spec(None)).expect("unscrubbed run");
     assert!(
         unscrubbed.model_text.contains(SENTINEL_VALUE),
         "control run: the addition must reach the child without a scrub\n{}",

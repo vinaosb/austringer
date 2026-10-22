@@ -36,7 +36,10 @@ pub enum Container {
 /// projection implement this same spec rule separately, on purpose).
 #[must_use]
 pub fn indices_byte_width(indices: &[u32]) -> usize {
-    if indices.iter().all(|index| *index <= u64::from(u16::MAX) as u32) {
+    if indices
+        .iter()
+        .all(|index| *index <= u64::from(u16::MAX) as u32)
+    {
         2
     } else {
         4
@@ -50,7 +53,11 @@ pub fn indices_byte_width(indices: &[u32]) -> usize {
 /// the same format contract.
 #[must_use]
 pub fn normalized_rotation(rotation: [f32; 4]) -> Option<[f32; 4]> {
-    let norm = rotation.iter().map(|component| component * component).sum::<f32>().sqrt();
+    let norm = rotation
+        .iter()
+        .map(|component| component * component)
+        .sum::<f32>()
+        .sqrt();
     if norm == 0.0 {
         return None;
     }
@@ -170,7 +177,8 @@ fn default_container() -> Container {
 /// Parse and validate `params` against the subset contract; every
 /// violation is the typed [`MediaError::InvalidSpec`].
 pub fn parse_spec(params: &Value) -> Result<GltfSpec, MediaError> {
-    let spec: GltfSpec = serde_json::from_value(params.clone()).map_err(|_| MediaError::InvalidSpec)?;
+    let spec: GltfSpec =
+        serde_json::from_value(params.clone()).map_err(|_| MediaError::InvalidSpec)?;
     if spec.nodes.is_empty() {
         return Err(MediaError::InvalidSpec);
     }
@@ -179,35 +187,53 @@ pub fn parse_spec(params: &Value) -> Result<GltfSpec, MediaError> {
     unique_names(spec.materials.iter().map(|material| material.name.as_str()))?;
     let node_names: BTreeSet<&str> = spec.nodes.iter().map(|node| node.name.as_str()).collect();
     let mesh_names: BTreeSet<&str> = spec.meshes.iter().map(|mesh| mesh.name.as_str()).collect();
-    let material_names: BTreeSet<&str> = spec.materials.iter().map(|material| material.name.as_str()).collect();
+    let material_names: BTreeSet<&str> = spec
+        .materials
+        .iter()
+        .map(|material| material.name.as_str())
+        .collect();
     for node in &spec.nodes {
-        if node.children.iter().any(|child| !node_names.contains(child.as_str()))
-            || node.mesh.as_ref().is_some_and(|mesh| !mesh_names.contains(mesh.as_str()))
+        if node
+            .children
+            .iter()
+            .any(|child| !node_names.contains(child.as_str()))
+            || node
+                .mesh
+                .as_ref()
+                .is_some_and(|mesh| !mesh_names.contains(mesh.as_str()))
         {
             return Err(MediaError::InvalidSpec);
         }
     }
     // A glTF hierarchy is a forest: no node may be somebody's child twice.
     let mut child_refs = std::collections::BTreeSet::new();
-    if !spec
-        .nodes
-        .iter()
-        .all(|node| node.children.iter().all(|child| child_refs.insert(child.as_str())))
-    {
+    if !spec.nodes.iter().all(|node| {
+        node.children
+            .iter()
+            .all(|child| child_refs.insert(child.as_str()))
+    }) {
         return Err(MediaError::InvalidSpec);
     }
     for mesh in &spec.meshes {
         for primitive in &mesh.primitives {
             let vertex_count = primitive.positions.len();
             if vertex_count == 0
-                || primitive.normals.as_ref().is_some_and(|normals| normals.len() != vertex_count)
+                || primitive
+                    .normals
+                    .as_ref()
+                    .is_some_and(|normals| normals.len() != vertex_count)
                 || primitive.indices.as_ref().is_some_and(|indices| {
-                    indices.is_empty() || indices.iter().any(|index| *index as usize >= vertex_count)
+                    indices.is_empty()
+                        || indices.iter().any(|index| *index as usize >= vertex_count)
                 })
             {
                 return Err(MediaError::InvalidSpec);
             }
-            if primitive.material.as_ref().is_some_and(|material| !material_names.contains(material.as_str())) {
+            if primitive
+                .material
+                .as_ref()
+                .is_some_and(|material| !material_names.contains(material.as_str()))
+            {
                 return Err(MediaError::InvalidSpec);
             }
         }
@@ -237,10 +263,14 @@ pub fn spec_tree(params: &Value) -> Result<Value, MediaError> {
         for primitive in &mesh.primitives {
             let widths = [
                 Some(12 * primitive.positions.len() as u64),
-                primitive.normals.as_ref().map(|normals| 12 * normals.len() as u64),
-                primitive.indices.as_ref().map(|indices| {
-                    indices_byte_width(indices) as u64 * indices.len() as u64
-                }),
+                primitive
+                    .normals
+                    .as_ref()
+                    .map(|normals| 12 * normals.len() as u64),
+                primitive
+                    .indices
+                    .as_ref()
+                    .map(|indices| indices_byte_width(indices) as u64 * indices.len() as u64),
             ];
             for width in widths.into_iter().flatten() {
                 accessor_sizes.push(width);
@@ -259,7 +289,9 @@ pub fn spec_tree(params: &Value) -> Result<Value, MediaError> {
         .iter()
         .map(|node| {
             let rotation = match node.rotation {
-                Some(quaternion) => Some(normalized_rotation(quaternion).ok_or(MediaError::InvalidSpec)?),
+                Some(quaternion) => {
+                    Some(normalized_rotation(quaternion).ok_or(MediaError::InvalidSpec)?)
+                }
                 None => None,
             };
             Ok(serde_json::json!({

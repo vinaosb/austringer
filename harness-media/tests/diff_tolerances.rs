@@ -2,13 +2,15 @@
 //! subtree skips, the depth cap (64) and node cap (100k) tripping the typed
 //! DiffTooLarge variant. Hermetic: no network, no fs writes, no tools.
 
-use harness_media::diff::{
-    structural_diff, Tolerances, MAX_DIFF_DEPTH, MAX_DIFF_NODES,
-};
+use harness_media::diff::{MAX_DIFF_DEPTH, MAX_DIFF_NODES, Tolerances, structural_diff};
 use harness_media::error::MediaError;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-fn diff_of(expected: &Value, actual: &Value, tolerances: &Tolerances) -> harness_media::diff::StructuralDiff {
+fn diff_of(
+    expected: &Value,
+    actual: &Value,
+    tolerances: &Tolerances,
+) -> harness_media::diff::StructuralDiff {
     structural_diff(expected, actual, tolerances).unwrap()
 }
 
@@ -49,10 +51,26 @@ fn unordered_pointers_are_order_insensitive_under_shuffle() {
     assert!(diff_of(&expected, &reversed, &t).is_empty());
     // And: duplicates follow MULTISET semantics (not set, not positional).
     let tags = unordered(&["/tags"]);
-    assert!(diff_of(&json!({"tags": [1, 2, 2, 3]}), &json!({"tags": [2, 3, 1, 2]}), &tags).is_empty());
-    assert_eq!(diff_of(&json!({"tags": [1, 2]}), &json!({"tags": [2, 2]}), &tags).changed.len(), 1);
+    assert!(
+        diff_of(
+            &json!({"tags": [1, 2, 2, 3]}),
+            &json!({"tags": [2, 3, 1, 2]}),
+            &tags
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        diff_of(&json!({"tags": [1, 2]}), &json!({"tags": [2, 2]}), &tags)
+            .changed
+            .len(),
+        1
+    );
     // And: sibling ordered arrays stay order-sensitive (escape is scoped).
-    let out = diff_of(&json!({"m": [1, 2], "materials": []}), &json!({"m": [2, 1], "materials": []}), &t);
+    let out = diff_of(
+        &json!({"m": [1, 2], "materials": []}),
+        &json!({"m": [2, 1], "materials": []}),
+        &t,
+    );
     assert_eq!(out.changed.len(), 2);
 }
 
@@ -83,7 +101,10 @@ fn unordered_element_mutation_reports_a_sub_pointer() {
         {"name": "blue", "baseColorFactor": [0.0, 1.0]},
         {"name": "red", "baseColorFactor": [1.000000000001, 0.0]},
     ]});
-    let eps = Tolerances { float_epsilon: 1e-9, ..t.clone() };
+    let eps = Tolerances {
+        float_epsilon: 1e-9,
+        ..t.clone()
+    };
     assert!(diff_of(&expected, &drifted, &eps).is_empty());
     let out = diff_of(&expected, &drifted, &t);
     assert_eq!(out.changed.len(), 1);

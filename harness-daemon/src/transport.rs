@@ -12,7 +12,9 @@ use tokio::sync::{broadcast, mpsc};
 use crate::attach::{AttachError, HostCommand, SessionHost};
 use crate::compat::downgrade_for_v1;
 use crate::events::ReplayKind;
-use crate::protocol::{ClientMsg, ErrorCode, PROTOCOL_VERSION, ServerMsg, SessionCommand, version_compatible};
+use crate::protocol::{
+    ClientMsg, ErrorCode, PROTOCOL_VERSION, ServerMsg, SessionCommand, version_compatible,
+};
 
 /// Why a client session ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,11 +31,7 @@ pub enum PumpExit {
 /// wire downgrade when the peer negotiated protocol v1 (media blocks
 /// become text markers; v2-only variants are withheld). Returns false
 /// when the client is gone.
-async fn forward(
-    outbound: &mpsc::Sender<ServerMsg>,
-    peer_version: u32,
-    msg: ServerMsg,
-) -> bool {
+async fn forward(outbound: &mpsc::Sender<ServerMsg>, peer_version: u32, msg: ServerMsg) -> bool {
     let msg = if peer_version < PROTOCOL_VERSION {
         match downgrade_for_v1(msg) {
             Some(downgraded) => downgraded,

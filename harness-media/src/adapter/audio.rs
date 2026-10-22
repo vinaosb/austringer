@@ -42,20 +42,22 @@
 use std::collections::BTreeSet;
 
 use harness_core::event::ProjectionKind;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::descriptor::Operation;
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
 use crate::generate::GenerationSpec;
-use crate::projection::{ProjectionContext, ProjectionProvider, ProjectionRegistry, ProjectionWiringError};
+use crate::projection::{
+    ProjectionContext, ProjectionProvider, ProjectionRegistry, ProjectionWiringError,
+};
 
-pub use super::audio_decode::{decode, DecodedAudio};
+pub use super::audio_decode::{DecodedAudio, decode};
 pub use super::audio_flac::encode_flac;
 pub use super::audio_synth::SynthOutput;
-pub use super::audio_wav::{decode_wav, encode_wav, WavDepth};
+pub use super::audio_wav::{WavDepth, decode_wav, encode_wav};
 
 /// Producer-disclosure engine id for the extract/verify bindings.
 pub const ENGINE: &str = "harness-media::audio";
@@ -68,13 +70,11 @@ pub const SYNTH_ENGINE: &str = "harness-media::audio-synth";
 pub const WAVEFORM_PEAK_BUCKETS: usize = 256;
 
 /// The typed opus-decode redirect reason (pinned by tests).
-pub const OPUS_DECODE_REDIRECT: &str =
-    "opus decode is unimplemented in symphonia (digest 3.4 status '-'); the pure lane never \
+pub const OPUS_DECODE_REDIRECT: &str = "opus decode is unimplemented in symphonia (digest 3.4 status '-'); the pure lane never \
      decodes it - it routes to the ffmpeg subprocess lane (M17)";
 
 /// The typed lossy-encode redirect reason (pinned by tests).
-pub const LOSSY_ENCODE_REDIRECT: &str =
-    "the pure tier never claims opus/mp3/vorbis encode; encoding routes to the ffmpeg \
+pub const LOSSY_ENCODE_REDIRECT: &str = "the pure tier never claims opus/mp3/vorbis encode; encoding routes to the ffmpeg \
      subprocess lane (M17: libopus/libmp3lame/libvorbis are all GREEN flags there)";
 
 /// Peak + RMS + the waveform-peak thumbnail array over interleaved
@@ -90,7 +90,11 @@ fn analyze(samples: &[f32]) -> (f64, f64, Vec<f64>) {
         peak = peak.max(magnitude);
         energy += magnitude * magnitude;
     }
-    let rms = if samples.is_empty() { 0.0 } else { (energy / samples.len() as f64).sqrt() };
+    let rms = if samples.is_empty() {
+        0.0
+    } else {
+        (energy / samples.len() as f64).sqrt()
+    };
     let len = samples.len();
     let mut peaks = Vec::with_capacity(WAVEFORM_PEAK_BUCKETS);
     for bucket in 0..WAVEFORM_PEAK_BUCKETS {
@@ -128,9 +132,15 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
     });
     let minutes = (duration / 60.0) as u64;
     let seconds = (duration - f64::from(60_u32 * minutes as u32)) as u64;
-    let projection =
-        format!("audio: {} {}Hz {}ch {minutes}:{seconds:02}", decoded.codec, decoded.sample_rate, decoded.channels);
-    Ok(Extracted { tree, text_projection: projection, thumbnails: Vec::new() })
+    let projection = format!(
+        "audio: {} {}Hz {}ch {minutes}:{seconds:02}",
+        decoded.codec, decoded.sample_rate, decoded.channels
+    );
+    Ok(Extracted {
+        tree,
+        text_projection: projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 /// The synth facade: validated spec to interleaved samples + layout.
@@ -173,7 +183,11 @@ pub fn spec_tree(spec: &GenerationSpec) -> Result<Value, MediaError> {
 }
 
 fn tolerances() -> Tolerances {
-    Tolerances { float_epsilon: 1e-9, unordered_at: BTreeSet::new(), ignored_at: BTreeSet::new() }
+    Tolerances {
+        float_epsilon: 1e-9,
+        unordered_at: BTreeSet::new(),
+        ignored_at: BTreeSet::new(),
+    }
 }
 
 /// The audio verify handler: probe-diff under the waveform tolerance

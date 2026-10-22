@@ -5,7 +5,7 @@
 //! CORRECT format - never a guess. Hermetic: no network, no tools.
 
 use harness_media::format::FormatId;
-use harness_media::probe::{probe, Confidence, ProbeResult};
+use harness_media::probe::{Confidence, ProbeResult, probe};
 
 /// Reads a committed fixture (binary or text) into memory.
 fn fixture(name: &str) -> Vec<u8> {
@@ -18,15 +18,20 @@ const CORPUS: &[(&str, &str, FormatId, Confidence)] = &[
     ("png.png", "png.png", FormatId::Png, Confidence::Certain),
     ("jpeg.jpg", "jpeg.jpg", FormatId::Jpeg, Confidence::Certain),
     ("gif.gif", "gif.gif", FormatId::Gif, Confidence::Certain),
-    ("webp.webp", "webp.webp", FormatId::Webp, Confidence::Certain),
-    ("avif.avif", "avif.avif", FormatId::Avif, Confidence::Certain),
-    ("jxl.jxl", "jxl.jxl", FormatId::Jxl, Confidence::Certain),
     (
-        "svg.svg",
-        "svg.svg",
-        FormatId::Svg,
+        "webp.webp",
+        "webp.webp",
+        FormatId::Webp,
         Confidence::Certain,
     ),
+    (
+        "avif.avif",
+        "avif.avif",
+        FormatId::Avif,
+        Confidence::Certain,
+    ),
+    ("jxl.jxl", "jxl.jxl", FormatId::Jxl, Confidence::Certain),
+    ("svg.svg", "svg.svg", FormatId::Svg, Confidence::Certain),
     (
         "gltf.gltf",
         "gltf.gltf",
@@ -42,7 +47,12 @@ const CORPUS: &[(&str, &str, FormatId, Confidence)] = &[
     ),
     ("pdf.pdf", "pdf.pdf", FormatId::Pdf, Confidence::Certain),
     ("wav.wav", "wav.wav", FormatId::Wav, Confidence::Certain),
-    ("flac.flac", "flac.flac", FormatId::Flac, Confidence::Certain),
+    (
+        "flac.flac",
+        "flac.flac",
+        FormatId::Flac,
+        Confidence::Certain,
+    ),
     (
         "opus.opus",
         "opus.opus",
@@ -82,25 +92,10 @@ const CORPUS: &[(&str, &str, FormatId, Confidence)] = &[
         FormatId::Markdown,
         Confidence::Likely,
     ),
-    (
-        "html.html",
-        "html.html",
-        FormatId::Html,
-        Confidence::Likely,
-    ),
-    (
-        "json.json",
-        "json.json",
-        FormatId::Json,
-        Confidence::Likely,
-    ),
+    ("html.html", "html.html", FormatId::Html, Confidence::Likely),
+    ("json.json", "json.json", FormatId::Json, Confidence::Likely),
     ("csv.csv", "csv.csv", FormatId::Csv, Confidence::Likely),
-    (
-        "toml.toml",
-        "toml.toml",
-        FormatId::Toml,
-        Confidence::Likely,
-    ),
+    ("toml.toml", "toml.toml", FormatId::Toml, Confidence::Likely),
     ("step.stp", "step.stp", FormatId::Step, Confidence::Certain),
     (
         "geotiff.tif",
@@ -127,12 +122,7 @@ const CORPUS: &[(&str, &str, FormatId, Confidence)] = &[
         FormatId::Sqlite,
         Confidence::Certain,
     ),
-    (
-        "hdf5.h5",
-        "hdf5.h5",
-        FormatId::Hdf5,
-        Confidence::Certain,
-    ),
+    ("hdf5.h5", "hdf5.h5", FormatId::Hdf5, Confidence::Certain),
     (
         "parquet.parquet",
         "parquet.parquet",

@@ -11,9 +11,7 @@ use tokio::sync::oneshot;
 
 use crate::attach::SessionHost;
 use crate::automations::{AutomationDefinition, NetworkPolicy};
-use crate::gate::{
-    CompletionGate, EvidenceBundle, EvidenceLink, GateVerdict, TestRunEvidence,
-};
+use crate::gate::{CompletionGate, EvidenceBundle, EvidenceLink, GateVerdict, TestRunEvidence};
 use crate::notify::{Notification, NotificationKind, Notifier};
 use crate::protocol::{Frame, ServerMsg, SessionEvent, VerdictKind};
 use crate::run_history::{RunHistory, RunHistoryError, RunRecord};
@@ -232,8 +230,7 @@ impl RunSink {
                         test_runs.push(run);
                     }
                     if let SessionEvent::TurnFinished { turn, outcome } = frame.event {
-                        let verdict =
-                            self.on_turn_finished(&session, turn, &outcome, test_runs);
+                        let verdict = self.on_turn_finished(&session, turn, &outcome, test_runs);
                         let kind = match &verdict {
                             GateVerdict::Confirmed { .. } => VerdictKind::Confirmed,
                             GateVerdict::Refuted { .. } => VerdictKind::Refuted,
@@ -640,7 +637,9 @@ mod tests {
     ) -> Option<(VerdictKind, Vec<u64>)> {
         for _ in 0..100 {
             match tokio::time::timeout(Duration::from_millis(50), frames.recv()).await {
-                Ok(Ok(ServerMsg::Verdict { verdict, evidence, .. })) => {
+                Ok(Ok(ServerMsg::Verdict {
+                    verdict, evidence, ..
+                })) => {
                     return Some((verdict, evidence));
                 }
                 Ok(Ok(_)) => continue,
@@ -681,11 +680,13 @@ mod tests {
             turn: 1,
             outcome: "task_completed".into(),
         });
-        let done =
-            await_history_verdict(&sink, "nightly").await.expect("watcher never gated the turn");
+        let done = await_history_verdict(&sink, "nightly")
+            .await
+            .expect("watcher never gated the turn");
         assert_eq!(done.verdict.as_deref(), Some("confirmed"));
-        let (kind, evidence) =
-            await_verdict_frame(&mut frames).await.expect("no Verdict frame observed");
+        let (kind, evidence) = await_verdict_frame(&mut frames)
+            .await
+            .expect("no Verdict frame observed");
         assert_eq!(kind, VerdictKind::Confirmed);
         assert!(
             evidence.contains(&run_frame.id),
@@ -750,11 +751,13 @@ mod tests {
             turn: 1,
             outcome: "task_completed".into(),
         });
-        let done =
-            await_history_verdict(&sink, "nightly").await.expect("watcher never gated the turn");
+        let done = await_history_verdict(&sink, "nightly")
+            .await
+            .expect("watcher never gated the turn");
         assert_eq!(done.verdict.as_deref(), Some("refuted"));
-        let (kind, _) =
-            await_verdict_frame(&mut frames).await.expect("no Verdict frame observed");
+        let (kind, _) = await_verdict_frame(&mut frames)
+            .await
+            .expect("no Verdict frame observed");
         assert_eq!(kind, VerdictKind::Refuted);
         let turn_msgs = messages_of(&memory, NotificationKind::TurnComplete);
         assert_eq!(turn_msgs.len(), 1);
@@ -796,15 +799,17 @@ mod tests {
             turn: 1,
             outcome: "task_completed".into(),
         });
-        let done =
-            await_history_verdict(&sink, "nightly").await.expect("watcher never gated the turn");
+        let done = await_history_verdict(&sink, "nightly")
+            .await
+            .expect("watcher never gated the turn");
         assert_eq!(
             done.verdict.as_deref(),
             Some("inconclusive"),
             "a suite binding without a test run must never confirm"
         );
-        let (kind, _) =
-            await_verdict_frame(&mut frames).await.expect("no Verdict frame observed");
+        let (kind, _) = await_verdict_frame(&mut frames)
+            .await
+            .expect("no Verdict frame observed");
         assert_eq!(kind, VerdictKind::Inconclusive);
         Ok(())
     }

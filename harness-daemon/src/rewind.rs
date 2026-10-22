@@ -13,13 +13,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use harness_core::event::{Event, Sequence};
+use harness_sessions::SessionError;
+use harness_sessions::SessionStore;
+use harness_sessions::lease::LeaseOwner;
 use harness_snapshots::ids::{InvalidId, SessionId, TruncationCursor};
 use harness_snapshots::{
     ExternallyModifiedPolicy, RestoreMode, SnapshotError, SnapshotStore, Turn,
 };
-use harness_sessions::SessionError;
-use harness_sessions::SessionStore;
-use harness_sessions::lease::LeaseOwner;
 
 use crate::attach::SessionHost;
 use crate::protocol::SessionEvent;
@@ -41,7 +41,9 @@ pub enum RewindError {
     #[error("no snapshots recorded for session {session}; nothing to rewind")]
     NoSnapshots { session: String },
     /// The request walks past the oldest snapshot; the oldest is named.
-    #[error("rewind {requested} exceeds the {available} available snapshot(s); the oldest restore point is turn {oldest}")]
+    #[error(
+        "rewind {requested} exceeds the {available} available snapshot(s); the oldest restore point is turn {oldest}"
+    )]
     BeyondOldest {
         requested: u64,
         available: usize,
@@ -167,9 +169,11 @@ pub(crate) fn sessions_root(session_dir: &std::path::Path) -> PathBuf {
 pub async fn run_rewind(host: Arc<SessionHost>, steps: u64) -> Result<(), RewindError> {
     tokio::task::spawn_blocking(move || rewind(&host, steps))
         .await
-        .map_err(|join| RewindError::Snapshot(SnapshotError::Serialize(format!(
-            "rewind task panicked: {join}"
-        ))))?
+        .map_err(|join| {
+            RewindError::Snapshot(SnapshotError::Serialize(format!(
+                "rewind task panicked: {join}"
+            )))
+        })?
 }
 
 /// Turn selection semantics: 1 = the latest snapshot, N = the Nth back
@@ -179,7 +183,8 @@ pub fn select_turn(turns: &[Turn], steps: u64) -> Option<Turn> {
     if steps == 0 {
         return None;
     }
-    turns.len()
+    turns
+        .len()
         .checked_sub(usize::try_from(steps).unwrap_or(usize::MAX))
         .and_then(|index| turns.get(index).copied())
 }
@@ -197,12 +202,19 @@ mod tests {
         };
         let text = error.to_string();
         assert!(text.contains("oldest restore point is turn 1"), "{text}");
-        assert_eq!(error.error_code(), crate::protocol::ErrorCode::MalformedFrame);
+        assert_eq!(
+            error.error_code(),
+            crate::protocol::ErrorCode::MalformedFrame
+        );
     }
 
     #[test]
     fn select_turn_counts_back_from_the_latest() {
-        let turns = vec![Turn::new(1).unwrap(), Turn::new(2).unwrap(), Turn::new(4).unwrap()];
+        let turns = vec![
+            Turn::new(1).unwrap(),
+            Turn::new(2).unwrap(),
+            Turn::new(4).unwrap(),
+        ];
         assert_eq!(select_turn(&turns, 1), Some(Turn::new(4).unwrap()));
         assert_eq!(select_turn(&turns, 2), Some(Turn::new(2).unwrap()));
         assert_eq!(select_turn(&turns, 3), Some(Turn::new(1).unwrap()));

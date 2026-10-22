@@ -16,7 +16,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use harness_core::agent_loop::inference::{InferenceError, InferenceRequest, PendingCall, TurnUsage};
+use harness_core::agent_loop::inference::{
+    InferenceError, InferenceRequest, PendingCall, TurnUsage,
+};
 use harness_core::agent_loop::{AssistantTurn, CancelToken, Inference};
 use harness_core::event::{ContentBlock, Event};
 use harness_core::tools::{IoCap, ProviderError, ToolProvider, ToolRegistry};
@@ -323,7 +325,10 @@ fn expect_refusal(
 
 /// Frames of one host's hub snapshot, event payloads only.
 fn hub_events(host: &SessionHost) -> Vec<SessionEvent> {
-    host.snapshot().into_iter().map(|frame| frame.event).collect()
+    host.snapshot()
+        .into_iter()
+        .map(|frame| frame.event)
+        .collect()
 }
 
 /// (child, task, role, model) rows of every ChildStarted on a host.
@@ -388,7 +393,10 @@ async fn curated_explore_routes_via_cheap_pool_role_and_returns_grep_shaped_summ
     // When: one task(explore) child runs.
     let outcome = kit
         .services
-        .run_child(&parent, curated_request("explore", "where is RoleRegistry used?"))
+        .run_child(
+            &parent,
+            curated_request("explore", "where is RoleRegistry used?"),
+        )
         .await
         .expect("curated child runs");
     // Then: the child dispatched under the ROLE route — the cheap-pool
@@ -455,7 +463,10 @@ async fn curated_explore_write_tool_call_is_refused_and_logged() {
     // When: the explore child attempts edit_lines.
     let outcome = kit
         .services
-        .run_child(&parent, curated_request("explore", "search, then try to edit"))
+        .run_child(
+            &parent,
+            curated_request("explore", "search, then try to edit"),
+        )
         .await
         .expect("refusal is a tool outcome, not a spawn failure");
     // Then: the write NEVER executed (allowlist refused it before the
@@ -469,8 +480,9 @@ async fn curated_explore_write_tool_call_is_refused_and_logged() {
     // the read-only contract…
     let results = tool_result_texts(&outcome.child);
     assert!(
-        results.iter().any(|text| text.contains("edit_lines")
-            && text.contains("read-only agent `explore`")),
+        results
+            .iter()
+            .any(|text| text.contains("edit_lines") && text.contains("read-only agent `explore`")),
         "refusal text: {results:?}"
     );
     // …and was LOGGED on the child stream as a typed notification.

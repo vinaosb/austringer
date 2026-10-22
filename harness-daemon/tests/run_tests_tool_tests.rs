@@ -31,7 +31,7 @@ use harness_core::agent_loop::inference::{
 };
 use harness_core::agent_loop::{AssistantTurn, CancelToken, Inference};
 use harness_core::autonomy::gate::capability_of;
-use harness_core::autonomy::matrix::{AutonomyMode, AutonomyMatrix, Capability};
+use harness_core::autonomy::matrix::{AutonomyMatrix, AutonomyMode, Capability};
 use harness_core::event::ContentBlock;
 use harness_core::tools::ProviderError;
 use harness_core::tools::ToolProvider;
@@ -222,12 +222,9 @@ async fn run_tests_fixture_crate_report_has_exact_entries() {
         .await
         .expect("run_tests must succeed on a cargo fixture");
     let text = String::from_utf8(bytes).expect("report is utf-8");
-    let report: TestReport = serde_json::from_str(
-        text.lines()
-            .next()
-            .expect("report json is the first line"),
-    )
-    .expect("observation must deserialize as a TestReport");
+    let report: TestReport =
+        serde_json::from_str(text.lines().next().expect("report json is the first line"))
+            .expect("observation must deserialize as a TestReport");
 
     assert!(
         matches!(report.framework.as_str(), "cargo-nextest" | "cargo-libtest"),

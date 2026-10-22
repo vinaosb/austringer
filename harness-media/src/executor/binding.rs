@@ -37,9 +37,7 @@ pub type VerifyHandler = fn(&Value, &[u8]) -> Result<RoundTripVerdict, MediaErro
 #[derive(Debug, Clone, Copy)]
 pub enum SubHandler {
     /// Structural extract through the tool lane.
-    Extract(
-        fn(&ToolExecutor, &[u8], ExtractBudgets) -> Result<super::types::Produced, MediaError>,
-    ),
+    Extract(fn(&ToolExecutor, &[u8], ExtractBudgets) -> Result<super::types::Produced, MediaError>),
     /// Spec-driven generation through the tool lane.
     Generate(fn(&ToolExecutor, &GenerationSpec) -> Result<super::types::Produced, MediaError>),
     /// Round-trip verification through the tool lane.

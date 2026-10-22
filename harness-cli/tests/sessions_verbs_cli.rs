@@ -78,9 +78,8 @@ impl Inference for CompleteWithUsage {
 }
 
 fn plain_factory() -> InferenceFactory {
-    let legacy: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> = Arc::new(|| {
-        Box::new(CompleteOnly)
-    });
+    let legacy: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
+        Arc::new(|| Box::new(CompleteOnly));
     legacy.into_factory()
 }
 
@@ -146,7 +145,10 @@ async fn spawn(factory: InferenceFactory) -> Server {
 fn seed_search_fixture(dir: &Path) {
     let store = SessionStore::open(dir).unwrap();
     for (id, texts) in [
-        ("s1", vec!["unrelated opener", "the needle appears once here"]),
+        (
+            "s1",
+            vec!["unrelated opener", "the needle appears once here"],
+        ),
         (
             "s2",
             vec![
@@ -258,7 +260,10 @@ async fn sessions_search_regression_guard_preserves_t11_behavior() {
         "bm25 order must survive the new dispatch:\n{output}"
     );
     // FTS5 syntax error stays a typed nonzero failure.
-    let failed = verb(&server, "search").arg("\"unbalanced").assert().failure();
+    let failed = verb(&server, "search")
+        .arg("\"unbalanced")
+        .assert()
+        .failure();
     let stderr = String::from_utf8_lossy(&failed.get_output().stderr).into_owned();
     let code = failed.get_output().status.code().unwrap_or_default();
     println!("--- FTS syntax error (exit {code}) ---\n{stderr}");

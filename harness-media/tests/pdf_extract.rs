@@ -21,8 +21,13 @@ fn many_page_pdf(pages: usize) -> Vec<u8> {
     let blocks: Vec<_> = (0..4)
         .map(|i| json!({"text": format!("page text block {i}: the quick brown fox"), "size": 10.0}))
         .collect();
-    let pages: Vec<_> = (0..pages).map(|_| json!({"blocks": blocks.clone()})).collect();
-    let spec = GenerationSpec { format: FormatId::Pdf, params: json!({"pages": pages}) };
+    let pages: Vec<_> = (0..pages)
+        .map(|_| json!({"blocks": blocks.clone()}))
+        .collect();
+    let spec = GenerationSpec {
+        format: FormatId::Pdf,
+        params: json!({"pages": pages}),
+    };
     pdf::generate(&spec).expect("many-page pdf generates")
 }
 
@@ -83,7 +88,10 @@ fn many_page_pdf_trips_the_size_cap_typed() {
     // Given: a generated 400-page PDF (the pathological-input lane).
     let bytes = many_page_pdf(400);
     // When: extracted under a 50 KB materialization cap.
-    let budgets = ExtractBudgets { deadline: Duration::from_secs(10), max_total_bytes: 50_000 };
+    let budgets = ExtractBudgets {
+        deadline: Duration::from_secs(10),
+        max_total_bytes: 50_000,
+    };
     let error = pdf::extract(&bytes, budgets).expect_err("size cap must trip typed");
     // Then: ExtractTooLarge - never a hang, never silent truncation.
     assert_eq!(error, MediaError::ExtractTooLarge);
@@ -97,7 +105,10 @@ fn many_page_pdf_trips_the_size_cap_typed() {
 fn zero_deadline_trips_typed_before_any_page_work() {
     // Given: the minimal fixture and an already-elapsed deadline.
     let bytes = fixture("pdf/minimal.pdf");
-    let budgets = ExtractBudgets { deadline: Duration::ZERO, max_total_bytes: u64::MAX };
+    let budgets = ExtractBudgets {
+        deadline: Duration::ZERO,
+        max_total_bytes: u64::MAX,
+    };
     // When: extracted.
     let error = pdf::extract(&bytes, budgets).expect_err("deadline must trip typed");
     // Then: ExtractTooLarge (the deadline is one of the two budget axes).

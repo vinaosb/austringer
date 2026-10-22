@@ -6,13 +6,13 @@
 
 use std::sync::Arc;
 
+use harness_core::event::ProjectionKind;
 use harness_media::adapter::svg;
 use harness_media::error::MediaError;
-use harness_media::executor::{OpRequest, OpOutput};
+use harness_media::executor::{OpOutput, OpRequest};
 use harness_media::format::FormatId;
 use harness_media::generate::GenerationSpec;
 use harness_media::projection::{ProjectionContext, ProjectionRegistry};
-use harness_core::event::ProjectionKind;
 use serde_json::json;
 
 const MINIMAL_SVG: &[u8] =
@@ -54,7 +54,10 @@ fn extract_dispatch_carries_svg_producer_disclosure() {
     let produced = registry()
         .dispatch(
             FormatId::Svg,
-            OpRequest::Extract { bytes: MINIMAL_SVG, budgets: Default::default() },
+            OpRequest::Extract {
+                bytes: MINIMAL_SVG,
+                budgets: Default::default(),
+            },
         )
         .expect("extract dispatch");
     // Then: the artifact is the canonical tree + bounded projection...
@@ -92,7 +95,13 @@ fn generate_and_verify_dispatch_round_trip_live() {
     assert_eq!(generated.producer().engine, "harness-media::svg");
     // When: verified through the executor too.
     let verified = registry
-        .dispatch(FormatId::Svg, OpRequest::Verify { expected: &expected, bytes })
+        .dispatch(
+            FormatId::Svg,
+            OpRequest::Verify {
+                expected: &expected,
+                bytes,
+            },
+        )
         .expect("verify dispatch");
     // Then: PASS with svg-engine disclosure.
     let OpOutput::Verify(verdict) = verified.inner() else {
@@ -113,7 +122,10 @@ fn xxe_through_the_executor_is_a_typed_dispatch_error() {
     let error = registry()
         .dispatch(
             FormatId::Svg,
-            OpRequest::Extract { bytes: &bytes, budgets: Default::default() },
+            OpRequest::Extract {
+                bytes: &bytes,
+                budgets: Default::default(),
+            },
         )
         .expect_err("XXE must be refused");
     // Then: the typed ParseFailure propagates through dispatch - never a
@@ -128,10 +140,18 @@ fn deterministic_projector_registers_and_matches_extract_projection() {
     projections
         .register(FormatId::Svg, Arc::new(svg::SvgProjector))
         .expect("first registration wins");
-    let context = ProjectionContext { budgets: Default::default(), name_hint: None };
+    let context = ProjectionContext {
+        budgets: Default::default(),
+        name_hint: None,
+    };
     // When: projected for the TextProjection kind.
     let projected = projections
-        .project(&FormatId::Svg, ProjectionKind::TextProjection, MINIMAL_SVG, &context)
+        .project(
+            &FormatId::Svg,
+            ProjectionKind::TextProjection,
+            MINIMAL_SVG,
+            &context,
+        )
         .expect("svg projects");
     // Then: it is exactly extract's text_projection (a thin wrap, by
     // design - never a fabricated transcript).
@@ -145,7 +165,10 @@ fn deterministic_projector_registers_and_matches_extract_projection() {
         MINIMAL_SVG,
         &context,
     );
-    assert!(matches!(mismatch, Err(MediaError::NoProjector)), "got {mismatch:?}");
+    assert!(
+        matches!(mismatch, Err(MediaError::NoProjector)),
+        "got {mismatch:?}"
+    );
 }
 
 #[test]
@@ -162,7 +185,9 @@ fn duplicate_projector_registration_is_refused() {
     // Then: typed duplicate refusal, original intact.
     assert_eq!(
         error,
-        harness_media::projection::ProjectionWiringError::DuplicateProjector { format: FormatId::Svg }
+        harness_media::projection::ProjectionWiringError::DuplicateProjector {
+            format: FormatId::Svg
+        }
     );
 }
 

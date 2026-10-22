@@ -25,7 +25,7 @@ use harness_core::event::ProjectionKind;
 use serde_json::Value;
 
 use crate::adapter::text::{tolerances, truncate_chars};
-use crate::diff::{structural_diff, RoundTripVerdict, Tolerances};
+use crate::diff::{RoundTripVerdict, Tolerances, structural_diff};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
@@ -69,8 +69,7 @@ impl CsvSpec {
         struct Params {
             rows: Vec<Vec<String>>,
         }
-        let params: Params =
-            serde_json::from_value(spec.params.clone()).map_err(|_| invalid())?;
+        let params: Params = serde_json::from_value(spec.params.clone()).map_err(|_| invalid())?;
         if params.rows.is_empty() || params.rows.len() > MAX_ROWS {
             return Err(invalid());
         }
@@ -128,9 +127,7 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
         collected += record.as_slice().len() as u64;
         if row_count == 0 {
             field_count = record.len();
-            first_row = Some(
-                record.iter().map(str::to_owned).collect::<Vec<_>>().into(),
-            );
+            first_row = Some(record.iter().map(str::to_owned).collect::<Vec<_>>().into());
         }
         row_count += 1;
     }
@@ -141,14 +138,22 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
         "row_count": row_count,
     });
     let first = match &tree["first_row"] {
-        Value::Array(row) => row.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(","),
+        Value::Array(row) => row
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(","),
         _ => String::new(),
     };
     let text_projection = truncate_chars(
         format!("csv: {row_count} rows x {field_count} fields; first_row={first}"),
         TEXT_PROJECTION_MAX_CHARS,
     );
-    Ok(Extracted { tree, text_projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree,
+        text_projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 /// Generate deterministic RFC 4180 bytes (CRLF records, RFC quoting,
@@ -163,7 +168,9 @@ pub fn generate(spec: &GenerationSpec) -> Result<Vec<u8>, MediaError> {
         .terminator(csv::Terminator::CRLF)
         .from_writer(Vec::new());
     for row in &parsed.rows {
-        writer.write_record(row).map_err(|_| MediaError::ParseFailure)?;
+        writer
+            .write_record(row)
+            .map_err(|_| MediaError::ParseFailure)?;
     }
     writer.into_inner().map_err(|_| MediaError::ParseFailure)
 }
@@ -200,11 +207,7 @@ impl ProjectionProvider for CsvProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         extract(bytes, context.budgets).map(|extracted| extracted.text_projection)
     }
 }

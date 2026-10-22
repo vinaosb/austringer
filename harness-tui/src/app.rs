@@ -1,4 +1,4 @@
-﻿//! The headless UI state machine: one input event in, state transition
+//! The headless UI state machine: one input event in, state transition
 //! plus outgoing actions out. This is the entire interface logic, and
 //! it is fully testable without a terminal â€” the binary only wires a
 //! crossterm reader and the daemon client to [`App::step`].
@@ -665,9 +665,7 @@ mod tests {
         app.step(UiEvent::Server(ServerMsg::PlanResolved {
             ask_id: 4,
             plan_id: 1,
-            outcome: PlanOutcome::Approved {
-                by: "tui".into(),
-            },
+            outcome: PlanOutcome::Approved { by: "tui".into() },
         }));
         assert!(app.plan_gate().is_none());
         assert!(

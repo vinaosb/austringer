@@ -87,7 +87,10 @@ fn seed_fixture(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap_or_default();
     let store = SessionStore::open(dir).unwrap();
     for (id, texts) in [
-        ("s1", vec!["unrelated opener", "the needle appears once here"]),
+        (
+            "s1",
+            vec!["unrelated opener", "the needle appears once here"],
+        ),
         (
             "s2",
             vec![

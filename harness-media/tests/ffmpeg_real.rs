@@ -6,7 +6,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use harness_media::adapter::ffmpeg::{self, Caps, Target, TranscodeSpec, FFMPEG_TOOL, FFPROBE_TOOL};
+use harness_media::adapter::ffmpeg::{
+    self, Caps, FFMPEG_TOOL, FFPROBE_TOOL, Target, TranscodeSpec,
+};
 use harness_media::tool::{ToolConfig, ToolExecutor, ToolOverride};
 
 const INPUT_DIR: &str = concat!(
@@ -36,7 +38,10 @@ fn real_executor() -> Option<ToolExecutor> {
     Some(ToolExecutor::new(ToolConfig {
         enabled: [
             (FFMPEG_TOOL.to_owned(), override_for(ffmpeg_bin)),
-            (FFPROBE_TOOL.to_owned(), override_for(ffprobe_path.to_string_lossy().into_owned())),
+            (
+                FFPROBE_TOOL.to_owned(),
+                override_for(ffprobe_path.to_string_lossy().into_owned()),
+            ),
         ]
         .into(),
         install_enabled: false,
@@ -87,10 +92,14 @@ fn real_probe_transcode_decode_back() {
         },
         trim: None,
     };
-    let artifact = adapter.transcode(&input, &census, &spec).expect("real transcode");
+    let artifact = adapter
+        .transcode(&input, &census, &spec)
+        .expect("real transcode");
     assert!(!artifact.bytes.is_empty());
 
-    let after = adapter.probe_av(&artifact.bytes).expect("real after census");
+    let after = adapter
+        .probe_av(&artifact.bytes)
+        .expect("real after census");
     assert_eq!(
         ffmpeg::verify_transcode(&census, &after, &spec).expect("real probe-diff runs"),
         harness_media::diff::RoundTripVerdict::Pass,

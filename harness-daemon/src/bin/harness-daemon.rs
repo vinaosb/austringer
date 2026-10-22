@@ -139,7 +139,9 @@ fn utility_mediation(
     ) {
         Ok(route) => route,
         Err(failure) => {
-            eprintln!("harness-daemon: routing.json unusable for the projection utility route: {failure}");
+            eprintln!(
+                "harness-daemon: routing.json unusable for the projection utility route: {failure}"
+            );
             return None;
         }
     };
@@ -188,7 +190,10 @@ fn routing_intake(
             Some(composed.inference)
         })
     };
-    Some(Arc::new(harness_daemon::routing::RoutingIntake { table, models }))
+    Some(Arc::new(harness_daemon::routing::RoutingIntake {
+        table,
+        models,
+    }))
 }
 
 /// Builds the shared daemon state (provider composition, projection
@@ -205,8 +210,9 @@ async fn build_state(config: DaemonConfig) -> Result<Arc<DaemonState>, String> {
         harness_providers::transport_reqwest::ReqwestTransport::new()
             .map_err(|e| format!("provider transport init: {e}"))?,
     );
-    let factory = harness_daemon::provider::compose_factory(config.provider.as_ref(), transport.clone())
-        .map_err(|e| format!("provider config: {e}"))?;
+    let factory =
+        harness_daemon::provider::compose_factory(config.provider.as_ref(), transport.clone())
+            .map_err(|e| format!("provider config: {e}"))?;
     // M10: submit-time projection mediation — the session model when
     // its M7 caps cover the media, else the configured capable utility
     // role via the T42 routing table. Computed before `config` moves
@@ -348,10 +354,12 @@ async fn run() -> Result<(), String> {
     notifier.add(Arc::new(harness_daemon::osc::stdout_sink("harness")));
     // Scheduled-run notifications mirror onto the owning session's
     // event stream (kinds sched/verdict) so attached clients see them.
-    notifier.add(Arc::new(harness_daemon::engine::EventStreamSink::new(Arc::new({
-        let state = Arc::clone(&state);
-        move |sid: &str| state.try_session(sid)
-    }))));
+    notifier.add(Arc::new(harness_daemon::engine::EventStreamSink::new(
+        Arc::new({
+            let state = Arc::clone(&state);
+            move |sid: &str| state.try_session(sid)
+        }),
+    )));
     let run_sink = match harness_daemon::bridge::RunSink::open(
         &data_dir,
         Arc::new(harness_daemon::gate::CriteriaGate),

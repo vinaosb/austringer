@@ -56,7 +56,8 @@ impl App {
                 diff_summary,
                 ..
             } => {
-                self.view.note(&format!("media ({producer}): {diff_summary}"));
+                self.view
+                    .note(&format!("media ({producer}): {diff_summary}"));
                 self.dirty = true;
             }
             ServerMsg::Usage {
@@ -74,7 +75,8 @@ impl App {
                 self.hud.apply(&HudUpdate {
                     cache_hit_pct,
                     model: model.model.clone(),
-                    cost_delta: cost_usd_micros.map_or(0.0, |micros| micros as f64 / MICROS_PER_DOLLAR),
+                    cost_delta: cost_usd_micros
+                        .map_or(0.0, |micros| micros as f64 / MICROS_PER_DOLLAR),
                 });
                 self.dirty = true;
             }
@@ -92,8 +94,10 @@ impl App {
                     self.fallback_gate = None;
                     self.fallback_pending = None;
                 }
-                self.view
-                    .note(&format!("fallback {ask_id} resolved: next model {}", chosen.model));
+                self.view.note(&format!(
+                    "fallback {ask_id} resolved: next model {}",
+                    chosen.model
+                ));
                 self.dirty = true;
             }
             ServerMsg::Verdict {
@@ -159,7 +163,9 @@ fn plan_resolution_note(ask_id: u64, plan_id: u64, outcome: &PlanOutcome) -> Str
             format!("plan ask {ask_id}: plan {plan_id} rejected by {by}; still gated")
         }
         PlanOutcome::Edited { by, .. } => {
-            format!("plan ask {ask_id}: plan {plan_id} edited by {by}; re-gated on the new revision")
+            format!(
+                "plan ask {ask_id}: plan {plan_id} edited by {by}; re-gated on the new revision"
+            )
         }
         PlanOutcome::Cancelled { by } => {
             format!("plan ask {ask_id}: withdrawn by {by}; plan {plan_id} stays pending")
@@ -183,10 +189,9 @@ mod tests {
     #[test]
     fn hello_ack_records_the_negotiated_version() {
         let mut app = app();
-        let ack = decode_server(
-            br#"{"type":"hello_ack","version":2,"last_event_id":0}"#.as_slice(),
-        )
-        .expect("fixture ack decodes");
+        let ack =
+            decode_server(br#"{"type":"hello_ack","version":2,"last_event_id":0}"#.as_slice())
+                .expect("fixture ack decodes");
         app.step(UiEvent::Server(ack));
         assert_eq!(app.negotiated_version(), Some(2));
         assert_eq!(app.conn, Conn::Attached);

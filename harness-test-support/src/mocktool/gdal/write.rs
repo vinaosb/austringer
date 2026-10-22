@@ -125,7 +125,22 @@ pub(super) fn write_tiff(
     let model: u16 = if (4000..=4999).contains(&epsg) { 2 } else { 1 };
     let crs_key: u16 = if model == 2 { 2048 } else { 3072 };
     let geokeys: Vec<u16> = vec![
-        1, 1, 0, 3, 1024, 0, 1, model, 1025, 0, 1, 1, crs_key, 0, 1, epsg as u16,
+        1,
+        1,
+        0,
+        3,
+        1024,
+        0,
+        1,
+        model,
+        1025,
+        0,
+        1,
+        1,
+        crs_key,
+        0,
+        1,
+        epsg as u16,
     ];
     let geokeys_at = out.len() as u32;
     for value in &geokeys {
@@ -149,8 +164,18 @@ pub(super) fn write_tiff(
             entries.extend([
                 (TAG_TILE_WIDTH, TYPE_LONG, 1, TILE),
                 (TAG_TILE_LENGTH, TYPE_LONG, 1, TILE),
-                (TAG_TILE_OFFSETS, TYPE_LONG, offsets.len() as u32, offsets_field),
-                (TAG_TILE_COUNTS, TYPE_LONG, counts.len() as u32, counts_field),
+                (
+                    TAG_TILE_OFFSETS,
+                    TYPE_LONG,
+                    offsets.len() as u32,
+                    offsets_field,
+                ),
+                (
+                    TAG_TILE_COUNTS,
+                    TYPE_LONG,
+                    counts.len() as u32,
+                    counts_field,
+                ),
             ]);
         } else {
             entries.extend([

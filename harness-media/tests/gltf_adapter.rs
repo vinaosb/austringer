@@ -98,20 +98,35 @@ fn glb_fixture_extracts_to_pinned_tree_with_bin_chunk_size() {
 #[test]
 fn text_projection_is_the_bounded_scene_outline() {
     // Given: either fixture.
-    let extracted = gltf::extract(&fixture("scene.glb"), ExtractBudgets::default())
-        .expect("glb must extract");
+    let extracted =
+        gltf::extract(&fixture("scene.glb"), ExtractBudgets::default()).expect("glb must extract");
     // Then: the projection is a deterministic outline naming the asset,
     // container, hierarchy, and material census - and is bounded.
-    assert!(extracted.text_projection.contains("gltf 2.0"), "projection: {}",
-        extracted.text_projection);
-    assert!(extracted.text_projection.contains("glb"), "projection: {}",
-        extracted.text_projection);
-    assert!(extracted.text_projection.contains("root"), "projection: {}",
-        extracted.text_projection);
-    assert!(extracted.text_projection.contains("child-a"), "projection: {}",
-        extracted.text_projection);
-    assert!(extracted.text_projection.contains("red"), "projection: {}",
-        extracted.text_projection);
+    assert!(
+        extracted.text_projection.contains("gltf 2.0"),
+        "projection: {}",
+        extracted.text_projection
+    );
+    assert!(
+        extracted.text_projection.contains("glb"),
+        "projection: {}",
+        extracted.text_projection
+    );
+    assert!(
+        extracted.text_projection.contains("root"),
+        "projection: {}",
+        extracted.text_projection
+    );
+    assert!(
+        extracted.text_projection.contains("child-a"),
+        "projection: {}",
+        extracted.text_projection
+    );
+    assert!(
+        extracted.text_projection.contains("red"),
+        "projection: {}",
+        extracted.text_projection
+    );
     assert!(
         extracted.text_projection.chars().count() <= 1200,
         "projection bound: {}",
@@ -132,7 +147,9 @@ fn draco_required_fixture_is_typed_unsupported_feature() {
     // Then: UnsupportedFeature naming the format and the extension - never
     // a mangled extraction, never a panic.
     match error {
-        MediaError::UnsupportedFeature { format, feature, .. } => {
+        MediaError::UnsupportedFeature {
+            format, feature, ..
+        } => {
             assert_eq!(format, FormatId::Gltf);
             assert_eq!(feature, "KHR_draco_mesh_compression");
         }
@@ -145,8 +162,8 @@ fn meshopt_required_is_typed_unsupported_feature() {
     // Given: a .gltf JSON declaring EXT_meshopt_compression required.
     let bytes = br#"{"asset":{"version":"2.0"},"extensionsRequired":["EXT_meshopt_compression"],
         "scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"name":"n"}]}"#;
-    let error = gltf::extract(bytes, ExtractBudgets::default())
-        .expect_err("meshopt must be refused typed");
+    let error =
+        gltf::extract(bytes, ExtractBudgets::default()).expect_err("meshopt must be refused typed");
     match error {
         MediaError::UnsupportedFeature { feature, .. } => {
             assert_eq!(feature, "EXT_meshopt_compression");
@@ -191,7 +208,11 @@ fn wrong_glb_version_and_magic_report_offsets() {
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&12u32.to_le_bytes());
     let error = gltf::glb_chunks(&bytes).expect_err("no chunks must fail");
-    assert_eq!(error.offset(), 12, "first chunk header would sit at byte 12");
+    assert_eq!(
+        error.offset(),
+        12,
+        "first chunk header would sit at byte 12"
+    );
 }
 
 #[test]
@@ -199,8 +220,8 @@ fn anonymous_nodes_are_index_keyed() {
     // Given: a minimal unnamed-node scene.
     let bytes = br#"{"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0,1]}],
         "nodes":[{},{"name":"leaf"}]}"#;
-    let extracted = gltf::extract(bytes, ExtractBudgets::default())
-        .expect("unnamed nodes must extract");
+    let extracted =
+        gltf::extract(bytes, ExtractBudgets::default()).expect("unnamed nodes must extract");
     // Then: anonymous nodes are keyed "#<index>" in the name-keyed view.
     let nodes = &extracted.tree["nodes"];
     assert_eq!(nodes[0]["name"], "#0");
@@ -214,7 +235,9 @@ fn anonymous_nodes_are_index_keyed() {
 fn over_deep_hierarchy_trips_the_typed_budget() {
     // Given: a 65-node deep chain (the walk depth cap is 64); the last
     // node carries no children so the document stays index-valid.
-    let mut nodes = String::from("{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[");
+    let mut nodes = String::from(
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[",
+    );
     for index in 0..65 {
         if index > 0 {
             nodes.push(',');
@@ -228,7 +251,10 @@ fn over_deep_hierarchy_trips_the_typed_budget() {
     nodes.push_str("]}");
     let error = gltf::extract(nodes.as_bytes(), ExtractBudgets::default())
         .expect_err("the 65-deep chain must trip the cap");
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
 }
 
 #[test]
@@ -240,7 +266,10 @@ fn zero_deadline_trips_the_typed_budget() {
         max_total_bytes: 1 << 20,
     };
     let error = gltf::extract(bytes, budgets).expect_err("zero deadline must trip");
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
 }
 
 #[test]
@@ -252,7 +281,10 @@ fn oversized_input_is_refused_before_parsing() {
         max_total_bytes: 8,
     };
     let error = gltf::extract(&bytes, budgets).expect_err("cap must trip");
-    assert!(matches!(error, MediaError::ExtractTooLarge), "got {error:?}");
+    assert!(
+        matches!(error, MediaError::ExtractTooLarge),
+        "got {error:?}"
+    );
 }
 
 #[test]
@@ -266,18 +298,26 @@ fn scene_outline_projector_registers_as_text_projection() {
         name_hint: None,
     };
     let projected = registry
-        .project(&FormatId::Gltf, harness_core::event::ProjectionKind::TextProjection,
-            &fixture("scene.glb"), &context)
+        .project(
+            &FormatId::Gltf,
+            harness_core::event::ProjectionKind::TextProjection,
+            &fixture("scene.glb"),
+            &context,
+        )
         .expect("text projection resolves");
     // Then: it equals the extraction's text projection.
-    let extracted = gltf::extract(&fixture("scene.glb"), ExtractBudgets::default())
-        .expect("glb must extract");
+    let extracted =
+        gltf::extract(&fixture("scene.glb"), ExtractBudgets::default()).expect("glb must extract");
     assert_eq!(projected, extracted.text_projection);
     // And: a different kind is honestly typed NoProjector (one format, one
     // projector - the registry contract).
     let error = registry
-        .project(&FormatId::Gltf, harness_core::event::ProjectionKind::Transcript,
-            &fixture("scene.glb"), &context)
+        .project(
+            &FormatId::Gltf,
+            harness_core::event::ProjectionKind::Transcript,
+            &fixture("scene.glb"),
+            &context,
+        )
         .expect_err("transcript is not this projector's kind");
     assert!(matches!(error, MediaError::NoProjector), "got {error:?}");
 }
@@ -289,10 +329,13 @@ fn executor_dispatches_gltf_extract_with_full_disclosure() {
     // When: extract is dispatched on the committed fixture.
     let bytes = fixture("scene.gltf");
     let produced = registry
-        .dispatch(FormatId::Gltf, OpRequest::Extract {
-            bytes: &bytes,
-            budgets: ExtractBudgets::default(),
-        })
+        .dispatch(
+            FormatId::Gltf,
+            OpRequest::Extract {
+                bytes: &bytes,
+                budgets: ExtractBudgets::default(),
+            },
+        )
         .expect("gltf extract dispatches");
     // Then: pure tier, named engine, crate version, no command.
     let producer = produced.producer();
@@ -322,5 +365,8 @@ fn descriptor_claims_match_the_bound_handlers() {
 fn projection_provider_is_usable_directly() {
     // Given: the provider type itself (the daemon wiring composes it).
     let provider = Arc::new(gltf::GltfOutline);
-    assert_eq!(provider.kind(), harness_core::event::ProjectionKind::TextProjection);
+    assert_eq!(
+        provider.kind(),
+        harness_core::event::ProjectionKind::TextProjection
+    );
 }

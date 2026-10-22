@@ -94,7 +94,11 @@ impl HtmlSpec {
         if self.blocks.len() > MAX_BLOCKS {
             return Err(invalid());
         }
-        if self.title.as_ref().is_some_and(|title| !canonical(title, true)) {
+        if self
+            .title
+            .as_ref()
+            .is_some_and(|title| !canonical(title, true))
+        {
             return Err(invalid());
         }
         for block in &self.blocks {

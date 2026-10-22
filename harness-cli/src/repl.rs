@@ -15,8 +15,8 @@ use tokio::sync::mpsc;
 use crate::client::SessionTransport;
 use crate::error::CliError;
 use crate::image::{self, PreparedImage};
-use crate::repl_input::{parse_line, ReplLine};
-use crate::run::{replay_until_live, wait_turn, TurnWait};
+use crate::repl_input::{ReplLine, parse_line};
+use crate::run::{TurnWait, replay_until_live, wait_turn};
 
 /// Per-turn deadline inside the REPL.
 const REPL_TURN_TIMEOUT: Duration = Duration::from_secs(300);

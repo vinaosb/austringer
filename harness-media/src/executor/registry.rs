@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use super::binding::{AdapterEntry, OpBinding, ProbeHandler, SubHandler};
 use super::types::{AdapterTier, OpOutput, OpRequest, Produced, ProducerInfo};
-use crate::descriptor::{Operation, OpSupport};
+use crate::descriptor::{OpSupport, Operation};
 use crate::error::MediaError;
 use crate::format::FormatId;
 use crate::tool::ToolExecutor;
@@ -124,10 +124,7 @@ impl ExecutorRegistryBuilder {
             ($op:expr, $binding:expr) => {
                 match ($binding, claims.get(&$op).cloned().unwrap_or_else(missing)) {
                     (OpBinding::Pure { .. }, OpSupport::Unsupported { .. }) => {
-                        return Err(ExecutorWiringError::HandlerWithoutClaim {
-                            format,
-                            op: $op,
-                        });
+                        return Err(ExecutorWiringError::HandlerWithoutClaim { format, op: $op });
                     }
                     (OpBinding::Unsupported { .. }, OpSupport::Supported) => {
                         return Err(ExecutorWiringError::SupportedWithoutDispatch {
@@ -170,7 +167,9 @@ impl ExecutorRegistry {
     /// Look up a format's adapter entry; unregistered formats are the
     /// typed [`MediaError::UnsupportedFormat`] - never a guess.
     pub fn lookup(&self, format: &FormatId) -> Result<&AdapterEntry, MediaError> {
-        self.entries.get(format).ok_or(MediaError::UnsupportedFormat)
+        self.entries
+            .get(format)
+            .ok_or(MediaError::UnsupportedFormat)
     }
 
     /// Every registered format id (registry-completeness enumeration).

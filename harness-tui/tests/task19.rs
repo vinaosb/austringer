@@ -94,7 +94,11 @@ fn diff_event_renders_hunk_lines_and_diffstats() {
 fn accept_and_reject_decide_pending_hunks_in_order() {
     // Given: a two-hunk diff with the panel open.
     let mut app = App::new(harness_tui::app::DEFAULT_CONTEXT_WINDOW);
-    app.step(UiEvent::Server(diff_msg(1, "src/lib.rs", &[HUNK_A, HUNK_B])));
+    app.step(UiEvent::Server(diff_msg(
+        1,
+        "src/lib.rs",
+        &[HUNK_A, HUNK_B],
+    )));
     app.step(ctrl('5'));
     // When: y accepts — then the FIRST pending hunk is decided.
     let actions = app.step(plain('y'));
@@ -138,10 +142,17 @@ fn unparseable_hunk_renders_placeholder_not_crash() {
     // FAILURE channel: a hunk without a unified-diff header renders a
     // placeholder instead of being parsed (or panicking).
     let mut app = App::new(harness_tui::app::DEFAULT_CONTEXT_WINDOW);
-    app.step(UiEvent::Server(diff_msg(1, "bad.rs", &["not a hunk at all"])));
+    app.step(UiEvent::Server(diff_msg(
+        1,
+        "bad.rs",
+        &["not a hunk at all"],
+    )));
     app.step(ctrl('5'));
     let rendered = screen(&app, 100, 30);
-    assert!(rendered.contains("(unparseable hunk)"), "rendered:\n{rendered}");
+    assert!(
+        rendered.contains("(unparseable hunk)"),
+        "rendered:\n{rendered}"
+    );
     assert!(rendered.contains("bad.rs"), "rendered:\n{rendered}");
 }
 

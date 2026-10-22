@@ -41,7 +41,9 @@ pub fn downgrade_for_v1(msg: ServerMsg) -> Option<ServerMsg> {
         | ServerMsg::Verdict { .. }
         | ServerMsg::PlanAsk { .. }
         | ServerMsg::PlanResolved { .. } => None,
-        ServerMsg::Event { frame } => downgrade_frame(frame).map(|frame| ServerMsg::Event { frame }),
+        ServerMsg::Event { frame } => {
+            downgrade_frame(frame).map(|frame| ServerMsg::Event { frame })
+        }
         ServerMsg::Snapshot { frames } => Some(ServerMsg::Snapshot {
             frames: frames.into_iter().filter_map(downgrade_frame).collect(),
         }),
@@ -77,36 +79,49 @@ fn downgrade_frame(frame: Frame) -> Option<Frame> {
             seq,
             event: downgrade_event(event),
         },
-        event
-        @ (SessionEvent::TurnStarted { .. }
+        event @ (SessionEvent::TurnStarted { .. }
         | SessionEvent::TurnFinished { .. }
         | SessionEvent::Diff { .. }
         | SessionEvent::Notification { .. }) => event,
-        SessionEvent::ChildStarted { child, task, role, model } => {
-            SessionEvent::Notification {
-                kind: "child_started".to_owned(),
-                message: format!("{child} ({task}) started as {role} on {model}"),
-            }
-        }
-        SessionEvent::ChildProgress { child, phase, detail } => SessionEvent::Notification {
+        SessionEvent::ChildStarted {
+            child,
+            task,
+            role,
+            model,
+        } => SessionEvent::Notification {
+            kind: "child_started".to_owned(),
+            message: format!("{child} ({task}) started as {role} on {model}"),
+        },
+        SessionEvent::ChildProgress {
+            child,
+            phase,
+            detail,
+        } => SessionEvent::Notification {
             kind: "child_progress".to_owned(),
             message: format!("{child} {phase}: {detail}"),
         },
-        SessionEvent::ChildFinished { child, task, state, detail } => {
-            SessionEvent::Notification {
-                kind: "child_finished".to_owned(),
-                message: format!("{child} ({task}) finished {state}: {detail}"),
-            }
-        }
-        SessionEvent::CostWarning { consumed_micros, cap_micros } => {
-            SessionEvent::Notification {
-                kind: "cost_warning".to_owned(),
-                message: format!(
-                    "session spend {consumed_micros} of {cap_micros} micro-USD (80% of cap)"
-                ),
-            }
-        }
-        SessionEvent::CostStop { consumed_micros, cap_micros } => SessionEvent::Notification {
+        SessionEvent::ChildFinished {
+            child,
+            task,
+            state,
+            detail,
+        } => SessionEvent::Notification {
+            kind: "child_finished".to_owned(),
+            message: format!("{child} ({task}) finished {state}: {detail}"),
+        },
+        SessionEvent::CostWarning {
+            consumed_micros,
+            cap_micros,
+        } => SessionEvent::Notification {
+            kind: "cost_warning".to_owned(),
+            message: format!(
+                "session spend {consumed_micros} of {cap_micros} micro-USD (80% of cap)"
+            ),
+        },
+        SessionEvent::CostStop {
+            consumed_micros,
+            cap_micros,
+        } => SessionEvent::Notification {
             kind: "cost_stop".to_owned(),
             message: format!(
                 "session spend {consumed_micros} of {cap_micros} micro-USD (cap reached); \
@@ -278,8 +293,10 @@ mod tests {
                 },
             },
         };
-        let downgraded = downgrade_for_v1(ServerMsg::Snapshot { frames: vec![frame] })
-            .expect("snapshot kept");
+        let downgraded = downgrade_for_v1(ServerMsg::Snapshot {
+            frames: vec![frame],
+        })
+        .expect("snapshot kept");
         let ServerMsg::Snapshot { frames } = downgraded else {
             panic!("shape");
         };
@@ -316,7 +333,10 @@ mod tests {
             match frame.event {
                 SessionEvent::Notification { kind, message } => {
                     assert_eq!(kind, expected_kind);
-                    assert!(message.contains("1000000"), "message names the cap: {message}");
+                    assert!(
+                        message.contains("1000000"),
+                        "message names the cap: {message}"
+                    );
                 }
                 other => panic!("expected notification downgrade, got {other:?}"),
             }

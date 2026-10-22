@@ -58,8 +58,8 @@ pub use cancel::{CancelHandle, CancelRecord, CancelToken};
 pub use config::{FailureReason, LoopConfig, RunOutcome};
 pub use focus::{CompletionBlock, FocusChain, FocusTodo, PlanGate, TodoId};
 pub use inference::{
-    AssistantTurn, Inference, InferenceError, InferenceRequest, PendingCall, TurnUsage,
-    TASK_COMPLETED_TOOL,
+    AssistantTurn, Inference, InferenceError, InferenceRequest, PendingCall, TASK_COMPLETED_TOOL,
+    TurnUsage,
 };
 pub use operation::Operation;
 pub use pipeline::AgentLoop;

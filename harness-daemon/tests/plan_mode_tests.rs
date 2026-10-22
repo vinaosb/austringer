@@ -423,7 +423,10 @@ async fn plan_approval_lets_subsequent_edit_proceed() {
         frames.iter().any(|f| f.contains("\"plan_approved\""))
     })
     .await;
-    assert!(!host.plan_gate().is_active(), "approval flips plan mode off");
+    assert!(
+        !host.plan_gate().is_active(),
+        "approval flips plan mode off"
+    );
 
     let turn2 = drive_plan_turn(&state, SID, "now edit").await;
     let joined = format!("{}\n{}", turn1.join("\n"), turn2.join("\n"));
@@ -432,7 +435,10 @@ async fn plan_approval_lets_subsequent_edit_proceed() {
         "after approval the edit must execute through the normal permission path:\n{joined}"
     );
     let on_disk = std::fs::read_to_string(&fixture).expect("read back");
-    assert!(on_disk.contains("BETA EDITED"), "the edit must land on disk");
+    assert!(
+        on_disk.contains("BETA EDITED"),
+        "the edit must land on disk"
+    );
 
     approver.abort();
     permit_answerer.abort();
@@ -460,10 +466,13 @@ async fn plan_edit_updates_artifact_and_re_gates() {
 
     plan::set_plan_mode(&host, true);
     let mut control = host.mediator().subscribe();
-    let editor =
-        spawn_plan_answerer(host.mediator(), "gold", vec![PlanDecision::Edit {
+    let editor = spawn_plan_answerer(
+        host.mediator(),
+        "gold",
+        vec![PlanDecision::Edit {
             artifact: "# Revised plan\n- task one\n- files: src/x.rs".to_owned(),
-        }]);
+        }],
+    );
 
     let turn1 = drive_plan_turn(&state, SID, "plan").await;
     assert!(turn1.join("\n").contains("\"plan_blocked\""));
@@ -489,7 +498,9 @@ async fn plan_edit_updates_artifact_and_re_gates() {
         }
     }
     assert!(
-        plan_asks.iter().any(|a| a.artifact.contains("Revised plan")),
+        plan_asks
+            .iter()
+            .any(|a| a.artifact.contains("Revised plan")),
         "a fresh ask must carry the edited artifact: {plan_asks:?}"
     );
     assert!(
@@ -498,7 +509,10 @@ async fn plan_edit_updates_artifact_and_re_gates() {
     );
 
     let on_disk = std::fs::read_to_string(&fixture).expect("read back");
-    assert!(!on_disk.contains("BETA EDITED"), "still gated after the edit");
+    assert!(
+        !on_disk.contains("BETA EDITED"),
+        "still gated after the edit"
+    );
     assert!(host.plan_gate().is_active(), "edit keeps plan mode on");
     editor.abort();
 }
@@ -539,7 +553,10 @@ async fn plan_ask_timeout_does_not_approve() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
-    assert!(timed_out, "the unattended ask must resolve timeout, never approve");
+    assert!(
+        timed_out,
+        "the unattended ask must resolve timeout, never approve"
+    );
 
     let turn2 = drive_plan_turn(&state, SID, "retry").await;
     let joined = turn2.join("\n");

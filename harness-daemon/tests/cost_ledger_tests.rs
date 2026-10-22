@@ -107,7 +107,9 @@ impl Inference for FallbackMeteredInference {
                 ))
                 .await;
         }
-        Ok(metered_turn(self.per_call_costs.get(index).copied().unwrap_or(0)))
+        Ok(metered_turn(
+            self.per_call_costs.get(index).copied().unwrap_or(0),
+        ))
     }
 }
 
@@ -166,7 +168,8 @@ fn metered_factory(costs: &[u64]) -> (harness_daemon::usage::InferenceFactory, A
 }
 
 async fn submit(host: &Arc<SessionHost>, text: &str) -> Result<(), CommandRejected> {
-    host.handle_command(HostCommand::Submit(text.to_owned())).await
+    host.handle_command(HostCommand::Submit(text.to_owned()))
+        .await
 }
 
 /// Blocks until the session's next `TurnFinished`, returning the
@@ -209,9 +212,10 @@ fn cost_warnings(events: &[SessionEvent]) -> Vec<(u128, u128)> {
     events
         .iter()
         .filter_map(|event| match event {
-            SessionEvent::CostWarning { consumed_micros, cap_micros } => {
-                Some((*consumed_micros, *cap_micros))
-            }
+            SessionEvent::CostWarning {
+                consumed_micros,
+                cap_micros,
+            } => Some((*consumed_micros, *cap_micros)),
             _ => None,
         })
         .collect()
@@ -221,9 +225,10 @@ fn cost_stops(events: &[SessionEvent]) -> Vec<(u128, u128)> {
     events
         .iter()
         .filter_map(|event| match event {
-            SessionEvent::CostStop { consumed_micros, cap_micros } => {
-                Some((*consumed_micros, *cap_micros))
-            }
+            SessionEvent::CostStop {
+                consumed_micros,
+                cap_micros,
+            } => Some((*consumed_micros, *cap_micros)),
             _ => None,
         })
         .collect()
@@ -241,13 +246,23 @@ async fn cost_ledger_warning_at_80_pct_emits_typed_event_and_badge_state() {
     let host = state.session("s-warn");
     let mut live = host.hub_subscribe();
 
-    submit(&host, "one").await.expect("under-cap submit accepted");
+    submit(&host, "one")
+        .await
+        .expect("under-cap submit accepted");
     let (first, mut events) = turn_batch(&mut live).await;
-    assert!(!first.starts_with("failed"), "turn one must succeed: {first}");
+    assert!(
+        !first.starts_with("failed"),
+        "turn one must succeed: {first}"
+    );
 
-    submit(&host, "two").await.expect("still-under-cap submit accepted");
+    submit(&host, "two")
+        .await
+        .expect("still-under-cap submit accepted");
     let (second, mut batch) = turn_batch(&mut live).await;
-    assert!(!second.starts_with("failed"), "turn two must succeed: {second}");
+    assert!(
+        !second.starts_with("failed"),
+        "turn two must succeed: {second}"
+    );
     events.append(&mut batch);
     events.extend(drain(&mut live));
 
@@ -280,10 +295,16 @@ async fn cost_ledger_warning_stop_at_cap_halts_turns_typed() {
 
     submit(&host, "one").await.expect("accepted");
     let (first, mut events) = turn_batch(&mut live).await;
-    assert!(!first.starts_with("failed"), "turn one must succeed: {first}");
+    assert!(
+        !first.starts_with("failed"),
+        "turn one must succeed: {first}"
+    );
     submit(&host, "two").await.expect("accepted");
     let (second, mut batch) = turn_batch(&mut live).await;
-    assert!(!second.starts_with("failed"), "turn two must succeed: {second}");
+    assert!(
+        !second.starts_with("failed"),
+        "turn two must succeed: {second}"
+    );
     events.append(&mut batch);
     events.extend(drain(&mut live));
 
@@ -295,7 +316,9 @@ async fn cost_ledger_warning_stop_at_cap_halts_turns_typed() {
 
     // Further Submit attempts: a TYPED refusal naming the cap — never a
     // silent drop, never a model switch.
-    let rejection = submit(&host, "three").await.expect_err("at-cap submit refused");
+    let rejection = submit(&host, "three")
+        .await
+        .expect_err("at-cap submit refused");
     let CommandRejected::CostCapReached(reason) = &rejection else {
         panic!("typed cost refusal expected, got {rejection:?}");
     };
@@ -329,7 +352,10 @@ async fn cost_ledger_warning_stop_at_cap_halts_turns_typed() {
         .filter(|event| {
             matches!(
                 event,
-                SessionEvent::Recorded { event: harness_core::event::Event::Assistant { .. }, .. }
+                SessionEvent::Recorded {
+                    event: harness_core::event::Event::Assistant { .. },
+                    ..
+                }
             )
         })
         .count();
@@ -337,7 +363,10 @@ async fn cost_ledger_warning_stop_at_cap_halts_turns_typed() {
     let badge = host.cost_ledger().expect("ledger bound").snapshot();
     assert!(badge.stopped);
     assert_eq!(badge.consumed_micros, 1_100_000);
-    assert_eq!(assistant_turns, 2, "no assistant turn for the refused turn: {events:?}");
+    assert_eq!(
+        assistant_turns, 2,
+        "no assistant turn for the refused turn: {events:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -367,10 +396,7 @@ async fn cost_ledger_child_spend_aggregates_into_parent_ledger() {
             loop {
                 match live.recv().await {
                     Ok(ServerMsg::Event { frame }) => {
-                        let finished = matches!(
-                            frame.event,
-                            SessionEvent::ChildFinished { .. }
-                        );
+                        let finished = matches!(frame.event, SessionEvent::ChildFinished { .. });
                         seen.push(frame.event);
                         let finished_count = seen
                             .iter()
@@ -409,7 +435,11 @@ async fn cost_ledger_child_spend_aggregates_into_parent_ledger() {
     assert!(badge.stopped, "2.4M crossed the 2M stop line");
     assert_eq!(cost_warnings(&events).len(), 1, "{events:?}");
     assert_eq!(cost_stops(&events).len(), 1, "{events:?}");
-    assert_eq!(calls.load(Ordering::SeqCst), 2, "one provider call per child");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "one provider call per child"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -443,13 +473,20 @@ async fn cost_ledger_automation_session_respects_own_cap() {
     // Two metered assistant turns; the third fire made NO provider
     // call (the preflight gate refused it — kicker submits bypass the
     // intake refusal, so the provider seam is the automation cap).
-    assert_eq!(calls.load(Ordering::SeqCst), 2, "no provider call past the cap");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "no provider call past the cap"
+    );
     let assistant_turns = events
         .iter()
         .filter(|event| {
             matches!(
                 event,
-                SessionEvent::Recorded { event: harness_core::event::Event::Assistant { .. }, .. }
+                SessionEvent::Recorded {
+                    event: harness_core::event::Event::Assistant { .. },
+                    ..
+                }
             )
         })
         .count();
@@ -489,7 +526,10 @@ async fn cost_ledger_pending_fallback_ask_resolves_before_stop_no_substitution()
 
     submit(&host, "one").await.expect("accepted");
     let (first, mut events) = turn_batch(&mut live).await;
-    assert!(!first.starts_with("failed"), "turn one must succeed: {first}");
+    assert!(
+        !first.starts_with("failed"),
+        "turn one must succeed: {first}"
+    );
 
     // Answer the in-flight fallback ask DENY-side (chosen == current):
     // the mediation resolves same-model — the ask is never swallowed.
@@ -500,9 +540,11 @@ async fn cost_ledger_pending_fallback_ask_resolves_before_stop_no_substitution()
             loop {
                 match control.recv().await {
                     Ok(ServerMsg::FallbackAsk { ask }) => {
-                        let _ = host
-                            .mediator()
-                            .answer_fallback(ask.ask_id, "test-client", ask.current.clone());
+                        let _ = host.mediator().answer_fallback(
+                            ask.ask_id,
+                            "test-client",
+                            ask.current.clone(),
+                        );
                         return;
                     }
                     Ok(_) => continue,
@@ -514,7 +556,10 @@ async fn cost_ledger_pending_fallback_ask_resolves_before_stop_no_substitution()
 
     submit(&host, "two").await.expect("accepted");
     let (second, mut batch) = turn_batch(&mut live).await;
-    assert!(!second.starts_with("failed"), "the mediated turn succeeds: {second}");
+    assert!(
+        !second.starts_with("failed"),
+        "the mediated turn succeeds: {second}"
+    );
     events.append(&mut batch);
     events.extend(drain(&mut live));
     answerer.await.expect("ask answered");
@@ -527,13 +572,13 @@ async fn cost_ledger_pending_fallback_ask_resolves_before_stop_no_substitution()
         .expect("typed stop landed");
     let resolved_index = events
         .iter()
-        .position(
-            |event| matches!(
+        .position(|event| {
+            matches!(
                 event,
                 SessionEvent::Notification { kind, message }
                     if kind == "fallback" && message.contains("resolved")
-            ),
-        )
+            )
+        })
         .expect("fallback resolution landed");
     assert!(
         resolved_index < stop_index,
@@ -549,7 +594,9 @@ async fn cost_ledger_pending_fallback_ask_resolves_before_stop_no_substitution()
     assert_eq!(cost_stops(&events).len(), 1);
 
     // After the stop: typed refusal, no model ever switched.
-    let rejection = submit(&host, "three").await.expect_err("at-cap submit refused");
+    let rejection = submit(&host, "three")
+        .await
+        .expect_err("at-cap submit refused");
     assert!(matches!(rejection, CommandRejected::CostCapReached(..)));
 }
 
@@ -560,15 +607,13 @@ async fn cost_ledger_pending_fallback_ask_resolves_before_stop_no_substitution()
 #[tokio::test]
 async fn cost_ledger_unpriced_turns_do_not_trip_the_cap() {
     let dir = tempfile::tempdir().unwrap();
-    let factory: harness_daemon::usage::InferenceFactory = Arc::new(|| {
-        ComposedInference {
-            inference: Box::new(MeteredInference {
-                per_call_costs: vec![900_000_000, 900_000_000],
-                next: 0,
-                calls: Arc::new(AtomicUsize::new(0)),
-            }),
-            identity: Some(ModelIdentity::new("fake", "unknown-model")),
-        }
+    let factory: harness_daemon::usage::InferenceFactory = Arc::new(|| ComposedInference {
+        inference: Box::new(MeteredInference {
+            per_call_costs: vec![900_000_000, 900_000_000],
+            next: 0,
+            calls: Arc::new(AtomicUsize::new(0)),
+        }),
+        identity: Some(ModelIdentity::new("fake", "unknown-model")),
     });
     let state = daemon_with(dir.path(), factory, 1_000_000);
     let host = state.session("s-unpriced");
@@ -576,9 +621,14 @@ async fn cost_ledger_unpriced_turns_do_not_trip_the_cap() {
 
     let mut events = Vec::new();
     for _ in 0..2 {
-        submit(&host, "burn").await.expect("unpriced submits never refused");
+        submit(&host, "burn")
+            .await
+            .expect("unpriced submits never refused");
         let (outcome, mut batch) = turn_batch(&mut live).await;
-        assert!(!outcome.starts_with("failed"), "unpriced turns run: {outcome}");
+        assert!(
+            !outcome.starts_with("failed"),
+            "unpriced turns run: {outcome}"
+        );
         events.append(&mut batch);
     }
     events.extend(drain(&mut live));
@@ -602,8 +652,14 @@ async fn cost_ledger_unpriced_turns_do_not_trip_the_cap() {
 
 #[test]
 fn cost_ledger_config_default_is_twenty_dollars_per_session() {
-    assert_eq!(DaemonConfig::default().session_cost_cap_micros, DEFAULT_SESSION_COST_CAP_MICROS);
-    assert_eq!(DEFAULT_SESSION_COST_CAP_MICROS, 20_000_000, "rationale in the constant doc");
+    assert_eq!(
+        DaemonConfig::default().session_cost_cap_micros,
+        DEFAULT_SESSION_COST_CAP_MICROS
+    );
+    assert_eq!(
+        DEFAULT_SESSION_COST_CAP_MICROS, 20_000_000,
+        "rationale in the constant doc"
+    );
 }
 
 #[test]

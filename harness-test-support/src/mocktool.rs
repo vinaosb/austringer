@@ -114,15 +114,21 @@ fn stage_var(name: &str) -> Option<std::path::PathBuf> {
 }
 
 fn stagecopy_mode() -> i32 {
-    let (Some(source), Some(target)) = (stage_var("HARNESS_MEDIA_STAGE_IN"), stage_var("HARNESS_MEDIA_STAGE_OUT"))
-    else {
+    let (Some(source), Some(target)) = (
+        stage_var("HARNESS_MEDIA_STAGE_IN"),
+        stage_var("HARNESS_MEDIA_STAGE_OUT"),
+    ) else {
         eprintln!("mocktool: stagecopy needs HARNESS_MEDIA_STAGE_IN/OUT");
         return 2;
     };
     match std::fs::copy(&source, &target) {
         Ok(_) => 0,
         Err(e) => {
-            eprintln!("mocktool: stagecopy {} -> {} failed: {e}", source.display(), target.display());
+            eprintln!(
+                "mocktool: stagecopy {} -> {} failed: {e}",
+                source.display(),
+                target.display()
+            );
             2
         }
     }
@@ -133,7 +139,8 @@ fn stagegolden_mode(name: Option<&str>) -> i32 {
         eprintln!("mocktool: stagegolden needs <name> and HARNESS_MEDIA_STAGE_OUT");
         return 2;
     };
-    let Some(dir) = std::env::var_os("HARNESS_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty()) else {
+    let Some(dir) = std::env::var_os("HARNESS_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
+    else {
         eprintln!("mocktool: HARNESS_MOCKTOOL_GOLDEN_DIR is unset");
         return 2;
     };
@@ -142,7 +149,10 @@ fn stagegolden_mode(name: Option<&str>) -> i32 {
         Ok(bytes) => match std::fs::write(&target, &bytes) {
             Ok(()) => 0,
             Err(e) => {
-                eprintln!("mocktool: stagegolden write {} failed: {e}", target.display());
+                eprintln!(
+                    "mocktool: stagegolden write {} failed: {e}",
+                    target.display()
+                );
                 2
             }
         },
@@ -168,7 +178,8 @@ fn golden_mode(name: Option<&str>) -> i32 {
         eprintln!("mocktool: golden mode needs a name");
         return 2;
     };
-    let Some(dir) = std::env::var_os("HARNESS_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty()) else {
+    let Some(dir) = std::env::var_os("HARNESS_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
+    else {
         eprintln!("mocktool: HARNESS_MOCKTOOL_GOLDEN_DIR is unset");
         return 2;
     };

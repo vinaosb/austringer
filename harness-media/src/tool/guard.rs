@@ -13,7 +13,6 @@
 //!   (`Command::process_group(0)`), so pid == pgid and a kill reaches
 //!   the whole group via `killpg`.
 
-use std::io;
 use std::process::Child;
 
 /// Owns the tree-kill domain for one spawned tool process. Dropping the
@@ -31,12 +30,11 @@ impl ToolTreeGuard {
     /// spawned child. Failing to establish the domain is an error, not a
     /// degraded mode - the no-orphans guarantee is the product.
     #[cfg(windows)]
-    pub(crate) fn attach_child(child: &Child) -> io::Result<Self> {
+    pub(crate) fn attach_child(child: &Child) -> std::io::Result<Self> {
+        use std::io;
         use std::os::windows::io::AsRawHandle;
         let job = win32job::Job::create().map_err(io::Error::other)?;
-        let mut info = job
-            .query_extended_limit_info()
-            .map_err(io::Error::other)?;
+        let mut info = job.query_extended_limit_info().map_err(io::Error::other)?;
         info.limit_kill_on_job_close();
         job.set_extended_limit_info(&info)
             .map_err(io::Error::other)?;

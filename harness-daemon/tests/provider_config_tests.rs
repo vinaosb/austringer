@@ -29,8 +29,7 @@ fn anthropic_selection() -> ProviderSelection {
 
 async fn infer_once(
     factory: &Factory,
-) -> Result<harness_core::agent_loop::AssistantTurn, harness_core::agent_loop::InferenceError>
-{
+) -> Result<harness_core::agent_loop::AssistantTurn, harness_core::agent_loop::InferenceError> {
     let mut inference = factory().inference;
     let request = InferenceRequest {
         events: &[],
@@ -122,11 +121,10 @@ async fn compat_without_base_url_is_typed_and_actionable() {
 
 #[tokio::test]
 async fn keyed_family_without_key_env_name_is_typed_and_actionable() {
-    let text =
-        match ProviderSelection::from_parts("google", Some("gemini-m32"), None, None, None) {
-            Err(failure) => failure.to_string(),
-            Ok(selection) => panic!("keyed family without key env must be rejected: {selection:?}"),
-        };
+    let text = match ProviderSelection::from_parts("google", Some("gemini-m32"), None, None, None) {
+        Err(failure) => failure.to_string(),
+        Ok(selection) => panic!("keyed family without key env must be rejected: {selection:?}"),
+    };
     assert!(
         text.contains("HARNESS_PROVIDER_KEY_ENV"),
         "name the key: {text}"
@@ -157,12 +155,13 @@ async fn missing_key_env_value_fails_typed_naming_the_variable() {
 #[tokio::test]
 async fn anthropic_cassette_round_trip_carries_prompt_and_key() {
     let answer = "m32 cassette answer";
-    let transport = CassetteTransport::new(vec![Cassette::Sse(
-        anthropic_text_cassette("claude-m32-cassette", answer),
-    )]);
-    let resolved = match anthropic_selection().resolve_with(|name| {
-        (name == KEY_ENV).then(|| "m32-fake-key".to_owned())
-    }) {
+    let transport = CassetteTransport::new(vec![Cassette::Sse(anthropic_text_cassette(
+        "claude-m32-cassette",
+        answer,
+    ))]);
+    let resolved = match anthropic_selection()
+        .resolve_with(|name| (name == KEY_ENV).then(|| "m32-fake-key".to_owned()))
+    {
         Ok(resolved) => resolved,
         Err(failure) => panic!("resolve failed: {failure}"),
     };
@@ -230,11 +229,10 @@ async fn hanging_provider_surfaces_typed_timeout_without_hanging() {
     };
     let factory = resolved.compose_factory(transport.clone());
     let started = Instant::now();
-    let guarded =
-        match tokio::time::timeout(Duration::from_secs(5), infer_once(&factory)).await {
-            Ok(outcome) => outcome,
-            Err(_elapsed) => panic!("infer hung past the 5s outer guard"),
-        };
+    let guarded = match tokio::time::timeout(Duration::from_secs(5), infer_once(&factory)).await {
+        Ok(outcome) => outcome,
+        Err(_elapsed) => panic!("infer hung past the 5s outer guard"),
+    };
     let failure = match guarded {
         Ok(turn) => panic!("a hanging provider must not succeed: {turn:?}"),
         Err(failure) => failure.to_string(),

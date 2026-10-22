@@ -13,8 +13,13 @@ use crate::adapter::svg::spec::SvgSpec;
 
 /// The SMIL animation element names counted by
 /// [`SvgTree::animation_elements`].
-pub const ANIMATION_TAGS: [&str; 5] =
-    ["animate", "animateMotion", "animateTransform", "animateColor", "set"];
+pub const ANIMATION_TAGS: [&str; 5] = [
+    "animate",
+    "animateMotion",
+    "animateTransform",
+    "animateColor",
+    "set",
+];
 
 /// The bounded extract tree (plan M11 field set): root attrs, element
 /// census by tag, ids, classes, text content, embedded raster refs,
@@ -70,10 +75,9 @@ pub struct ViewBox(pub [Number; 4]);
 pub fn number_or_raw(raw: &str) -> Value {
     match raw.trim().parse::<f64>() {
         // from_f64 is None exactly for non-finite parses; those stay raw.
-        Ok(number) => Number::from_f64(number).map_or_else(
-            || Value::String(raw.to_owned()),
-            Value::Number,
-        ),
+        Ok(number) => {
+            Number::from_f64(number).map_or_else(|| Value::String(raw.to_owned()), Value::Number)
+        }
         Err(_) => Value::String(raw.to_owned()),
     }
 }
@@ -82,7 +86,10 @@ pub fn number_or_raw(raw: &str) -> Value {
 /// become a [`ViewBox`], anything else stays the raw string.
 #[must_use]
 pub fn parse_view_box(raw: &str) -> Option<ViewBox> {
-    let numbers: Vec<f64> = raw.split_whitespace().filter_map(|token| token.parse().ok()).collect();
+    let numbers: Vec<f64> = raw
+        .split_whitespace()
+        .filter_map(|token| token.parse().ok())
+        .collect();
     boxed(numbers.try_into().ok()?)
 }
 
@@ -135,7 +142,11 @@ pub fn spec_tree(spec: &SvgSpec) -> SvgTree {
         if let Some(id) = &common.id {
             ids.insert(collapse(id));
         }
-        for token in common.class.iter().flat_map(|class| class.split_whitespace()) {
+        for token in common
+            .class
+            .iter()
+            .flat_map(|class| class.split_whitespace())
+        {
             classes.insert(token.to_owned());
         }
         if let Shape::Text { content, .. } = shape {
@@ -167,8 +178,11 @@ pub fn render_projection(tree: &SvgTree) -> String {
             out.push_str(&format!(" {label}={value}"));
         }
     }
-    let census: Vec<String> =
-        tree.census.iter().map(|(tag, count)| format!("{tag}={count}")).collect();
+    let census: Vec<String> = tree
+        .census
+        .iter()
+        .map(|(tag, count)| format!("{tag}={count}"))
+        .collect();
     out.push_str(&format!("; elements={}", census.join(",")));
     if !tree.ids.is_empty() {
         out.push_str(&format!("; ids={}", tree.ids.join(",")));

@@ -96,7 +96,13 @@ const FFPROBE_OP_PROBE_AV: ToolOpTemplate = ToolOpTemplate {
     op: "probe-av",
     program: None,
     args: &[
-        "-v", "error", "-show_format", "-show_streams", "-of", "json", "{input}",
+        "-v",
+        "error",
+        "-show_format",
+        "-show_streams",
+        "-of",
+        "json",
+        "{input}",
     ],
 };
 
@@ -104,8 +110,17 @@ const FFMPEG_OP_THUMBNAIL: ToolOpTemplate = ToolOpTemplate {
     op: "thumbnail",
     program: None,
     args: &[
-        "-y", "-hide_banner", "-loglevel", "error", "-ss", "0", "-i", "{input}", "-frames:v",
-        "1", "{output}",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        "0",
+        "-i",
+        "{input}",
+        "-frames:v",
+        "1",
+        "{output}",
     ],
 };
 
@@ -113,7 +128,16 @@ const FFMPEG_OP_PCM_MD5: ToolOpTemplate = ToolOpTemplate {
     op: "pcm-md5",
     program: None,
     args: &[
-        "-hide_banner", "-loglevel", "error", "-i", "{input}", "-map", "0:a", "-f", "md5", "-",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        "{input}",
+        "-map",
+        "0:a",
+        "-f",
+        "md5",
+        "-",
     ],
 };
 
@@ -140,8 +164,11 @@ const FREECAD_OP_TOPOLOGY_DUMP: ToolOpTemplate = ToolOpTemplate {
     args: &["{script}", "{input}"],
 };
 
-const FREECAD_OPS: &[ToolOpTemplate] =
-    &[VERSION_CHECK, FREECAD_OP_STEP_BUILD, FREECAD_OP_TOPOLOGY_DUMP];
+const FREECAD_OPS: &[ToolOpTemplate] = &[
+    VERSION_CHECK,
+    FREECAD_OP_STEP_BUILD,
+    FREECAD_OP_TOPOLOGY_DUMP,
+];
 
 // M21 georaster lane: the FIXED machine-readable census op is a
 // manifest template. The spec-driven gdal_translate argv (EPSG,
@@ -207,7 +234,8 @@ const BLENDER_OP_SCENE_BUILD: ToolOpTemplate = ToolOpTemplate {
     ],
 };
 
-const BLENDER_OPS: &[ToolOpTemplate] = &[VERSION_CHECK, BLENDER_OP_SCENE_DUMP, BLENDER_OP_SCENE_BUILD];
+const BLENDER_OPS: &[ToolOpTemplate] =
+    &[VERSION_CHECK, BLENDER_OP_SCENE_DUMP, BLENDER_OP_SCENE_BUILD];
 const FFMPEG_OPS: &[ToolOpTemplate] = &[VERSION_CHECK, FFMPEG_OP_THUMBNAIL, FFMPEG_OP_PCM_MD5];
 const FFPROBE_OPS: &[ToolOpTemplate] = &[FFPROBE_VERSION_CHECK, FFPROBE_OP_PROBE_AV];
 const WHISPER_OPS: &[ToolOpTemplate] = &[ToolOpTemplate {
@@ -232,11 +260,23 @@ pub fn manifests() -> &'static BTreeMap<String, ExternalToolSpec> {
                 // (golden captures; see golden/mocktool/capture.md).
                 spec("ffmpeg", "ffmpeg", "8.1.1", 300_000, FFMPEG_OPS),
                 spec("ffprobe", "ffprobe", "8.1.1", 30_000, FFPROBE_OPS),
-                spec("whisper-cpp", "whisper-cli", PENDING_PIN, 600_000, WHISPER_OPS),
+                spec(
+                    "whisper-cpp",
+                    "whisper-cli",
+                    PENDING_PIN,
+                    600_000,
+                    WHISPER_OPS,
+                ),
                 spec("libreoffice", "soffice", PENDING_PIN, 120_000, PANDOC_OPS),
                 // pandoc 3.9.0.2 exercised on the dev machine 2026-09-24.
                 spec("pandoc", "pandoc", "3.9.0.2", 60_000, PANDOC_OPS),
-                spec("freecadcmd", "freecadcmd", PENDING_PIN, 180_000, FREECAD_OPS),
+                spec(
+                    "freecadcmd",
+                    "freecadcmd",
+                    PENDING_PIN,
+                    180_000,
+                    FREECAD_OPS,
+                ),
                 spec("gdal", "gdal_translate", PENDING_PIN, 180_000, GDAL_OPS),
             ] {
                 table.insert(entry.name.to_owned(), entry);

@@ -5,13 +5,13 @@
 
 use std::collections::BTreeSet;
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
-use serde_json::{json, Value};
+use quick_xml::events::Event;
+use serde_json::{Value, json};
 
+use super::TEXT_PROJECTION_MAX_CHARS;
 use super::parts::{self, Ledger, truncate_chars};
 use super::xlsx_sheet::sheet_tree;
-use super::TEXT_PROJECTION_MAX_CHARS;
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 
@@ -91,12 +91,9 @@ fn sheet_list(workbook: &str, ledger: &mut Ledger) -> Result<Vec<(String, String
                 if sheets.len() >= MAX_SHEETS {
                     return Err(MediaError::ExtractTooLarge);
                 }
-                let rid = parts::prefixed_attribute(&element, "r:id")
-                    .ok_or(MediaError::ParseFailure)?;
-                sheets.push((
-                    parts::attribute(&element, "name").unwrap_or_default(),
-                    rid,
-                ));
+                let rid =
+                    parts::prefixed_attribute(&element, "r:id").ok_or(MediaError::ParseFailure)?;
+                sheets.push((parts::attribute(&element, "name").unwrap_or_default(), rid));
             }
             _ => {}
         }
@@ -116,9 +113,7 @@ fn shared_strings(xml: &str, ledger: &mut Ledger) -> Result<Vec<String>, MediaEr
             Event::Eof => break,
             // Stateful elements (si) open ONLY on Start: an Empty event
             // has no matching End, so opening there would strand state.
-            Event::Start(element)
-                if element.name().local_name().as_ref() == "si" =>
-            {
+            Event::Start(element) if element.name().local_name().as_ref() == "si" => {
                 in_item = true;
                 current.clear();
             }
@@ -129,9 +124,7 @@ fn shared_strings(xml: &str, ledger: &mut Ledger) -> Result<Vec<String>, MediaEr
                     .to_string();
                 current.push_str(&resolved);
             }
-            Event::End(element)
-                if element.name().local_name().as_ref() == "si" =>
-            {
+            Event::End(element) if element.name().local_name().as_ref() == "si" => {
                 in_item = false;
                 if strings.len() >= MAX_SHARED {
                     return Err(MediaError::ExtractTooLarge);
@@ -167,7 +160,11 @@ fn named_styles(xml: &str, ledger: &mut Ledger) -> Result<BTreeSet<String>, Medi
     Ok(styles)
 }
 
-fn finish(sheets: Vec<Value>, styles: &BTreeSet<String>, macros: u8) -> Result<Extracted, MediaError> {
+fn finish(
+    sheets: Vec<Value>,
+    styles: &BTreeSet<String>,
+    macros: u8,
+) -> Result<Extracted, MediaError> {
     let count = sheets.len();
     let mut projection = format!("xlsx: {count} sheets");
     for sheet in &sheets {
@@ -195,5 +192,9 @@ fn finish(sheets: Vec<Value>, styles: &BTreeSet<String>, macros: u8) -> Result<E
         "sheets": sheets,
         "styles_defined": styles.iter().map(String::as_str).collect::<Vec<_>>(),
     });
-    Ok(Extracted { tree, text_projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree,
+        text_projection,
+        thumbnails: Vec::new(),
+    })
 }

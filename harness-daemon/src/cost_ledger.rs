@@ -34,8 +34,8 @@ use harness_core::agent_loop::{
     AssistantTurn, CancelToken, Inference, InferenceError, InferenceRequest,
 };
 use harness_core::budget::{
-    BudgetCap, BudgetPeriod, BudgetSignal, BudgetSignalSink, BudgetSpec, Cost, Dimension,
-    MicroUsd, Spend, SpendLedger, StopReason, TokenCount,
+    BudgetCap, BudgetPeriod, BudgetSignal, BudgetSignalSink, BudgetSpec, Cost, Dimension, MicroUsd,
+    Spend, SpendLedger, StopReason, TokenCount,
 };
 use harness_providers::cost::Priced;
 use harness_providers::identity::ModelIdentity;
@@ -131,10 +131,9 @@ impl SessionLedger {
             return Vec::new();
         }
         state.consumed_micros = state.consumed_micros.saturating_add(spend.money().0);
-        state.warned |= sink
-            .0
-            .iter()
-            .any(|signal| matches!(signal, BudgetSignal::Warning(w) if w.dimension == Dimension::Money));
+        state.warned |= sink.0.iter().any(
+            |signal| matches!(signal, BudgetSignal::Warning(w) if w.dimension == Dimension::Money),
+        );
         state.stopped |= sink
             .0
             .iter()
@@ -250,7 +249,8 @@ impl Inference for CostLedgerInference {
             };
             let spend = Spend {
                 tokens: TokenCount(
-                    usage.input_tokens
+                    usage
+                        .input_tokens
                         .saturating_add(usage.output_tokens)
                         .saturating_add(usage.cache_read_tokens)
                         .saturating_add(usage.cache_write_tokens),

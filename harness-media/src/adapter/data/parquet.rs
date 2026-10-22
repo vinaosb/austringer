@@ -12,16 +12,16 @@
 //! stats exact (single-row-group spec-driven writes, M5/M22 aligned).
 
 use bytes::Bytes;
+use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriterOptions;
-use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::{EnabledStatistics, WriterProperties, WriterVersion};
 use serde_json::{Map, Value};
 
 use super::spec::{ColumnType, TabularSpec};
 use super::{budget_tripped, cell_value, parquet_census, record_batch, tolerances};
-use crate::diff::{structural_diff, RoundTripVerdict};
+use crate::diff::{RoundTripVerdict, structural_diff};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 use crate::format::FormatId;
@@ -106,8 +106,7 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
                 MediaError::UnsupportedFeature {
                     format: FormatId::Parquet,
                     feature: format!("column-type:{}", field.data_type()),
-                    reason: "the v0.2 data lane covers bool/int32/int64/double/utf8 columns"
-                        .into(),
+                    reason: "the v0.2 data lane covers bool/int32/int64/double/utf8 columns".into(),
                 }
             })
         })

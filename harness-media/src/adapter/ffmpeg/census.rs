@@ -4,7 +4,7 @@
 //! a stable public contract; this module never trusts a field beyond
 //! its declared type (strings parse to numbers, unknown fields drop).
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::error::MediaError;
 use crate::extract::TEXT_PROJECTION_MAX_CHARS;
@@ -20,7 +20,10 @@ fn round3(value: f64) -> f64 {
 }
 
 fn parse_f64(value: &Value) -> Option<f64> {
-    value.as_str().and_then(|text| text.parse::<f64>().ok()).map(round3)
+    value
+        .as_str()
+        .and_then(|text| text.parse::<f64>().ok())
+        .map(round3)
 }
 
 fn parse_ratio(value: &Value) -> Option<f64> {
@@ -88,9 +91,13 @@ impl AvProbe {
     /// [`MAX_CENSUS_STREAMS`].
     pub fn parse(payload: &str) -> Result<Self, MediaError> {
         let start = payload.find('{').ok_or(MediaError::ParseFailure)?;
-        let root: Value = serde_json::from_str(&payload[start..]).map_err(|_| MediaError::ParseFailure)?;
+        let root: Value =
+            serde_json::from_str(&payload[start..]).map_err(|_| MediaError::ParseFailure)?;
         let format = &root["format"];
-        let format_name = format["format_name"].as_str().unwrap_or_default().to_owned();
+        let format_name = format["format_name"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
         if format_name.is_empty() {
             return Err(MediaError::ParseFailure);
         }
@@ -108,12 +115,16 @@ impl AvProbe {
                 codec_type: codec_type.clone(),
                 codec_name: codec_name.clone(),
                 width: stream["width"].as_u64().and_then(|w| u32::try_from(w).ok()),
-                height: stream["height"].as_u64().and_then(|h| u32::try_from(h).ok()),
+                height: stream["height"]
+                    .as_u64()
+                    .and_then(|h| u32::try_from(h).ok()),
                 fps: parse_ratio(&stream["avg_frame_rate"]),
                 duration_secs: parse_f64(&stream["duration"]),
                 sample_rate: parse_u64(&stream["sample_rate"])
                     .and_then(|rate| u32::try_from(rate).ok()),
-                channels: stream["channels"].as_u64().and_then(|c| u32::try_from(c).ok()),
+                channels: stream["channels"]
+                    .as_u64()
+                    .and_then(|c| u32::try_from(c).ok()),
                 bitrate: parse_u64(&stream["bit_rate"]),
             };
             if codec_name.is_empty() || codec_type.is_empty() {
@@ -172,7 +183,11 @@ impl AvProbe {
     }
 
     fn render_projection(&self) -> String {
-        let codecs: Vec<&str> = self.streams.iter().map(|row| row.codec_name.as_str()).collect();
+        let codecs: Vec<&str> = self
+            .streams
+            .iter()
+            .map(|row| row.codec_name.as_str())
+            .collect();
         let duration = self.duration_secs.unwrap_or_default();
         let minutes = (duration / 60.0) as u64;
         let seconds = (duration - f64::from(60_u32 * minutes as u32)) as u64;

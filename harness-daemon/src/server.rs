@@ -188,7 +188,10 @@ impl DaemonState {
             let _ = host.projection.set(intake);
         }
         let executor = (self.executor_factory)(&session_dir, host.event_sink());
-        let ComposedInference { inference, identity } = (self.inference_factory)();
+        let ComposedInference {
+            inference,
+            identity,
+        } = (self.inference_factory)();
         // Identity-bearing stacks (the shipped provider composition)
         // emit one Usage frame per assistant turn; identity-less
         // scripted stacks stay bare. The cost ledger wraps the
@@ -200,15 +203,14 @@ impl DaemonState {
         // follow the dispatch, and an acknowledged fallback hop
         // re-cites the new model.
         let inference = match (&self.routing, identity) {
-            (Some(intake), Some(configured)) => {
-                Box::new(crate::routing::SessionRouter::new(
-                    Arc::clone(intake),
-                    id,
-                    Arc::clone(&host),
-                    Arc::clone(&cost_ledger),
-                    configured,
-                )) as Box<dyn harness_core::agent_loop::Inference>
-            }
+            (Some(intake), Some(configured)) => Box::new(crate::routing::SessionRouter::new(
+                Arc::clone(intake),
+                id,
+                Arc::clone(&host),
+                Arc::clone(&cost_ledger),
+                configured,
+            ))
+                as Box<dyn harness_core::agent_loop::Inference>,
             (None, Some(identity)) => {
                 let usage = crate::usage::UsageInference::new(
                     Arc::clone(&host),

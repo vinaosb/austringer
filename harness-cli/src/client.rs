@@ -74,7 +74,10 @@ impl SessionTransport {
             Some(base) => Carrier::Http(HttpSession::open(base, connect).await?),
             None => Carrier::Ipc(IpcSession::open(connect).await?),
         };
-        Ok(Self { carrier, negotiated_version: None })
+        Ok(Self {
+            carrier,
+            negotiated_version: None,
+        })
     }
 
     /// Submit a user turn.

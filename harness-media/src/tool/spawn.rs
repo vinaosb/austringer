@@ -33,7 +33,10 @@ pub(crate) fn wait_bounded(
 ) -> Result<ToolRun, ToolError> {
     let out_thread = reader_thread(child.stdout.take(), STDOUT_CAP_BYTES);
     let err_thread = reader_thread(child.stderr.take(), STDERR_HEAD_BYTES);
+    #[cfg(windows)]
     let mut guard = attach_guard(child, tool)?;
+    #[cfg(unix)]
+    let mut guard = attach_guard(child)?;
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
@@ -80,18 +83,17 @@ pub(crate) fn wait_bounded(
     })
 }
 
+#[cfg(windows)]
 fn attach_guard(child: &Child, tool: &str) -> Result<ToolTreeGuard, ToolError> {
-    #[cfg(windows)]
-    {
-        ToolTreeGuard::attach_child(child).map_err(|detail| ToolError::Spawn {
-            tool: tool.to_owned(),
-            detail: detail.to_string(),
-        })
-    }
-    #[cfg(unix)]
-    {
-        Ok(ToolTreeGuard::for_child(child))
-    }
+    ToolTreeGuard::attach_child(child).map_err(|detail| ToolError::Spawn {
+        tool: tool.to_owned(),
+        detail: detail.to_string(),
+    })
+}
+
+#[cfg(unix)]
+fn attach_guard(child: &Child) -> Result<ToolTreeGuard, ToolError> {
+    Ok(ToolTreeGuard::for_child(child))
 }
 
 fn reader_thread<R: Read + Send + 'static>(

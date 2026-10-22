@@ -6,8 +6,8 @@
 use std::io::Read;
 use std::time::Instant;
 
-use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
 
 use crate::error::MediaError;
 use crate::extract::ExtractBudgets;
@@ -141,7 +141,8 @@ pub(super) fn reference_char(name: &str) -> Option<char> {
             .strip_prefix("#x")
             .and_then(|digits| u32::from_str_radix(digits, 16).ok())
             .or_else(|| {
-                name.strip_prefix('#').and_then(|digits| digits.parse::<u32>().ok())
+                name.strip_prefix('#')
+                    .and_then(|digits| digits.parse::<u32>().ok())
             })
             .and_then(char::from_u32),
     }
@@ -152,7 +153,12 @@ pub(super) fn reference_char(name: &str) -> Option<char> {
 pub(super) fn attribute(element: &BytesStart<'_>, name: &str) -> Option<String> {
     element.attributes().flatten().find_map(|attribute| {
         (attribute.key.local_name().as_ref() == name)
-            .then(|| attribute.normalized_value(quick_xml::XmlVersion::Implicit1_0).ok().map(|value| value.into_owned()))
+            .then(|| {
+                attribute
+                    .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                    .ok()
+                    .map(|value| value.into_owned())
+            })
             .flatten()
     })
 }
@@ -164,7 +170,12 @@ pub(super) fn attribute(element: &BytesStart<'_>, name: &str) -> Option<String> 
 pub(super) fn prefixed_attribute(element: &BytesStart<'_>, key: &str) -> Option<String> {
     element.attributes().flatten().find_map(|attribute| {
         (attribute.key.as_ref() == key)
-            .then(|| attribute.normalized_value(quick_xml::XmlVersion::Implicit1_0).ok().map(|value| value.into_owned()))
+            .then(|| {
+                attribute
+                    .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                    .ok()
+                    .map(|value| value.into_owned())
+            })
             .flatten()
     })
 }

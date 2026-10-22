@@ -15,10 +15,13 @@ use harness_media::extract::ExtractBudgets;
 use harness_media::format::FormatId;
 use harness_media::generate::GenerationSpec;
 use harness_media::projection::{ProjectionContext, ProjectionRegistry};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn spec(params: Value) -> GenerationSpec {
-    GenerationSpec { format: FormatId::Pdf, params }
+    GenerationSpec {
+        format: FormatId::Pdf,
+        params,
+    }
 }
 
 /// (name, params) corpus: Latin, Cyrillic, CJK, and a mixed two-page doc.
@@ -81,8 +84,8 @@ fn roundtrip_corpus_is_text_equal_with_fonts_embedded() {
         let generation = spec(params.clone());
         // When: generated then extracted.
         let bytes = pdf::generate(&generation).unwrap_or_else(|e| panic!("{name}: generate {e:?}"));
-        let extracted =
-            pdf::extract(&bytes, ExtractBudgets::default()).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let extracted = pdf::extract(&bytes, ExtractBudgets::default())
+            .unwrap_or_else(|e| panic!("{name}: {e:?}"));
         // Then: page count and whitespace-normalized text round-trip exactly.
         let expected_texts = expected_page_texts(&params);
         let pages = extracted.tree["pages"].as_array().expect("pages");
@@ -96,7 +99,11 @@ fn roundtrip_corpus_is_text_equal_with_fonts_embedded() {
         // defect is unembedded fonts - pinned here via the extract font
         // list, per plan M13).
         for font in extracted.tree["fonts"].as_array().expect("fonts") {
-            assert_eq!(font["embedded"], json!(true), "{name}: font {font} must be embedded");
+            assert_eq!(
+                font["embedded"],
+                json!(true),
+                "{name}: font {font} must be embedded"
+            );
         }
         // And: non-Latin1 entries never ride WinAnsi - krilla emits
         // Type0/Identity-H with ToUnicode CMaps (fidelity law).
@@ -111,7 +118,8 @@ fn roundtrip_corpus_is_text_equal_with_fonts_embedded() {
             );
             for font in fonts {
                 assert_ne!(
-                    font["encoding"], json!("WinAnsiEncoding"),
+                    font["encoding"],
+                    json!("WinAnsiEncoding"),
                     "{name}: WinAnsi emitted for non-Latin1 text - the pinned defect"
                 );
             }
@@ -151,8 +159,13 @@ fn generation_is_byte_deterministic_with_epoch_dates() {
     assert_eq!(first, second, "repeat generation must be byte-identical");
     // And: the document clock is pinned to the fixed epoch (2026-01-01).
     let extracted = pdf::extract(&first, ExtractBudgets::default()).expect("extract");
-    let date = extracted.tree["metadata"]["creation_date"].as_str().expect("date");
-    assert!(date.starts_with("D:20260101"), "creation date pinned to epoch, got {date}");
+    let date = extracted.tree["metadata"]["creation_date"]
+        .as_str()
+        .expect("date");
+    assert!(
+        date.starts_with("D:20260101"),
+        "creation date pinned to epoch, got {date}"
+    );
 }
 
 #[test]
@@ -171,7 +184,10 @@ fn invalid_specs_fail_typed_invalid_spec() {
         // When: generated.
         let error = pdf::generate(&spec(params)).err();
         // Then: typed InvalidSpec - never a panic, never fake output.
-        assert!(matches!(error, Some(MediaError::InvalidSpec)), "got {error:?}");
+        assert!(
+            matches!(error, Some(MediaError::InvalidSpec)),
+            "got {error:?}"
+        );
     }
 }
 
@@ -195,7 +211,10 @@ fn executor_dispatch_wires_pdf_ops_with_producer_disclosure() {
     let extracted = registry
         .dispatch(
             FormatId::Pdf,
-            OpRequest::Extract { bytes: &bytes, budgets: ExtractBudgets::default() },
+            OpRequest::Extract {
+                bytes: &bytes,
+                budgets: ExtractBudgets::default(),
+            },
         )
         .expect("pdf extract dispatches");
     assert_eq!(extracted.producer().engine, pdf::EXTRACT_ENGINE);
@@ -203,7 +222,10 @@ fn executor_dispatch_wires_pdf_ops_with_producer_disclosure() {
     let verified = registry
         .dispatch(
             FormatId::Pdf,
-            OpRequest::Verify { expected: &expected, bytes: &bytes },
+            OpRequest::Verify {
+                expected: &expected,
+                bytes: &bytes,
+            },
         )
         .expect("pdf verify dispatches");
     assert!(
@@ -220,7 +242,10 @@ fn executor_dispatch_wires_pdf_ops_with_producer_disclosure() {
         harness_media::descriptor::Operation::Verify,
     ] {
         assert!(
-            matches!(descriptor.ops.get(&op), Some(harness_media::descriptor::OpSupport::Supported)),
+            matches!(
+                descriptor.ops.get(&op),
+                Some(harness_media::descriptor::OpSupport::Supported)
+            ),
             "pdf {op} must be claimed Supported"
         );
     }
@@ -244,10 +269,18 @@ fn pdf_projection_provider_is_a_thin_extract_wrap() {
         let path = format!("{}/fixtures/pdf/minimal.pdf", env!("CARGO_MANIFEST_DIR"));
         std::fs::read(path).expect("minimal fixture")
     };
-    let context = ProjectionContext { budgets: ExtractBudgets::default(), name_hint: Some("a.pdf") };
+    let context = ProjectionContext {
+        budgets: ExtractBudgets::default(),
+        name_hint: Some("a.pdf"),
+    };
     // When: projected.
     let projected = projections
-        .project(&FormatId::Pdf, ProjectionKind::TextProjection, &bytes, &context)
+        .project(
+            &FormatId::Pdf,
+            ProjectionKind::TextProjection,
+            &bytes,
+            &context,
+        )
         .expect("projection exists");
     // Then: it is the extract-side bounded text projection (M10 seam: thin
     // wrap over Extracted.text_projection).
@@ -257,7 +290,10 @@ fn pdf_projection_provider_is_a_thin_extract_wrap() {
         &FormatId::Pdf,
         ProjectionKind::Transcript,
         &bytes,
-        &ProjectionContext { budgets: ExtractBudgets::default(), name_hint: None },
+        &ProjectionContext {
+            budgets: ExtractBudgets::default(),
+            name_hint: None,
+        },
     );
     assert!(matches!(wrong, Err(MediaError::NoProjector)));
 }

@@ -6,12 +6,12 @@
 
 use std::collections::BTreeSet;
 
-use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
-use serde_json::{json, Value};
+use quick_xml::events::{BytesStart, Event};
+use serde_json::{Value, json};
 
-use super::parts::{self, Ledger, Rel, collapse, truncate_chars};
 use super::TEXT_PROJECTION_MAX_CHARS;
+use super::parts::{self, Ledger, Rel, collapse, truncate_chars};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted};
 
@@ -75,11 +75,7 @@ struct Walk {
     embeds: BTreeSet<String>,
 }
 
-fn walk_document(
-    document: &str,
-    ledger: &mut Ledger,
-    walk: &mut Walk,
-) -> Result<(), MediaError> {
+fn walk_document(document: &str, ledger: &mut Ledger, walk: &mut Walk) -> Result<(), MediaError> {
     let mut reader = Reader::from_str(document);
     loop {
         match parts::next_event(&mut reader, ledger)? {
@@ -277,5 +273,9 @@ fn finish(
         projection.push_str(&format!("\nmacros present: {macros}, not executed"));
     }
     let text_projection = truncate_chars(projection, TEXT_PROJECTION_MAX_CHARS);
-    Ok(Extracted { tree, text_projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree,
+        text_projection,
+        thumbnails: Vec::new(),
+    })
 }

@@ -58,27 +58,27 @@ impl ToolApproval for ReadOnlyApproval {
         let calls = std::mem::take(ctx.pending_calls);
         let mut decisions = Vec::with_capacity(calls.len());
         for call in &calls {
-            let decision =
-                if call.tool != TASK_COMPLETED_TOOL && !self.allowed.contains(&call.tool) {
-                    let reason = format!(
-                        "read-only agent `{}` cannot execute `{}` — allowed tools: {}",
-                        self.agent,
-                        call.tool,
-                        self.allowed.join(", ")
-                    );
-                    self.host.publish(SessionEvent::Notification {
-                        kind: REFUSAL_KIND.to_owned(),
-                        message: reason.clone(),
-                    });
-                    Decision::Deny { reason }
-                } else {
-                    ctx.pending_calls.clear();
-                    ctx.pending_calls.push(call.clone());
-                    let single = self.inner.approve(ctx).await?;
-                    single.first().cloned().unwrap_or(Decision::Deny {
-                        reason: "approval stage returned no decision".into(),
-                    })
-                };
+            let decision = if call.tool != TASK_COMPLETED_TOOL && !self.allowed.contains(&call.tool)
+            {
+                let reason = format!(
+                    "read-only agent `{}` cannot execute `{}` — allowed tools: {}",
+                    self.agent,
+                    call.tool,
+                    self.allowed.join(", ")
+                );
+                self.host.publish(SessionEvent::Notification {
+                    kind: REFUSAL_KIND.to_owned(),
+                    message: reason.clone(),
+                });
+                Decision::Deny { reason }
+            } else {
+                ctx.pending_calls.clear();
+                ctx.pending_calls.push(call.clone());
+                let single = self.inner.approve(ctx).await?;
+                single.first().cloned().unwrap_or(Decision::Deny {
+                    reason: "approval stage returned no decision".into(),
+                })
+            };
             decisions.push(decision);
         }
         *ctx.pending_calls = calls;

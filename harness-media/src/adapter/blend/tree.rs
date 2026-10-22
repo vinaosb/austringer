@@ -6,10 +6,10 @@
 //! own copies (three-way triangulation, pinned by the round-trip
 //! suite).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::spec::{BlendSpec, ObjectSpec, Primitive};
 use super::DUMP_SCHEMA;
+use super::spec::{BlendSpec, ObjectSpec, Primitive};
 
 /// Blender's factory-default world color (dumped when the spec sets no
 /// background).
@@ -38,14 +38,18 @@ pub fn spec_tree(spec: &BlendSpec) -> Value {
 
 fn object_tree(object: &ObjectSpec) -> Value {
     let (verts, edges, faces) = stats(object.primitive);
-    let slots: Vec<Value> = object.material.iter().map(|material| {
-        json!({
-            "base_color": material.base_color,
-            "metallic": material.metallic,
-            "name": format!("{}-material", object.name),
-            "roughness": material.roughness,
+    let slots: Vec<Value> = object
+        .material
+        .iter()
+        .map(|material| {
+            json!({
+                "base_color": material.base_color,
+                "metallic": material.metallic,
+                "name": format!("{}-material", object.name),
+                "roughness": material.roughness,
+            })
         })
-    }).collect();
+        .collect();
     json!({
         "material_slots": slots,
         "mesh": {"edges": edges, "faces": faces, "verts": verts},

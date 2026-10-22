@@ -32,7 +32,7 @@
 mod read;
 mod write;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use read::parse_tiff;
 
@@ -107,8 +107,14 @@ fn info() -> Result<(), String> {
         "bands": [{"band": 1, "type": "Byte"}],
     });
     if let Some(geo) = &main.geo {
-        census["geoTransform"] =
-            json!([geo.origin[0], geo.scale[0], 0.0, geo.origin[1], 0.0, -geo.scale[1]]);
+        census["geoTransform"] = json!([
+            geo.origin[0],
+            geo.scale[0],
+            0.0,
+            geo.origin[1],
+            0.0,
+            -geo.scale[1]
+        ]);
     }
     if parsed.cog_layout {
         census["metadata"] = json!({"IMAGE_STRUCTURE": {"LAYOUT": "COG"}});

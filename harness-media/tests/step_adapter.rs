@@ -103,11 +103,7 @@ fn corpus() -> Vec<(&'static str, StepSpec)> {
         (
             "single-sphere",
             StepSpec {
-                solids: vec![solid(
-                    "Ball",
-                    SolidShape::Sphere { radius: 2.0 },
-                    identity,
-                )],
+                solids: vec![solid("Ball", SolidShape::Sphere { radius: 2.0 }, identity)],
             },
         ),
         (
@@ -179,7 +175,14 @@ fn corpus() -> Vec<(&'static str, StepSpec)> {
             StepSpec {
                 solids: vec![
                     solid("Ball", SolidShape::Sphere { radius: 1.5 }, identity),
-                    solid("Pin", SolidShape::Cylinder { radius: 1.0, height: 4.0 }, identity),
+                    solid(
+                        "Pin",
+                        SolidShape::Cylinder {
+                            radius: 1.0,
+                            height: 4.0,
+                        },
+                        identity,
+                    ),
                     solid(
                         "Block",
                         SolidShape::Box {
@@ -304,7 +307,10 @@ fn hand_committed_fixture_extracts_pinned_tree() {
             .collect::<Vec<_>>(),
         vec!["MILLI/METRE", "NANO/SECOND"]
     );
-    assert_eq!(extracted.tree["bbox"]["min"], serde_json::json!([-2.5, 0.0, 0.0]));
+    assert_eq!(
+        extracted.tree["bbox"]["min"],
+        serde_json::json!([-2.5, 0.0, 0.0])
+    );
     assert_eq!(
         extracted.tree["bbox"]["max"],
         serde_json::json!([10.0, 20.0, 1000.0])
@@ -341,7 +347,10 @@ fn malformed_input_is_typed_parse_failure() {
     ];
     for case in cases {
         assert!(
-            matches!(step::extract(&case, Default::default()), Err(MediaError::ParseFailure)),
+            matches!(
+                step::extract(&case, Default::default()),
+                Err(MediaError::ParseFailure)
+            ),
             "expected typed ParseFailure for {:?}",
             String::from_utf8_lossy(&case)
         );
@@ -414,7 +423,11 @@ fn pure_extract_reads_generated_bytes() {
             "{name}: AP214-flavored FILE_SCHEMA"
         );
         let products = extracted.tree["products"].as_array().expect("products");
-        assert_eq!(products.len(), spec.solids.len(), "{name}: product per solid");
+        assert_eq!(
+            products.len(),
+            spec.solids.len(),
+            "{name}: product per solid"
+        );
         for (product, expected) in products.iter().zip(&spec.solids) {
             assert_eq!(product["name"], expected.name, "{name}: ordered names");
         }
@@ -452,7 +465,12 @@ fn generation_is_byte_deterministic_with_pinned_epoch() {
 fn default_config_generate_is_typed_tool_unavailable_extract_stays_pure() {
     let registry = harness_media::executor::registry();
     let error = registry
-        .dispatch(FormatId::Step, OpRequest::Generate { spec: &generation(&corpus().remove(0).1) })
+        .dispatch(
+            FormatId::Step,
+            OpRequest::Generate {
+                spec: &generation(&corpus().remove(0).1),
+            },
+        )
         .expect_err("default: freecadcmd not enabled");
     match error {
         MediaError::ToolUnavailable { tool, install_hint } => {
@@ -496,7 +514,12 @@ fn dispatch_generate_carries_freecadcmd_producer_disclosure() {
     let registry =
         harness_media::executor::registry().with_tools(step_exec("stepbuild", temp.path()));
     let produced = registry
-        .dispatch(FormatId::Step, OpRequest::Generate { spec: &generation(&corpus().remove(0).1) })
+        .dispatch(
+            FormatId::Step,
+            OpRequest::Generate {
+                spec: &generation(&corpus().remove(0).1),
+            },
+        )
         .expect("dispatch generate through the mock lane");
     let producer = produced.producer();
     assert_eq!(producer.engine, "freecadcmd");
@@ -504,16 +527,21 @@ fn dispatch_generate_carries_freecadcmd_producer_disclosure() {
         producer.tier,
         harness_media::executor::AdapterTier::Subprocess
     );
-    assert!(producer
-        .command
-        .as_deref()
-        .is_some_and(|command| command.contains("--exact")));
+    assert!(
+        producer
+            .command
+            .as_deref()
+            .is_some_and(|command| command.contains("--exact"))
+    );
     let spec = harness_media::tool::manifests()
         .get("freecadcmd")
         .expect("freecadcmd manifest");
     let build = spec.op_template("step-build").expect("step-build op").args;
     assert_eq!(build, &["{script}", "{output}"]);
-    let dump = spec.op_template("topology-dump").expect("topology-dump op").args;
+    let dump = spec
+        .op_template("topology-dump")
+        .expect("topology-dump op")
+        .args;
     assert_eq!(dump, &["{script}", "{input}"]);
     assert!(!generate_bytes(&produced).is_empty());
 }
@@ -538,7 +566,10 @@ fn mock_failure_is_typed_nonzero_exit_no_partial_artifact() {
     match error {
         MediaError::NonZeroExit { code, stderr_head } => {
             assert_eq!(code, 4);
-            assert!(stderr_head.contains("freecad-boom"), "stderr head carries why");
+            assert!(
+                stderr_head.contains("freecad-boom"),
+                "stderr head carries why"
+            );
         }
         other => panic!("expected NonZeroExit, got {other:?}"),
     }
@@ -555,11 +586,8 @@ fn topology_schema_contract_is_version_pinned() {
         &step::generate(&step_exec("stepbuild", temp.path()), &generation(&spec))
             .expect("generate"),
     );
-    let extracted_census = step::read_topology_census(
-        &step_exec("stepdump", temp.path()),
-        &bytes,
-    )
-    .expect("census re-read");
+    let extracted_census = step::read_topology_census(&step_exec("stepdump", temp.path()), &bytes)
+        .expect("census re-read");
     let top: Vec<&str> = extracted_census
         .as_object()
         .expect("census root is an object")
@@ -574,7 +602,9 @@ fn topology_schema_contract_is_version_pinned() {
     let keys: Vec<&str> = first.keys().map(String::as_str).collect();
     assert_eq!(
         keys,
-        vec!["bbox_max", "bbox_min", "edges", "faces", "vertices", "volume"]
+        vec![
+            "bbox_max", "bbox_min", "edges", "faces", "vertices", "volume"
+        ]
     );
 }
 
@@ -591,10 +621,7 @@ fn text_projection_is_a_bounded_structure_summary() {
             extracted.text_projection
         );
     }
-    assert!(
-        extracted.text_projection.len()
-            <= harness_media::extract::TEXT_PROJECTION_MAX_CHARS
-    );
+    assert!(extracted.text_projection.len() <= harness_media::extract::TEXT_PROJECTION_MAX_CHARS);
 }
 
 /// HERMETIC HARDENING: the mock freecadcmd mode runs the emitted builder
@@ -607,7 +634,10 @@ fn syntactically_broken_builder_script_fails_hermetically() {
     std::fs::create_dir_all(&dir).expect("mkdir");
     std::fs::write(dir.join("build.py"), "def broken(:\n    pass\n").expect("write script");
     let error = step_exec("stepbuild", temp.path())
-        .run(&harness_media::tool::ToolCall::new("freecadcmd", "step-build"))
+        .run(&harness_media::tool::ToolCall::new(
+            "freecadcmd",
+            "step-build",
+        ))
         .expect_err("broken python refuses in the mock");
     match error {
         harness_media::tool::ToolError::NonZeroExit { stderr_head, .. } => {
@@ -776,7 +806,11 @@ fn real_freecadcmd_smoke_round_trips_the_primitive_corpus() {
     });
     let env: BTreeMap<String, String> = ["PATH", "SYSTEMROOT", "SYSTEMDRIVE", "TEMP", "TMP"]
         .iter()
-        .filter_map(|key| std::env::var(key).ok().map(|value| ((*key).to_owned(), value)))
+        .filter_map(|key| {
+            std::env::var(key)
+                .ok()
+                .map(|value| ((*key).to_owned(), value))
+        })
         .collect();
     for (name, spec) in corpus() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -798,7 +832,10 @@ fn real_freecadcmd_smoke_round_trips_the_primitive_corpus() {
             &step::generate(&tools, &generation(&spec))
                 .unwrap_or_else(|error| panic!("{name}: real generate: {error:?}")),
         );
-        assert!(bytes.starts_with(b"ISO-10303-21;"), "{name}: real STEP magic");
+        assert!(
+            bytes.starts_with(b"ISO-10303-21;"),
+            "{name}: real STEP magic"
+        );
         let verdict = step::verify(&tools, &spec.topology_tree(), &bytes)
             .unwrap_or_else(|error| panic!("{name}: real verify: {error:?}"));
         assert!(

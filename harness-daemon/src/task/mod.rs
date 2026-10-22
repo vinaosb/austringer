@@ -226,7 +226,12 @@ impl TaskServices {
     }
 
     fn ledger_for(&self, parent_id: &str) -> Arc<Mutex<DelegationBudget>> {
-        let caps = self.caps.lock().map_or((DEFAULT_FAN_OUT_CAP, DEFAULT_TASK_TOKEN_BUDGET), |caps| *caps);
+        let caps = self
+            .caps
+            .lock()
+            .map_or((DEFAULT_FAN_OUT_CAP, DEFAULT_TASK_TOKEN_BUDGET), |caps| {
+                *caps
+            });
         if let Ok(ledgers) = self.ledgers.lock()
             && let Some(existing) = ledgers.get(parent_id)
         {
@@ -271,8 +276,7 @@ impl TaskServices {
         parent: &Arc<SessionHost>,
         request: TaskRequest,
     ) -> Result<TaskChildOutcome, TaskRefusal> {
-        DepthGuard::default()
-            .check(depth_of(parent.session_id()) + 1)?;
+        DepthGuard::default().check(depth_of(parent.session_id()) + 1)?;
         let curated = curated(&request.category);
         let resolution = self.intake.table.resolve(match &curated {
             Some(agent) => RouteRequest::Role(agent.role),
@@ -359,24 +363,26 @@ impl TaskServices {
             None,
         );
         let executor = (self.launch.executor_factory)(&session_dir, child.event_sink());
-        let ComposedInference { inference, identity } = (self.launch.inference_factory)();
+        let ComposedInference {
+            inference,
+            identity,
+        } = (self.launch.inference_factory)();
         let route = match &spawn.curated {
             Some(agent) => RouteRequest::Role(agent.role),
             None => RouteRequest::Category(request.category.clone()),
         };
         let inference = match (identity, parent.cost_ledger()) {
-            (Some(identity), Some(ledger)) => {
-                Box::new(
-                    crate::routing::SessionRouter::new(
-                        Arc::clone(&self.intake),
-                        &spawn.child_id,
-                        Arc::clone(&child),
-                        ledger,
-                        identity,
-                    )
-                    .under_request(route),
-                ) as Box<dyn harness_core::agent_loop::Inference>
-            }
+            (Some(identity), Some(ledger)) => Box::new(
+                crate::routing::SessionRouter::new(
+                    Arc::clone(&self.intake),
+                    &spawn.child_id,
+                    Arc::clone(&child),
+                    ledger,
+                    identity,
+                )
+                .under_request(route),
+            )
+                as Box<dyn harness_core::agent_loop::Inference>,
             // Identity-less factories (scripted stacks) or unledgered
             // parents run the factory stack unrouted — honest absence.
             _ => inference,
@@ -391,10 +397,10 @@ impl TaskServices {
         parent.publish(SessionEvent::ChildStarted {
             child: spawn.child_id.clone(),
             task: request.category.clone(),
-            role: spawn.curated.as_ref().map_or_else(
-                || TASK_ROLE.to_owned(),
-                |agent| agent.name.clone(),
-            ),
+            role: spawn
+                .curated
+                .as_ref()
+                .map_or_else(|| TASK_ROLE.to_owned(), |agent| agent.name.clone()),
             model: spawn.model.clone(),
         });
         let mut live = child.hub_subscribe();
@@ -407,7 +413,8 @@ impl TaskServices {
             .send(HostCommand::Submit(request.prompt.clone()))
             .await
             .map_err(|e| TaskRefusal::Spawn(format!("prompt submit: {e}")))?;
-        let observed = await_child_turn(parent, &child, &mut live, &mut control, CHILD_TURN_TIMEOUT).await;
+        let observed =
+            await_child_turn(parent, &child, &mut live, &mut control, CHILD_TURN_TIMEOUT).await;
         observed.map(|observed| (observed, child))
     }
 }

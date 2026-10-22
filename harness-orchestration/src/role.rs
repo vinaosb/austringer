@@ -183,7 +183,10 @@ impl RoleRegistry {
             let def = RoleDef::builtin(tier);
             roles.insert(def.name.clone(), def);
         }
-        for def in CURATED_AGENTS.iter().filter_map(|name| RoleDef::curated(name)) {
+        for def in CURATED_AGENTS
+            .iter()
+            .filter_map(|name| RoleDef::curated(name))
+        {
             roles.insert(def.name.clone(), def);
         }
         Self { roles }

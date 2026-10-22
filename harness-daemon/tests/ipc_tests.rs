@@ -4,12 +4,12 @@
 
 mod common;
 
-use std::sync::Arc;
-use std::time::Duration;
 use harness_core::agent_loop::Inference;
 use interprocess::local_socket::GenericNamespaced;
 use interprocess::local_socket::tokio::Stream;
 use interprocess::local_socket::tokio::prelude::*;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use harness_daemon::ipc::serve_ipc;

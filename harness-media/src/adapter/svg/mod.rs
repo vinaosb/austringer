@@ -49,8 +49,8 @@ mod verify;
 
 pub use extract::extract;
 pub use generate::generate;
-pub use shapes::{CommonAttrs, Shape, DEFAULT_FONT_FAMILY};
-pub use spec::{SvgSpec, MAX_SHAPES};
+pub use shapes::{CommonAttrs, DEFAULT_FONT_FAMILY, Shape};
+pub use spec::{MAX_SHAPES, SvgSpec};
 pub use verify::{profile, verify};
 
 /// Producer-disclosure engine name for every svg op (extract, generate,
@@ -74,11 +74,7 @@ impl ProjectionProvider for SvgProjector {
         ProjectionKind::TextProjection
     }
 
-    fn project(
-        &self,
-        bytes: &[u8],
-        context: &ProjectionContext<'_>,
-    ) -> Result<String, MediaError> {
+    fn project(&self, bytes: &[u8], context: &ProjectionContext<'_>) -> Result<String, MediaError> {
         extract(bytes, context.budgets).map(|extracted| extracted.text_projection)
     }
 }

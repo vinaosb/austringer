@@ -3,7 +3,7 @@
 //! unknown-format dispatch, and the honest day-one placeholders (gif,
 //! hdf5). Hermetic.
 
-use harness_media::descriptor::{FormatDescriptor, FormatRegistry, Operation, OpSupport};
+use harness_media::descriptor::{FormatDescriptor, FormatRegistry, OpSupport, Operation};
 use harness_media::error::MediaError;
 use harness_media::executor::{
     AdapterOps, AdapterTier, ExecutorRegistryBuilder, ExecutorWiringError, OpBinding, OpRequest,
@@ -41,7 +41,10 @@ fn probe_adapter(bytes: &[u8], name_hint: Option<&str>) -> harness_media::probe:
 /// row - so its claims never shift under the dev feature set. The
 /// former docx base retired when M18 flipped its extract claim).
 fn stable_descriptor() -> FormatDescriptor {
-    probe::registry().lookup(&FormatId::Gif).expect("gif descriptor").clone()
+    probe::registry()
+        .lookup(&FormatId::Gif)
+        .expect("gif descriptor")
+        .clone()
 }
 
 #[test]
@@ -107,7 +110,12 @@ fn descriptor_claims_stay_synced_with_bindings_on_day_one() {
     for id in FormatId::ALL {
         let descriptor = descriptors.lookup(id).expect("descriptor");
         let entry = registry.lookup(id).expect("executor entry");
-        for op in [Operation::Probe, Operation::Extract, Operation::Generate, Operation::Verify] {
+        for op in [
+            Operation::Probe,
+            Operation::Extract,
+            Operation::Generate,
+            Operation::Verify,
+        ] {
             let claim = descriptor.ops.get(&op).expect("op claim");
             match op {
                 Operation::Probe => check_sync!(&entry.ops.probe, claim, id, Operation::Probe),
@@ -127,7 +135,9 @@ fn descriptor_claims_stay_synced_with_bindings_on_day_one() {
 fn builder_rejects_an_entry_without_a_bound_probe() {
     // Given: a gif entry whose probe is a typed refusal.
     let mut ops = pure_probe_ops();
-    ops.probe = OpBinding::Unsupported { reason: "no sniffer".into() };
+    ops.probe = OpBinding::Unsupported {
+        reason: "no sniffer".into(),
+    };
     // When: registered.
     let error = ExecutorRegistryBuilder::new()
         .register(harness_media::executor::AdapterEntry {
@@ -138,7 +148,9 @@ fn builder_rejects_an_entry_without_a_bound_probe() {
         .expect_err("probe-less entry must be rejected");
     // Then: the typed wiring error (the plan's MUST-NOT is constructor-
     // enforced, not convention).
-    assert!(matches!(error, ExecutorWiringError::ProbeNotBound { format } if format == FormatId::Gif));
+    assert!(
+        matches!(error, ExecutorWiringError::ProbeNotBound { format } if format == FormatId::Gif)
+    );
 }
 
 #[test]
@@ -201,7 +213,10 @@ fn unknown_format_dispatch_fails_typed_unsupported_format() {
     let error = partial
         .dispatch(
             FormatId::Png,
-            OpRequest::Probe { bytes: PNG_MAGIC, name_hint: None },
+            OpRequest::Probe {
+                bytes: PNG_MAGIC,
+                name_hint: None,
+            },
         )
         .expect_err("unregistered format must refuse");
     // Then: the typed UnsupportedFormat - never a guess, never a panic.

@@ -17,7 +17,7 @@ use serde_json::Value;
 
 use super::spec::{ColumnType, TabularSpec};
 use super::{budget_tripped, cell_value, record_batch, tolerances, truncate_chars};
-use crate::diff::{structural_diff, Change, RoundTripVerdict};
+use crate::diff::{Change, RoundTripVerdict, structural_diff};
 use crate::error::MediaError;
 use crate::extract::{ExtractBudgets, Extracted, TEXT_PROJECTION_MAX_CHARS};
 use crate::format::FormatId;
@@ -62,8 +62,7 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
                 MediaError::UnsupportedFeature {
                     format: FormatId::Arrow,
                     feature: format!("column-type:{}", field.data_type()),
-                    reason: "the v0.2 data lane covers bool/int32/int64/double/utf8 columns"
-                        .into(),
+                    reason: "the v0.2 data lane covers bool/int32/int64/double/utf8 columns".into(),
                 }
             })
         })
@@ -115,7 +114,11 @@ pub fn extract(bytes: &[u8], budgets: ExtractBudgets) -> Result<Extracted, Media
         ),
         TEXT_PROJECTION_MAX_CHARS,
     );
-    Ok(Extracted { tree, text_projection: projection, thumbnails: Vec::new() })
+    Ok(Extracted {
+        tree,
+        text_projection: projection,
+        thumbnails: Vec::new(),
+    })
 }
 
 /// Generate Arrow IPC file bytes from the tabular spec: one record
@@ -130,8 +133,8 @@ pub fn generate(spec: &GenerationSpec) -> Result<Vec<u8>, MediaError> {
     }
     let parsed = TabularSpec::from_generation(spec)?;
     let batch = record_batch(&parsed)?;
-    let mut writer = FileWriter::try_new(Vec::new(), &batch.schema())
-        .map_err(|_| MediaError::InvalidSpec)?;
+    let mut writer =
+        FileWriter::try_new(Vec::new(), &batch.schema()).map_err(|_| MediaError::InvalidSpec)?;
     writer.write(&batch).map_err(|_| MediaError::InvalidSpec)?;
     writer.into_inner().map_err(|_| MediaError::InvalidSpec)
 }

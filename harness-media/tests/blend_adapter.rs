@@ -8,7 +8,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use harness_media::adapter::blend::{self, BlendSpec, MaterialSpec, ObjectSpec, Primitive, Transform};
+use harness_media::adapter::blend::{
+    self, BlendSpec, MaterialSpec, ObjectSpec, Primitive, Transform,
+};
 use harness_media::error::MediaError;
 use harness_media::executor::{OpOutput, OpRequest, Produced};
 use harness_media::format::FormatId;
@@ -68,7 +70,12 @@ fn material(base_color: [f64; 4], metallic: f64, roughness: f64) -> MaterialSpec
     }
 }
 
-fn object(name: &str, primitive: Primitive, transform: Transform, material: Option<MaterialSpec>) -> ObjectSpec {
+fn object(
+    name: &str,
+    primitive: Primitive,
+    transform: Transform,
+    material: Option<MaterialSpec>,
+) -> ObjectSpec {
     ObjectSpec {
         name: name.to_owned(),
         primitive,
@@ -104,7 +111,14 @@ fn corpus() -> Vec<(&'static str, BlendSpec)> {
     ];
     let moved = transform([0.5, -1.25, 2.0], [0.1, -0.2, 0.3], [1.0, 2.0, 0.5]);
     vec![
-        ("single-cube", spec(vec![object("Cube", Primitive::Cube, identity, None)], None, "Collection")),
+        (
+            "single-cube",
+            spec(
+                vec![object("Cube", Primitive::Cube, identity, None)],
+                None,
+                "Collection",
+            ),
+        ),
         (
             "plane-with-material",
             spec(
@@ -118,7 +132,10 @@ fn corpus() -> Vec<(&'static str, BlendSpec)> {
                 "Collection",
             ),
         ),
-        ("all-primitives", spec(all_primitives.clone(), None, "Collection")),
+        (
+            "all-primitives",
+            spec(all_primitives.clone(), None, "Collection"),
+        ),
         (
             "transformed-sphere",
             spec(
@@ -144,13 +161,21 @@ fn corpus() -> Vec<(&'static str, BlendSpec)> {
                     object(
                         "Pillar",
                         Primitive::Cylinder,
-                        transform([1.0, 0.0, 0.0], [0.0, 0.0, std::f64::consts::FRAC_PI_2], [1.0; 3]),
+                        transform(
+                            [1.0, 0.0, 0.0],
+                            [0.0, 0.0, std::f64::consts::FRAC_PI_2],
+                            [1.0; 3],
+                        ),
                         Some(material([0.5, 0.5, 0.5, 1.0], 1.0, 0.4)),
                     ),
                     object(
                         "Tip",
                         Primitive::Cone,
-                        transform([-1.0, 0.5, 0.25], [std::f64::consts::FRAC_PI_4, 0.0, 0.0], [0.5, 0.5, 1.5]),
+                        transform(
+                            [-1.0, 0.5, 0.25],
+                            [std::f64::consts::FRAC_PI_4, 0.0, 0.0],
+                            [0.5, 0.5, 1.5],
+                        ),
                         None,
                     ),
                 ],
@@ -161,25 +186,76 @@ fn corpus() -> Vec<(&'static str, BlendSpec)> {
         (
             "icosphere-custom-collection",
             spec(
-                vec![object("Gem", Primitive::Icosphere, transform([0.0, 3.0, 1.0], [0.0, 0.4, 0.0], [2.0, 2.0, 2.0]), Some(material([0.9, 0.8, 0.1, 1.0], 0.2, 0.05)))],
+                vec![object(
+                    "Gem",
+                    Primitive::Icosphere,
+                    transform([0.0, 3.0, 1.0], [0.0, 0.4, 0.0], [2.0, 2.0, 2.0]),
+                    Some(material([0.9, 0.8, 0.1, 1.0], 0.2, 0.05)),
+                )],
                 None,
                 "Props",
             ),
         ),
         (
             "reversed-order-twin",
-            spec(all_primitives.into_iter().rev().collect(), None, "Collection"),
+            spec(
+                all_primitives.into_iter().rev().collect(),
+                None,
+                "Collection",
+            ),
         ),
         (
             "kitchen-sink",
             spec(
                 vec![
-                    object("Floor", Primitive::Plane, transform([0.0, 0.0, -2.0], [0.0; 3], [10.0, 10.0, 1.0]), Some(material([0.9, 0.9, 0.85, 1.0], 0.0, 0.95))),
-                    object("Table", Primitive::Cube, transform([0.0, 0.0, 0.5], [0.0, 0.0, std::f64::consts::FRAC_PI_6], [2.0, 1.0, 0.1]), Some(material([0.4, 0.25, 0.1, 1.0], 0.0, 0.6))),
-                    object("Globe", Primitive::Sphere, transform([0.4, 0.0, 1.1], [0.0; 3], [0.5, 0.5, 0.5]), Some(material([0.0, 0.4, 0.8, 1.0], 0.1, 0.3))),
-                    object("Cap", Primitive::Cone, transform([-0.6, 0.3, 0.75], [0.0, 0.0, -0.2], [0.3, 0.3, 0.4]), None),
-                    object("Bit", Primitive::Icosphere, transform([1.2, -0.8, 0.6], [0.3, 0.3, 0.3], [0.2, 0.2, 0.2]), Some(material([1.0, 1.0, 1.0, 1.0], 0.95, 0.02))),
-                    object("Bar", Primitive::Cylinder, transform([1.5, 1.5, 0.0], [std::f64::consts::FRAC_PI_2, 0.0, std::f64::consts::FRAC_PI_4], [0.1, 0.1, 3.0]), None),
+                    object(
+                        "Floor",
+                        Primitive::Plane,
+                        transform([0.0, 0.0, -2.0], [0.0; 3], [10.0, 10.0, 1.0]),
+                        Some(material([0.9, 0.9, 0.85, 1.0], 0.0, 0.95)),
+                    ),
+                    object(
+                        "Table",
+                        Primitive::Cube,
+                        transform(
+                            [0.0, 0.0, 0.5],
+                            [0.0, 0.0, std::f64::consts::FRAC_PI_6],
+                            [2.0, 1.0, 0.1],
+                        ),
+                        Some(material([0.4, 0.25, 0.1, 1.0], 0.0, 0.6)),
+                    ),
+                    object(
+                        "Globe",
+                        Primitive::Sphere,
+                        transform([0.4, 0.0, 1.1], [0.0; 3], [0.5, 0.5, 0.5]),
+                        Some(material([0.0, 0.4, 0.8, 1.0], 0.1, 0.3)),
+                    ),
+                    object(
+                        "Cap",
+                        Primitive::Cone,
+                        transform([-0.6, 0.3, 0.75], [0.0, 0.0, -0.2], [0.3, 0.3, 0.4]),
+                        None,
+                    ),
+                    object(
+                        "Bit",
+                        Primitive::Icosphere,
+                        transform([1.2, -0.8, 0.6], [0.3, 0.3, 0.3], [0.2, 0.2, 0.2]),
+                        Some(material([1.0, 1.0, 1.0, 1.0], 0.95, 0.02)),
+                    ),
+                    object(
+                        "Bar",
+                        Primitive::Cylinder,
+                        transform(
+                            [1.5, 1.5, 0.0],
+                            [
+                                std::f64::consts::FRAC_PI_2,
+                                0.0,
+                                std::f64::consts::FRAC_PI_4,
+                            ],
+                            [0.1, 0.1, 3.0],
+                        ),
+                        None,
+                    ),
                 ],
                 Some([0.03, 0.05, 0.07, 1.0]),
                 "Stage",
@@ -290,7 +366,12 @@ fn dispatch_generate_carries_blender_producer_disclosure() {
         harness_media::executor::registry().with_tools(blend_exec("blendbuild", temp.path()));
     let (_, blend_spec) = corpus().remove(0);
     let produced = registry
-        .dispatch(FormatId::Blend, OpRequest::Generate { spec: &generation(&blend_spec) })
+        .dispatch(
+            FormatId::Blend,
+            OpRequest::Generate {
+                spec: &generation(&blend_spec),
+            },
+        )
         .expect("dispatch generate through the mock lane");
     let producer = produced.producer();
     assert_eq!(producer.engine, "blender");
@@ -302,14 +383,19 @@ fn dispatch_generate_carries_blender_producer_disclosure() {
     // substitution argv here (honest - the real blender argv belongs to
     // the #[ignore] real-tool tier); the manifest template below pins
     // the real invocation shape.
-    assert!(producer
-        .command
-        .as_deref()
-        .is_some_and(|command| command.contains("--exact")));
+    assert!(
+        producer
+            .command
+            .as_deref()
+            .is_some_and(|command| command.contains("--exact"))
+    );
     let spec = harness_media::tool::manifests()
         .get("blender")
         .expect("blender manifest");
-    let build_args = spec.op_template("scene-build").expect("scene-build op").args;
+    let build_args = spec
+        .op_template("scene-build")
+        .expect("scene-build op")
+        .args;
     assert!(build_args.contains(&"--background"));
     assert!(build_args.contains(&"--factory-startup"));
     let dump_args = spec.op_template("scene-dump").expect("scene-dump op").args;
@@ -326,7 +412,11 @@ fn mock_failure_is_typed_nonzero_exit_no_partial_artifact() {
         enabled: [("blender".to_owned(), mocktool_override())].into(),
         install_enabled: false,
         session_temp: temp.path().to_path_buf(),
-        env: [("HARNESS_MOCKTOOL_ARGV".to_owned(), "exit 3 blender-boom".to_owned())].into(),
+        env: [(
+            "HARNESS_MOCKTOOL_ARGV".to_owned(),
+            "exit 3 blender-boom".to_owned(),
+        )]
+        .into(),
     });
     let (_, blend_spec) = corpus().remove(0);
     let error = blend::generate(&failing, &generation(&blend_spec))
@@ -334,7 +424,10 @@ fn mock_failure_is_typed_nonzero_exit_no_partial_artifact() {
     match error {
         MediaError::NonZeroExit { code, stderr_head } => {
             assert_eq!(code, 3);
-            assert!(stderr_head.contains("blender-boom"), "stderr head carries why");
+            assert!(
+                stderr_head.contains("blender-boom"),
+                "stderr head carries why"
+            );
         }
         other => panic!("expected NonZeroExit, got {other:?}"),
     }
@@ -348,9 +441,8 @@ fn dump_schema_contract_is_version_pinned() {
     let builder = blend_exec("blendbuild", temp.path());
     let dumper = blend_exec("blenddump", temp.path());
     let (_, blend_spec) = corpus().remove(2); // all-primitives
-    let bytes = generate_bytes(
-        &blend::generate(&builder, &generation(&blend_spec)).expect("generate"),
-    );
+    let bytes =
+        generate_bytes(&blend::generate(&builder, &generation(&blend_spec)).expect("generate"));
     let extracted = blend::extract(&dumper, &bytes, Default::default()).expect("extract");
     let tree = match extracted.inner() {
         OpOutput::Extract(extracted) => extracted.tree.clone(),
@@ -405,16 +497,18 @@ fn text_projection_is_a_bounded_scene_outline() {
     let builder = blend_exec("blendbuild", temp.path());
     let dumper = blend_exec("blenddump", temp.path());
     let (_, blend_spec) = corpus().remove(2); // all-primitives
-    let bytes = generate_bytes(
-        &blend::generate(&builder, &generation(&blend_spec)).expect("generate"),
-    );
+    let bytes =
+        generate_bytes(&blend::generate(&builder, &generation(&blend_spec)).expect("generate"));
     let extracted = blend::extract(&dumper, &bytes, Default::default()).expect("extract");
     let projection = match extracted.inner() {
         OpOutput::Extract(extracted) => extracted.text_projection.clone(),
         other => panic!("expected Extract output, got {other:?}"),
     };
     for name in ["Cube", "Sphere", "Cylinder", "Icosphere", "Cone"] {
-        assert!(projection.contains(name), "outline names {name}: {projection}");
+        assert!(
+            projection.contains(name),
+            "outline names {name}: {projection}"
+        );
     }
     assert!(projection.len() <= harness_media::extract::TEXT_PROJECTION_MAX_CHARS);
 }
@@ -465,8 +559,12 @@ fn blend_bytes_without_census_fail_typed_not_faked() {
         "\\fixtures\\blend.blend"
     ))
     .expect("committed blend fixture");
-    let error = blend::extract(&blend_exec("blenddump", temp.path()), &fixture, Default::default())
-        .expect_err("no census in the fixture: typed refusal");
+    let error = blend::extract(
+        &blend_exec("blenddump", temp.path()),
+        &fixture,
+        Default::default(),
+    )
+    .expect_err("no census in the fixture: typed refusal");
     assert!(
         matches!(error, MediaError::NonZeroExit { .. }),
         "expected NonZeroExit, got {error:?}"
@@ -505,7 +603,10 @@ fn invalid_specs_are_typed_refusals() {
         "Collection",
     );
     assert!(matches!(
-        blend::generate(&blend_exec("blendbuild", temp.path()), &generation(&nan_transform)),
+        blend::generate(
+            &blend_exec("blendbuild", temp.path()),
+            &generation(&nan_transform)
+        ),
         Err(MediaError::InvalidSpec)
     ));
     let too_many = spec(
@@ -527,7 +628,10 @@ fn invalid_specs_are_typed_refusals() {
         "Collection",
     );
     assert!(matches!(
-        blend::generate(&blend_exec("blendbuild", temp.path()), &generation(&too_many)),
+        blend::generate(
+            &blend_exec("blendbuild", temp.path()),
+            &generation(&too_many)
+        ),
         Err(MediaError::InvalidSpec)
     ));
 }
@@ -548,7 +652,11 @@ fn real_blender_smoke_round_trips_the_primitive_corpus() {
     });
     let env: BTreeMap<String, String> = ["PATH", "SYSTEMROOT", "SYSTEMDRIVE", "TEMP", "TMP"]
         .iter()
-        .filter_map(|key| std::env::var(key).ok().map(|value| ((*key).to_owned(), value)))
+        .filter_map(|key| {
+            std::env::var(key)
+                .ok()
+                .map(|value| ((*key).to_owned(), value))
+        })
         .collect();
     for (name, blend_spec) in corpus() {
         let temp = tempfile::tempdir().expect("tempdir");

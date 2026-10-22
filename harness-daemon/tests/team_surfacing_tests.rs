@@ -30,7 +30,10 @@ fn three_child_fixture_aggregates_in_progress_not_terminal() {
     assert_eq!(aggregate_of_states(states), TeamStatus::InProgress);
     // And: the same fixture with the collision vocabulary for the
     // blocked child (a write-set collision blocks pre-quarantine).
-    assert_eq!(aggregate_of_states(["file_touched", "collision", "success"]), TeamStatus::InProgress);
+    assert_eq!(
+        aggregate_of_states(["file_touched", "collision", "success"]),
+        TeamStatus::InProgress
+    );
 }
 
 #[test]
@@ -38,13 +41,25 @@ fn aggregate_terminal_settles_on_highest_terminal_and_empty_waits() {
     // Given: an all-terminal team (error + cancelled + success).
     // Then: Error outranks Cancelled outranks Success — the team
     // settles terminal but never reports success over a failure.
-    assert_eq!(aggregate_of_states(["failed", "quarantined", "success"]), TeamStatus::Error);
-    assert_eq!(aggregate_of_states(["quarantined", "success"]), TeamStatus::Cancelled);
-    assert_eq!(aggregate_of_states(["success", "success"]), TeamStatus::Success);
+    assert_eq!(
+        aggregate_of_states(["failed", "quarantined", "success"]),
+        TeamStatus::Error
+    );
+    assert_eq!(
+        aggregate_of_states(["quarantined", "success"]),
+        TeamStatus::Cancelled
+    );
+    assert_eq!(
+        aggregate_of_states(["success", "success"]),
+        TeamStatus::Success
+    );
     // And: a team with no reported child state is WaitingForEvents.
     assert_eq!(aggregate_of_states([]), TeamStatus::WaitingForEvents);
     // And: an unmapped state never collapses to a terminal aggregate.
-    assert_eq!(aggregate_of_states(["success", "something-new"]), TeamStatus::InProgress);
+    assert_eq!(
+        aggregate_of_states(["success", "something-new"]),
+        TeamStatus::InProgress
+    );
 }
 
 #[test]

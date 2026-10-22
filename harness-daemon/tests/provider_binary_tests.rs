@@ -44,10 +44,7 @@ async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
         .kill_on_drop(true);
     let mut child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
     std::mem::forget(dir);
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "no stdout".to_owned())?;
+    let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_owned())?;
     let mut lines = tokio::io::BufReader::new(stdout).lines();
     let deadline = Duration::from_secs(60);
     let started = tokio::time::Instant::now();
@@ -56,13 +53,11 @@ async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
             .await
             .map_err(|e| format!("read timeout: {e}"))?
             .map_err(|e| format!("read: {e}"))?;
-        let Some(line) = line else { return Err("stdout closed".to_owned()) };
+        let Some(line) = line else {
+            return Err("stdout closed".to_owned());
+        };
         if let Some((base, token)) = parse_handshake(&line) {
-            return Ok(Daemon {
-                base,
-                token,
-                child,
-            });
+            return Ok(Daemon { base, token, child });
         }
     }
     Err("no handshake line within deadline".to_owned())
@@ -83,7 +78,10 @@ async fn attach_submit_collect(
     session: &str,
     prompt: &str,
 ) -> Result<Vec<String>, String> {
-    let url = format!("ws://{}/s/{session}/attach?token={}", daemon.base, daemon.token);
+    let url = format!(
+        "ws://{}/s/{session}/attach?token={}",
+        daemon.base, daemon.token
+    );
     let (mut socket, _) = tokio_tungstenite::connect_async(url)
         .await
         .map_err(|e| format!("ws connect: {e}"))?;
@@ -146,10 +144,11 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
         .bearer_auth(&daemon.token)
         .send()
         .await;
-    assert!(health.is_ok_and(|r| r.status().is_success()), "root must serve");
-    let frames = match attach_submit_collect(&mut daemon, "m32-bin", "hello provider")
-        .await
-    {
+    assert!(
+        health.is_ok_and(|r| r.status().is_success()),
+        "root must serve"
+    );
+    let frames = match attach_submit_collect(&mut daemon, "m32-bin", "hello provider").await {
         Ok(frames) => frames,
         Err(failure) => panic!("round-trip failed: {failure}"),
     };
