@@ -1,0 +1,246 @@
+# Deep QA — scheduled sweep of the workspace's `#[ignore]`d deep-QA tests
+# plus a criterion bench smoke (plan todo 27).
+#
+# WHY SCHEDULED-ONLY: these tests are heavy by design (100 MB through a
+# real ConPTY, a ~150 s full-session PTY capture, a 50k-node repomap
+# stress, real rust-analyzer indexing, a Docker container run) and none
+# of them should gate a PR. Triggers are `schedule` + `workflow_dispatch`
+# only — same policy as the evals sweep (goose discipline: deep checks
+# run on a cadence, PRs stay fast).
+#
+# WHY SPLIT BY RUNNER OS: a single-OS design is internally contradictory
+# — 3 of pty_qa's 7 tests are `#[cfg(windows)]` (they never even compile
+# on ubuntu), while container_args needs a Docker daemon (GitHub's
+# windows runners have no docker binary at all — the test panics at
+# `.expect("docker binary")`, it does not skip). Each test below is
+# assigned to exactly one runner; the UNION of both jobs is the deep-QA
+# accounting unit.
+#
+# ── Ignored-test inventory and per-OS assignment (≥21 target) ──────────
+# Base command on both runners:
+#   cargo nextest run --workspace --run-ignored only --exclude harness-media
+# (harness-media excluded: its 7 ignored tests are the real-tool tiers —
+# ffmpeg / blender / freecad / gltf-validator / gdal / size-canary —
+# gated on vendor binaries via FFMPEG_BIN, BLENDER_BIN, FREECAD_BIN,
+# GLTF_VALIDATOR_BIN, GDAL_TRANSLATE_BIN/GDALINFO_BIN. They stay OPT-IN
+# by design: a scheduled CI runner has none of those tools, and running
+# them requires a human-decided local environment. Do not "fix" that
+# here; it is the media crate's documented contract.)
+#
+# WINDOWS job — 8 tests (nextest filter: package(harness-exec) or the
+# taskkill-bound golden; nothing else):
+#   harness-exec  pty_qa (7): qa_happy_cargo_version_through_pty,
+#                 qa_progress_bar_collapses [cfg(windows)],
+#                 qa_timeout_tree_enumeration [cfg(windows)],
+#                 qa_100mb_output_spills_bounded (cmd /c type),
+#                 qa_headless_pathology_timings (cmd /c echo),
+#                 qa_teardown_enumeration_under_new_drop_path
+#                   [cfg(windows)],
+#                 qa_wsl_typed_statuses (real WSL probe; no-distro
+#                   statuses handled — proven on GH windows runners by
+#                   the un-ignored wsl_bridge suite)
+#   harness-lsp   real_kill9_restart_with_backoff_then_degrade (its
+#                 kill9() helper shells out to `taskkill` — Windows-only
+#                 by construction; needs the pinned rust-analyzer below)
+#
+# UBUNTU job — 19 tests (Docker available; pinned rust-analyzer
+# installed for the goldens; harness-safety built with
+# `--features container` — container_args.rs is `#![cfg(feature =
+# "container")]` and default-off, so without the flag the docker smoke
+# test does not even compile in; filter: everything except the windows
+# set and the never-run corpus recorder):
+#   harness-safety  docker_daemon_smoke_run (real `docker run alpine:3`
+#                   under the hardened generated args)
+#   harness-lsp     golden_goto_definition_returns_the_exact_location,
+#                   golden_hover_is_bounded_and_names_the_symbol,
+#                   did_change_refreshes_positions_in_the_live_server
+#                   (goldens against the PINNED rust-analyzer — see
+#                   RUST_ANALYZER_VERSION below)
+#   harness-daemon  real_binary_pty_session_emits_program_status (real
+#                   daemon binary on a real PTY, ~90–150 s wall clock)
+#   harness-core    transcript_happy_three_turn_conversation,
+#                   transcript_cancel_mid_tool_execution,
+#                   qa_smart_approve_benign_read,
+#                   qa_plan_mode_freeze_with_schema_snapshot,
+#                   qa_destructive_always_asks_every_mode (FakeApi,
+#                   hermetic)
+#   harness-tools   qa_happy_three_hunk_selective_with_fringe,
+#                   qa_drift_small_shift_reanchors_large_shift_rejects,
+#                   qa_strict_mode_rejects_unread_region,
+#                   anchor_scheme_benchmark_harness
+#   harness-vfs     bench_apply_rollback_1k_files,
+#                   bench_apply_rollback_10k_files,
+#                   bench_gix_worktree_backing_1k_files
+#   harness-repomap fifty_k_node_stress_stays_bounded
+#
+# EXCLUDED FROM BOTH RUNNERS (2, documented — not fixable in a workflow):
+#   harness-daemon capture_v1_ws_and_ipc_corpus — a one-shot STEP-0
+#     recorder that REWRITES the v1 wire-corpus fixtures; its own ignore
+#     message says re-running after a protocol change would falsify
+#     history. Scheduled CI must never execute it.
+#   harness-media  7 real-tool tier tests — opt-in by design (above).
+#
+# Accounting: windows 8 + ubuntu 19 = 27 executed ≥ 21 target. Neither
+# job alone reaches it (8 < 21, 19 < 21) — the union is the contract.
+#
+# ── Failure modes (how this workflow fails LOUDLY) ─────────────────────
+#  * A golden drift (rust-analyzer behavior change on the pinned
+#    version, or router logic change) surfaces as a NAMED nextest
+#    failure — e.g. `FAIL golden_hover_is_bounded_and_names_the_symbol`
+#    with the assertion diff in the log. `--run-ignored only` means
+#    there are no silent skips to hide in: every selected test runs.
+#  * The single self-skipping test in the swept set is
+#    docker_daemon_smoke_run (upstream design: returns Ok when no
+#    daemon is reachable). This workflow runs it ONLY on the Docker-
+#    equipped ubuntu leg, so the skip branch is unreachable there; a
+#    silent pass-with-skip in the ubuntu log is itself an incident to
+#    investigate, not a green light.
+#  * Known machine-local flakes (documented in
+#    .omo/notepads/ecosystem-alignment/issues.md: pty_live cargo-PATH
+#    quirk, provider_binary contention, dispatcher_live under load) are
+#    NOT part of this ignored-only sweep — no test here belongs to those
+#    families. This workflow deliberately does not schedule around
+#    them; if one appears in these jobs it is a new finding, not noise.
+#
+# ── Bench smoke ─────────────────────────────────────────────────────────
+# The six criterion benches (repomap, eviction, prompt, pty, sessions,
+# tui — all synthetic/hermetic, cross-platform) otherwise NEVER run in
+# CI. The smoke pass proves they still compile and execute with
+# deliberately tiny sampling parameters (warm-up 1 s, measurement 2 s,
+# 10 samples) — this is an existence + plumbing check, NOT a performance
+# measurement; numbers from this job must never be recorded as
+# baselines (harness-bench/baselines/ has its own recorded procedure).
+# The exact flags were validated locally (task-27 evidence): exit 0.
+
+name: deep-qa
+
+on:
+  schedule:
+    # Mondays 04:23 UTC — weekly cadence, off the hour/half-hour to
+    # dodge the shared-runner contention spikes at :00/:30.
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+# Scheduled runs never cancel each other; a dispatch supersedes nothing.
+concurrency:
+  group: deep-qa
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  # PINNED rust-analyzer for the golden tests (github.com/rust-lang/
+  # rust-analyzer releases; date-tagged weekly). Verified real release:
+  # corroborated by the releases page and the prefix.dev/mise channel
+  # timelines (2026-09-21 → 10-05 → 10-12 → 10-19 cadence). Bump
+  # DELIBERATELY: a golden drift after a bump is a finding about
+  # rust-analyzer behavior, not about this repo — record it in the
+  # bumping task's evidence.
+  RUST_ANALYZER_VERSION: '2026-10-12'
+
+jobs:
+  ignored-windows:
+    name: ignored deep-QA (windows — pty_qa + taskkill golden)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Install pinned rust-analyzer (${{ env.RUST_ANALYZER_VERSION }})
+        # Needed by real_kill9_restart_with_backoff_then_degrade (spawns
+        # `rust-analyzer` from PATH, then taskkills it twice).
+        run: |
+          $ErrorActionPreference = 'Stop'
+          curl.exe -sSL -o ra.zip "https://github.com/rust-lang/rust-analyzer/releases/download/${env:RUST_ANALYZER_VERSION}/rust-analyzer-x86_64-pc-windows-msvc.zip"
+          Expand-Archive ra.zip -DestinationPath rust-analyzer-bin
+          $dir = (Resolve-Path rust-analyzer-bin).Path
+          Add-Content $env:GITHUB_PATH $dir
+          $env:PATH = "$dir;$env:PATH"
+          rust-analyzer --version
+      - name: Run ignored deep-QA tests (windows set — 8 tests)
+        # Windows assignment only: the whole harness-exec package (its 7
+        # ignored pty_qa tests; 3 are #[cfg(windows)], 2 more need
+        # cmd.exe) plus the taskkill-bound golden. Everything else is
+        # the ubuntu job's — see the inventory in the header comment.
+        run: >-
+          cargo nextest run --workspace --run-ignored only
+          --exclude harness-media --locked
+          -E "package(harness-exec) or test(real_kill9_restart_with_backoff_then_degrade)"
+
+  ignored-ubuntu:
+    name: ignored deep-QA (ubuntu — docker + goldens + cross-platform remainder)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Reclaim runner disk
+        # Same rationale as the CI test matrix: a cold-cache full
+        # workspace build does not fit beside the preinstalled SDKs.
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/lib/graalvm /opt/ghc
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Install pinned rust-analyzer (${{ env.RUST_ANALYZER_VERSION }})
+        # For the three golden tests (goto/hover/didChange) — they spawn
+        # `rust-analyzer` from PATH against a fixture crate.
+        run: |
+          set -euxo pipefail
+          curl -sSL "https://github.com/rust-lang/rust-analyzer/releases/download/${RUST_ANALYZER_VERSION}/rust-analyzer-x86_64-unknown-linux-gnu.gz" -o ra.gz
+          gunzip ra.gz
+          chmod +x ra
+          sudo mv ra /usr/local/bin/rust-analyzer
+          rust-analyzer --version
+      - name: Run ignored deep-QA tests (ubuntu set — 19 tests)
+        # Ubuntu assignment: everything ignored and cross-platform, on a
+        # Docker-equipped runner (docker_daemon_smoke_run pulls alpine:3
+        # — Docker is preinstalled on ubuntu-latest images), MINUS the
+        # windows-only set (harness-exec; the taskkill golden) and MINUS
+        # the never-run v1 corpus recorder (rewrites its fixtures; see
+        # header). `--features harness-safety/container` is REQUIRED:
+        # container_args.rs is compiled empty without it (the test would
+        # silently not exist — the exact silent-skip class this
+        # workflow's accounting exists to prevent).
+        run: >-
+          cargo nextest run --workspace --run-ignored only
+          --exclude harness-media --locked
+          --features harness-safety/container
+          -E "not (package(harness-exec) or test(real_kill9_restart_with_backoff_then_degrade) or test(capture_v1_ws_and_ipc_corpus))"
+
+  bench-smoke:
+    name: criterion bench smoke (6 benches, tiny samples)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/lib/graalvm /opt/ghc
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Bench smoke (all six criterion benches)
+        # Existence/plumbing check only — see the header comment. Sample
+        # counts at this size are noise; never re-record baselines from
+        # this job.
+        run: >-
+          cargo bench --locked -p harness-bench --
+          --warm-up-time 1 --measurement-time 2 --sample-size 10
