@@ -511,6 +511,21 @@ mod tests {
     }
 
     #[test]
+    fn todo_23_modal_renders_the_canonical_allow_scope_labels() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Server(ask(12)));
+        let body = crate::panels::compose_body(&app)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            body.contains("y (once)  a (session)  n (deny)  c (vote-cancel)"),
+            "modal key hints: {body}"
+        );
+    }
+
+    #[test]
     fn slash_commands_parse_locally_and_note_honestly() {
         let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
         app.step(UiEvent::Key(char_key('i')));
@@ -544,6 +559,93 @@ mod tests {
             app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
             vec![UiAction::Send(ClientMsg::PlanMode { on: false })]
         );
+    }
+
+    #[test]
+    fn todo_23_explicit_steer_always_steers_and_cancel_cancels() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/steer hurry up");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Steer {
+                    text: "hurry up".into()
+                }
+            })],
+            "explicit /steer steers even with no turn running"
+        );
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/cancel");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Cancel
+            })]
+        );
+    }
+
+    #[test]
+    fn todo_23_vote_cancel_targets_the_open_ask_or_notes() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/vote-cancel");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert!(
+            app.view
+                .notes()
+                .iter()
+                .any(|n| n == "no open ask to cancel")
+        );
+        // While a gate is open the modal owns the keys ('c' cancels —
+        // pinned by gate_deny_and_cancel_are_bound); the omnibar path
+        // below is reachable with the modal closed (e.g. another
+        // client's ask), so the explicit id is the general form.
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/vote-cancel 42");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::PermissionCancel { ask_id: 42 })]
+        );
+    }
+
+    #[test]
+    fn todo_23_help_notes_the_shared_cheat_sheet() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/help");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        let notes: Vec<&String> = app.view.notes().iter().collect();
+        assert_eq!(notes.len(), 9, "one note per grammar command");
+        assert_eq!(notes[0], "/help — show this command list");
+        assert_eq!(
+            notes[notes.len() - 1],
+            "/image <path> — attach an image to the next submit (cli only)"
+        );
+    }
+
+    #[test]
+    fn todo_23_unknown_commands_note_the_shared_help_string() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/model sonnet");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert!(
+            app.view
+                .notes()
+                .iter()
+                .any(|n| n == "unknown command /model — /help lists commands")
+        );
+    }
+
+    #[test]
+    fn todo_23_cli_local_commands_note_cli_only() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/exit");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert!(app.view.notes().iter().any(|n| n == "/exit is cli-only"));
+        assert!(!app.quit(), "/exit must not quit the TUI");
     }
 
     #[test]

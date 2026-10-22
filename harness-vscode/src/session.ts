@@ -20,7 +20,7 @@ import type { AskPayload } from "./protocol.ts";
 import { gaugeState, type GaugeInputs } from "./gauge.ts";
 import { hunkAction, planDiff, gateHunkAccept, type HunkPlan, type HunkRange } from "./hunks.ts";
 import { nodeHttpIo } from "./nodehttp.ts";
-import { parseOmnibar } from "./omnibar.ts";
+import { runOmnibar, type OmnibarDeps } from "./omnibar.ts";
 import { buildTelemetryContext, type EditorSnapshot } from "./telemetry.ts";
 import { transcriptEntryFromFrame } from "./transcript.ts";
 import { TranscriptPanel } from "./webview.ts";
@@ -214,27 +214,26 @@ export class HarnessSession {
     }
 
     async omnibar(): Promise<void> {
-        const input = await vscode.window.showInputBox({ prompt: "harness omnibar — /steer <text> | /cancel | text submits" });
+        const input = await vscode.window.showInputBox({ prompt: "harness omnibar — /help lists commands" });
         if (input === undefined) {
             return;
         }
-        const intent = parseOmnibar(input);
         const telemetry = buildTelemetryContext(telemetryEnabled(), editorSnapshot());
         const context = telemetry === null ? "" : `\n\n${telemetry}`;
-        const outcome = intent.kind === "submit"
-            ? await this.client.submit(`${intent.text}${context}`)
-            : intent.kind === "steer"
-                ? await this.client.steer(intent.text)
-                : intent.kind === "cancel"
-                    ? await this.client.cancelTurn()
-                    : null;
-        if (outcome === null) {
-            void vscode.window.showWarningMessage(intent.kind === "unknown" ? intent.usage : "nothing to send");
-            return;
-        }
-        if (!outcome.ok) {
-            void vscode.window.showErrorMessage(`Harness: command failed (${outcome.error.kind})`);
-        }
+        const deps: OmnibarDeps = {
+            submit: (text) => this.client.submit(`${text}${context}`),
+            submitVerbatim: (text) => this.client.submit(text),
+            steer: (text) => this.client.steer(text),
+            cancelTurn: () => this.client.cancelTurn(),
+            cancelAsk: (askId) => this.client.cancelAsk(askId),
+            planMode: (on) => this.client.planMode(on),
+            rewind: (steps) => this.client.rewind(steps),
+            openAskIds: () => [...this.pendingAsks.keys()],
+            showInfo: (message) => void vscode.window.showInformationMessage(message),
+            showWarn: (message) => void vscode.window.showWarningMessage(message),
+            showError: (message) => void vscode.window.showErrorMessage(message),
+        };
+        await runOmnibar(input, deps);
     }
 
     async hunkCommand(path: string, header: string, accept: boolean): Promise<void> {

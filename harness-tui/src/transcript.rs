@@ -281,8 +281,10 @@ impl SessionView {
                 }
             }
             Event::Snapshot { label } => {
-                self.entries
-                    .push(Entry::Notice(format!("snapshot: {label}")));
+                self.entries.push(Entry::Notice(format!(
+                    "{}: {label}",
+                    harness_daemon::grammar::VOCAB_REWIND_POINT
+                )));
             }
         }
     }
@@ -716,7 +718,7 @@ mod tests {
         assert_eq!(
             view.entries(),
             &[
-                Entry::Notice("snapshot: turn-2".into()),
+                Entry::Notice("rewind point: turn-2".into()),
                 Entry::System("restored to turn 2".into()),
             ]
         );

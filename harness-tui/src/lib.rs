@@ -10,7 +10,9 @@
 pub mod app;
 mod app_input;
 mod app_server;
+mod app_submit;
 pub mod client;
+pub mod commands;
 pub mod complete;
 pub mod diffs;
 pub mod hud;

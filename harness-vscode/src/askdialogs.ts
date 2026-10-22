@@ -12,12 +12,17 @@ import type { HarnessClient } from "./client.ts";
 import type { Answer, AskPayload, FallbackAskPayload, PlanAskPayload } from "./protocol.ts";
 import {
     fallbackChoiceFromPick,
+    isVoteCancelPick,
     KEEP_BUTTON,
     HOP_BUTTON,
     permissionAnswerFromPick,
     planDecisionFromPick,
     APPROVE_BUTTON,
     REJECT_BUTTON,
+    ALLOW_ONCE,
+    ALLOW_SESSION,
+    DENY,
+    VOTE_CANCEL,
 } from "./prompts.ts";
 
 export class AskDialogs {
@@ -33,10 +38,18 @@ export class AskDialogs {
     async promptPermission(ask: AskPayload): Promise<void> {
         const pick = await vscode.window.showWarningMessage(
             `${ask.tool} → ${ask.target ?? "?"}: ${ask.reason}`,
-            "Allow once",
-            "Allow for session",
-            "Deny",
+            ALLOW_ONCE,
+            ALLOW_SESSION,
+            DENY,
+            VOTE_CANCEL,
         );
+        if (isVoteCancelPick(pick)) {
+            const result = await this.client.cancelAsk(ask.ask_id);
+            if (!result.ok && result.error.kind !== "unknown_ask") {
+                void vscode.window.showErrorMessage(`Harness: vote-cancel failed (${result.error.kind})`);
+            }
+            return;
+        }
         const answer = permissionAnswerFromPick(pick);
         if (answer === null) {
             return;

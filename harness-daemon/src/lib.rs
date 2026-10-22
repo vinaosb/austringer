@@ -23,6 +23,7 @@ pub mod engine;
 pub mod errors;
 pub mod events;
 pub mod gate;
+pub mod grammar;
 pub mod handlers;
 pub mod ipc;
 pub mod journal;

@@ -89,6 +89,40 @@ impl SessionTransport {
         .await
     }
 
+    /// Steer the running turn.
+    /// # Errors
+    /// typed transport failures.
+    pub async fn steer(&mut self, text: &str) -> Result<(), CliError> {
+        self.send(&ClientMsg::Command {
+            command: SessionCommand::Steer {
+                text: text.to_owned(),
+            },
+        })
+        .await
+    }
+
+    /// Withdraw a broadcast permission ask (todo 23 `/vote-cancel`).
+    /// # Errors
+    /// typed transport failures.
+    pub async fn permission_cancel(&mut self, ask_id: u64) -> Result<(), CliError> {
+        self.send(&ClientMsg::PermissionCancel { ask_id }).await
+    }
+
+    /// Enter or exit daemon plan mode (todo 23 `/mode`).
+    /// # Errors
+    /// typed transport failures.
+    pub async fn plan_mode(&mut self, on: bool) -> Result<(), CliError> {
+        self.send(&ClientMsg::PlanMode { on }).await
+    }
+
+    /// Rewind to the snapshot `steps` restore points back (todo 23
+    /// `/rewind`).
+    /// # Errors
+    /// typed transport failures.
+    pub async fn rewind(&mut self, steps: u64) -> Result<(), CliError> {
+        self.send(&ClientMsg::Rewind { steps }).await
+    }
+
     /// Answer a broadcast permission ask.
     /// # Errors
     /// typed transport failures.

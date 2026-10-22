@@ -459,7 +459,7 @@ function applyEngineEvent(state, seq, event) {
     case "condensation":
       return push(state, hud, { role: "condensation", seq, text: event.summary || "" });
     case "snapshot":
-      return push(state, hud, { role: "snapshot", seq, text: event.label || "" });
+      return push(state, hud, { role: "rewind point", seq, text: event.label || "" });
     default:
       return bumpAnomaly({ ...state, hud });
   }

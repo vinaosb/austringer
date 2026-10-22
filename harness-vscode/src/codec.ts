@@ -174,6 +174,7 @@ export function validateClient(msg: ClientMsg): ProtocolError | null {
         case "permission_cancel":
         case "fallback_answer":
         case "plan_mode":
+        case "rewind":
         case "ping":
             return null;
         case "plan_answer":

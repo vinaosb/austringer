@@ -75,6 +75,7 @@ export type ClientMsg =
     | { type: "permission_cancel"; ask_id: number }
     | { type: "fallback_answer"; ask: number; chosen: ModelIdentity }
     | { type: "plan_mode"; on: boolean }
+    | { type: "rewind"; steps: number }
     | { type: "plan_answer"; ask: number; decision: PlanDecision }
     | { type: "ping" };
 

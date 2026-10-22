@@ -418,7 +418,7 @@ function teamPanel(state) {
   if (state.workers.length === 0 && !state.budget && !state.budgetExhausted) {
     return box;
   }
-  box.append(el("h2", { text: "team" }));
+  box.append(el("h2", { text: "agents" }));
   box.append(
     el("p", {
       class: "team-status",
@@ -491,7 +491,7 @@ function gates(state, actions) {
           el("button", { text: "y (once)", onclick: () => actions.answer(ask.ask_id, "allow_once") }),
           el("button", { text: "a (session)", onclick: () => actions.answer(ask.ask_id, "allow_session") }),
           el("button", { text: "n (deny)", onclick: () => actions.answer(ask.ask_id, "deny") }),
-          el("button", { text: "cancel-vote", onclick: () => actions.cancelVote(ask.ask_id) }),
+          el("button", { text: "vote-cancel", onclick: () => actions.cancelVote(ask.ask_id) }),
         ]),
       ]),
     );
@@ -643,7 +643,7 @@ function composer(state, props, actions) {
     class: "composer",
     onsubmit: (ev) => {
       ev.preventDefault();
-      actions.submit(text.value, images.slice());
+      actions.input(text.value);
       text.value = "";
       images.length = 0;
       previews.replaceChildren();
@@ -657,6 +657,13 @@ function composer(state, props, actions) {
       el("button", { type: "button", text: "cancel turn", onclick: () => actions.cancel() }),
       el("button", { type: "submit", text: "submit" }),
     ]),
+    props.feedback
+      ? (() => {
+          const pre = el("pre", { class: "hint", "data-testid": "command-feedback" });
+          pre.textContent = props.feedback;
+          return pre;
+        })()
+      : null,
     el("p", {
       class: "hint",
       text: "images preview locally; submits carry text only (the v2 media upload endpoint is disclosed for the daemon)",
@@ -694,7 +701,7 @@ function replay(state, props, actions) {
 function shareBox(state, actions) {
   return el("section", { class: "panel", "data-testid": "share" }, [
     el("h2", { text: "share" }),
-    el("p", { class: "hint", text: "redacted snapshot link with a 10-minute expiry (client-side; no cloud)" }),
+    el("p", { class: "hint", text: "redacted share link with a 10-minute expiry (client-side; no cloud)" }),
     el("div", { class: "row" }, [
       el("button", { text: "mint share link", onclick: () => actions.mintShare() }),
       el("input", {

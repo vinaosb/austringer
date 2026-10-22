@@ -62,7 +62,7 @@ pub fn human(msg: &ServerMsg) -> Option<String> {
         ServerMsg::StateResyncRequired { last_event_id } => Some(format!(
             "— resync: state diverged, replaying from {last_event_id} —"
         )),
-        ServerMsg::Snapshot { .. } => Some("— snapshot received —".to_owned()),
+        ServerMsg::Snapshot { .. } => Some("— state replayed —".to_owned()),
         ServerMsg::Bye { reason } => Some(format!("— daemon closed the stream: {reason} —")),
         ServerMsg::HelloAck { .. } | ServerMsg::Pong => None,
         ServerMsg::Error { code, message } => Some(format!("daemon error ({code:?}): {message}")),
@@ -165,10 +165,10 @@ fn human_event(event: &SessionEvent) -> Option<String> {
             fan_out_cap,
             token_budget,
         } => Some(format!(
-            "team budget: {spawned}/{fan_out_cap} children, {tokens_spent}/{token_budget} tokens"
+            "agents budget: {spawned}/{fan_out_cap} children, {tokens_spent}/{token_budget} tokens"
         )),
         SessionEvent::TeamBudgetExhausted { spent, budget } => Some(format!(
-            "team budget exhausted: {spent} of {budget} tokens — further task spawns refused"
+            "agents budget exhausted: {spent} of {budget} tokens — further task spawns refused"
         )),
         SessionEvent::PlanModeEntered { plan } => {
             Some(format!("plan mode entered (plan {plan}); writes gated until approval"))
@@ -301,6 +301,26 @@ mod tests {
         assert_eq!(bad["ok"], serde_json::json!(false));
         assert!(!outcome_ok("cancelled@4"));
         assert!(outcome_ok("turn_complete"));
+    }
+
+    #[test]
+    fn human_lines_render_agents_budget_and_state_replayed_copy() {
+        let budget = human_event(&SessionEvent::TeamBudget {
+            spawned: 2,
+            tokens_spent: 50,
+            fan_out_cap: 4,
+            token_budget: 1000,
+        })
+        .unwrap_or_default();
+        assert!(budget.starts_with("agents budget:"), "{budget}");
+        let exhausted = human_event(&SessionEvent::TeamBudgetExhausted {
+            spent: 1000,
+            budget: 1000,
+        })
+        .unwrap_or_default();
+        assert!(exhausted.starts_with("agents budget exhausted"), "{exhausted}");
+        let replayed = human(&ServerMsg::Snapshot { frames: Vec::new() }).unwrap_or_default();
+        assert_eq!(replayed, "— state replayed —");
     }
 
     #[test]

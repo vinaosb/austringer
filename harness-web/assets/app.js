@@ -3,6 +3,7 @@
 // (deep-linked session, token hand-off, share fragments), connects
 // the transport, and re-renders on store changes.
 import { connect } from "spa/proto";
+import { routeCommand } from "spa/grammar";
 import { createStore } from "spa/store";
 import { mintShare, parseShare } from "spa/share";
 import { render } from "spa/ui";
@@ -45,6 +46,7 @@ function boot() {
     session: sessionFromPath(location.pathname),
     shareHash: location.hash.startsWith("#share=") ? location.hash : null,
     token: initialToken(),
+    feedback: null,
   };
 
   const props = () => ({
@@ -60,6 +62,7 @@ function boot() {
     historyLoaded: app.historyLoaded,
     expanded: app.expanded,
     share: app.shareParsed,
+    feedback: app.feedback,
   });
 
   const view = () => {
@@ -81,10 +84,17 @@ function boot() {
     openSession(id) {
       location.assign(`/s/${encodeURIComponent(id)}`);
     },
-    submit(text, localImages) {
-      // Protocol v1 submit carries text only; localImages stay in the
-      // composer preview (disclosed limitation, see composer hint).
-      send({ type: "command", command: { type: "submit", text } });
+    // Composer entry point (todo 23): the shared grammar routes the
+    // line; feedback renders under the composer. Protocol v1 submit
+    // carries text only — local images stay in the composer preview
+    // (disclosed limitation, see composer hint).
+    input(text) {
+      const { sends, feedback } = routeCommand(text, Object.keys(store.getState().asks));
+      for (const msg of sends) {
+        send(msg);
+      }
+      app.feedback = feedback;
+      repaint();
     },
     steer(text) {
       if (!text) return;

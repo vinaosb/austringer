@@ -130,6 +130,10 @@ export class HarnessClient {
         return this.postCommand({ type: "plan_mode", on });
     }
 
+    rewind(steps: number): Promise<CommandResult> {
+        return this.postCommand({ type: "rewind", steps });
+    }
+
     answerPlan(ask: number, decision: PlanDecision): Promise<CommandResult> {
         return this.postCommand({ type: "plan_answer", ask, decision });
     }

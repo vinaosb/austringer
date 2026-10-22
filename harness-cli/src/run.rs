@@ -80,7 +80,17 @@ pub async fn run(
         .submit(&image::submit_text(prompt, images))
         .await?;
     let deadline = Instant::now() + options.timeout;
-    let outcome = wait_turn(transport, options.json, Some(&mut stdin), deadline).await?;
+    let mut open_asks = Vec::new();
+    let outcome = wait_turn(
+        transport,
+        TurnWait {
+            json: options.json,
+            stdin: Some(&mut stdin),
+            deadline,
+            open_asks: &mut open_asks,
+        },
+    )
+    .await?;
     println!("{}", render::turn_result(outcome.0, &outcome.1));
     if render::outcome_ok(&outcome.1) {
         Ok(0)
@@ -160,16 +170,40 @@ pub(crate) async fn replay_until_live(
     }
 }
 
+/// Inputs of one `wait_turn` invocation.
+pub(crate) struct TurnWait<'a> {
+    /// `--output-json` rendering.
+    pub json: bool,
+    /// Interactive stdin (permission answers), if any.
+    pub stdin: Option<&'a mut mpsc::Receiver<String>>,
+    /// Whole-turn deadline.
+    pub deadline: Instant,
+    /// Open permission-ask ids, maintained across the whole REPL
+    /// session (todo 23 `/vote-cancel` resolves the single open ask
+    /// from here).
+    pub open_asks: &'a mut Vec<u64>,
+}
+
+impl<'a> TurnWait<'a> {
+    fn track(&mut self, msg: &ServerMsg) {
+        match msg {
+            ServerMsg::PermissionAsk { ask } => self.open_asks.push(ask.ask_id),
+            ServerMsg::PermissionResolved { ask_id, .. } => {
+                self.open_asks.retain(|id| id != ask_id);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The shared turn-wait loop: render events, answer asks from stdin,
 /// stop at TurnFinished. Returns `(turn, outcome)`.
 pub(crate) async fn wait_turn(
     transport: &mut SessionTransport,
-    json: bool,
-    mut stdin: Option<&mut mpsc::Receiver<String>>,
-    deadline: Instant,
+    mut wait: TurnWait<'_>,
 ) -> Result<(u64, String), CliError> {
     loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
+        let remaining = wait.deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(CliError::Timeout { secs: 1 });
         }
@@ -183,15 +217,16 @@ pub(crate) async fn wait_turn(
                 detail: "stream ended mid-turn".to_owned(),
             });
         };
+        wait.track(&msg);
         if let ServerMsg::Event { frame } = &msg
             && let SessionEvent::TurnFinished { turn, outcome } = &frame.event
         {
-            print_msg(&msg, json);
+            print_msg(&msg, wait.json);
             return Ok((*turn, outcome.clone()));
         }
         if let ServerMsg::PermissionAsk { ask } = &msg {
-            print_msg(&msg, json);
-            if let Some(stdin) = stdin.as_mut()
+            print_msg(&msg, wait.json);
+            if let Some(stdin) = wait.stdin.as_mut()
                 && let Some(line) = stdin.recv().await
             {
                 let answer = parse_answer(&line);
@@ -200,7 +235,7 @@ pub(crate) async fn wait_turn(
             }
             continue;
         }
-        print_msg(&msg, json);
+        print_msg(&msg, wait.json);
     }
 }
 

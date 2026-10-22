@@ -1,5 +1,6 @@
 ---
 source: harness-tui/tests/screens.rs
+assertion_line: 96
 expression: rendered
 ---
 v transcript (2)
@@ -12,7 +13,7 @@ fn x() {}
 ```
 v tools (0)
 > diffs (0)
-v team (1)
+v agents (1)
 status: in_progress
 build            l-child-build running
 

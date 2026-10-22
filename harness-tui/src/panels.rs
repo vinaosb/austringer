@@ -5,6 +5,7 @@
 //! (Amp/Antigravity/Claude/Devin/goose convergence). Pure functions
 //! of [`App`]; nothing here can block.
 
+use harness_daemon::grammar::{ALLOW_SCOPES, VOCAB_AGENTS};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
@@ -46,7 +47,7 @@ fn permission_gate_lines(app: &App) -> Vec<Line<'static>> {
     }
     let status = match app.pending_answer_label() {
         Some(label) => format!("answered: {label} — waiting for resolution"),
-        None => "[y] once  [a] session  [n] deny  [c] cancel".to_owned(),
+        None => ALLOW_SCOPES.join("  "),
     };
     lines.push(Line::from(status));
     lines.push(Line::from(""));
@@ -264,7 +265,7 @@ pub(crate) fn compose_body(app: &App) -> Vec<Line<'static>> {
         || diffs_panel(app),
     ));
     lines.extend(accordion(
-        "team",
+        VOCAB_AGENTS,
         app.panels.team,
         app.view.children().len(),
         || team_panel(app),

@@ -18,6 +18,7 @@ pub mod image;
 pub mod mcp;
 pub mod render;
 pub mod repl;
+pub mod repl_input;
 pub mod run;
 pub mod sessions;
 pub mod target;

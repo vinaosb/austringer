@@ -140,6 +140,14 @@ test("store: cancel-vote resolution withdraws the ask without allowing it", () =
   assert.equal(st.resolvedLog[0].resolution.type, "cancelled");
 });
 
+test("store: rewind-point markers render the disambiguated label (todo 23)", () => {
+  const s = createStore();
+  feed(s, frame(3, { type: "recorded", seq: 3, event: { type: "snapshot", label: "turn-2" } }));
+  const entry = s.getState().transcript[0];
+  assert.equal(entry.role, "rewind point");
+  assert.equal(entry.text, "turn-2");
+});
+
 test("store: image blocks render as their typed text marker", () => {
   const s = createStore();
   feed(s, frame(1, {

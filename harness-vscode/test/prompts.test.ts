@@ -5,10 +5,15 @@ import {
     permissionAnswerFromPick,
     fallbackChoiceFromPick,
     planDecisionFromPick,
+    isVoteCancelPick,
     HOP_BUTTON,
     KEEP_BUTTON,
     APPROVE_BUTTON,
     REJECT_BUTTON,
+    ALLOW_ONCE,
+    ALLOW_SESSION,
+    DENY,
+    VOTE_CANCEL,
 } from "../src/prompts.ts";
 
 test("Esc (dismissed prompt) leaves the permission ask pending — never denies", () => {
@@ -16,13 +21,23 @@ test("Esc (dismissed prompt) leaves the permission ask pending — never denies"
     assert.equal(answer, null, "dismissal must map to null (stay pending), not an answer");
 });
 
-test("explicit permission picks map to their answers", () => {
-    assert.equal(permissionAnswerFromPick("Allow once"), "allow_once");
-    assert.equal(permissionAnswerFromPick("Allow for session"), "allow_session");
-    assert.equal(permissionAnswerFromPick("Deny"), "deny");
+test("explicit permission picks map to their answers (todo 23 canonical labels)", () => {
+    assert.equal(permissionAnswerFromPick("y (once)"), "allow_once");
+    assert.equal(permissionAnswerFromPick("a (session)"), "allow_session");
+    assert.equal(permissionAnswerFromPick("n (deny)"), "deny");
+    assert.equal(ALLOW_ONCE, "y (once)");
+    assert.equal(ALLOW_SESSION, "a (session)");
+    assert.equal(DENY, "n (deny)");
+    assert.equal(VOTE_CANCEL, "c (vote-cancel)");
 });
 
-test("deny is only reachable through the explicit Deny pick", () => {
+test("vote-cancel is a withdraw pick, never an answer", () => {
+    assert.equal(isVoteCancelPick("c (vote-cancel)"), true);
+    assert.equal(isVoteCancelPick(undefined), false);
+    assert.equal(permissionAnswerFromPick("c (vote-cancel)"), null, "withdraw must not resolve as an answer");
+});
+
+test("deny is only reachable through the explicit deny pick", () => {
     const dismissed = permissionAnswerFromPick(undefined);
     assert.notEqual(dismissed, "deny");
     assert.notEqual(dismissed, "allow_once");

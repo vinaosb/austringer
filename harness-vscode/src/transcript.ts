@@ -78,10 +78,10 @@ function entryFromSession(frameId: number, event: SessionEvent): TranscriptEntry
             return {
                 seq: frameId,
                 kind: "team",
-                text: `team budget: ${event.spawned}/${event.fan_out_cap} spawned, ${event.tokens_spent}/${event.token_budget} tokens`,
+                text: `agents budget: ${event.spawned}/${event.fan_out_cap} spawned, ${event.tokens_spent}/${event.token_budget} tokens`,
             };
         case "team_budget_exhausted":
-            return { seq: frameId, kind: "team", text: `team budget exhausted: ${event.spent}/${event.budget} tokens` };
+            return { seq: frameId, kind: "team", text: `agents budget exhausted: ${event.spent}/${event.budget} tokens` };
         case "cost_warning":
             return { seq: frameId, kind: "notification", text: `cost warning: ${event.consumed_micros}/${event.cap_micros} µUSD` };
         case "cost_stop":

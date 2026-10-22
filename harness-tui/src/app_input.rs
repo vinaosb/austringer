@@ -1,15 +1,14 @@
-//! Key-input half of the [`App`] state machine: ask modals
+﻿//! Key-input half of the [`App`] state machine: ask modals
 //! (permission y/a/n/c, fallback y/n, plan y/n), hunk review,
 //! omnibar editing, scrolling, global actions, and submit routing.
 //! Split from `app` for the size budget; it is the same state and
 //! one dispatch chain (`App::step` -> `App::key`).
 
-use harness_daemon::protocol::{Answer, ClientMsg, PlanDecision, SessionCommand};
+use harness_daemon::protocol::{Answer, ClientMsg, PlanDecision};
 
 use crate::app::{App, UiAction};
 use crate::diffs::HunkDecision;
 use crate::keys::{Action, Key};
-use crate::omnibar::{Omnibar, Parsed};
 use crate::panels;
 
 impl App {
@@ -215,70 +214,5 @@ impl App {
         *target = !*target;
         self.dirty = true;
         true
-    }
-
-    /// `/mode` dispatch (todo 16): `plan` enters daemon plan mode and
-    /// `off`/`exit` leaves it; the engine-side autonomy levels have no
-    /// daemon surface, so they note honestly instead of pretending.
-    fn mode_command(&mut self, name: &str) -> Vec<UiAction> {
-        match name {
-            "plan" => vec![UiAction::Send(ClientMsg::PlanMode { on: true })],
-            "off" | "exit" => vec![UiAction::Send(ClientMsg::PlanMode { on: false })],
-            other => {
-                self.view.note(&format!(
-                    "/mode {other}: daemon plan mode is the wired surface (/mode plan, /mode off); \
-                     autonomy levels are engine-side"
-                ));
-                Vec::new()
-            }
-        }
-    }
-
-    fn submit(&mut self) -> Vec<UiAction> {
-        let text = self.bar.text();
-        if text.is_empty() {
-            return Vec::new();
-        }
-        let parsed = crate::omnibar::parse(&text);
-        self.bar = Omnibar::new();
-        self.bar_focused = false;
-        self.dirty = true;
-        match parsed {
-            Parsed::Chat(text) => {
-                let command = if self.turn_running() {
-                    SessionCommand::Steer { text }
-                } else {
-                    SessionCommand::Submit { text }
-                };
-                vec![UiAction::Send(ClientMsg::Command { command })]
-            }
-            Parsed::Mode { name } => self.mode_command(&name),
-            Parsed::Rewind { steps } => {
-                vec![UiAction::Send(ClientMsg::Rewind {
-                    steps: steps.unwrap_or(1),
-                })]
-            }
-            Parsed::Skill { name, rest } => {
-                // Submit verbatim, never Steer: the daemon-side trust
-                // gate parses /skill off the submit lane — steering
-                // would bypass it.
-                let text = if rest.is_empty() {
-                    format!("/skill {name}")
-                } else {
-                    format!("/skill {name} {rest}")
-                };
-                vec![UiAction::Send(ClientMsg::Command {
-                    command: SessionCommand::Submit { text },
-                })]
-            }
-            Parsed::UnknownCommand { word } => {
-                self.view.note(&format!("unknown command /{word}"));
-                Vec::new()
-            }
-            Parsed::Malformed { usage } => {
-                self.view.note(usage);
-                Vec::new()
-            }
-        }
     }
 }
