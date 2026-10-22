@@ -169,15 +169,23 @@ impl BudgetSignalSink for Sink {
     }
 }
 
+/// Wire-side micros: u64 (the internally-tagged event frames cannot
+/// carry u128 — see [`SessionEvent::CostWarning`]). Saturation is the
+/// documented contract: a spend past u64::MAX micro-USD (~18 trillion
+/// USD) is a budget that already exploded, and the event still fires.
+fn wire_micros(micros: u128) -> u64 {
+    u64::try_from(micros).unwrap_or(u64::MAX)
+}
+
 fn cost_event(signal: BudgetSignal) -> SessionEvent {
     match signal {
         BudgetSignal::Warning(w) => SessionEvent::CostWarning {
-            consumed_micros: w.consumed,
-            cap_micros: w.cap,
+            consumed_micros: wire_micros(w.consumed),
+            cap_micros: wire_micros(w.cap),
         },
         BudgetSignal::Stop(reason) => SessionEvent::CostStop {
-            consumed_micros: reason.exhaustion().consumed,
-            cap_micros: reason.exhaustion().cap,
+            consumed_micros: wire_micros(reason.exhaustion().consumed),
+            cap_micros: wire_micros(reason.exhaustion().cap),
         },
     }
 }

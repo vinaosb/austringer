@@ -487,6 +487,43 @@ mod tests {
     }
 
     #[test]
+    fn cost_event_frames_decode_through_internally_tagged_content() {
+        // Given: cost_warning/cost_stop frames exactly as the daemon
+        // encodes them. These variants once carried u128 wire fields,
+        // which serde's internally-tagged Content buffering cannot
+        // deserialize — every client's decode_server rejected the
+        // frames (Err(Malformed("u128 is not supported"))) and the
+        // cost badge never surfaced (F3 TUI defect).
+        for (json, expected) in [
+            (
+                r#"{"type":"event","frame":{"id":9,"event":{"type":"cost_warning",
+                    "consumed_micros":850000,"cap_micros":1000000}}}"#,
+                SessionEvent::CostWarning {
+                    consumed_micros: 850_000,
+                    cap_micros: 1_000_000,
+                },
+            ),
+            (
+                r#"{"type":"event","frame":{"id":10,"event":{"type":"cost_stop",
+                    "consumed_micros":1100000,"cap_micros":1000000}}}"#,
+                SessionEvent::CostStop {
+                    consumed_micros: 1_100_000,
+                    cap_micros: 1_000_000,
+                },
+            ),
+        ] {
+            // When: the client's decode path runs.
+            let msg = decode_server(json.as_bytes())
+                .unwrap_or_else(|e| panic!("cost frame must decode, got {e:?}"));
+            // Then: the frame arrives intact.
+            let ServerMsg::Event { frame } = msg else {
+                panic!("shape");
+            };
+            assert_eq!(frame.event, expected);
+        }
+    }
+
+    #[test]
     fn version_gate_serves_v1_and_v2_only() {
         assert!(version_compatible(1), "v1 Hello must never be refused");
         assert!(version_compatible(PROTOCOL_VERSION));

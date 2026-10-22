@@ -208,7 +208,7 @@ fn drain(live: &mut broadcast::Receiver<ServerMsg>) -> Vec<SessionEvent> {
     out
 }
 
-fn cost_warnings(events: &[SessionEvent]) -> Vec<(u128, u128)> {
+fn cost_warnings(events: &[SessionEvent]) -> Vec<(u64, u64)> {
     events
         .iter()
         .filter_map(|event| match event {
@@ -221,7 +221,7 @@ fn cost_warnings(events: &[SessionEvent]) -> Vec<(u128, u128)> {
         .collect()
 }
 
-fn cost_stops(events: &[SessionEvent]) -> Vec<(u128, u128)> {
+fn cost_stops(events: &[SessionEvent]) -> Vec<(u64, u64)> {
     events
         .iter()
         .filter_map(|event| match event {

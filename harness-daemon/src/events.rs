@@ -96,10 +96,15 @@ pub enum SessionEvent {
     /// consume (todos 19/20); downgraded for v1 wires to a
     /// `cost_warning` notification.
     CostWarning {
-        /// Cumulative priced spend, micro-USD.
-        consumed_micros: u128,
-        /// The session cost cap, micro-USD.
-        cap_micros: u128,
+        /// Cumulative priced spend, micro-USD. u64 on the wire: serde's
+        /// internally-tagged Content buffering cannot deserialize u128,
+        /// so u128 fields made every client reject the frame. The
+        /// internal ledger stays u128; the boundary conversion
+        /// saturates at u64::MAX.
+        consumed_micros: u64,
+        /// The session cost cap, micro-USD (u64 on the wire; see
+        /// `consumed_micros`).
+        cap_micros: u64,
     },
     /// Session spend reached 100% of the cap: the typed terminal cost
     /// stop. Further turns are refused naming the cap; no model
@@ -107,10 +112,10 @@ pub enum SessionEvent {
     /// the halt).
     CostStop {
         /// Cumulative priced spend, micro-USD (may overshoot on the
-        /// crossing record).
-        consumed_micros: u128,
-        /// The session cost cap, micro-USD.
-        cap_micros: u128,
+        /// crossing record; u64 on the wire, saturating conversion).
+        consumed_micros: u64,
+        /// The session cost cap, micro-USD (u64 on the wire).
+        cap_micros: u64,
     },
     /// The per-parent delegation budget after a spawn authorization or
     /// a recorded spend (todo 15 team surfacing; the
