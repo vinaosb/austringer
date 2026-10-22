@@ -119,6 +119,9 @@ export class FakeDaemon {
     /** The `after` cursor of each SSE open (null = absent). */
     readonly afters: (number | null)[] = [];
 
+    /** The proposed protocol `version` of each SSE open (null = absent). */
+    readonly versions: (number | null)[] = [];
+
     private broadcast(data: string): void {
         for (const client of this.sseClients) {
             client.write(`data: ${data}\n\n`);
@@ -164,6 +167,8 @@ export class FakeDaemon {
         this.sseOpens += 1;
         const after = url.searchParams.get("after");
         this.afters.push(after === null ? null : Number(after));
+        const version = url.searchParams.get("version");
+        this.versions.push(version === null ? null : Number(version));
         res.writeHead(200, {
             "content-type": "text/event-stream",
             "cache-control": "no-cache",
@@ -200,7 +205,7 @@ export class FakeDaemon {
         res.write(
             `data: ${JSON.stringify({
                 type: "hello_ack",
-                version: 1,
+                version: 2,
                 last_event_id: lastId,
             } satisfies ServerMsg)}\n\n`,
         );

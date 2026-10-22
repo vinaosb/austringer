@@ -1,0 +1,147 @@
+Task 21 - VS Code: transcript, frames, Esc-deny fix (ecosystem alignment)
+=========================================================================
+Date: 2026-10-22
+Worker: Sisyphus-junior (checkbox 21, .omo/plans/ecosystem-alignment.md)
+Scope: harness-vscode only. No grammar/omnibar changes (task 23 owns them; parseOmnibar
+untouched). No daemon source touched (mediation.rs read for deadline semantics only).
+No commit made (per task instruction).
+
+WHAT LANDED
+-----------
+(a) Transcript webview (VS Code previously had NO transcript - session.ts dropped all
+    non-turn/diff frames via `default: break`):
+    - src/transcript.ts (NEW, pure/headless): transcriptEntryFromFrame maps frames to
+      typed entries (turn/message/tool/condensation/notification/team/plan; diff stays
+      silent - it already renders as editor decorations); renderTranscriptHtml emits a
+      plain HTML <ul> list (no framework, no scripts) with HTML-escaped text.
+    - src/webview.ts (NEW, VS Code glue): TranscriptPanel - createWebviewPanel once,
+      reveal after, full re-render per append, bounded 500-entry ring, disposed on stop.
+    - src/session.ts: every frame + snapshot frame feeds appendTranscript; fallback/plan
+      resolutions append synthetic entries. Command "harness.showTranscript" registered
+      (extension.ts + package.json contribution).
+(b) Condensation/Notification/team frames: decode.ts now decodes ALL daemon v2
+    SessionEvent variants (child_started/child_progress/child_finished, cost_warning,
+    cost_stop, team_budget, team_budget_exhausted, plan_mode_entered/exited, plan_blocked,
+    plan_updated, plan_approved, plan_rejected); transcript renders condensation
+    (recorded.engine.condensation), notifications, and team entries.
+    CRITICAL fix this forced: unknown SessionEvent tags previously decoded null ->
+    `malformed` -> cursor never advanced -> next frame read as a gap -> infinite
+    reconnect loop. Negotiating v2 without decoding team/plan/cost frames would have
+    looped the client forever; the decode table is the cursor-advance contract.
+(c) Esc-deny footgun fixed: session.ts:173-182 mapped pick===undefined -> "deny".
+    - src/prompts.ts (NEW, pure/headless): permissionAnswerFromPick / fallbackChoiceFromPick
+      / planDecisionFromPick map undefined -> null (stay pending), never deny.
+    - src/askdialogs.ts (NEW, VS Code glue): AskDialogs.promptPermission/promptFallback/
+      promptPlan return without answering when the pick is null - the ask stays in
+      pendingAsks (gauge keeps showing "N permission asks pending") until the explicit
+      choice OR the daemon's mediation deadline (mediation.rs resolves Timeout ->
+      AskResolution::Refuse fail-closed on the daemon side - read-only, verified).
+(d) Grammar untouched: omnibar.ts / parseOmnibar not modified (git status clean for it).
+(e) FallbackAsk + plan approve/reject rendered and answerable via the existing
+    showWarningMessage dialog surfaces:
+    - protocol.ts/decode.ts/codec.ts: v2 ServerMsg fallback_ask/fallback_resolved/
+      plan_ask/plan_resolved decode; ClientMsg fallback_answer {ask, chosen},
+      plan_answer {ask, decision}, plan_mode {on} encode+validate (edit artifact
+      bounded, mirroring daemon validate_client).
+    - client.ts emits fallback-ask/fallback-resolved/plan-ask/plan-resolved ClientEvents
+      + answerFallback/answerPlan/planMode methods.
+    - AskDialogs prompts: fallback = "Hop to <model>" / "Keep <model>" (Esc = pending;
+      timeout retries SAME model daemon-side); plan = Approve / Reject (Esc = pending;
+      timeout NEVER approves daemon-side).
+    - Protocol v2 negotiation: PROTOCOL_VERSION 1 -> 2; SSE URL now carries
+      &version=2 (daemon handlers.rs reads query.version, defaults absent to v1 and
+      withholds v2 frames); fakedaemon hello_ack now version 2 and records the proposed
+      version per SSE open (daemon.versions), kept in sync per the task instruction.
+    - Omnibar/messages unchanged elsewhere; no new npm dependencies (git diff of
+      package.json = one command contribution only).
+
+RED (captured before implementation; per-file runs because failing v2 tests skip daemon
+cleanup and hang the shared runner - open handles, noted under issues)
+----------------------------------------------------------------------------------------------------
+> node --test --test-timeout=8000 test/prompts.test.ts
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module
+'C:\...\harness-vscode\src\prompts.ts' imported from C:\...\test\prompts.test.ts
+tests 1 / pass 0 / fail 1
+
+> node --test --test-timeout=8000 test/transcript.test.ts
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module
+'C:\...\harness-vscode\src\transcript.ts' imported from C:\...\test\transcript.test.ts
+tests 1 / pass 0 / fail 1
+
+> node --test --test-timeout=8000 test/v2.test.ts   (all 7 fail - captured via file redirect)
+[fail] the connection negotiates protocol version 2 on the SSE URL        (57ms)
+[fail] v2 hello_ack (version 2) is accepted and reaches connected         (15ms)
+[fail] team frames ... without a reconnect loop                           (5031ms - timeout)
+[fail] fallback ask surfaces as a client event; answering posts ...       (5022ms - timeout)
+[fail] plan ask surfaces as a client event; approving posts ...           (5023ms - timeout)
+[fail] plan mode toggle posts plan_mode on/off                            (12ms)
+[fail] a malformed raw line mid-stream is ignored ...                     (23ms)
+Root causes pre-fix: PROTOCOL_VERSION === 1; fallback_ask/plan_ask unknown message
+types (malformed); child_* unknown SessionEvent tags (malformed -> no cursor advance).
+
+GREEN (after implementation)
+----------------------------------------------------------------------------------------------------
+> npm run typecheck            -> tsc -p ./ --noEmit   EXIT 0 (clean)
+> npm test                     -> tests 78 / pass 78 / fail 0 (was 60 pre-task; +18 new)
+
+NEW TESTS (18)
+--------------
+test/prompts.test.ts (6): Esc-pending for permission/fallback/plan; explicit pick
+  mappings; "deny is only reachable through the explicit Deny pick".
+test/transcript.test.ts (5): fixture stream renders tool/condensation/notification/team
+  entries; every fixture frame renders or is explicitly silent; diff frames silent;
+  HTML escaping blocks <script> injection; empty transcript = valid empty list.
+test/v2.test.ts (7): SSE open carries version=2 + PROTOCOL_VERSION===2; v2 hello_ack
+  reaches connected; child_started/progress/finished frames decode, advance the cursor,
+  and cause NO reconnect (sseOpens stays 1); fallback_ask event + fallback_answer POST
+  body {type:"fallback_answer",ask:1,chosen:{provider,model}} + fallback_resolved event;
+  plan_ask event + plan_answer approve POST + plan_resolved event; plan_mode toggle
+  POST; malformed raw line mid-stream ignored with later frames still delivered.
+
+QA SCENARIOS (per plan; commands + observed output)
+---------------------------------------------------
+happy - ask answered explicitly OR expires with a typed outcome:
+  > node --test test/prompts.test.ts test/v2.test.ts
+  pass 13 / fail 0, including:
+  "Esc (dismissed prompt) leaves the permission ask pending - never denies"
+  "fallback ask surfaces as a client event; answering posts fallback_answer ..."
+  (explicit permission answers + typed timeout resolution already covered by the
+   pre-existing client.test.ts / protocol.test.ts suites, both green in the full run.)
+
+happy - transcript webview renders tool/condensation/team entries from fixture stream:
+  > node --test test/transcript.test.ts
+  pass 5 / fail 0, including:
+  "transcript renders tool, condensation, notification, and team entries from a
+   fixture stream" (tool entry names edit_lines; 3 team entries for
+   l1-child-explore; condensation entry carries the summary)
+
+failure - malformed frame ignored without breaking the webview:
+  > node --test test/v2.test.ts (last test)
+  "a malformed raw line mid-stream is ignored and later frames still arrive
+   (webview stream never breaks)" - garbage line -> one `malformed` client event,
+   cursor unaffected, next frame accepted, sseOpens stays 1.
+  Plus transcript.test.ts HTML-escaping test: hostile entry text cannot inject markup.
+
+FILES
+-----
+M  package.json (harness.showTranscript command contribution only - no deps added)
+M  src/client.ts          (v2 URL param, 4 event emissions, 3 answer/command methods)
+M  src/codec.ts           (4 ServerMsg decode cases; plan_answer artifact bound)
+M  src/decode.ts          (13 SessionEvent decoders + fallback/plan payload decoders)
+M  src/extension.ts       (register harness.showTranscript)
+M  src/protocol.ts        (PROTOCOL_VERSION 2; v2 types)
+M  src/session.ts         (event routing, transcript feed, dialogs delegated)
+M  test/fakedaemon.ts     (hello_ack version 2; records proposed versions)
+M  test/protocol.test.ts  (hello literal 1 -> 2, kept in sync per task instruction)
+A  src/askdialogs.ts      (dialog glue: dismissed = pending, never deny)
+A  src/prompts.ts         (pure pick->decision mappings)
+A  src/transcript.ts      (pure frame->entry projection + HTML render)
+A  src/webview.ts         (webview panel glue)
+A  test/prompts.test.ts, test/transcript.test.ts, test/v2.test.ts
+
+CAVEAT (cross-crate, recorded in issues.md): the REAL daemon's HTTP command route
+refuses fallback_answer/plan_answer typed (handlers.rs - answers need a WS/IPC
+connection identity; the SSE client is read-only). The client-side wiring is complete
+and proven against the fakedaemon; against the real daemon the answer POST surfaces
+the typed failure honestly ("fallback answer failed (http)"). A WS/IPC carrier for
+harness-vscode is the follow-up seam (not in this task's scope).

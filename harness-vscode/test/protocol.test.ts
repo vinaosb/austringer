@@ -30,7 +30,7 @@ test("hello encodes to the exact daemon wire shape", () => {
     const parsed: object = JSON.parse(encoded);
     assert.deepEqual(parsed, {
         type: "hello",
-        version: 1,
+        version: 2,
         token: "t".repeat(32),
         client_id: "vscode-1",
         session: null,

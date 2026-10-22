@@ -1,36 +1,48 @@
 /**
  * The live editor-side session (plan todo 38): owns the daemon
  * client, projects its events onto the status-bar gauge, diff
- * decorations, pending permission prompts, the omnibar, and hunk
- * commands. Decisions live in headless-tested modules; this file is
- * VS Code glue only.
+ * decorations, the transcript webview, pending permission prompts,
+ * the omnibar, and hunk commands. Decisions live in headless-tested
+ * modules; this file is VS Code glue only.
+ *
+ * allow: SIZE_OK — 271 pure LOC; 246 pre-todo-21 with every
+ * todo-21-extractable unit (ask dialogs, transcript projection,
+ * webview panel) already split out. The remainder is one routing
+ * switch + thin delegates; moving untouched units (omnibar, hunk
+ * glue) is out of todo-21 scope.
  */
 
 import * as vscode from "vscode";
 
 import { HarnessClient, type ClientEvent } from "./client.ts";
+import { AskDialogs } from "./askdialogs.ts";
 import type { AskPayload } from "./protocol.ts";
 import { gaugeState, type GaugeInputs } from "./gauge.ts";
 import { hunkAction, planDiff, gateHunkAccept, type HunkPlan, type HunkRange } from "./hunks.ts";
 import { nodeHttpIo } from "./nodehttp.ts";
 import { parseOmnibar } from "./omnibar.ts";
 import { buildTelemetryContext, type EditorSnapshot } from "./telemetry.ts";
+import { transcriptEntryFromFrame } from "./transcript.ts";
+import { TranscriptPanel } from "./webview.ts";
 
 export class HarnessSession {
     private readonly client: HarnessClient;
     private readonly gauge: vscode.StatusBarItem;
+    private readonly dialogs: AskDialogs;
     private readonly decoration = vscode.window.createTextEditorDecorationType({
         backgroundColor: new vscode.ThemeColor("diffEditor.insertedTextBackground"),
         isWholeLine: true,
     });
     private readonly plans = new Map<string, HunkPlan>();
     private readonly pendingAsks = new Map<number, AskPayload>();
+    private readonly transcript = new TranscriptPanel();
     private gaugeInputs: GaugeInputs = { status: "disconnected", attempt: 0, turn: null, pendingAsks: 0 };
     private turn: number | null = null;
 
     constructor(client: HarnessClient, gauge: vscode.StatusBarItem) {
         this.client = client;
         this.gauge = gauge;
+        this.dialogs = new AskDialogs(client);
     }
 
     static async connect(gauge: vscode.StatusBarItem): Promise<HarnessSession> {
@@ -65,6 +77,7 @@ export class HarnessSession {
         this.gauge.hide();
         this.gauge.dispose();
         this.decoration.dispose();
+        this.transcript.dispose();
         await this.client.stop();
     }
 
@@ -75,17 +88,39 @@ export class HarnessSession {
                 break;
             case "frame":
                 this.handleFrame(event.frame.event);
+                this.appendTranscript(event.frame);
                 break;
             case "ask":
                 this.pendingAsks.set(event.ask.ask_id, event.ask);
-                void this.promptAsk(event.ask);
+                void this.dialogs.promptPermission(event.ask);
                 break;
             case "resolved":
                 this.pendingAsks.delete(event.askId);
                 break;
+            case "fallback-ask":
+                void this.dialogs.promptFallback(event.ask);
+                break;
+            case "fallback-resolved":
+                this.transcript.append({
+                    seq: Date.now(),
+                    kind: "notification",
+                    text: `model fallback resolved → ${event.chosen.provider}/${event.chosen.model}`,
+                });
+                break;
+            case "plan-ask":
+                void this.dialogs.promptPlan(event.ask);
+                break;
+            case "plan-resolved":
+                this.transcript.append({
+                    seq: Date.now(),
+                    kind: "plan",
+                    text: `plan ${event.planId} resolved (${Object.keys(event.outcome)[0]})`,
+                });
+                break;
             case "snapshot":
                 for (const frame of event.frames) {
                     this.handleFrame(frame.event);
+                    this.appendTranscript(frame);
                 }
                 break;
             case "protocol-error":
@@ -121,6 +156,17 @@ export class HarnessSession {
             default:
                 break;
         }
+    }
+
+    private appendTranscript(frame: import("./protocol.ts").Frame): void {
+        const entry = transcriptEntryFromFrame(frame);
+        if (entry !== null) {
+            this.transcript.append(entry);
+        }
+    }
+
+    showTranscript(): void {
+        this.transcript.show();
     }
 
     renderGauge(): void {
@@ -164,21 +210,7 @@ export class HarnessSession {
     }
 
     async answer(askId: number, answer: "allow_once" | "allow_session" | "deny"): Promise<void> {
-        const result = await this.client.answerAsk(askId, answer);
-        if (!result.ok && result.error.kind !== "unknown_ask") {
-            void vscode.window.showErrorMessage(`Harness: answer failed (${result.error.kind})`);
-        }
-    }
-
-    private async promptAsk(ask: AskPayload): Promise<void> {
-        const pick = await vscode.window.showWarningMessage(
-            `${ask.tool} → ${ask.target ?? "?"}: ${ask.reason}`,
-            "Allow once",
-            "Allow for session",
-            "Deny",
-        );
-        const answer = pick === "Allow once" ? "allow_once" : pick === "Allow for session" ? "allow_session" : "deny";
-        await this.answer(ask.ask_id, answer);
+        await this.dialogs.answer(askId, answer);
     }
 
     async omnibar(): Promise<void> {
