@@ -6,8 +6,11 @@
 
 **One small Rust daemon runs an AI coding agent; four thin clients attach to it — terminal, TUI, browser, VS Code — under hard, CI-enforced performance budgets, and every design decision is a receipt from a studied post-mortem of another harness.**
 
-- Pre-release (0.1.x, workspace scaffold through wave 9). No releases have been
-  tagged yet; see [Status](#status) for exactly what works at this commit.
+- Pre-release (0.1.x, workspace scaffold through wave 9). `v0.1.0` (tagged
+  2026-09-21) is the first snapshot, cut when the release pipeline went
+  green; see [Status](#status) for exactly what works at this commit and
+  [Release transparency](#release-transparency) for what every tag
+  publishes.
 - The claims on this page cite their evidence: research sections refer to
   [.omo/research/harness-research.md](.omo/research/harness-research.md)
   (the in-repo study of 25+ harnesses this project is built from); shipped
@@ -50,14 +53,22 @@ cargo build --release -p harness-daemon -p harness-cli -p harness-tui
 cargo nextest run --workspace     # full test suite: hermetic, zero API keys, zero network
 ```
 
-Talking to a live model is opt-in per daemon: set `HARNESS_PROVIDER`
-(`anthropic` | `openai` | `google` | `xai` | `compat`),
-`HARNESS_MODEL`, and `HARNESS_PROVIDER_KEY_ENV` naming the environment
-variable that holds the API key (the key value itself never appears in
-any committed file); `compat` additionally takes
-`HARNESS_PROVIDER_BASE_URL`. An unconfigured daemon stays fully
-servable and answers inference with a typed, actionable error naming
-those keys.
+Talking to a live model is opt-in per daemon (the key value itself never
+appears in any committed file). Environment variables the daemon reads:
+
+| Variable | Meaning |
+| --- | --- |
+| `HARNESS_PROVIDER` | provider family: `anthropic` \| `openai` \| `google` \| `xai` \| `compat` |
+| `HARNESS_MODEL` | model id from the seeded catalog (effort may be pinned with the `model[effort=xhigh]` bracket grammar) |
+| `HARNESS_PROVIDER_KEY_ENV` | name of the environment variable holding the API key |
+| `HARNESS_PROVIDER_BASE_URL` | `compat` family only: the OpenAI-compatible base URL |
+| `HARNESS_PROVIDER_TIMEOUT_SECS` | inference timeout in whole seconds |
+| `HARNESS_SESSION_COST_CAP_USD` | per-session spend cap in decimal dollars (default 20.00); warning at 80%, typed stop at 100% |
+| `HARNESS_TEST_COMMAND` | user-global override of the `run_tests` tool's framework detection (a repo-local override file is refused with a typed error) |
+| `HARNESS_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint — never on by default |
+
+An unconfigured daemon stays fully servable and answers inference with a
+typed, actionable error naming those keys.
 
 ## Four frontends, one engine
 
@@ -101,7 +112,7 @@ allocation metrics. All numbers above are reproducible:
 
 ## Architecture
 
-One daemon, a 24-crate Cargo workspace, four thin clients:
+One daemon, a 25-crate Cargo workspace, four thin clients:
 
 ```
                      ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
@@ -113,19 +124,19 @@ One daemon, a 24-crate Cargo workspace, four thin clients:
                                  └────────────┴─────────────────┘
                                               │
                                        harness-daemon
-                    (event log, sessions, permissions, scheduler, sandbox)
-                                              │
+                     (event log, sessions, permissions, scheduler, sandbox)
+                                               │
         ┌───────────────┬──────────────┬──────┴──────┬───────────────┬────────────┐
         │ engine        │ models       │ context     │ exec + safety │ extension  │
         │ harness-core  │ harness-     │ harness-ast │ harness-exec  │ harness-mcp│
-        │ (events, loop,│  providers   │ harness-    │ harness-vfs   │ harness-   │
-        │  tools, com-  │ harness-     │  repomap    │ harness-      │  skills    │
-        │  paction)     │  intel       │ harness-    │  snapshots    │            │
-        │               │ harness-     │  search     │ harness-safety│           │
+        │ harness-tools │  providers   │ harness-    │ harness-vfs   │ harness-   │
+        │ (events, loop,│ harness-     │  repomap    │ harness-      │  skills    │
+        │  tools, com-  │  intel       │ harness-    │  snapshots    │            │
+        │  paction)     │ harness-     │  search     │ harness-safety│           │
         │               │  orchestration│ harness-lsp│ harness-wasm  │           │
         └───────────────┴──────────────┴─────────────┴───────────────┴────────────┘
-                persistence: harness-sessions   meta: harness-test-support,
-                                                    harness-bench, harness-evals
+      persistence: harness-sessions   media: harness-media (daemon-served)
+      meta: harness-test-support, harness-bench, harness-evals
 ```
 
 Crate-by-crate map with the plan decision each implements:
@@ -169,7 +180,7 @@ task-N, internal):
 ## Built on post-mortems
 
 The research file — [.omo/research/harness-research.md](.omo/research/harness-research.md)
-— is the working artifact this project was designed from: a 33-section study of
+— is the working artifact this project was designed from: a 40-section study of
 25+ harnesses (Claude Code, Codex, goose, opencode, aider, Gemini CLI, Qwen
 Code, crush, OpenHands, SWE-agent, Mentat, Plandex, Pi, Grok Build, Droid,
 Amp, Cursor, Copilot, Antigravity, Devin, Zed, JetBrains, Warp, forge,
@@ -208,19 +219,32 @@ an eval table, harness-matched rows only:
 
 ## Status
 
-Works at this commit (HEAD `c8926a4`, all with recorded task evidence): the
-full engine crate set (events, operation-pipeline loop, tool registry with
-schema hydration, inspector chain, autonomy modes, compaction, tiered
-eviction, budgets, hooks), five cassette-tested provider adapters composed
-into the daemon's session factory behind environment configuration
-(`HARNESS_PROVIDER` / `HARNESS_MODEL` / `HARNESS_PROVIDER_KEY_ENV`; opt-in,
-never enabled by default), ast / repomap / search / lsp, exec + ConPTY +
-WSL2 bridge, transactional shadows, snapshots, encrypted sessions store,
-sandboxes, permission engine, MCP client + server mode, skills + Skill
-Forge + registry, model profiles, daemon protocol (multi-client, token
-auth, scheduler), TUI, web dashboard, VS Code extension, CLI, WASM plugin
-runtime, perf gates, evals crate. Live-model eval sweeps are
-scheduled-only by policy and never gate PRs.
+Works at this commit (HEAD `c836542`; every production-wired row is verified
+against the daemon/CLI/TUI/web/VS Code source and carries recorded task
+evidence in `.omo/evidence/`). The distinction that matters to a reader:
+**production-wired** means the mechanism is reachable through the shipped
+binaries (daemon, CLI, TUI, web dashboard, VS Code extension) — not merely
+implemented and tested inside a library crate.
+
+| Production-wired at HEAD (exercised through the shipped surfaces) | Library-tested (crate tests green; not wired into the shipped binaries) |
+| --- | --- |
+| All six CORE_TOOLS served in-process: `view_window`/`edit_lines` (harness-tools), `execute_command` (harness-exec under a harness-safety sandbox/egress policy), `lsp_query` (harness-lsp) — no NoExecutor path in production (task-3/4) | `harness-repomap` — CSR + SIMD PageRank repo map; its only consumer today is harness-bench's committed baselines, not the daemon's context pipeline |
+| Provider composition from env (five cassette-tested adapters on the production reqwest transport); typed, actionable no-provider error when unconfigured (M32) | `harness-search` — Tantivy BM25 lexical index; zero dependents (the shipped `tool_search` is core-internal) |
+| Protocol v2 frames: per-turn usage (model/effort/tokens/cost), FallbackAsk/FallbackResolved (mediated, v1-withheld), Verdict with evidence ids (task-1) | `harness-wasm` — wasmtime/WASI 0.2 plugin runtime; feature-gated, off by default, zero dependents |
+| Dispatcher live in the daemon loop: routing.json roles/tiers/categories/fallbacks/cheap-pool, ask-first fallback, same-model retry on timeout (task-9/13) | OAuth device-flow subscription auth (providers `device_flow.rs`, RFC 8628 + PKCE); cassette-tested in the crate, not yet composed into the daemon's env-based selection |
+| 2026-10 model catalog wave (GPT-6 Sol, GPT-6.1 Sol, GPT-6 Luna, Gemini 4 Argon, Grok 4.7, Claude Opus/Sonnet/Haiku 5.5 beside the existing 12; fail-closed effort grids) (task-10) | Orchestration best-of-N (same prompt on up to four models) and plan-branch comparison; the spec-driven launch path and fork-join children ARE wired (task-8) |
+| Cross-session transcript search over the maintained `event_fts` index: `GET /sessions/search`, `harness sessions search`, session-scoped `search_sessions` model tool (task-11) | Worker (out-of-process executor) protocol — deliberately reserved; in-process executors are the production path (task-3) |
+| ACP stdio agent mode (`harness-daemon --acp`): initialize, session/prompt, session/update, fs read; mediation through the same queues (task-12) | |
+| `task(category)` delegation (depth cap, fresh grant state, per-parent fan-out/budget caps) + curated read-only `explore`/`librarian` cheap-pool agents + team surfacing with Warp-style status precedence (task-13/14/15) | |
+| Opt-in interactive plan mode (off by default; write tools gated until approve/edit/reject; session grants suspended while planning) (task-16) | |
+| `run_tests` tool (cargo test/nextest detection, `HARNESS_TEST_COMMAND` user-global override, typed TestReport) with test evidence bound into the completion gate — REFUTED verdicts cite failing test ids (task-17/18) | |
+| Snapshot rewind: `ClientMsg::Rewind`, TUI `/rewind`, event_fts truncated to the restore point (task-5) | |
+| Skills runtime: pack loading behind trust gates + quarantine, `/skill` invocation, `GET /packs`; pack MCP entries land disabled (task-6) | |
+| Session cost governance: micro-USD ledger keyed off usage frames, default $20/session cap (`HARNESS_SESSION_COST_CAP_USD`), warning at 80%, typed stop at 100%; children and automations aggregate (task-33) | |
+| History + automations surfaces: `GET /s/{sid}/history`, `GET /automations`, sched/verdict notifications on the event stream; declarative `automations.json` (task-2) | |
+| MCP CLI family (`harness mcp list\|scan\|serve\|call`) (task-7); run-history + automations + team events in the four frontends; unified command grammar; OSC 777 + 7501 program-status emission (task-23/24) | |
+| Media surface: daemon-served upload/fetch with delivery-cap projection, nine adapter families enabled (image, svg, pdf, audio, office, gltf, georaster, data, text) | |
+| Encrypted sessions store (XChaCha20-Poly1305, lazy paging), transactional shadows, sandboxes, permission engine, TUI/web/VS Code/CLI surfaces, perf gates, evals sweep (hermetic, scheduled-only by policy; live-model sweeps never gate PRs) | |
 
 ## Roadmap
 

@@ -23,7 +23,7 @@ are compared against committed baselines with a 10% tolerance
 perf-gate` re-measures every number below from source.
 
 [[leaderboard-baseline]]
-== Pre-release baseline (HEAD c8926a4)
+== Pre-release baseline (measured at c8926a4, 2026-09-14; gate re-validated green 2026-10-22, task-28)
 
 [cols="2,1,1"]
 |===

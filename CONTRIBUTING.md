@@ -122,7 +122,9 @@ docs: positioning README + community ramp + AsciiDoc docs site
 - One logical change per commit; a todo-sized unit of work lands as one
   commit, not a trail of fixes (follow-up corrections are their own small
   commit, never an amend of a pushed branch).
-- Squash-merge is the norm; tags follow the wave plan (`v0.wave-N`).
+- Squash-merge is the norm; tags are semver — `v0.1.0` (2026-09-21) is the
+  first tagged snapshot, and every tagged release adds its page under
+  `docs/release/` (leaderboard + eval tables per the publication rules).
 
 ## Wave map and parallelization
 
