@@ -11,6 +11,7 @@ Plan
 fn x() {}
 ```
 v tools (0)
+> diffs (0)
 v team (1)
 status: in_progress
 build            l-child-build running
@@ -21,6 +22,5 @@ build            l-child-build running
 
 
 
-
-ctx: ≈17/10000 (0%) | cache: 72.5% | cost: frontier-x $0.42 | saved $0.09 routin
+ctx: ≈17/10000 (0%) | cache: 72.5% | cost: frontier-x $0.42
 harness (i to type, q quits)────────────────────────────────────────────────────

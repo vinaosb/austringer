@@ -8,12 +8,15 @@
 //! is required to drive or verify the interface.
 
 pub mod app;
-pub mod app_input;
+mod app_input;
+mod app_server;
 pub mod client;
 pub mod complete;
+pub mod diffs;
 pub mod hud;
 pub mod keys;
 pub mod markdown;
 pub mod omnibar;
+mod panels;
 pub mod render;
 pub mod transcript;

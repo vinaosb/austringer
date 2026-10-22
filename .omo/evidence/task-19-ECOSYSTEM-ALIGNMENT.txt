@@ -1,0 +1,146 @@
+Task 19 — TUI: render diffs (hunk panel), live HUD, scroll fix
+==============================================================
+Date: 2026-10-22
+Scope: harness-tui only (+ zero harness-cli changes — no SessionEvent variants
+were added, so no sibling render arms were required; t33 lesson respected).
+
+WHAT CHANGED
+------------
+(a) Diffs accordion (ctrl+5): render.rs never drew view.diffs() — the README
+    "hunk review gates" claim was false. New src/diffs.rs carries DiffEntry
+    (path + per-hunk DiffHunk{text, HunkDecision}) with diffstat parsing;
+    src/panels.rs renders one diffstat line per file (path +A/-R, N pending)
+    plus every hunk line with a [pending]/[accepted]/[rejected] marker.
+    y/n (while the panel is open and hunks are pending) accept/reject the
+    next pending hunk in order; decisions surface as client notes.
+    DECISION: accept/reject is client-side view state — the wire carries no
+    hunk-decision message (ClientMsg has none; adding one would need daemon
+    arms outside this task's scope). Logged in issues.md as the protocol gap.
+(b) ServerMsg::Usage now feeds Hud::apply (src/app_server.rs): cache pct =
+    cache_read/input_tokens*100, cost delta = cost_usd_micros/1e6, model row
+    from ModelIdentity.model. HUD cache/cost/model go live; the old usage
+    transcript note is gone (HUD is the surface).
+(c) Dead field removed: Hud.routing_savings + HudUpdate.routing_savings +
+    the "saved $X routing" cost_line suffix — no frame feeds it (Usage has
+    no savings field). Screens fixture + snapshots updated accordingly.
+(d) ScrollUp/ScrollDown dispatch implemented (were dead bindings): a body
+    scroll offset in lines from the tail; Up clamps at compose_body length,
+    Down at 0 (= auto-follow); any Event/Snapshot frame resets to 0. The
+    render window keeps [end-height, end) of compose_body.
+(e) Collapsed-by-default detail (Amp/Antigravity/Claude/Devin/goose 5-project
+    convergence): tools accordion renders ONE line per tool (result collapsed
+    to its first line, bounded at 48 chars + ellipsis) with full hunk detail
+    living in the diffs accordion (expand-on-demand). Diff events carry no
+    call_id, so a diff cannot be attributed to a specific tool row — diffstats
+    ride the diffs panel; gap logged in issues.md.
+(f) FallbackAsk and PlanAsk render as modals reusing the permission-gate
+    pattern (top-of-body block, key-swallowing): fallback y = hop to proposed
+    / n = keep current -> ClientMsg::FallbackAnswer{chosen}; plan y = Approve
+    / n = Reject -> ClientMsg::PlanAnswer{decision}. FallbackResolved /
+    PlanResolved (matching ask_id) close the modals; resolution notes remain.
+    /mode plan|off (task 16) untouched.
+
+MODULE SPLITS (250-LOC discipline; todo-16 learnings assigned these to t19)
+  src/diffs.rs      NEW  69 prod-pure  (hunk view types + diffstats)
+  src/panels.rs     NEW 246 prod-pure  (modals + accordions + notes)
+  src/app_server.rs NEW 160 prod-pure  (ServerMsg dispatch half)
+  src/app.rs        296 -> 203 prod-pure (state + step)
+  src/app_input.rs  ~150 -> 248 prod-pure (key dispatch half, modal keys)
+  src/render.rs     ~200 ->  94 prod-pure (layout + scroll windowing)
+  src/transcript.rs 312 -> 317 prod-pure (pre-existing over-ceiling; DiffEntry
+                    extracted to diffs.rs, +hunk review methods; further split
+                    candidates: entries/apply_event vs team arms)
+  src/keys.rs       +3 (ToggleDiffs action, "toggle_diffs" config name, ctrl+5)
+
+TESTS (RED first, then green)
+-----------------------------
+RED capture (before implementation; tests written in final form — compile
+failure names the missing surfaces, the "function does not exist yet" red):
+
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-tui --test task19"
+  > error[E0432]: unresolved import `harness_tui::diffs`
+  > error[E0609]: no field `decision` on type `std::string::String`   (x4)
+  > error[E0599]: no method named `fallback_gate` found for struct `App` (x2)
+  > error[E0599]: no method named `plan_gate` found for struct `App`   (x2)
+  > error: could not compile `harness-tui` (test "task19") due to 9 previous errors
+
+HAPPY (diff -> accept e2e + live HUD + version):
+
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-tui diff_event_renders accept_and_reject unparseable usage_frame attach_negotiates"
+  > Starting 6 tests across 7 binaries (78 tests skipped)
+  > PASS harness-tui::task19 unparseable_hunk_renders_placeholder_not_crash
+  > PASS harness-tui diffs::tests::unparseable_hunks_never_count_and_are_detected
+  > PASS harness-tui::daemon_e2e attach_negotiates_protocol_version_two
+  > PASS harness-tui::task19 accept_and_reject_decide_pending_hunks_in_order
+  > PASS harness-tui::task19 diff_event_renders_hunk_lines_and_diffstats
+  > PASS harness-tui::task19 usage_frame_feeds_hud_cost_and_cache
+  > Summary [  0.059s] 6 tests run: 6 passed, 78 skipped
+
+  - diff_event_renders_hunk_lines_and_diffstats: a Diff frame + ctrl+5 renders
+    "diffs (1)", the path, "+2/-1" diffstats, and the "+added line" hunk body.
+  - accept_and_reject_decide_pending_hunks_in_order: y -> hunks[0].decision ==
+    Accepted (hunks[1] still Pending), n -> hunks[1] == Rejected, no-op once
+    nothing is pending, "[accepted]"/"[rejected]" markers + "hunk accepted:
+    src/lib.rs" note render.
+  - usage_frame_feeds_hud_cost_and_cache: Usage{input 1000, cache_read 900,
+    cost_usd_micros 250000} -> hud.cache_line() == "cache: 90.0%" and
+    cost_line contains "gpt-sol $0.25"; no "n/a"/"unpriced" remains.
+  - scroll_keys_move_the_body_window_and_refollow_on_new_events: 40-entry
+    transcript, tail shows line-39; 5x Up -> window spans line-18..line-37
+    (line-39 gone — the 3 collapsed accordion headers ride the body, so the
+    window math is 44 body lines); 5x Down -> tail back; a new frame resets
+    to auto-follow (line-40 visible).
+  - attach_negotiates_protocol_version_two (real daemon, attach level): the
+    daemon echoes the client's Hello proposal in HelloAck, so asserting
+    negotiated_version() == Some(PROTOCOL_VERSION == 2) fails the moment a
+    frontend proposes 1 (v1 wires lose usage/fallback/verdict silently).
+  - fallback_ask_is_modal_and_answerable / fallback_deny_keeps_the_current_model:
+    modal renders "fallback proposed: model-a -> model-b" + reason, swallows
+    typing, y -> FallbackAnswer{chosen.model=="model-b"}, n -> chosen.model
+    =="model-a"; FallbackResolved closes it.
+  - plan_ask_is_modal_and_answerable / plan_reject_keeps_plan_mode_active:
+    modal renders "plan 1 (revision 2) awaiting approval" + artifact preview,
+    y -> PlanAnswer{Approve}, n -> PlanAnswer{Reject}; PlanResolved closes it.
+  - Unit: hello_ack_records_the_negotiated_version (wire-decoded HelloAck),
+    fallback_and_plan_gates_open_and_resolve, diffs stats/parseability,
+    hud priced-turns accumulation (post routing_savings removal).
+
+FAILURE (unparseable hunk -> placeholder, not crash):
+
+  cmd /c "... cargo nextest run -p harness-tui unparseable"
+  > PASS harness-tui::task19 unparseable_hunk_renders_placeholder_not_crash
+  A hunk with no "@@" header line renders "(unparseable hunk)" (dim, marked
+  with its decision state) and never enters diffstat counting; rendering the
+  whole screen completes without panic.
+
+GATES
+-----
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-tui -p harness-cli"
+  > Summary [  7.256s] 158 tests run: 158 passed, 0 skipped
+
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+  > Finished `dev` profile [unoptimized + debuginfo] target(s) in 35.60s   (EXIT=0)
+
+SNAPSHOT DELTAS (reviewed, all intended):
+  4 screens .snap files: + "> diffs (0)" collapsed header; - "| saved $0.09
+  routing" HUD suffix (field removed); the body window shifted one line
+  mechanically (new header). insta assertion_line metadata dropped by the
+  current insta version on rewrite — not content.
+
+CONVERGENCE RECEIPT NOTE (5-project, plan draft C9)
+---------------------------------------------------
+Collapsed-by-default transcript detail — one line per tool with diffstats,
+expand on demand — is the 5-project convergence posture (Amp, Antigravity,
+Claude Code, Devin, goose; research/draft C9 receipts). Implemented as:
+tools accordion one-line rows (result first-line bounded), diffstats + hunk
+detail in the diffs accordion (its own on-demand expansion), all panels
+collapsed by default (Panels::collapsed(), unchanged posture).
+
+CONCURRENT-WORKER NOTES
+-----------------------
+- harness-daemon/src/osc.rs (todo-24 worker) was broken in-tree twice during
+  this task (serde_json::Json typo, then a type mismatch, then their PTY test
+  file); per protocol I waited (~100-180s each) and re-ran — both gates above
+  ran green against the merged tree including their tests. Zero cross-edits.
+- harness-cli/src/render.rs was NOT touched: no SessionEvent variants were
+  added (the task's expected outcome — the acceptance criteria needed none).

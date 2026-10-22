@@ -1,7 +1,7 @@
-//! HUD view model: context gauge, cache-hit percentage, per-model cost
-//! breakdown, and routing-savings estimate. Honest-unknown posture:
-//! fields the daemon does not feed yet render as explicitly absent,
-//! never as invented numbers.
+//! HUD view model: context gauge, cache-hit percentage, and
+//! per-model cost breakdown, fed live by protocol v2 Usage frames.
+//! Honest-unknown posture: fields the daemon does not feed yet
+//! render as explicitly absent, never as invented numbers.
 
 /// Per-model cost row (Devin /session-stats pattern).
 #[derive(Debug, Clone, PartialEq)]
@@ -23,8 +23,6 @@ pub struct HudUpdate {
     pub model: String,
     /// Cost delta for that turn.
     pub cost_delta: f64,
-    /// Routing savings vs the manual pick for that turn.
-    pub routing_savings: f64,
 }
 
 /// HUD state.
@@ -39,8 +37,6 @@ pub struct Hud {
     pub cache_hit_pct: Option<f64>,
     /// Per-model cost rows.
     pub model_costs: Vec<ModelCost>,
-    /// Accumulated routing savings, when any priced turn ran.
-    pub routing_savings: Option<f64>,
 }
 
 /// chars→tokens approximation for the context gauge (documented
@@ -60,7 +56,6 @@ impl Hud {
             context_used_tokens: None,
             cache_hit_pct: None,
             model_costs: Vec::new(),
-            routing_savings: None,
         }
     }
 
@@ -90,10 +85,6 @@ impl Hud {
                 turns: 1,
             });
         }
-        if update.cost_delta > 0.0 || update.routing_savings > 0.0 {
-            let saved = round_cents(self.routing_savings.unwrap_or(0.0) + update.routing_savings);
-            self.routing_savings = Some(saved);
-        }
     }
 
     /// Gauge percentage 0-100 of the context window, when anything is
@@ -114,22 +105,17 @@ impl Hud {
         }
     }
 
-    /// One-line cost summary: per-model rows plus routing savings, or
-    /// the honest unpriced state.
+    /// One-line cost summary: per-model rows, or the honest unpriced
+    /// state.
     #[must_use]
     pub fn cost_line(&self) -> String {
         let total: f64 = self.model_costs.iter().map(|r| r.cost).sum();
-        if total <= 0.0 && self.routing_savings.unwrap_or(0.0) <= 0.0 {
+        if total <= 0.0 {
             return "cost: unpriced (no usage events yet)".to_owned();
         }
         let mut line = String::from("cost:");
         for row in &self.model_costs {
             line.push_str(&format!(" {} ${:.2}", row.model, row.cost));
-        }
-        if let Some(saved) = self.routing_savings
-            && saved > 0.0
-        {
-            line.push_str(&format!(" | saved ${saved:.2} routing"));
         }
         line
     }
@@ -178,36 +164,31 @@ mod tests {
     }
 
     #[test]
-    fn priced_turns_accumulate_per_model_and_savings() {
+    fn priced_turns_accumulate_per_model() {
         let mut hud = Hud::new(100);
         hud.apply(&HudUpdate {
             cache_hit_pct: Some(90.0),
             model: "frontier-x".into(),
             cost_delta: 0.10,
-            routing_savings: 0.02,
         });
         hud.apply(&HudUpdate {
             cache_hit_pct: None,
             model: "cheap-y".into(),
             cost_delta: 0.01,
-            routing_savings: 0.05,
         });
         hud.apply(&HudUpdate {
             cache_hit_pct: Some(50.0),
             model: "frontier-x".into(),
             cost_delta: 0.20,
-            routing_savings: 0.0,
         });
         assert_eq!(hud.model_costs.len(), 2);
         assert_eq!(hud.model_costs[0].cost, 0.30);
         assert_eq!(hud.model_costs[0].turns, 2);
         assert_eq!(hud.model_costs[1].cost, 0.01);
-        assert_eq!(hud.routing_savings, Some(0.07));
         assert_eq!(hud.cache_line(), "cache: 50.0%");
         let line = hud.cost_line();
         assert!(line.contains("frontier-x $0.30"), "{line}");
         assert!(line.contains("cheap-y $0.01"), "{line}");
-        assert!(line.contains("saved $0.07 routing"), "{line}");
     }
 
     #[test]
@@ -217,7 +198,6 @@ mod tests {
             cache_hit_pct: Some(10.0),
             model: "m".into(),
             cost_delta: 0.0,
-            routing_savings: 0.0,
         });
         assert_eq!(hud.cost_line(), "cost: unpriced (no usage events yet)");
         assert_eq!(hud.cache_line(), "cache: 10.0%");

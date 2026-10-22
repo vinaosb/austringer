@@ -9,6 +9,8 @@ use harness_core::event::{ContentBlock, Event};
 use harness_daemon::protocol::{Frame, ServerMsg, SessionEvent};
 use harness_daemon::team::TeamStatus;
 
+pub use crate::diffs::{DiffEntry, HunkDecision};
+
 /// One transcript row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
@@ -44,15 +46,6 @@ pub struct TurnState {
     pub turn: u64,
     /// Outcome string once `turn_finished` arrived.
     pub outcome: Option<String>,
-}
-
-/// A surfaced semantic diff.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiffEntry {
-    /// Changed path.
-    pub path: String,
-    /// Rendered hunks.
-    pub hunks: Vec<String>,
 }
 
 /// Live child-session state (feeds the team grid); the state string
@@ -154,10 +147,7 @@ impl SessionView {
                 }
             }
             SessionEvent::Diff { path, hunks, .. } => {
-                self.diffs.push(DiffEntry {
-                    path: path.clone(),
-                    hunks: hunks.clone(),
-                });
+                self.diffs.push(DiffEntry::new(path, hunks.clone()));
             }
             SessionEvent::Notification { kind, message } => {
                 self.entries
@@ -345,6 +335,24 @@ impl SessionView {
     #[must_use]
     pub fn diffs(&self) -> &[DiffEntry] {
         &self.diffs
+    }
+
+    /// Hunks still awaiting review, across all diffs.
+    #[must_use]
+    pub fn pending_hunks(&self) -> usize {
+        self.diffs.iter().map(DiffEntry::pending_count).sum()
+    }
+
+    /// Decide the first pending hunk (hunk-review gate); returns the
+    /// owning path when a hunk was decided. Client-side state until
+    /// the wire carries hunk decisions.
+    pub fn decide_next_hunk(&mut self, decision: HunkDecision) -> Option<String> {
+        for diff in &mut self.diffs {
+            if diff.decide_next_pending(decision).is_some() {
+                return Some(diff.path.clone());
+            }
+        }
+        None
     }
 
     /// Child cells for the team grid.

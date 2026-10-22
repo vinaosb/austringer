@@ -67,7 +67,6 @@ fn populated_app() -> App {
         cache_hit_pct: Some(72.5),
         model: "frontier-x".into(),
         cost_delta: 0.42,
-        routing_savings: 0.09,
     });
     app
 }

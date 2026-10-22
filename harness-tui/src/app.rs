@@ -1,15 +1,15 @@
-//! The headless UI state machine: one input event in, state transition
+﻿//! The headless UI state machine: one input event in, state transition
 //! plus outgoing actions out. This is the entire interface logic, and
-//! it is fully testable without a terminal — the binary only wires a
+//! it is fully testable without a terminal â€” the binary only wires a
 //! crossterm reader and the daemon client to [`App::step`].
 //!
 //! Event-driven by construction: `step` never blocks, never sleeps,
 //! and marks the app dirty only when observable state changed. The UI
-//! loop renders iff [`App::should_redraw`] — there is no timer, no
+//! loop renders iff [`App::should_redraw`] â€” there is no timer, no
 //! poll, and therefore 0% idle CPU (pinned by test).
 
 use harness_daemon::protocol::{
-    Answer, AskPayload, ClientMsg, PlanOutcome, Resolution, ServerMsg,
+    Answer, AskPayload, ClientMsg, FallbackAskPayload, PlanAskPayload, ServerMsg,
 };
 
 use crate::hud;
@@ -70,6 +70,8 @@ pub struct Panels {
     pub tools: bool,
     /// Team-grid accordion.
     pub team: bool,
+    /// Hunk-review accordion.
+    pub diffs: bool,
 }
 
 impl Panels {
@@ -80,6 +82,7 @@ impl Panels {
             transcript: false,
             tools: false,
             team: false,
+            diffs: false,
         }
     }
 }
@@ -112,8 +115,17 @@ pub struct App {
     pub(crate) bar_focused: bool,
     /// Collapsed accordions.
     pub panels: Panels,
+    /// Body scroll offset in lines from the tail (0 = auto-follow).
+    pub(crate) scroll_offset: usize,
     pub(crate) gate: Option<AskPayload>,
     pub(crate) pending: Option<Answer>,
+    pub(crate) fallback_gate: Option<FallbackAskPayload>,
+    pub(crate) fallback_pending: Option<&'static str>,
+    pub(crate) plan_gate: Option<PlanAskPayload>,
+    pub(crate) plan_pending: Option<&'static str>,
+    /// Wire version the daemon acked (HelloAck echoes the client's
+    /// proposal); `None` before the first attach.
+    pub(crate) negotiated_version: Option<u32>,
     pub(crate) completions: Box<dyn CompletionSource>,
     /// Connection state for the status area.
     pub conn: Conn,
@@ -135,8 +147,14 @@ impl App {
             binds: Keybinds::defaults(),
             bar_focused: false,
             panels: Panels::collapsed(),
+            scroll_offset: 0,
             gate: None,
             pending: None,
+            fallback_gate: None,
+            fallback_pending: None,
+            plan_gate: None,
+            plan_pending: None,
+            negotiated_version: None,
             completions: Box::new(NoCompletions),
             conn: Conn::Disconnected,
             show_hud: true,
@@ -181,6 +199,43 @@ impl App {
     #[must_use]
     pub fn gate(&self) -> Option<&AskPayload> {
         self.gate.as_ref()
+    }
+
+    /// The active model-fallback ask, if its modal is open.
+    #[must_use]
+    pub fn fallback_gate(&self) -> Option<&FallbackAskPayload> {
+        self.fallback_gate.as_ref()
+    }
+
+    /// What this client answered the open fallback ask, if it did.
+    #[must_use]
+    pub fn fallback_pending_label(&self) -> Option<&'static str> {
+        self.fallback_pending
+    }
+
+    /// The active plan-approval ask, if its modal is open.
+    #[must_use]
+    pub fn plan_gate(&self) -> Option<&PlanAskPayload> {
+        self.plan_gate.as_ref()
+    }
+
+    /// What this client answered the open plan ask, if it did.
+    #[must_use]
+    pub fn plan_pending_label(&self) -> Option<&'static str> {
+        self.plan_pending
+    }
+
+    /// The wire version negotiated at attach (the daemon echoes the
+    /// client's Hello proposal); `None` before the first attach.
+    #[must_use]
+    pub const fn negotiated_version(&self) -> Option<u32> {
+        self.negotiated_version
+    }
+
+    /// Body scroll offset in lines from the tail (0 = auto-follow).
+    #[must_use]
+    pub const fn scroll_offset(&self) -> usize {
+        self.scroll_offset
     }
 
     /// Completion candidates for the omnibar's active token.
@@ -236,140 +291,6 @@ impl App {
             UiEvent::Server(msg) => self.server(msg),
         }
     }
-
-    fn server(&mut self, msg: ServerMsg) -> Vec<UiAction> {
-        match msg {
-            ServerMsg::HelloAck { .. } => {
-                if self.conn != Conn::Attached {
-                    self.conn = Conn::Attached;
-                    self.dirty = true;
-                }
-            }
-            ServerMsg::Event { frame } => {
-                self.view.apply_frame(&frame);
-                self.hud.estimate_context(self.view.context_chars());
-                self.dirty = true;
-            }
-            ServerMsg::PermissionAsk { ask } => {
-                self.gate = Some(ask);
-                self.pending = None;
-                self.dirty = true;
-            }
-            ServerMsg::PermissionResolved { ask_id, resolution } => {
-                if self.gate.as_ref().is_some_and(|ask| ask.ask_id == ask_id) {
-                    self.gate = None;
-                    self.pending = None;
-                }
-                self.view.note(&resolution_note(ask_id, &resolution));
-                self.dirty = true;
-            }
-            ServerMsg::StateResyncRequired { .. } | ServerMsg::Snapshot { .. } => {
-                self.view.apply_server_msg(&msg);
-                self.hud.estimate_context(self.view.context_chars());
-                self.dirty = true;
-            }
-            ServerMsg::Error { code, message } => {
-                self.view
-                    .note(&format!("daemon error ({code:?}): {message}"));
-                self.dirty = true;
-            }
-            ServerMsg::MediaResult {
-                producer,
-                diff_summary,
-                ..
-            } => {
-                self.view.note(&format!("media ({producer}): {diff_summary}"));
-                self.dirty = true;
-            }
-            ServerMsg::Usage {
-                model,
-                input_tokens,
-                output_tokens,
-                ..
-            } => {
-                self.view.note(&format!(
-                    "model {}: {input_tokens} in / {output_tokens} out",
-                    model.model
-                ));
-                self.dirty = true;
-            }
-            ServerMsg::FallbackAsk { ask } => {
-                self.view.note(&format!(
-                    "fallback proposed: {} -> {} ({})",
-                    ask.current.model, ask.proposed.model, ask.reason
-                ));
-                self.dirty = true;
-            }
-            ServerMsg::FallbackResolved { ask_id, chosen } => {
-                self.view.note(&format!("fallback {ask_id} resolved: next model {}", chosen.model));
-                self.dirty = true;
-            }
-            ServerMsg::Verdict {
-                turn,
-                verdict,
-                evidence,
-            } => {
-                self.view.note(&format!(
-                    "turn {turn} verdict: {} ({} evidence events)",
-                    verdict.as_str(),
-                    evidence.len()
-                ));
-                self.dirty = true;
-            }
-            ServerMsg::PlanAsk { ask } => {
-                self.view.note(&format!(
-                    "plan {} (revision {}) awaiting approval — approve, edit, or reject it",
-                    ask.plan_id, ask.revision
-                ));
-                self.dirty = true;
-            }
-            ServerMsg::PlanResolved {
-                ask_id,
-                plan_id,
-                outcome,
-            } => {
-                self.view
-                    .note(&plan_resolution_note(ask_id, plan_id, &outcome));
-                self.dirty = true;
-            }
-            ServerMsg::Bye { reason } => {
-                self.view.note(&format!("daemon closed: {reason}"));
-                self.dirty = true;
-            }
-            ServerMsg::Pong => {}
-        }
-        Vec::new()
-    }
-}
-
-fn resolution_note(ask_id: u64, resolution: &Resolution) -> String {
-    let describe = |verb: &str, by: &str| format!("ask {ask_id} {verb} by {by}");
-    match resolution {
-        Resolution::Allowed { by } => describe("allowed", by),
-        Resolution::Denied { by } => describe("denied", by),
-        Resolution::Cancelled { by } => describe("cancelled", by),
-        Resolution::Timeout => format!("ask {ask_id} timed out"),
-    }
-}
-
-fn plan_resolution_note(ask_id: u64, plan_id: u64, outcome: &PlanOutcome) -> String {
-    match outcome {
-        PlanOutcome::Approved { by } => {
-            format!("plan ask {ask_id}: plan {plan_id} approved by {by}; writes re-armed")
-        }
-        PlanOutcome::Rejected { by } => {
-            format!("plan ask {ask_id}: plan {plan_id} rejected by {by}; still gated")
-        }
-        PlanOutcome::Edited { by, .. } => {
-            format!("plan ask {ask_id}: plan {plan_id} edited by {by}; re-gated on the new revision")
-        }
-        PlanOutcome::Cancelled { by } => {
-            format!("plan ask {ask_id}: withdrawn by {by}; plan {plan_id} stays pending")
-        }
-        PlanOutcome::Timeout => format!(
-            "plan ask {ask_id} timed out; plan {plan_id} stays pending (never auto-approved)"
-        ),
-    }
 }
 
 #[cfg(test)]
@@ -378,7 +299,7 @@ mod tests {
     use crate::keys::Action;
     use crate::omnibar::{self, Parsed};
     use harness_core::event::{ContentBlock, Event};
-    use harness_daemon::protocol::{Frame, SessionCommand, SessionEvent};
+    use harness_daemon::protocol::{Frame, Resolution, SessionCommand, SessionEvent};
 
     struct NoSrc;
     impl CompletionSource for NoSrc {
@@ -626,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_ask_and_resolution_surface_as_notes() {
+    fn plan_ask_opens_the_modal_and_resolution_notes() {
         use harness_daemon::protocol::{PlanAskPayload, PlanOutcome};
         let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
         app.step(UiEvent::Server(ServerMsg::PlanAsk {
@@ -638,7 +559,7 @@ mod tests {
                 deadline_ms: 30_000,
             },
         }));
-        assert!(app.view.notes().iter().any(|n| n.contains("plan 1")));
+        assert_eq!(app.plan_gate().map(|ask| ask.plan_id), Some(1));
         app.step(UiEvent::Server(ServerMsg::PlanResolved {
             ask_id: 4,
             plan_id: 1,
@@ -646,6 +567,7 @@ mod tests {
                 by: "tui".into(),
             },
         }));
+        assert!(app.plan_gate().is_none());
         assert!(
             app.view
                 .notes()
