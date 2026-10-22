@@ -97,7 +97,10 @@ fn import_map_targets_decode_to_the_exact_module_sources() {
         .get("imports")
         .and_then(|v| v.as_object())
         .unwrap_or_else(|| panic!("import map lacks an imports object"));
-    assert_eq!(imports.len(), 4, "spa/proto, spa/store, spa/share, spa/ui");
+    // Count derives from the mirror, not a pinned literal: a registry
+    // module added without a mirror entry fails here or in the
+    // per-module equality below.
+    assert_eq!(imports.len(), JS_SOURCES.len());
     let by_bare_name = |bare: &str| {
         JS_SOURCES
             .iter()
@@ -127,6 +130,7 @@ fn import_map_targets_decode_to_the_exact_module_sources() {
 /// registry's JS_MODULES table from the harness-web crate.
 const JS_SOURCES: &[(&str, &str)] = &[
     ("proto", include_str!("../assets/proto.js")),
+    ("grammar", include_str!("../assets/grammar.js")),
     ("store", include_str!("../assets/store.js")),
     ("share", include_str!("../assets/share.js")),
     ("ui", include_str!("../assets/ui.js")),
