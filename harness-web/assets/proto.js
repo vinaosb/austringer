@@ -1,14 +1,21 @@
-// Protocol v1 codec + transports for the harness web SPA (todo 37).
+// Protocol codec + transports for the harness web SPA (todo 37).
 // Zero-build ES module: no bundler, no CDN, loopback daemon only.
 //
 // Wire shapes mirror harness-daemon/src/protocol.rs exactly:
 //   client: {type:"hello",version,token,client_id,session?}
 //           {type:"command",command:{type:"submit"|"steer"|"cancel",...}}
 //           {type:"permission_answer",ask_id,answer:"allow_once"|"allow_session"|"deny"}
-//           {type:"permission_cancel",ask_id} {type:"ping"}
+//           {type:"permission_cancel",ask_id}
+//           {type:"fallback_answer",ask,chosen:{provider,model}}
+//           {type:"plan_answer",ask,decision:"approve"|"reject"|{edit:{artifact}}}
+//           {type:"ping"}
 //   server: hello_ack | event | permission_ask | permission_resolved |
-//           state_resync_required | snapshot | error | pong | bye
-export const PROTOCOL_VERSION = 1;
+//           state_resync_required | snapshot | error | pong | bye |
+//           usage | fallback_ask | fallback_resolved | verdict |
+//           plan_ask | plan_resolved
+// The client negotiates protocol v2 (todo 20): the v2 frames above
+// flow, and the SSE fallback opts in via ?version=2.
+export const PROTOCOL_VERSION = 2;
 
 // Total decoder: garbage in, {ok:false} out — the store never throws.
 export function decode(text) {
@@ -41,6 +48,7 @@ export function connect({ base, token, session, onMessage, onStatus }) {
   const wsURL = `ws://${base}/s/${encodeURIComponent(session)}/attach?token=${encodeURIComponent(token)}`;
   const sseURL = (after) =>
     `/s/${encodeURIComponent(session)}/events?token=${encodeURIComponent(token)}` +
+    `&version=${PROTOCOL_VERSION}` +
     (after > 0 ? `&after=${after}` : "");
 
   const status = (state) => onStatus(state, controller);

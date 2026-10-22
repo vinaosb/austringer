@@ -117,6 +117,111 @@ async function main() {
       await ctxB.close();
     });
 
+    // todo 20: dashboard drill — session history (fixture run verdict +
+    // per-session cost from v2 usage frames) -> per-turn changed-files
+    // timeline -> collapsed-by-default transcript focus view. The macro
+    // -> micro path the acceptance criteria name. Runs on its own
+    // fixture session (e2e-drill): the scripted stack serves one echo
+    // turn per session, and the engine runs no inference after a
+    // completed task — scenario 1 consumed session e2e's turn.
+    await scenario("happy: history cost+verdict, timeline files per turn, workers, trends, focus view (todo 20)", async () => {
+      const ctx = await browser.newContext();
+      const a = await openSession(ctx, base, token, "e2e-drill");
+      await a.page.waitForSelector(".status-open", { timeout: 10000 });
+
+      // The e2e connection negotiates protocol version 2.
+      await a.page.waitForSelector("[data-testid=proto-version]", { timeout: 5000 });
+      assert.equal(
+        await a.page.textContent("[data-testid=proto-version]"),
+        "v2",
+        "web client must negotiate protocol v2",
+      );
+
+      // Workers panel non-empty from the fixture children (team frames
+      // retained in the attach snapshot).
+      await a.page.waitForSelector("[data-testid=team] [data-child]", { timeout: 5000 });
+      const children = await a.page.locator("[data-testid=team] [data-child]").count();
+      assert.ok(children >= 2, `workers panel renders the fixture children (saw ${children})`);
+      assert.match(
+        await a.page.textContent("[data-testid=team-status]"),
+        /in_progress/,
+        "team aggregate respects the Warp precedence port",
+      );
+
+      // Run the session's turn: ask -> echo -> diff + two live v2
+      // usage frames (usage broadcasts reach only live subscribers).
+      await a.page.fill("[data-testid=composer]", "drill: history, timeline, focus");
+      await a.page.click("button[type=submit]");
+      await a.page.waitForSelector(".gate-ask", { timeout: 10000 });
+      await a.page.click(".gate-ask button:has-text(\"y (once)\")");
+      await a.page.waitForFunction(
+        () => document.querySelector("[data-testid=transcript]")?.textContent?.includes("done: turn completed"),
+        undefined,
+        { timeout: 10000 },
+      );
+
+      // History: the fixture scheduled-run verdict (task-2 route)…
+      await a.page.waitForSelector("[data-testid=history]", { timeout: 5000 });
+      assert.match(
+        await a.page.textContent("[data-testid=history]"),
+        /confirmed/,
+        "history shows the fixture run verdict",
+      );
+      // …and the per-session cost total fed by v2 usage frames (the
+      // identity-bearing fixture prices each of the turn's two
+      // inferences at 6720 micro-USD: exactly $0.013440).
+      await a.page.waitForFunction(
+        () => (document.querySelector("[data-testid=history-cost]")?.textContent || "").includes("$0.013440"),
+        undefined,
+        { timeout: 10000 },
+      );
+
+      // Timeline: changed files grouped under their turn.
+      const timeline = await a.page.textContent("[data-testid=timeline]");
+      assert.match(timeline, /turn 1/, "timeline groups changed files by turn");
+      assert.match(timeline, /src\/demo\.rs/, "timeline lists the changed file");
+
+      // Trends: fed by the v2 usage frames (model identity + cost).
+      const trends = await a.page.textContent("[data-testid=eval-trends]");
+      assert.match(trends, /claude-sonnet-4-5/, "trends names the serving model");
+      assert.match(trends, /\$/, "trends carries cost");
+
+      // Focus view: transcript collapses by default and expands on demand.
+      const firstEntry = a.page.locator("[data-testid=transcript-entry]").first();
+      assert.ok(
+        await firstEntry.evaluate((n) => n.classList.contains("entry-collapsed")),
+        "transcript entries render collapsed by default",
+      );
+      await firstEntry.locator("button:has-text(\"focus\")").click();
+      assert.ok(
+        await firstEntry.evaluate((n) => n.classList.contains("entry-open")),
+        "focus expands the entry",
+      );
+
+      assert.deepEqual(a.errors, [], "no page errors");
+      await ctx.close();
+    });
+
+    // todo 20 failure QA: an empty history renders the empty-state, not
+    // a spinner that never resolves.
+    await scenario("failure: empty history renders an empty-state, not a spinner", async () => {
+      const ctx = await browser.newContext();
+      const a = await openSession(ctx, base, token, "e2e-empty");
+      await a.page.waitForSelector("[data-testid=history]", { timeout: 5000 });
+      await a.page.waitForSelector("[data-testid=history-empty]", { timeout: 10000 });
+      assert.match(
+        await a.page.textContent("[data-testid=history-empty]"),
+        /no scheduled runs/,
+        "empty history names its empty-state",
+      );
+      const busy = await a.page
+        .locator("[data-testid=history] [aria-busy=true], [data-testid=history] .loading")
+        .count();
+      assert.equal(busy, 0, "no spinner may be stuck on the history panel");
+      assert.deepEqual(a.errors, [], "no page errors");
+      await ctx.close();
+    });
+
     await scenario("failure: expired share link renders 410 Gone", async () => {
       const ctx = await browser.newContext();
       const page = await ctx.newPage();

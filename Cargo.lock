@@ -3102,6 +3102,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64ct",
  "blake3",
  "bytes",
  "futures-util",
@@ -3123,6 +3124,7 @@ dependencies = [
  "harness-web",
  "interprocess",
  "libc",
+ "portable-pty",
  "reqwest",
  "serde",
  "serde_json",
@@ -3468,6 +3470,7 @@ dependencies = [
  "futures-util",
  "harness-core",
  "harness-daemon",
+ "harness-providers",
  "reqwest",
  "serde_json",
  "tempfile",

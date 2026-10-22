@@ -25,6 +25,8 @@ export function el(tag, attrs = {}, children = []) {
 
 const fmt = (n) => String(n);
 
+const fmtUsd = (micros) => `$${(micros / 1e6).toFixed(6)}`;
+
 export function render(root, view, state, props, actions) {
   root.replaceChildren();
   if (view === "share") {
@@ -74,6 +76,15 @@ function statusBanner(state, props) {
     el("strong", { text: `harness · ${props.session || "dashboard"}` }),
     el("span", { class: `status status-${props.status}`, text: props.status }),
   ];
+  if (state.hello && state.hello.version) {
+    bits.push(
+      el("span", {
+        class: "status",
+        "data-testid": "proto-version",
+        text: `v${state.hello.version}`,
+      }),
+    );
+  }
   if (props.transport) {
     bits.push(el("span", { class: "transport", text: props.transport }));
   }
@@ -124,7 +135,6 @@ function dashboardView(state, props, actions) {
   return el("main", { class: "dashboard" }, [
     sessions,
     toolHeatmap(state),
-    trendsPanel(state),
     packsPanel(state, props),
   ]);
 }
@@ -155,6 +165,9 @@ function toolHeatmap(state) {
   return panel;
 }
 
+// Trends: turn outcomes plus per-model cost/token mix and cache
+// efficiency from the v2 Usage frames. Lives in the session view —
+// trends only exist where a session is attached.
 function trendsPanel(state) {
   const panel = el("section", { class: "panel", "data-testid": "eval-trends" }, [
     el("h2", { text: "trends" }),
@@ -169,8 +182,157 @@ function trendsPanel(state) {
       el("ul", { class: "trend" }, outcomes.map((o, i) => el("li", { text: `#${i + 1} ${o}` }))),
     );
   }
-  panel.append(el("p", { class: "na", text: "cost / cache / eval scores: not carried by protocol v1" }));
+  const usage = state.usage;
+  if (usage.frames === 0) {
+    panel.append(
+      el("p", { class: "empty", text: "cost / cache / model trends appear as turns report usage (v2 frames)" }),
+    );
+    return panel;
+  }
+  const cacheTotal = usage.cacheRead + usage.inputTokens;
+  const cacheHit = cacheTotal > 0 ? Math.round((usage.cacheRead / cacheTotal) * 100) : 0;
+  panel.append(
+    el("p", {
+      class: "trend-cost",
+      text: `${fmtUsd(usage.totalCostMicros)} across ${usage.frames} usage frames · cache hit ${cacheHit}%`,
+    }),
+  );
+  for (const [label, stat] of Object.entries(usage.models)) {
+    panel.append(
+      el("div", { class: "row" }, [
+        el("span", { class: "heat-label", text: label }),
+        el("span", {
+          class: "heat-bar",
+          "data-count": fmt(stat.frames),
+          style: `width:${Math.max(6, Math.min(100, Math.round((stat.frames / usage.frames) * 100)))}%`,
+        }, [el("span", { text: `${fmt(stat.frames)}f` })]),
+        el("span", { class: "hint", text: fmtUsd(stat.costMicros) }),
+      ]),
+    );
+  }
   return panel;
+}
+
+// Session history: scheduled-run rows from GET /s/{sid}/history,
+// per-session cost/model totals from the v2 usage frames, gate
+// verdicts with evidence links into the replay log, and the asks
+// answered during this attach.
+function historyPanel(state, props, actions) {
+  const box = el("section", { class: "panel", "data-testid": "history" }, [
+    el("h2", { text: "history" }),
+  ]);
+  const usage = state.usage;
+  box.append(
+    el("p", {
+      "data-testid": "history-cost",
+      text:
+        usage.frames === 0
+          ? "cost: no usage frames yet — totals appear as turns run"
+          : `${fmtUsd(usage.totalCostMicros)} · ${usage.frames} usage frames · in ${fmt(usage.inputTokens)} out ${fmt(usage.outputTokens)} tokens`,
+    }),
+  );
+  if (usage.frames > 0) {
+    box.append(
+      el("p", {
+        class: "hint",
+        text: `models: ${Object.entries(usage.models)
+          .map(([label, stat]) => `${label} (${stat.frames}f)`)
+          .join(", ")}`,
+      }),
+    );
+  }
+  for (const verdict of state.verdicts) {
+    const evidence = verdict.evidence.map((id) => {
+      const idx = state.frames.findIndex((f) => f.id === id);
+      return idx >= 0
+        ? el("button", {
+            class: "evidence-link",
+            text: `#${id}`,
+            onclick: () => actions.replaySeek(idx),
+          })
+        : el("span", { class: "hint", text: `#${id}` });
+    });
+    box.append(
+      el("div", { class: "row", "data-testid": "history-verdict" }, [
+        el("span", {
+          class: `status verdict-${verdict.verdict}`,
+          text: verdict.verdict,
+        }),
+        el("span", { class: "hint", text: `turn ${verdict.turn}` }),
+        el("span", { class: "hint", text: "evidence:" }),
+        ...evidence,
+      ]),
+    );
+  }
+  if (!props.historyLoaded) {
+    box.append(el("p", { class: "hint", text: "loading run history…" }));
+  } else if (!props.history || props.history.length === 0) {
+    box.append(
+      el("p", {
+        class: "empty",
+        "data-testid": "history-empty",
+        text: "no scheduled runs recorded for this session",
+      }),
+    );
+  } else {
+    for (const run of props.history) {
+      box.append(
+        el("div", { class: "row", "data-testid": "history-run" }, [
+          el("strong", { text: run.automation_id || "automation" }),
+          el("span", { class: "hint", text: run.outcome || "" }),
+          run.verdict
+            ? el("span", { class: `status verdict-${run.verdict}`, text: run.verdict })
+            : null,
+          el("span", { class: "hint", text: `fired ${fmt(run.fired_at_minute)}` }),
+          el("span", { class: "hint", text: `net ${fmt(run.network || "")}` }),
+        ]),
+      );
+    }
+  }
+  if (state.resolvedLog.length > 0) {
+    const log = el("div", { "data-testid": "resolved-log" }, [
+      el("h3", { text: "asks answered" }),
+    ]);
+    for (const entry of state.resolvedLog) {
+      const resolution = entry.resolution || {};
+      const kind =
+        typeof resolution === "string" ? resolution : resolution.type || Object.keys(resolution)[0] || "?";
+      const by = typeof resolution === "object" ? resolution.by || "" : "";
+      log.append(el("p", { class: "hint", text: `ask ${entry.askId}: ${kind}${by ? ` by ${by}` : ""}` }));
+    }
+    box.append(log);
+  }
+  return box;
+}
+
+// Changed-files-by-turn (receipts: OpenCode #55064 Changed-files-by-turn;
+// Devin Session Insights): diff events grouped under the turn that
+// produced them.
+function timelinePanel(state) {
+  const box = el("section", { class: "panel", "data-testid": "timeline" }, [
+    el("h2", { text: "changed files by turn" }),
+  ]);
+  if (state.timeline.length === 0) {
+    box.append(
+      el("p", { class: "empty", text: "no changed files yet — diffs land here grouped by turn" }),
+    );
+    return box;
+  }
+  const turns = new Map();
+  for (const entry of state.timeline) {
+    const files = turns.get(entry.turn) || [];
+    if (!files.includes(entry.path)) files.push(entry.path);
+    turns.set(entry.turn, files);
+  }
+  for (const [turn, files] of turns) {
+    box.append(
+      el("div", { class: "row", "data-testid": "timeline-turn" }, [
+        el("strong", { text: `turn ${turn}` }),
+        el("code", { text: files.join(" · ") }),
+      ]),
+    );
+  }
+  return box;
 }
 
 function packsPanel(state, props) {
@@ -215,8 +377,11 @@ function sessionView(state, props, actions) {
     hud(state),
     gates(state, actions),
     teamPanel(state),
+    historyPanel(state, props, actions),
+    timelinePanel(state),
+    trendsPanel(state),
     diffs(state, actions),
-    transcript(state),
+    transcript(state, props, actions),
     composer(state, props, actions),
     replay(state, props, actions),
     shareBox(state, actions),
@@ -309,6 +474,11 @@ function stat(label, value) {
   ]);
 }
 
+const identityLabel = (identity) =>
+  identity && typeof identity === "object"
+    ? `${identity.provider || "?"}/${identity.model || "?"}`
+    : "?/?";
+
 function gates(state, actions) {
   const box = el("section", { class: "gates", "data-testid": "gates" });
   for (const ask of Object.values(state.asks)) {
@@ -322,6 +492,43 @@ function gates(state, actions) {
           el("button", { text: "a (session)", onclick: () => actions.answer(ask.ask_id, "allow_session") }),
           el("button", { text: "n (deny)", onclick: () => actions.answer(ask.ask_id, "deny") }),
           el("button", { text: "cancel-vote", onclick: () => actions.cancelVote(ask.ask_id) }),
+        ]),
+      ]),
+    );
+  }
+  // Model-fallback asks reuse the gates surface: keep the current
+  // model or acknowledge the proposed hop — any other resolution
+  // retries the SAME model, never a silent substitution.
+  for (const ask of Object.values(state.fallbackAsks)) {
+    box.append(
+      el("div", { class: "gate-ask fallback", "data-testid": "fallback-ask", "data-ask": fmt(ask.askId) }, [
+        el("strong", { text: "model fallback proposed" }),
+        el("p", {}, [
+          el("code", { text: identityLabel(ask.current) }),
+          el("span", { text: " → " }),
+          el("code", { text: identityLabel(ask.proposed) }),
+        ]),
+        el("p", { text: ask.reason }),
+        el("div", { class: "gate-actions" }, [
+          el("button", { text: "keep current", onclick: () => actions.answerFallback(ask.askId, ask.current) }),
+          el("button", { text: "switch to proposed", onclick: () => actions.answerFallback(ask.askId, ask.proposed) }),
+        ]),
+      ]),
+    );
+  }
+  // Plan-approval asks: approve ends plan mode and re-arms writes per
+  // the autonomy matrix; reject keeps plan mode active — nothing ever
+  // auto-approves a plan.
+  for (const ask of Object.values(state.planAsks)) {
+    const pre = el("pre", { class: "hunks plan-artifact" });
+    pre.textContent = ask.artifact;
+    box.append(
+      el("div", { class: "gate-ask plan", "data-testid": "plan-ask", "data-ask": fmt(ask.askId) }, [
+        el("strong", { text: `plan approval · revision ${ask.revision}` }),
+        pre,
+        el("div", { class: "gate-actions" }, [
+          el("button", { text: "approve", onclick: () => actions.answerPlan(ask.askId, "approve") }),
+          el("button", { text: "reject", onclick: () => actions.answerPlan(ask.askId, "reject") }),
         ]),
       ]),
     );
@@ -351,15 +558,46 @@ function diffs(state, actions) {
   return box;
 }
 
-function transcript(state) {
+const PREVIEW_LIMIT = 140;
+
+// Collapsed-by-default transcript (receipt: Claude /focus; the
+// 5-project convergence on one-line-per-entry): each entry renders a
+// single-line preview until its focus control expands it.
+function transcript(state, props, actions) {
   const box = el("section", { class: "transcript", "data-testid": "transcript" });
   for (const entry of state.transcript) {
+    const open = props.expanded.has(entry.seq);
+    const text = entry.text || "";
+    const singleLine = text.split("\n")[0] || "";
+    const preview = open || singleLine.length <= PREVIEW_LIMIT
+      ? singleLine
+      : `${singleLine.slice(0, PREVIEW_LIMIT)}…`;
     box.append(
-      el("article", { class: `entry entry-${entry.role}`, "data-role": entry.role }, [
-        el("span", { class: "entry-role", text: entry.role }),
-        entry.tool ? el("code", { class: "entry-tool", text: entry.tool }) : null,
-        el("p", { class: "entry-text", text: entry.text }),
-      ]),
+      el(
+        "article",
+        {
+          class: `entry entry-${entry.role} ${open ? "entry-open" : "entry-collapsed"}`,
+          "data-role": entry.role,
+          "data-testid": "transcript-entry",
+          "data-seq": fmt(entry.seq),
+        },
+        [
+          el("span", { class: "entry-role", text: entry.tool ? `${entry.role}:${entry.tool}` : entry.role }),
+          el("p", { class: "entry-text", text: preview }),
+          el("button", {
+            class: "focus-toggle",
+            text: open ? "collapse" : "focus",
+            onclick: () => actions.toggleFocus(entry.seq),
+          }),
+          open && text !== preview
+            ? (() => {
+                const pre = el("pre", { class: "entry-full" });
+                pre.textContent = text;
+                return pre;
+              })()
+            : null,
+        ],
+      ),
     );
   }
   if (state.transcript.length === 0) {
@@ -421,7 +659,7 @@ function composer(state, props, actions) {
     ]),
     el("p", {
       class: "hint",
-      text: "images preview locally; protocol v1 submit carries text only (media upload endpoint disclosed for the daemon)",
+      text: "images preview locally; submits carry text only (the v2 media upload endpoint is disclosed for the daemon)",
     }),
   ]);
   return form;

@@ -39,6 +39,9 @@ function boot() {
     packs: [],
     mcpServers: [],
     replayIdx: null,
+    history: [],
+    historyLoaded: false,
+    expanded: new Set(),
     session: sessionFromPath(location.pathname),
     shareHash: location.hash.startsWith("#share=") ? location.hash : null,
     token: initialToken(),
@@ -53,6 +56,9 @@ function boot() {
     packs: app.packs,
     mcpServers: app.mcpServers,
     replayIdx: app.replayIdx ?? (app.store.getState().frames.length - 1),
+    history: app.history,
+    historyLoaded: app.historyLoaded,
+    expanded: app.expanded,
     share: app.shareParsed,
   });
 
@@ -92,6 +98,25 @@ function boot() {
     },
     cancelVote(askId) {
       send({ type: "permission_cancel", ask_id: askId });
+    },
+    // FallbackAnswer keys on the SERVER-assigned connection identity at
+    // the transport pump — the identity object is echoed verbatim from
+    // the ask (garbage resolves deny-side server-side).
+    answerFallback(askId, chosen) {
+      send({ type: "fallback_answer", ask: askId, chosen });
+    },
+    answerPlan(askId, decision) {
+      // PlanDecision is externally tagged on the wire: "approve" |
+      // "reject" ride as bare strings.
+      send({ type: "plan_answer", ask: askId, decision });
+    },
+    toggleFocus(seq) {
+      if (app.expanded.has(seq)) {
+        app.expanded.delete(seq);
+      } else {
+        app.expanded.add(seq);
+      }
+      repaint();
     },
     replaySeek(index) {
       app.replayIdx = index;
@@ -144,6 +169,29 @@ function boot() {
         repaint();
       }
     },
+    // GET /s/{sid}/history (task-2 route). A typed 404 (unknown
+    // session, e.g. raced ahead of the WS attach) renders the same
+    // empty-state as an empty run list — never a stuck spinner.
+    async loadHistory() {
+      if (!app.token || !app.session) return;
+      try {
+        const response = await fetch(`/s/${encodeURIComponent(app.session)}/history`, {
+          headers: { authorization: `Bearer ${app.token}` },
+        });
+        if (response.status === 401) {
+          store.dispatch(JSON.stringify({ type: "error", code: "auth", message: "unauthorized" }));
+          return;
+        }
+        const body = await response.json();
+        app.history = Array.isArray(body) ? body : [];
+        app.historyLoaded = true;
+        repaint();
+      } catch {
+        app.history = [];
+        app.historyLoaded = true;
+        repaint();
+      }
+    },
     reconnect() {
       connectAll();
     },
@@ -169,6 +217,12 @@ function boot() {
       onStatus: (state, controller) => {
         app.status = state;
         app.transport = controller.mode === "ws" ? "websocket" : controller.mode === "sse" ? "sse" : "";
+        // The history route needs the session to exist server-side; a
+        // fetch raced ahead of the attach gets a typed 404, so retry
+        // once the connection is open.
+        if (state === "open" && !app.historyLoaded) {
+          actions.loadHistory();
+        }
         repaint();
       },
     });

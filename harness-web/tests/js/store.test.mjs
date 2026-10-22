@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createStore } from "../../assets/store.js";
-import { decode } from "../../assets/proto.js";
+import { PROTOCOL_VERSION, decode } from "../../assets/proto.js";
 
 // The store consumes wire strings, exactly what the transport hands it.
 function feed(store, msg) {
@@ -236,4 +236,140 @@ test("proto: decode is total — garbage in, typed failure out", () => {
   const good = decode('{"type":"pong"}');
   assert.equal(good.ok, true);
   assert.equal(good.value.type, "pong");
+});
+
+// ---- todo 20: v2 frames (usage / fallback / verdict / plan) ----------
+
+test("proto: the web client negotiates protocol version 2", () => {
+  assert.equal(PROTOCOL_VERSION, 2, "hello must propose v2 so v2 frames flow");
+});
+
+test("store: v2 usage frames accumulate per-session cost/model totals", () => {
+  const s = createStore();
+  const usage = (turn) => ({
+    type: "usage",
+    turn,
+    model: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    effort: null,
+    input_tokens: 1200,
+    output_tokens: 80,
+    cache_read: 6400,
+    cache_write: 0,
+    cost_usd_micros: 6720,
+  });
+  feed(s, usage(1));
+  feed(s, usage(1));
+  feed(s, {
+    type: "usage",
+    turn: 2,
+    model: { provider: "openai", model: "gpt-5.2" },
+    effort: "high",
+    input_tokens: 10,
+    output_tokens: 5,
+    cache_read: 0,
+    cache_write: 0,
+    cost_usd_micros: null,
+  });
+  const st = s.getState();
+  assert.equal(st.usage.frames, 3);
+  assert.equal(st.usage.totalCostMicros, 13440, "priced frames book; unpriced frames add zero");
+  assert.equal(st.usage.inputTokens, 2410);
+  assert.equal(st.usage.outputTokens, 165);
+  assert.equal(st.usage.cacheRead, 12800);
+  const sonnet = st.usage.models["anthropic/claude-sonnet-4-5"];
+  assert.equal(sonnet.frames, 2);
+  assert.equal(sonnet.costMicros, 13440);
+  const gpt = st.usage.models["openai/gpt-5.2"];
+  assert.equal(gpt.frames, 1);
+  assert.equal(gpt.costMicros, 0, "unpriced model stays at zero, never NaN");
+  assert.equal(st.hud.anomalies, 0, "usage frames are known shapes");
+});
+
+test("store: fallback ask lands pending; resolution retires it into the log", () => {
+  const s = createStore();
+  feed(s, {
+    type: "fallback_ask",
+    ask: {
+      ask_id: 11,
+      current: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      proposed: { provider: "openai", model: "gpt-5.2" },
+      reason: "provider 500 x3",
+      deadline_ms: 30000,
+    },
+  });
+  let st = s.getState();
+  assert.equal(Object.keys(st.fallbackAsks).length, 1);
+  assert.equal(st.fallbackAsks[11].proposed.model, "gpt-5.2");
+  feed(s, {
+    type: "fallback_resolved",
+    ask_id: 11,
+    chosen: { provider: "openai", model: "gpt-5.2" },
+  });
+  st = s.getState();
+  assert.equal(Object.keys(st.fallbackAsks).length, 0, "resolved ask leaves the pending set");
+  assert.equal(st.fallbackLog.length, 1);
+  assert.equal(st.fallbackLog[0].chosen, "openai/gpt-5.2");
+  assert.equal(st.hud.anomalies, 0);
+});
+
+test("store: verdict frames carry their evidence links", () => {
+  const s = createStore();
+  feed(s, { type: "verdict", turn: 3, verdict: "refuted", evidence: [12, 13] });
+  const st = s.getState();
+  assert.deepEqual(st.verdicts, [{ turn: 3, verdict: "refuted", evidence: [12, 13] }]);
+  assert.equal(st.hud.anomalies, 0);
+});
+
+test("store: plan ask lands pending; resolution records the outcome", () => {
+  const s = createStore();
+  feed(s, {
+    type: "plan_ask",
+    ask: { ask_id: 5, plan_id: 9, revision: 2, artifact: "## plan", deadline_ms: 30000 },
+  });
+  let st = s.getState();
+  assert.equal(st.planAsks[5].planId, 9);
+  assert.equal(st.planAsks[5].revision, 2);
+  feed(s, {
+    type: "plan_resolved",
+    ask_id: 5,
+    plan_id: 9,
+    outcome: { approved: { by: "ws-2" } },
+  });
+  st = s.getState();
+  assert.equal(Object.keys(st.planAsks).length, 0);
+  assert.equal(st.planLog.length, 1);
+  assert.equal(st.planLog[0].outcome, "approved");
+  assert.equal(st.hud.anomalies, 0);
+});
+
+test("store: diffs group under their turn for the changed-files timeline", () => {
+  const s = createStore();
+  feed(s, frame(1, { type: "turn_started", turn: 1 }));
+  feed(s, frame(2, { type: "diff", path: "src/a.rs", before_hash: "", after_hash: "x", hunks: [] }));
+  feed(s, frame(3, { type: "diff", path: "src/b.rs", before_hash: "", after_hash: "y", hunks: [] }));
+  feed(s, frame(4, { type: "turn_finished", turn: 1, outcome: "task_completed" }));
+  feed(s, frame(5, { type: "turn_started", turn: 2 }));
+  feed(s, frame(6, { type: "diff", path: "src/a.rs", before_hash: "x", after_hash: "z", hunks: [] }));
+  const st = s.getState();
+  assert.deepEqual(
+    st.timeline,
+    [
+      { turn: 1, path: "src/a.rs" },
+      { turn: 1, path: "src/b.rs" },
+      { turn: 2, path: "src/a.rs" },
+    ],
+    "timeline records (turn, path) per diff event",
+  );
+});
+
+test("store: v2 session events render as notifications, not anomalies", () => {
+  const s = createStore();
+  feed(s, frame(1, { type: "plan_blocked", plan: 9, tool: "edit_lines", target: "src/x.rs" }));
+  feed(s, frame(2, { type: "cost_warning", consumed_micros: 80, cap_micros: 100 }));
+  const st = s.getState();
+  assert.equal(st.notifications.length, 2);
+  assert.equal(st.notifications[0].kind, "plan_blocked");
+  assert.match(st.notifications[0].message, /edit_lines/);
+  assert.equal(st.notifications[1].kind, "cost_warning");
+  assert.equal(st.hud.anomalies, 0, "v2 session events are known shapes");
 });

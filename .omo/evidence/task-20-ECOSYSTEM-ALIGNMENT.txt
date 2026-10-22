@@ -1,0 +1,137 @@
+Task 20 — Web dashboard: history, timeline, workers, focus view
+================================================================
+Plan: .omo/plans/ecosystem-alignment.md checkbox 20 (Wave U)
+Scope: harness-web only (ui.js, store.js, app.js, proto.js, app.css,
+e2e/run-e2e.mjs, e2e_daemon fixture example, store.test.mjs).
+share.js UNTOUCHED. No harness-daemon src changes. No commit.
+
+What landed
+-----------
+(a) Session-history panel (ui.js historyPanel): scheduled-run rows from
+    GET /s/{sid}/history (task-2 route; RunRecord {automation_id,
+    session_id, fired_at_minute, outcome, verdict, network}), per-session
+    cost/model totals accumulated from v2 usage frames, gate Verdict
+    frames with evidence links that seek the replay log to the cited
+    frame id, and state.resolvedLog finally rendered ("asks answered").
+    Empty-state: "no scheduled runs recorded for this session" — never a
+    spinner (typed 404 and fetch failures land in the same empty-state).
+(b) Changed-files-by-turn timeline (ui.js timelinePanel): Diff events
+    grouped under the turn that produced them (store tracks turn from
+    TurnStarted frames; timeline = [{turn, path}]).
+    Receipts: OpenCode #55064 Changed-files-by-turn; Devin Session
+    Insights timeline.
+(c) Workers panel: rendered from state.workers since t15 (Warp
+    precedence port); e2e now proves it non-empty with fixture children
+    (ChildStarted/ChildProgress/ChildFinished/TeamBudget frames seeded
+    into the attach-snapshot ring by the e2e daemon fixture).
+(d) Collapsed-by-default transcript with per-entry "focus" expand
+    (receipt: Claude /focus; 5-project one-line-per-entry convergence).
+    Single-line preview (140 chars) collapsed; full text on expand.
+(e) Trends panel moved into the session view (it can never have data on
+    the unattached dashboard) and fed by v2 usage frames: total cost,
+    cache-hit %, per-model frame/cost mix. The stale "cost / cache /
+    eval scores: not carried by protocol v1" confession is DELETED.
+    Composer hint's stale "protocol v1" wording corrected.
+(f) FallbackAsk + PlanAsk answer UI reusing the gates surface:
+    keep-current / switch-to-proposed buttons send
+    {type:"fallback_answer",ask,chosen} (identity echoed verbatim — the
+    mediator accepts only exact matches, garbage resolves deny-side);
+    approve/reject buttons send {type:"plan_answer",ask,decision:"approve"|"reject"}
+    (PlanDecision is externally tagged: bare strings on the wire).
+    Store also maps the v2 SessionEvents cost_warning/cost_stop/plan_*
+    to notifications with the compat.rs kind names (not anomalies).
+
+Protocol negotiation
+--------------------
+proto.js PROTOCOL_VERSION 1 -> 2 (the "flipping a web client proposing
+1 is IN-SCOPE" clause); SSE fallback URL now carries &version=2 (the
+SSE wire has no Hello — v2 is query-opt-in per server.rs TokenQuery).
+hello_ack version renders as a [data-testid=proto-version] badge.
+
+Fixture (harness-web/examples/e2e_daemon/daemon.rs)
+---------------------------------------------------
+- factory() is now identity-bearing: ComposedInference{ identity: Some
+  (anthropic/claude-sonnet-4-5) } so the daemon's UsageInference
+  decorator broadcasts priced per-turn frames (TurnUsage 1200/80/6400/0
+  -> 6720 micro-USD per inference via the builtin price table).
+- seed_fixtures(): one confirmed RunRecord per fixture session in
+  {data}/runs.jsonl + five team frames retained in each ring.
+- Seeded into TWO sessions (e2e, e2e-drill): the drill scenario needs a
+  fresh scripted stack — the engine runs NO inference after a completed
+  task (discovered live: turn 2 on a task_completed session publishes
+  turn_started/turn_finished but zero transcript events and no usage
+  broadcast), so scenario 1 (todo 37) keeps session e2e's only turn and
+  the todo-20 drill owns e2e-drill's turn: ask -> echo -> diff + exactly
+  two live usage frames = $0.013440.
+- harness-web Cargo.toml gains dev-dep harness-providers (ModelIdentity
+  for the fixture identity; versioned path dep per cargo-deny). This is
+  the one Rust delta beyond JS; it is inside harness-web, no daemon code
+  touched. ("No Rust changes expected" was not achievable: the history
+  verdict row, the workers children, and the priced usage frames the
+  acceptance criteria assert cannot exist without fixture data, and the
+  fixtures live in this example.)
+
+RED (before implementation; exact commands + outcome)
+-----------------------------------------------------
+node --test harness-web/tests/js/store.test.mjs
+  -> tests 16, pass 9, fail 7 (all seven new todo-20 tests fail:
+     PROTOCOL_VERSION=2, usage totals, fallback ask/resolved, verdict
+     evidence, plan ask/resolved, per-turn timeline, v2 session events)
+node harness-web/e2e/run-e2e.mjs
+  -> FAIL happy: history cost+verdict, timeline files per turn, workers,
+     trends, focus view (todo 20): page.waitForSelector: Timeout 5000ms
+     (first new selector [data-testid=proto-version] absent)
+  -> E2E RESULT: FATAL ...
+
+GREEN (after implementation; exact commands + output)
+-----------------------------------------------------
+node --test harness-web/tests/js/store.test.mjs
+  -> tests 16 / pass 16 / fail 0
+node harness-web/e2e/run-e2e.mjs   (HARNESS_E2E_EXE=target\debug\examples\
+e2e_daemon.exe built with `cargo build -p harness-web --example
+e2e_daemon`, NODE_PATH=global npm node_modules, PLAYWRIGHT chromium from
+the local ms-playwright cache)
+  -> PASS happy: two browsers attach, approve gate, HUD + hunk update in both
+  -> PASS happy: history cost+verdict, timeline files per turn, workers, trends, focus view (todo 20)
+  -> PASS failure: empty history renders an empty-state, not a spinner
+  -> PASS failure: expired share link renders 410 Gone
+  -> PASS failure: auth negatives (401/403) and wrong-token page never sees events
+  -> PASS absent-daemon observed reconnecting
+  -> PASS failure: absent daemon -> reconnecting state
+  -> E2E RESULT: ALL PASS   (run twice back-to-back: stable)
+cargo nextest run -p harness-web
+  -> Summary: 13 tests run: 13 passed, 0 skipped (served_assets embed
+     the edited JS sources; content-addressing + import-map + no-cloud
+     guards all green)
+cargo clippy -p harness-web --all-targets -- -D warnings
+  -> Finished, zero warnings
+
+New e2e assertions (acceptance criteria mapping)
+------------------------------------------------
+- history view shows a fixture run cost+verdict: [data-testid=history]
+  matches /confirmed/ and [data-testid=history-cost] includes
+  "$0.013440" (exact fixture-priced total).
+- timeline lists changed files per turn: [data-testid=timeline] matches
+  /turn 1/ and /src\/demo\.rs/.
+- workers panel non-empty with fixture children:
+  [data-testid=team] [data-child] count >= 2 and team-status aggregate
+  "in_progress" (Warp precedence: running child outranks finished).
+- e2e connection negotiates protocol version 2:
+  [data-testid=proto-version] === "v2".
+
+QA scenarios
+------------
+happy — macro->micro drill (session -> turn -> file), exercised by the
+  todo-20 e2e scenario: history panel (session verdict + cost) ->
+  timeline ("turn 1" -> src/demo.rs) -> transcript focus expand
+  (entry-collapsed by default; "focus" click -> entry-open).
+failure — empty history renders an empty-state NOT a spinner:
+  dedicated e2e scenario on session e2e-empty asserts
+  [data-testid=history-empty] text and zero [aria-busy=true]/.loading
+  elements inside the history panel.
+
+Learnings recorded in .omo/notepads/ecosystem-alignment/learnings.md
+(engine runs no inference after task_completed; usage broadcasts are
+transient per-connection accumulations; serde externally-tagged
+decisions ride as bare strings; daemon embeds the SPA at compile time —
+rebuild the example after JS edits).

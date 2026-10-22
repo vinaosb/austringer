@@ -25,6 +25,7 @@ base64ct.workspace = true
 harness-daemon = { path = "../harness-daemon", version = "0.1.0" }
 # E2E example: scripted inference + worker over the daemon router.
 harness-core = { path = "../harness-core", version = "0.1.0" }
+harness-providers = { path = "../harness-providers", version = "0.1.0" }
 axum.workspace = true
 base64ct.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
