@@ -4,29 +4,50 @@
 // chromium from the local ms-playwright cache — no network.
 //
 // Usage:
-//   set HARNESS_E2E_EXE=<path to e2e_daemon.exe built with --example>
 //   set NODE_PATH=C:\Users\vsbb1\AppData\Roaming\npm\node_modules
 //   node e2e/run-e2e.mjs
+// The fixture exe defaults to $CARGO_TARGET_DIR (or ./target when
+// unset, e.g. CI) under debug/examples/e2e_daemon(.exe); override
+// with HARNESS_E2E_EXE. The browser defaults to the dev machine's
+// LOCALAPPDATA ms-playwright cache; on any other machine (e.g. a CI
+// runner) point PLAYWRIGHT_CHROMIUM at a chromium-family executable.
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { mintShare } from "../assets/share.js";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright-core");
 
-const EXE = process.env.HARNESS_E2E_EXE;
-assert.ok(EXE, "HARNESS_E2E_EXE must point at the built e2e_daemon example exe");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const targetDir = process.env.CARGO_TARGET_DIR || join(repoRoot, "target");
+const EXE =
+  process.env.HARNESS_E2E_EXE || join(targetDir, "debug", "examples", "e2e_daemon.exe");
+if (!existsSync(EXE)) {
+  assert.fail(
+    `HARNESS_E2E_EXE resolved to ${EXE} but it does not exist — build it with ` +
+      `cargo build -p harness-web --example e2e_daemon (or set HARNESS_E2E_EXE)`,
+  );
+}
 const CHROMIUM =
   process.env.PLAYWRIGHT_CHROMIUM ||
-  join(
-    process.env.LOCALAPPDATA,
-    "ms-playwright",
-    "chromium-1234",
-    "chrome-win64",
-    "chrome.exe",
+  (process.env.LOCALAPPDATA &&
+    join(
+      process.env.LOCALAPPDATA,
+      "ms-playwright",
+      "chromium-1234",
+      "chrome-win64",
+      "chrome.exe",
+    ));
+if (!CHROMIUM || !existsSync(CHROMIUM)) {
+  assert.fail(
+    `chromium not found at ${CHROMIUM || "(no PLAYWRIGHT_CHROMIUM set and no LOCALAPPDATA ms-playwright cache)"} ` +
+      `— set PLAYWRIGHT_CHROMIUM to a chromium-family browser executable`,
   );
+}
 
 async function startDaemon() {
   const child = spawn(EXE, ["--serve-for-e2e"], {
