@@ -62,6 +62,11 @@ harness-tools = { path = "../harness-tools", version = "0.1.0" }
 harness-web = { path = "../harness-web", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
+# Todo 24 (ecosystem alignment): OSC 7501 Program Status reports carry
+# their human-readable msg as standard base64 (spec: superlogical.com/
+# rex/docs/build/program-status). Already in the tree via harness-web;
+# zero new crates.
+base64ct.workspace = true
 thiserror.workspace = true
 blake3.workspace = true
 async-trait.workspace = true
@@ -94,6 +99,10 @@ libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Todo 24 QA: spawn the shipped daemon binary on a real PTY (ConPTY on
+# Windows) and capture the raw master-side OSC bytes. Already in the
+# tree via harness-exec; zero new crates.
+portable-pty.workspace = true
 # Todo 6: proving pack-installed MCP declarations parse as
 # DeferredOnFirstUse under the manager's autostart decision.
 harness-mcp = { path = "../harness-mcp", version = "0.1.0" }

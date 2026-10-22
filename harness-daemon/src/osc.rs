@@ -1,18 +1,33 @@
-//! OSC 777/9 terminal notification emission: an escape-sequence bus
-//! any listening terminal receives. Text is sanitized before framing —
-//! a notification must never smuggle a second escape sequence.
+//! OSC 777/9 terminal notification emission plus todo 24's program
+//! status lanes: the structured OSC 777 `warp://cli-agent` lifecycle
+//! frame and the OSC 7501 Program Status Protocol report (Warp issue
+//! #16407 — Crush emits, cmux receives; emit-only, the daemon receives
+//! neither). Text is sanitized before framing — a payload must never
+//! smuggle a second escape sequence.
 
 use std::io::Write;
 use std::sync::Mutex;
 
-use crate::notify::{Notification, NotificationSink, NotifyError};
+use base64ct::{Base64, Encoding};
+
+use crate::notify::{Notification, NotificationSink, NotifyError, ProgramStatus};
 
 /// Bound on emitted text per frame (bytes, char-boundary safe).
 pub const OSC_MAX_TEXT_BYTES: usize = 200;
 
+/// Warp's structured cli-agent OSC 777 title sentinel: the frame title
+/// its listener intercepts (`view.rs`) before parsing the JSON body.
+const WARP_CLI_AGENT_TITLE: &str = "warp://cli-agent";
+
+/// Stable program identifier for the OSC 7501 `app` key (spec grammar
+/// `[A-Za-z0-9_.+-]{1,32}`).
+const OSC7501_APP: &str = "harness";
+
 /// Strip control characters and bound length. ESC/BEL inside payload
 /// text would allow terminal-sequence injection; every C0 control
-/// (plus DEL) is replaced by a space.
+/// (plus DEL) is replaced by a space — and C1 (U+0080–U+009F), which
+/// `char::is_control` also covers, so both OSC lanes inherit the same
+/// guarantee.
 #[must_use]
 pub fn sanitize_osc_text(text: &str, max_bytes: usize) -> String {
     let cleaned: String = text
@@ -54,8 +69,59 @@ impl<W: Write + Send> OscSink<W> {
             self.title, body, body
         )
         .into_bytes();
+        if let Some(status) = notification.kind.program_status() {
+            frame.extend(Self::status_frames(
+                Some(status),
+                notification.session_id.as_deref(),
+                &notification.message,
+            ));
+        }
         frame.push(b'\n');
         Ok(frame)
+    }
+
+    /// Todo 24 status frames for one program-status transition, appended
+    /// to every mapped notification's plain notify frames:
+    ///
+    /// - the structured OSC 777 lifecycle frame — title
+    ///   `warp://cli-agent`, body Warp's compact cli-agent JSON
+    ///   (`{"v":1,"agent":"harness","event":…,"session_id":…}`);
+    /// - the OSC 7501 Program Status Protocol report —
+    ///   `state=…[:kind=permission]:app=harness:msg=<base64>` closed
+    ///   with ST, every free-text field sanitized first.
+    ///
+    /// A kind with no terminal status (`None`) emits NOTHING — unknown
+    /// kinds must never produce a garbage sequence.
+    fn status_frames(
+        status: Option<ProgramStatus>,
+        session: Option<&str>,
+        message: &str,
+    ) -> Vec<u8> {
+        let Some(status) = status else {
+            return Vec::new();
+        };
+        let mut lifecycle = serde_json::json!({
+            "v": 1,
+            "agent": OSC7501_APP,
+            "event": status.warp_event(),
+        });
+        if let Some(session) = session {
+            lifecycle["session_id"] =
+                serde_json::Value::String(sanitize_osc_text(session, OSC_MAX_TEXT_BYTES));
+        }
+        let mut report = format!(
+            "\x1b]777;notify;{WARP_CLI_AGENT_TITLE};{lifecycle}\x07\x1b]7501;state={}",
+            status.osc7501_state()
+        );
+        if matches!(status, ProgramStatus::Blocked) {
+            report.push_str(":kind=permission");
+        }
+        // The 7501 spec bans control characters in the DECODED msg;
+        // sanitizing before the base64 makes that guaranteed by
+        // construction.
+        let msg = Base64::encode_string(sanitize_osc_text(message, OSC_MAX_TEXT_BYTES).as_bytes());
+        report.push_str(&format!(":app={OSC7501_APP}:msg={msg}\x1b\\"));
+        report.into_bytes()
     }
 }
 
@@ -154,13 +220,60 @@ mod tests {
         let sink = OscSink::new(buf.clone(), "harness");
         sink.deliver(&notification("ok\x1b]9;injected\x07"))?;
         let bytes = buf.0.lock().map(|g| g.clone()).unwrap_or_default();
-        // Exactly the two framing ESCs we emitted ourselves.
+        // TurnComplete is status-mapped (todo 24), so one deliver emits
+        // four sequences: notify-777, OSC 9, structured lifecycle 777
+        // (one ESC + one BEL each) and the 7501 report (one ESC for the
+        // OSC introducer, one for the ST terminator, no BEL) — exactly
+        // five framing ESCs and three framing BELs, nothing injected.
         assert_eq!(
             bytes.iter().filter(|b| **b == 0x1b).count(),
-            2,
+            5,
             "injected escape: {bytes:?}"
         );
-        assert_eq!(bytes.iter().filter(|b| **b == 0x07).count(), 2);
+        assert_eq!(bytes.iter().filter(|b| **b == 0x07).count(), 3);
         Ok(())
+    }
+
+    #[test]
+    fn status_frames_for_unmapped_kind_emit_nothing() {
+        // The None arm is what a future kind without a terminal status
+        // produces: zero status bytes, never a garbage sequence.
+        let frames = OscSink::<SharedBuf>::status_frames(None, Some("s-1"), "m");
+        assert!(frames.is_empty(), "unmapped kind emitted: {frames:?}");
+    }
+
+    #[test]
+    fn status_frames_pair_values_stay_in_the_7501_charset() {
+        for kind in [
+            NotificationKind::ScheduledFired,
+            NotificationKind::ApprovalNeeded,
+            NotificationKind::TurnComplete,
+            NotificationKind::WorkerLost,
+        ] {
+            let Some(status) = kind.program_status() else {
+                panic!("{kind:?} must map");
+            };
+            let frames = OscSink::<SharedBuf>::status_frames(
+                Some(status),
+                Some("s-\x1b]777;evil\x07"),
+                "m\x1b]7501;evil\x1b\\",
+            );
+            let text = String::from_utf8_lossy(&frames).into_owned();
+            let report = text
+                .split("\x1b]7501;")
+                .nth(1)
+                .unwrap_or_else(|| panic!("no 7501 report for {kind:?}: {text:?}"));
+            let body = &report[..report.find("\x1b\\").expect("ST terminator")];
+            for value in body.split(':').filter_map(|p| p.split_once('=')) {
+                assert!(
+                    value
+                        .1
+                        .chars()
+                        .all(|c| matches!(c, 'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '.' | ',' | '+' | '/' | '=' | '-')),
+                    "value outside the 7501 charset: {:?} in {body:?}",
+                    value.1
+                );
+            }
+        }
     }
 }
