@@ -65,7 +65,7 @@ pub enum Command {
     /// smoke-call one server (never contacts the daemon).
     Mcp(McpArgs),
     /// Session-store surface over the daemon's HTTP routes (todo 11:
-    /// transcript search).
+    /// transcript search; todo 22: session list + run history).
     Sessions(SessionsArgs),
 }
 
@@ -130,6 +130,13 @@ pub enum SessionsCommand {
     /// daemon's search route; hits are ranked by bm25. Requires `--url`
     /// (the HTTP transport).
     Search(SessionsSearchArgs),
+    /// Every live session id in the daemon (its `GET /sessions`
+    /// route). Requires `--url` (the HTTP transport).
+    List,
+    /// One session's scheduled-run lifecycle rows with their gate
+    /// verdicts (the daemon's `GET /s/{sid}/history` route). Requires
+    /// `--url` (the HTTP transport).
+    History(SessionsHistoryArgs),
 }
 
 /// `sessions search` arguments.
@@ -147,6 +154,13 @@ pub struct SessionsSearchArgs {
     /// The FTS5 query (a word, a quoted phrase, `a OR b`).
     #[arg(trailing_var_arg = true, required = true)]
     pub query: Vec<String>,
+}
+
+/// `sessions history` arguments.
+#[derive(Debug, Args)]
+pub struct SessionsHistoryArgs {
+    /// The session id whose run rows are listed.
+    pub session: String,
 }
 
 /// `run` arguments.

@@ -27,6 +27,19 @@ pub fn outcome_ok(outcome: &str) -> bool {
     matches!(outcome, "task_completed" | "turn_complete")
 }
 
+/// One NDJSON line for ANY server message: event frames take the
+/// envelope shape; every other frame — usage, fallback ask/resolved,
+/// verdict, plan, snapshot, bye — passes through verbatim (the eval
+/// driver contract requires the full v2 frame set, never a filtered
+/// subset).
+#[must_use]
+pub fn ndjson_line(msg: &ServerMsg) -> String {
+    match msg {
+        ServerMsg::Event { frame } => frame_envelope(frame),
+        other => serde_json::to_string(other).unwrap_or_else(|_| "{}".to_owned()),
+    }
+}
+
 /// The final NDJSON line for a finished turn.
 #[must_use]
 pub fn turn_result(turn: u64, outcome: &str) -> String {
@@ -188,7 +201,12 @@ fn human_core_event(event: &Event) -> Option<String> {
             Some(format!("tool result {call_id}: {}", blocks_text(blocks)))
         }
         Event::System { text } => Some(format!("system: {text}")),
-        Event::Condensation { .. } | Event::Snapshot { .. } => None,
+        Event::Condensation { summary, through_seq } => Some(format!(
+            "~ condensed through seq {} — {}",
+            through_seq.0,
+            summary.lines().next().unwrap_or_default()
+        )),
+        Event::Snapshot { .. } => None,
     }
 }
 
@@ -220,6 +238,7 @@ fn human_resolution(resolution: &Resolution) -> String {
 mod tests {
     use super::*;
     use harness_core::event::ContentBlock;
+    use harness_daemon::protocol::{PlanAskPayload, VerdictKind};
 
     fn user_frame(id: u64, text: &str) -> Frame {
         Frame {
@@ -336,5 +355,126 @@ mod tests {
         })
         .unwrap_or_default();
         assert!(user.contains("say something"), "{user}");
+    }
+
+    #[test]
+    fn condensation_renders_a_condensed_line() {
+        let frame = Frame {
+            id: 5,
+            event: SessionEvent::Recorded {
+                seq: 5,
+                event: Event::Condensation {
+                    summary: "early history folded into a summary".to_owned(),
+                    through_seq: harness_core::event::Sequence(4),
+                },
+            },
+        };
+        let line = human(&ServerMsg::Event { frame }).unwrap_or_default();
+        assert!(line.contains("~ condensed"), "{line}");
+        assert!(line.contains("seq 4"), "{line}");
+        assert!(
+            line.contains("early history folded"),
+            "summary must be visible: {line}"
+        );
+    }
+
+    #[test]
+    fn human_render_shows_fallback_and_plan_approval_states() {
+        let fallback: ServerMsg = serde_json::from_value(serde_json::json!({
+            "type": "fallback_ask",
+            "ask": {
+                "ask_id": 7,
+                "current": { "provider": "mock", "model": "big" },
+                "proposed": { "provider": "mock", "model": "small" },
+                "reason": "cap pressure",
+                "deadline_ms": 5000
+            }
+        }))
+        .unwrap();
+        let line = human(&fallback).unwrap_or_default();
+        assert!(line.contains("fallback"), "{line}");
+        assert!(line.contains("big"), "{line}");
+        assert!(line.contains("small"), "{line}");
+        assert!(line.contains("cap pressure"), "{line}");
+        let plan = human(&ServerMsg::PlanAsk {
+            ask: PlanAskPayload {
+                ask_id: 1,
+                plan_id: 2,
+                revision: 1,
+                artifact: "- do the thing".to_owned(),
+                deadline_ms: 1000,
+            },
+        })
+        .unwrap_or_default();
+        assert!(plan.contains("awaiting approval"), "{plan}");
+        let resolved = human(&ServerMsg::PlanResolved {
+            ask_id: 1,
+            plan_id: 2,
+            outcome: PlanOutcome::Approved {
+                by: "tui".to_owned(),
+            },
+        })
+        .unwrap_or_default();
+        assert!(resolved.contains("approved"), "{resolved}");
+    }
+
+    #[test]
+    fn ndjson_lines_pass_all_v2_frames_through() {
+        let usage: ServerMsg = serde_json::from_value(serde_json::json!({
+            "type": "usage",
+            "turn": 3,
+            "model": { "provider": "mock", "model": "mock-1" },
+            "effort": null,
+            "input_tokens": 10,
+            "output_tokens": 20,
+            "cache_read": 1,
+            "cache_write": 2,
+            "cost_usd_micros": null
+        }))
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&ndjson_line(&usage))
+            .unwrap_or_else(|e| panic!("json: {e}"));
+        assert_eq!(value["type"], serde_json::json!("usage"));
+        assert_eq!(value["input_tokens"], serde_json::json!(10));
+        assert_eq!(value["model"]["model"], serde_json::json!("mock-1"));
+
+        let fallback: ServerMsg = serde_json::from_value(serde_json::json!({
+            "type": "fallback_ask",
+            "ask": {
+                "ask_id": 7,
+                "current": { "provider": "mock", "model": "big" },
+                "proposed": { "provider": "mock", "model": "small" },
+                "reason": "cap pressure",
+                "deadline_ms": 5000
+            }
+        }))
+        .unwrap();
+        assert!(
+            ndjson_line(&fallback).contains("\"fallback_ask\""),
+            "fallback ask must pass through for eval drivers"
+        );
+
+        let verdict = ndjson_line(&ServerMsg::Verdict {
+            turn: 2,
+            verdict: VerdictKind::Confirmed,
+            evidence: vec![11, 12],
+        });
+        assert!(
+            verdict.contains("\"verdict\":\"confirmed\""),
+            "verdict frame must pass through: {verdict}"
+        );
+
+        let team = ndjson_line(&ServerMsg::Event {
+            frame: Frame {
+                id: 4,
+                event: SessionEvent::TeamBudget {
+                    spawned: 1,
+                    tokens_spent: 5,
+                    fan_out_cap: 4,
+                    token_budget: 100,
+                },
+            },
+        });
+        assert!(team.contains("\"team_budget\""), "{team}");
     }
 }

@@ -52,15 +52,16 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
         data_dir: cli.data_dir.clone(),
         ipc_name: cli.ipc_name.clone(),
     };
-    // `sessions search` rides the HTTP route surface only (the IPC
-    // carrier has no HTTP base), so it checks its transport BEFORE
-    // resolve — a missing --url is the typed hint, not a token-file
-    // failure.
-    if let Command::Sessions(SessionsArgs {
-        command: SessionsCommand::Search(args),
-    }) = &cli.command
-    {
-        return sessions::search(&spec, args).await;
+    // The `sessions` verb family rides the HTTP route surface only
+    // (the IPC carrier has no HTTP base), so it checks its transport
+    // BEFORE resolve — a missing --url is the typed hint, not a
+    // token-file failure.
+    if let Command::Sessions(SessionsArgs { command }) = &cli.command {
+        return match command {
+            SessionsCommand::Search(args) => sessions::search(&spec, args).await,
+            SessionsCommand::List => sessions::list(&spec).await,
+            SessionsCommand::History(args) => sessions::history(&spec, &args.session).await,
+        };
     }
     let target = Target::resolve(&spec)?;
     let images = image::attachments(&cli.images, false)?;
