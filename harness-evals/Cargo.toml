@@ -21,3 +21,13 @@ blake3.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+# Hermetic conformance sweep driver (todo 26): runs the committed
+# scenario pack under the scripted fake provider. Dev/CI tooling, not
+# a release artifact — cargo-dist must skip it (harness-bench
+# precedent).
+[[bin]]
+name = "run_sweep"
+
+[package.metadata.dist]
+dist = false

@@ -1,0 +1,12 @@
+{"event":{"id":1,"event":{"type":"tool_call","call_id":"c1","tool":"task","arguments":{"category":"explore","prompt":"map the search surfaces in this repo"}}}}
+{"event":{"id":2,"event":{"type":"tool_call","call_id":"c2","tool":"task","arguments":{"category":"librarian","prompt":"index prior sessions for the eviction decision"}}}}
+{"event":{"id":3,"event":{"type":"child_started","child":"s1-child-task1","task":"map the search surfaces in this repo","role":"explore","model":"mock/small"}}}
+{"event":{"id":4,"event":{"type":"child_started","child":"s1-child-task2","task":"index prior sessions for the eviction decision","role":"librarian","model":"mock/small"}}}
+{"event":{"id":5,"event":{"type":"team_budget","spawned":2,"tokens_spent":0,"fan_out_cap":4,"token_budget":200000}}}
+{"event":{"id":6,"event":{"type":"tool_result","call_id":"c1","blocks":[{"type":"text","text":"[task child s1-child-task1 category=explore] repomap + search surfaces mapped"}]}}}
+{"event":{"id":7,"event":{"type":"tool_result","call_id":"c2","blocks":[{"type":"text","text":"[task child s1-child-task2 category=librarian] prior sessions indexed"}]}}}
+{"event":{"id":8,"event":{"type":"assistant","blocks":[{"type":"text","text":"Delegated in parallel via task(category): category=explore mapped the search surfaces and category=librarian indexed prior sessions (task child s1-child-task1, task child s1-child-task2); 2 of the fan_out_cap=4 children used, both under the curated cheap pool."}]}}}
+{"event":{"id":9,"event":{"type":"child_finished","child":"s1-child-task1","task":"map the search surfaces in this repo","state":"success","detail":""}}}
+{"event":{"id":10,"event":{"type":"child_finished","child":"s1-child-task2","task":"index prior sessions for the eviction decision","state":"success","detail":""}}}
+{"event":{"id":11,"event":{"type":"turn_finished","turn":1,"outcome":"task_completed"}}}
+{"type":"turn_result","ok":true,"outcome":"task_completed","turn":1}

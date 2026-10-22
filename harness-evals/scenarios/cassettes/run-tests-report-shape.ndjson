@@ -1,0 +1,5 @@
+{"event":{"id":1,"event":{"type":"tool_call","call_id":"c1","tool":"run_tests","arguments":{"path":".","timeout_ms":600000}}}}
+{"event":{"id":2,"event":{"type":"tool_result","call_id":"c1","blocks":[{"type":"text","text":"{\"framework\":\"cargo-nextest\",\"command\":\"cargo nextest run\",\"exit_code\":0,\"timed_out\":false,\"suite_duration_ms\":512,\"tests\":[{\"name\":\"evals::dataset::tests\",\"status\":\"passed\",\"duration_ms\":28}],\"summary\":{\"passed\":57,\"failed\":0,\"ignored\":1}}\nsafety gate: 0 objections"}]}}}
+{"event":{"id":3,"event":{"type":"assistant","blocks":[{"type":"text","text":"run_tests detected the framework and the report shape held: framework=cargo-nextest, exit_code=0, timed_out=false, suite_duration_ms=512, summary passed=57 failed=0 ignored=1 — zero failures and the gate line rode the same observation."}]}}}
+{"event":{"id":4,"event":{"type":"turn_finished","turn":1,"outcome":"task_completed"}}}
+{"type":"turn_result","ok":true,"outcome":"task_completed","turn":1}

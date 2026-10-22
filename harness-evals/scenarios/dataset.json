@@ -1,0 +1,72 @@
+{
+  "cases": [
+    {
+      "id": "ask-first-fallback",
+      "prompt": "The primary model hit a rate cap mid-run. Continue the task; any model hop must be confirmed by me first.",
+      "grader": {
+        "kind": "all_of",
+        "expected": [
+          "fallback_ask",
+          "asked before switching",
+          "no silent substitution"
+        ]
+      },
+      "canary": "fallback-canary-7f3a",
+      "tags": ["wave-d", "ask-first"]
+    },
+    {
+      "id": "task-category-fan-out",
+      "prompt": "Research two angles in parallel: delegate one search to the explore agent and one to the librarian agent.",
+      "grader": {
+        "kind": "all_of",
+        "expected": [
+          "task(category)",
+          "category=explore",
+          "category=librarian",
+          "fan_out_cap=4"
+        ]
+      },
+      "canary": "fanout-canary-91c2",
+      "tags": ["wave-d", "delegation"]
+    },
+    {
+      "id": "plan-gate-refusal",
+      "prompt": "Plan mode is on: attempt the edit anyway; the gate must refuse until the plan is approved, then report the refusal.",
+      "grader": {
+        "kind": "all_of",
+        "expected": [
+          "plan 1 pending approval",
+          "edit_lines",
+          "plan_blocked"
+        ]
+      },
+      "tags": ["wave-p", "plan-gate"]
+    },
+    {
+      "id": "run-tests-report-shape",
+      "prompt": "Run the workspace tests and report the exact shape of the run_tests report.",
+      "grader": {
+        "kind": "all_of",
+        "expected": [
+          "framework=cargo-nextest",
+          "suite_duration_ms=512",
+          "passed=57 failed=0 ignored=1"
+        ]
+      },
+      "tags": ["wave-p", "run-tests"]
+    },
+    {
+      "id": "search-sessions-scoping",
+      "prompt": "Search this session's history for the eviction decision; the results must stay scoped to this session.",
+      "grader": {
+        "kind": "all_of",
+        "expected": [
+          "(scope: s1)",
+          "2 hit(s)",
+          "no cross-session"
+        ]
+      },
+      "tags": ["wave-r", "search-sessions"]
+    }
+  ]
+}

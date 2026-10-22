@@ -1,0 +1,5 @@
+{"event":{"id":1,"event":{"type":"tool_call","call_id":"c1","tool":"search_sessions","arguments":{"query":"eviction decision","limit":8}}}}
+{"event":{"id":2,"event":{"type":"tool_result","call_id":"c1","blocks":[{"type":"text","text":"search_sessions \"eviction decision\" (scope: s1): 2 hit(s)\n[1] session=s1 seq=14 bm25=1.25 :: eviction tier decision recorded\n[2] session=s1 seq=92 bm25=0.98 :: eviction projection budget"}]}}}
+{"event":{"id":3,"event":{"type":"assistant","blocks":[{"type":"text","text":"search_sessions ran with the calling session as the scope: search_sessions \"eviction decision\" (scope: s1): 2 hit(s) at limit 8 — omitting session_ids kept the results scoped to this session (seq=14, seq=92) with no cross-session rows."}]}}}
+{"event":{"id":4,"event":{"type":"turn_finished","turn":1,"outcome":"task_completed"}}}
+{"type":"turn_result","ok":true,"outcome":"task_completed","turn":1}

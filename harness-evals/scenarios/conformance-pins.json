@@ -1,0 +1,8 @@
+{
+  "ask-first-fallback": {
+    "tool_calls": ["view_window", "task_completed"]
+  },
+  "task-category-fan-out": {
+    "tool_calls": ["task", "task"]
+  }
+}

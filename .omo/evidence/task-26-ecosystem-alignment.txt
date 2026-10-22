@@ -1,0 +1,154 @@
+TASK 26 EVIDENCE - Evals driver + scheduled workflow (Wave Q)
+Plan: .omo/plans/ecosystem-alignment.md todo 26 (lines 317-323)
+Date: 2026-10-22. NO commit/stage performed (orchestrator owns commits;
+planned commit message: "feat(evals): run_sweep driver + scheduled workflow").
+
+FILES
+- harness-evals/Cargo.toml
+    + [[bin]] run_sweep + [package.metadata.dist] dist = false (dev/CI
+      tooling, not a release artifact - harness-bench precedent)
+- harness-evals/src/scenarios.rs (NEW)
+    + ScenarioPack loader for the committed hermetic pack: dataset.json
+      (EvalDataset), cassettes/*.ndjson (TurnStream-validated recorded
+      runs --output-json streams), conformance-pins.json (golden
+      prefixes), expected-failures.yaml (pinning; ships failures: [])
+    + PINNED_CASES doc-constant = ["ask-first-fallback",
+      "task-category-fan-out"]; any other pin set fails closed
+      (PinSetMismatch); missing/orphan cassettes and pins for unknown
+      cases are typed errors naming the file
+    + conformance_findings(): conformance::check per pinned cassette ->
+      named drift findings (case + cassette + expected/actual)
+- harness-evals/src/driver.rs (NEW)
+    + run(): pack -> conformance check -> sweep::execute (Regression,
+      locked profile "conformance-hermetic", model "fake-scripted",
+      reps=1, scripted subject = fake provider per policy) -> apply_pins
+      -> write JSON + .table.txt artifacts. Reuses sweep/runner/pinning
+      machinery; duplicates nothing.
+    + SweepVerdict::exit_code(): 0 clean / 2 drift-or-unpinned-regression;
+      DriverError::exit_code(): 3 (config class). parse_trigger accepts
+      exactly scheduled|manual - "pr"/"pull_request" do not parse.
+- harness-evals/src/bin/run_sweep.rs (NEW)
+    + argv: --conformance (required), --trigger, --fixtures, --report;
+      defaults: <manifest>/scenarios + docs/release/evals-conformance-
+      report.json; git source probe (rev-parse + status --porcelain) in
+      the BIN only (lib.rs contract: no I/O beyond explicit args)
+- harness-evals/scenarios/ (NEW, the hermetic scenario pack)
+    + dataset.json: 5 EvalCases (mechanisms: ask-first fallback,
+      task(category) fan-out, plan-gate refusal, run_tests report shape,
+      search_sessions scoping); canaries on the two pinned cases
+    + cassettes/*.ndjson x5: REAL protocol shapes (fallback_ask /
+      fallback_resolved / plan_ask top-level frames per render.rs:36-41;
+      task{category,prompt}; run_tests TestReport JSON in tool_result;
+      search_sessions "(scope: s1)" this-session scoping; envelope
+      {"event":{"id":N,"event":{...}}} + final turn_result line)
+    + conformance-pins.json: view_window+task_completed (fallback),
+      task+task (fan-out); expected-failures.yaml: version 1, failures []
+- harness-evals/tests/scenario_pack.rs (NEW): 9 tests (RED-first; see below)
+- .github/workflows/evals-scheduled.yml (NEW)
+    + schedule (cron 17 3 * * *) + workflow_dispatch (trigger choice
+      scheduled|manual). NO pull_request/push triggers - implements the
+      ci.yml:12-15 promise (eval sweeps scheduled-only, never PR gates).
+      Runs the HERMETIC sweep, uploads report + table artifacts.
+      persist-credentials: false (CI never pushes the artifact;
+      maintainers refresh docs/release).
+- docs/release/evals-conformance-report.json + .table.txt (NEW artifacts)
+    + evals.adoc publication source: harness-matched row
+      (baseline=hermetic-scenario-pack-v1), pass^k=1.0 beside mean@k=1.0,
+      honest source fingerprint (dirty:23 files at build time - TRUE:
+      worktree carries concurrent-wave edits pre-commit), guard
+      trigger-coverage surfaced (all noise=true on a green pack).
+
+RED-FIRST PROOF (new scenario-pack tests)
+- Command: cargo nextest run -p harness-evals --test scenario_pack
+  (before src/scenarios.rs + src/driver.rs existed; stub bin in place so
+  the manifest parsed)
+- Output: error[E0432]: unresolved import `harness_evals::driver`
+  --> harness-evals\tests\scenario_pack.rs:151:24
+  error: could not compile `harness-evals` (test "scenario_pack") due to
+  2 previous errors  [E0432 for driver + scenarios]
+- Then implementation landed; final suite green (below).
+
+ACCEPTANCE GATE 1 - conformance sweep via the bin (exit 0 + artifact)
+- Command (verbatim from the todo):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo run -p harness-evals --bin run_sweep -- --conformance"
+- Output:
+  conformance: 2 pinned cases, 0 drift finding(s), 0 unpinned regression(s)
+  sweep trigger=manual
+  model/profile	pass^k	mean@k	tokens/solved	disclosure
+  fake-scripted/conformance-hermetic	1.0000	1.0000	-	baseline=hermetic-scenario-pack-v1 source=dirty:23 files
+  artifact: C:\Users\vsbb1\source\repos\harness\docs\release\evals-conformance-report.json
+- Exit: 0. Artifacts written: docs/release/evals-conformance-report.json
+  (+ .table.txt). Final committed copy regenerated with --trigger
+  scheduled (the workflow's semantics), same exit 0.
+
+ACCEPTANCE GATE 2 - test suite green with NEW tests
+- Command: cmd /c "set CARGO_BUILD_JOBS=3&& set CARGO_TARGET_DIR=C:\ct&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-evals"
+- Output: Summary [0.737s] 67 tests run: 67 passed, 0 skipped
+  (58 pre-existing + 9 NEW scenario_pack tests: pack coverage/pins,
+  golden-prefix conformance receipt, corrupted-cassette loud failure,
+  named prefix drift, pin-set fail-closed, happy driver artifacts +
+  exit 0, corrupted-pack config error naming cassette + exit 3, trigger
+  vocabulary rejects pr/pull_request/release, harness-card verbatim
+  baseline/source).
+
+ACCEPTANCE GATE 3 - clippy + fmt
+- cargo clippy -p harness-evals --all-targets -- -D warnings: Finished, exit 0
+- cargo clippy --workspace --all-targets -- -D warnings: Finished
+  (37.85s incl. brief build-lock wait behind concurrent workers), exit 0
+- cargo fmt -p harness-evals -- --check: exit 0
+
+ACCEPTANCE GATE 4 - workflow_dispatch green in Actions (HONEST CAPTURE)
+- The remote (git remote -v) is https://github.com/vinaosb/harness.git;
+  the repository URL in README/Cargo.toml is a placeholder pending the
+  naming decision. I do NOT commit/push (orchestrator owns commits), so
+  the workflow file is not on any remote ref and workflow_dispatch
+  CANNOT be exercised from this task. Relied on per todo text: local
+  sweep green (gates 1-3) + YAML structural validation:
+  python -c "import yaml;d=yaml.safe_load(open('.github/workflows/
+  evals-scheduled.yml'));on=d[True] if True in d else d['on'];
+  print('triggers:', sorted(on.keys()));print('jobs:',list(d['jobs'].keys()))"
+  -> triggers: ['schedule', 'workflow_dispatch']  jobs: ['conformance-sweep']
+  (no pull_request/push trigger exists - the never-gate-PRs policy is
+  structural, not procedural).
+
+QA SCENARIO HAPPY - harness-matched table artifact (shown above, gate 1)
+- The table row carries baseline=hermetic-scenario-pack-v1 (matched ->
+  publishable per evals.adoc; no DO NOT PUBLISH marker), pass^k floor
+  beside Mean@k, dirty-source disclosure with the real file count.
+- JSON artifact spot-check (python):
+  trigger=scheduled; pair=fake-scripted/conformance-hermetic;
+  baseline hermetic-scenario-pack-v1; commit e8dfb32df72e dirty=True;
+  pass_k=1.0; fingerprint {'pass': 5}; coverage canary/fair_internet_use/
+  turn_outcome all fires=0 (surfaced as unmeasured noise - honest).
+
+QA SCENARIO FAILURE - corrupted cassette fails loudly (copy, not the fixture)
+- Setup: %TEMP%\opencode\task26-qa\scenarios = pack copy; overwrote
+  cassettes\search-sessions-scoping.ndjson with '{"corrupted": tru'
+- Command: cargo run -q -p harness-evals --bin run_sweep -- --conformance
+  --fixtures %TEMP%\opencode\task26-qa\scenarios --report %TEMP%\opencode\task26-qa\r.json
+- Output (exit 3):
+  run_sweep: cassette C:\Users\vsbb1\AppData\Local\Temp\opencode\task26-qa\
+  scenarios\cassettes\search-sessions-scoping.ndjson is not a valid NDJSON
+  stream: bad NDJSON line 1: EOF while parsing a value at line 1 column 17
+  -> non-zero exit, cassette NAMED, typed bounded detail.
+- Additional failure paths proven at the bin:
+  * golden-prefix drift (fresh copy, first fan-out tool call renamed to
+    task_v2; valid NDJSON): exit 2 +
+    "CONFORMANCE DRIFT: golden-prefix drift in task-category-fan-out
+    (cassette task-category-fan-out.ndjson): expected ["task", "task"],
+    actual ["task_v2", "task_v2"]"
+  * --trigger pr: exit 3 + "unknown trigger \"pr\": expected scheduled
+    or manual (there is no PR-gate trigger by policy)"
+  * no --conformance: exit 3 + usage line.
+- The committed fixtures were never corrupted (mutation only on the
+  temp copy; final scheduled run after all QA re-verified the real pack
+  green).
+
+POLICY COMPLIANCE NOTES
+- Live-model anything stays out of the default path: the bin runs ONLY
+  the hermetic scripted subject; sweep::Trigger still has no PR variant
+  (pinned by sweep.rs test + new driver parse_trigger test).
+- No new external dependencies: serde/serde_json/thiserror/blake3 only
+  (std::env argv parsing in the bin; no clap added).
+- No .omo/plans edits; ci.yml untouched (another worker owns it);
+  scope = harness-evals + new evals-scheduled.yml + docs/release artifacts.

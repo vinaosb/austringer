@@ -1,0 +1,8 @@
+{"event":{"id":1,"event":{"type":"plan_mode_entered","plan":1}}}
+{"event":{"id":2,"event":{"type":"tool_call","call_id":"c1","tool":"edit_lines","arguments":{"path":"src/lib.rs","hunks":[]}}}}
+{"event":{"id":3,"event":{"type":"plan_blocked","plan":1,"tool":"edit_lines","target":"src/lib.rs"}}}
+{"type":"plan_ask","ask":{"ask_id":3,"plan_id":1,"revision":1,"artifact":"plan-1.md","deadline_ms":300000}}
+{"event":{"id":4,"event":{"type":"tool_result","call_id":"c1","blocks":[{"type":"text","text":"plan 1 pending approval: write tool 'edit_lines' is gated until the plan is approved, edited, or rejected (answer the plan ask)"}]}}}
+{"event":{"id":5,"event":{"type":"assistant","blocks":[{"type":"text","text":"The plan gate refused the edit: plan 1 pending approval — write tool 'edit_lines' is gated until the plan is approved, edited, or rejected; the refusal surfaced as plan_blocked with a plan ask rather than executing silently."}]}}}
+{"event":{"id":6,"event":{"type":"turn_finished","turn":1,"outcome":"task_completed"}}}
+{"type":"turn_result","ok":true,"outcome":"task_completed","turn":1}

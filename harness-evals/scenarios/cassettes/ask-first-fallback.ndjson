@@ -1,0 +1,8 @@
+{"event":{"id":1,"event":{"type":"user","blocks":[{"type":"text","text":"The primary model hit a rate cap mid-run. Continue the task; any model hop must be confirmed by me first."}]}}}
+{"event":{"id":2,"event":{"type":"tool_call","call_id":"c1","tool":"view_window","arguments":{"path":"src/eviction.rs","window":[0,80]}}}}
+{"type":"fallback_ask","ask":{"ask_id":7,"current":{"provider":"mock","model":"big"},"proposed":{"provider":"mock","model":"small"},"reason":"cap pressure","deadline_ms":5000}}
+{"type":"fallback_resolved","ask_id":7,"chosen":{"provider":"mock","model":"small"}}
+{"event":{"id":3,"event":{"type":"assistant","blocks":[{"type":"text","text":"The dispatcher proposed a fallback from mock/big to mock/small and asked before switching (fallback_ask, deadline 5000 ms); the hop executed only after my explicit confirmation, so the run continued on the confirmed model with no silent substitution."}]}}}
+{"event":{"id":4,"event":{"type":"tool_call","call_id":"c2","tool":"task_completed","arguments":{"verdict":"CONFIRMED","evidence":["c1"]}}}}
+{"event":{"id":5,"event":{"type":"turn_finished","turn":1,"outcome":"task_completed"}}}
+{"type":"turn_result","ok":true,"outcome":"task_completed","turn":1}
