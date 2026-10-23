@@ -233,7 +233,7 @@ an eval table, harness-matched rows only:
 
 ## Status
 
-Works at this commit (HEAD `c836542`; every production-wired row is verified
+Works at this commit (HEAD `ee4b9df`; every production-wired row is verified
 against the daemon/CLI/TUI/web/VS Code source and carries recorded task
 evidence in `.omo/evidence/`). The distinction that matters to a reader:
 **production-wired** means the mechanism is reachable through the shipped
@@ -247,7 +247,7 @@ implemented and tested inside a library crate.
 | Protocol v2 frames: per-turn usage (model/effort/tokens/cost), FallbackAsk/FallbackResolved (mediated, v1-withheld), Verdict with evidence ids (task-1) | `harness-wasm` — wasmtime/WASI 0.2 plugin runtime; feature-gated, off by default, zero dependents |
 | Dispatcher live in the daemon loop: routing.json roles/tiers/categories/fallbacks/cheap-pool, ask-first fallback, same-model retry on timeout (task-9/13) | OAuth device-flow subscription auth (providers `device_flow.rs`, RFC 8628 + PKCE); cassette-tested in the crate, not yet composed into the daemon's env-based selection |
 | 2026-10 model catalog wave (GPT-6 Sol, GPT-6.1 Sol, GPT-6 Luna, Gemini 4 Argon, Grok 4.7, Claude Opus/Sonnet/Haiku 5.5 beside the existing 12; fail-closed effort grids) (task-10) | Orchestration best-of-N (same prompt on up to four models) and plan-branch comparison; the spec-driven launch path and fork-join children ARE wired (task-8) |
-| Cross-session transcript search over the maintained `event_fts` index: `GET /sessions/search`, `harness sessions search`, session-scoped `search_sessions` model tool (task-11) | Worker (out-of-process executor) protocol — deliberately reserved; in-process executors are the production path (task-3) |
+| Cross-session transcript search over the maintained `event_fts` index: `GET /sessions/search`, `harness sessions search`, session-scoped `search_sessions` model tool, ranked rendering (task-11). Search surface production-wired; the live-session feed is library-tested/unwired — the daemon engine does not insert live conversation turns into `event_fts`, so searches see seeded/test data only (follow-up logged to wire the recorded-event path) | Worker (out-of-process executor) protocol — deliberately reserved; in-process executors are the production path (task-3) |
 | ACP stdio agent mode (`harness-daemon --acp`): initialize, session/prompt, session/update, fs read; mediation through the same queues (task-12) | |
 | `task(category)` delegation (depth cap, fresh grant state, per-parent fan-out/budget caps) + curated read-only `explore`/`librarian` cheap-pool agents + team surfacing with Warp-style status precedence (task-13/14/15) | |
 | Opt-in interactive plan mode (off by default; write tools gated until approve/edit/reject; session grants suspended while planning) (task-16) | |
