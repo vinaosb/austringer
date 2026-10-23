@@ -1,0 +1,313 @@
+﻿cargo :    Compiling harness-tui v0.1.0 (C:\Users\vsbb1\source\repos\harness\harness-tui)
+At line:1 char:220
++ ... $env:Path"; cargo test -p harness-tui --test f3_qa -- --nocapture 2>& ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling ha...ss\harness-tui):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.96s
+     Running tests\f3_qa.rs (C:\ct\debug\deps\f3_qa-059060c1b8fc2786.exe)
+
+running 4 tests
+=== f3-cost decode probe: Err(Malformed("u128 is not supported"))
+=== f3-plan pre-attach server msg: StateResyncRequired { last_event_id: 0 }
+=== f3-plan pre-attach server msg: Snapshot { frames: [] }
+=== f3-plan /mode actions ===
+[Send(PlanMode { on: true })]
+=== f3-plan live server msg: HelloAck { version: 2, last_event_id: 0 }
+=== f3-plan live server msg: Event { frame: Frame { id: 1, event: PlanModeEntered { plan: 1 } } }
+=== f3-plan hub after /mode ===
+{"type":"event","frame":{"id":1,"event":{"type":"plan_mode_entered","plan":1}}}
+=== f3-team screen ===
+> transcript (0)
+> tools (0)
+> diffs (0)
+v agents (2)
+status: in_progress
+budget: 2/4 children | 512/100000 tokens
+deep             f3-child-deep success fixture complete
+quick            f3-child-quick running
+* turn 1 verdict: confirmed (3 evidence events)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: Γëê0/200000 (0%) | cache: n/a | cost: unpriced (no usage events yet)
+harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+=== f3-team notes ===
+turn 1 verdict: confirmed (3 evidence events)
+test f3_children_precedence_and_verdict_surface ... ok
+=== f3-fallback modal screen ===
+fallback proposed: claude-opus-4-7 -> gemini-3-pro
+outage; verbatim hop 1 of 1
+[y] hop to gemini-3-pro  [n] keep claude-opus-4-7
+
+> transcript (1)
+> tools (0)
+> diffs (0)
+> agents (0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: Γëê28/200000 (0%) | cache: n/a | cost: unpriced (no usage events yet)
+harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+=== f3-fallback notes after hop ===
+fallback: model fallback proposed: claude-opus-4-7 -> gemini-3-pro (outage; verbatim hop 1 of 1); awaiting answer
+fallback: model fallback resolved; next requests target gemini-3-pro
+do the routed thing
+hopped onward
+fallback 1 resolved: next model gemini-3-pro
+=== f3-fallback screen (HUD) ===
+> transcript (4)
+> tools (0)
+> diffs (0)
+> agents (0)
+* fallback 1 resolved: next model gemini-3-pro
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: Γëê53/200000 (0%) | cache: 533.3% | cost: unpriced (no usage events yet)
+harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+test f3_fallback_ask_visible_hop_answer_reroutes_turn ... ok
+=== f3-plan modal screen ===
+plan 1 (revision 1) awaiting approval
+[y] approve  [n] reject (plan mode stays active)
+
+> transcript (5)
+> tools (1)
+> diffs (0)
+> agents (0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: Γëê56/200000 (0%) | cache: n/a | cost: unpriced (no usage events yet)
+harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+=== f3-cost hub msgs ===
+{"type":"event","frame":{"id":1,"event":{"type":"turn_started","turn":1}}}
+{"type":"usage","turn":1,"model":{"provider":"anthropic","model":"claude-sonnet-4-5"},"effort":null,"input_tokens":1200,"output_tokens":80,"cache_read":6400,"cache_write":0,"cost_usd_micros":6720}
+{"type":"event","frame":{"id":2,"event":{"type":"cost_warning","consumed_micros":6720,"cap_micros":8000}}}
+{"type":"usage","turn":1,"model":{"provider":"anthropic","model":"claude-sonnet-4-5"},"effort":null,"input_tokens":1200,"output_tokens":80,"cache_read":6400,"cache_write":0,"cost_usd_micros":6720}
+{"type":"event","frame":{"id":3,"event":{"type":"cost_stop","consumed_micros":13440,"cap_micros":8000}}}
+{"type":"event","frame":{"id":4,"event":{"type":"diff","path":"src/demo.rs","before_hash":"","after_hash":"0123456789ab","hunks":["@@ -1,2 +1,2 @@\n-old line\n+new line"]}}}
+{"type":"event","frame":{"id":5,"event":{"type":"recorded","seq":1,"event":{"type":"user","blocks":[{"type":"text","text":"run the echo tool"}]}}}}
+{"type":"event","frame":{"id":6,"event":{"type":"recorded","seq":2,"event":{"type":"assistant","blocks":[{"type":"text","text":"working on it"}]}}}}
+{"type":"event","frame":{"id":7,"event":{"type":"recorded","seq":3,"event":{"type":"tool_call","call_id":"t1","tool":"echo","arguments":{"q":1}}}}}
+{"type":"event","frame":{"id":8,"event":{"type":"recorded","seq":4,"event":{"type":"tool_result","call_id":"t1","blocks":[{"type":"text","text":"{\"diff\":{\"after_hash\":\"0123456789ab\",\"before_hash\":\"\",\"hunks\":[\"@@ -1,2 +1,2 @@\\n-old line\\n+new line\"],\"path\":\"src/demo.rs\"},\"text\":\"echoed by mock worker\"}"}]}}}}
+{"type":"event","frame":{"id":9,"event":{"type":"recorded","seq":5,"event":{"type":"assistant","blocks":[{"type":"text","text":"done: turn completed"}]}}}}
+{"type":"event","frame":{"id":10,"event":{"type":"recorded","seq":6,"event":{"type":"tool_call","call_id":"done","tool":"task_completed","arguments":{}}}}}
+{"type":"event","frame":{"id":11,"event":{"type":"recorded","seq":7,"event":{"type":"tool_result","call_id":"done","blocks":[{"type":"text","text":"task completed"}]}}}}
+{"type":"event","frame":{"id":12,"event":{"type":"turn_finished","turn":1,"outcome":"task_completed"}}}
+=== f3-cost surface ===
+run the echo tool
+working on it
+done: turn completed
+ask 1 allowed by tui-test
+=== f3-cost screen (diag) ===
+> transcript (3)
+> tools (2)
+> diffs (1)
+> agents (0)
+* ask 1 allowed by tui-test
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: Γëê12/200000 (0%) | cache: 533.3% | cost: claude-sonnet-4-5 $0.02
+harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+=== f3-cost screen (HUD) ===
+> transcript (3)
+> tools (2)
+> diffs (1)
+> agents (0)
+* ask 1 allowed by tui-test
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: Γëê12/200000 (0%) | cache: 533.3% | cost: claude-sonnet-4-5 $0.02
+harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+=== f3-cost screen (diffs open) ===
+> transcript (3)
+> tools (2)
+v diffs (1)
+src/demo.rs +1/-1 (1 pending)
+  [pending] @@ -1,2 +1,2 @@
+  -old line
+  +new line
+> agents (0)
+* ask 1 allowed by tui-test
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: Γëê12/200000 (0%) | cache: 533.3% | cost: claude-sonnet-4-5 $0.02
+harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+=== f3-cost surface after hunk accept ===
+run the echo tool
+working on it
+done: turn completed
+ask 1 allowed by tui-test
+hunk accepted: src/demo.rs
+=== f3-plan fixture after approve ===
+alpha
+BETA EDITED
+gamma
+
+=== f3-plan fixture after reject ===
+alpha
+BETA EDITED
+gamma
+
+=== f3-plan final notes ===
+plan mode entered (plan 1); writes gated until approval
+plan 1 pending approval: write tool 'edit_lines' on 'C:/Users/vsbb1/AppData/Local/Temp/.tmp3KAtjk/sessions/f3-plan/fixture.txt' blocked
+plan then edit
+planning
+plan drafted
+plan 1 approved; writes re-armed
+now edit
+executing
+done editing
+plan mode entered (plan 2); writes gated until approval
+plan 2 pending approval: write tool 'edit_lines' on 'C:/Users/vsbb1/AppData/Local/Temp/.tmp3KAtjk/sessions/f3-plan/fixture.txt' blocked
+edit again
+planning two
+still gated
+plan ask 1: plan 1 approved by tui-test; writes re-armed
+ask 2 allowed by tui-test
+plan ask 3: plan 2 rejected by tui-test; still gated
+test f3_plan_approve_and_reject_through_the_wire ... ok
+=== f3-cost surface after capped submit ===
+run the echo tool
+working on it
+done: turn completed
+ask 1 allowed by tui-test
+hunk accepted: src/demo.rs
+daemon error (MalformedFrame): money budget exhausted for session period: consumed 13440 of 8000 micro-USD
+test f3_cost_warning_stop_refusal_and_hunk_surface ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.06s
+

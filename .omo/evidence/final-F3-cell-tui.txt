@@ -1,0 +1,1766 @@
+F3 manual-QA cell: TUI frontend
+================================
+Date: 2026-10-22 | HEAD: ee4b9df | Runner: cargo nextest (CARGO_BUILD_JOBS=3 wrapper)
+Throwaway harness: harness-tui/tests/f3_cell_tui.rs (7 tests) â€” WRITTEN, RUN, DELETED.
+Pattern: tests/daemon_e2e.rs (real in-process daemon per cell on 127.0.0.1:0, the real
+harness-tui client task over the WebSocket wire, App driven purely by key scripts through
+UiEvent::Key) + the task-19 frame-injection pattern for the pure-client scroll mechanism.
+Assertions target App/SessionView/HUD state observables and TestBackend-rendered screens;
+every key observable is println!'d in the run log below.
+
+Daemons used (all hermetic, zero network beyond loopback, zero keys):
+- routed daemon  : DaemonState + RoutingIntake (routing.json: default role grok-4-7,
+                   one-hop chain grok-4-6; doc provider xai so BOTH identities price in
+                   the builtin table via the grok-4 version-boundary prefix match);
+                   scripted per-model stacks (dispatcher-live-tests pattern).
+- priced daemon  : identity-bearing factory (anthropic/claude-sonnet-4-5, priced), cyclic
+                   inference (edit_lines tool call w/ 25,920-micro-USD usage, then a
+                   text-only ender), session cap 30,000 micro-USD, split-brain worker
+                   serving edit_lines whose result JSON carries the diff payload.
+- launch daemon  : CompleteOnly children (250 ms) + a two-task disjoint-write-set spec
+                   launched for real via the /launch submit text on the wire.
+- plan daemon    : CoreExecutors::in_process (REAL edit_lines on disk) + scripted steps.
+
+MECHANISM -> OBSERVABLE ASSERTED -> RESULT
+------------------------------------------
+1. Routed turn (submit -> assistant chunk rendered)
+   Observable: Entry::User("do the routed thing") + Entry::Assistant("routed reply chunk")
+   in view.entries(); turns().last().outcome == Some("turn_complete"); Usage frame went
+   live in the HUD ("cache: 20.0%", "cost: grok-4-7 $3.20" â€” the ROUTED identity); the
+   ctrl+1 screen renders "you: do the routed thing" + the chunk + the ctx HUD line.
+   -> PASS
+
+2a. Fallback ask, acknowledged (y hops)
+   Observable: fallback_gate() opens; modal renders "fallback proposed: grok-4-7 ->
+   grok-4-6", the outage reason, and "[y] hop to grok-4-6  [n] keep grok-4-7"; typing
+   ('i') swallowed while open (bar_focused false); y emits exactly
+   UiAction::Send(ClientMsg::FallbackAnswer{ ask_id, chosen == proposed }); the turn is
+   then SERVED on the hop (assistant "served on the hop"); resolution note "fallback 1
+   resolved: next model grok-4-6"; hub carries the proposed/resolved Notification pair
+   and a Usage frame citing xai/grok-4-6 effort=high cost 3,198,000 micro-USD; HUD cost
+   row flips to "cost: grok-4-6 $3.20" (identity contract: the hop is visible, never
+   silent).
+   -> PASS
+
+2b. Fallback ask, denied (n keeps current)
+   Observable: n emits ClientMsg::FallbackAnswer{ chosen.model == "grok-4-7" } (the
+   CURRENT identity â€” never a silent hop).
+   -> PASS
+
+2c. Fallback ask, unacknowledged (timeout -> verbatim retry notice)
+   Observable: with ask_timeout 200 ms and no answer, the session publishes the VERBATIM
+   degraded-mode notice twice ("fallback: model fallback asked; no interactive client â€”
+   retrying same model"), both resolutions keep the current model ("fallback N resolved:
+   next model grok-4-7" x2), no resolution ever names the hop, the hop model has NO Usage
+   row (zero substitution events), and the turn fails typed instead of looping.
+   -> PASS
+
+3a. Cost Warning at 80% (cap 30,000 micro-USD; turn-1 spend 25,920)
+   Observables: daemon publishes SessionEvent::CostWarning{25920/30000} on the hub (seen
+   in the hub dump); HUD cost line updates per Usage frame ("cost: claude-sonnet-4-5
+   $0.03", "cache: 84.2%").
+   -> PASS (hub + HUD)
+
+3b. Cost Stop at 100% (turn-2 spend crosses to 51,840)
+   Observables: daemon publishes SessionEvent::CostStop{51840/30000}; the NEXT submit is
+   typed-refused at intake and the TUI notes it: "daemon error (MalformedFrame): money
+   budget exhausted for session period: consumed 51840 of 30000 micro-USD"; the in-turn
+   follow-up inference also fails typed ("failed::InferenceExhausted { cause: money
+   budget exhausted ... }") as the TurnFinished outcome.
+   -> PASS (hub + typed refusal surfaced)
+
+3c. CostWarning/CostStop as TUI badge notices
+   Observable expected: Entry::Notice("cost warning: 25920 of 30000 micro-USD (80% of
+   cap)") / ("cost stop: cap reached (...)"). NOT PRESENT in the TUI surface.
+   -> FAIL â€” DEFECT (reproduced from the prior F3 cell, still present at HEAD):
+      the u128 fields of the cost frames cannot round-trip the client's wire decode.
+      decode_server probe: Err(Malformed("u128 is not supported")) â€” SessionEvent is an
+      internally-tagged serde enum, so deserialization buffers variant fields through
+      serde's Content, which has no u128. The daemon PUBLISHES the frames (hub dump
+      proves it); the TUI client silently drops each one (a malformed strike; three
+      strikes would self-disconnect the client). The badge notices therefore never
+      surface. Everything else about the cost mechanism (ledger, thresholds, typed
+      refusal, HUD dollars) works.
+
+4. edit_lines tool call -> diffs accordion -> per-hunk y/n
+   Observable: the executed edit_lines (worker executor, permission-gated: "ask N allowed
+   by tui-test") yields one SessionEvent::Diff per execution (2 turns -> diffs (2));
+   ctrl+5 accordion renders path "src/demo.rs", the per-diff diffstat "+2/-2 (2
+   pending)", and the hunk bodies ("+new line", "-sole removal"); y accepts the first
+   pending hunk and n rejects the next (HunkDecision::Accepted/Rejected asserted on
+   diffs()[0].hunks; decisions emit NO wire action â€” client-side state); the decided
+   hunks render "[accepted]"/"[rejected]" and the transcript notes "hunk accepted:
+   src/demo.rs" / "hunk rejected: src/demo.rs" (x2). The REAL in-process edit_lines
+   execution is additionally proven in cell 6 (bytes land on disk).
+   -> PASS
+   N-A note: in-process CoreExecutors do NOT emit SessionEvent::Diff (tools/mod.rs
+   ignores the event sink; only WorkerToolExecutor::forward_diff publishes Diff frames).
+   The accordion was therefore fed through the split-brain worker channel â€” a
+   production-wired executor path â€” with a mock edit_lines worker returning the diff
+   payload.
+
+5. Agents accordion (children rows + status)
+   Observable: a REAL /launch (two disjoint-write-set tasks) drives ChildStarted /
+   ChildFinished over the wire; mid-run the team aggregate is InProgress with
+   "ship-child-t1" state "running"; terminally both rows show "t1 ship-child-t1 success
+   completed" / "t2 ship-child-t2 success completed" with "status: success"; the
+   TeamBudget frame renders "budget: 2/4 children | 512/100000 tokens" (ctrl+3).
+   -> PASS
+   Findings recorded: (a) the TUI omnibar's local grammar REFUSES "/launch" â€” typing it
+   yields zero wire actions and the note "unknown command /launch â€” /help lists
+   commands"; the launch submit text had to be sent on the wire lane directly (CLI/HTTP
+   parity). The TUI cannot launch orchestrations through its own input today. (b) The
+   /launch path emits ChildStarted/ChildFinished but NOT TeamBudget (that frame comes
+   from the task-delegation path); the budget frame was published through the host's
+   publish (the same typed frame the delegation path emits).
+
+6. Plan-mode ask modal (approve/reject)
+   Observable: "/mode plan" notes "plan mode entered"; a write-tool turn in plan mode is
+   blocked ("plan N pending approval: write tool 'edit_lines' ... blocked") with the
+   PlanAsk modal open ("plan 1 (revision 1) awaiting approval", "[y] approve  [n] reject
+   (plan mode stays active)"); typing swallowed; pre-approval writes leave disk
+   untouched; y emits ClientMsg::PlanAnswer{Approve} and "writes re-armed" notes; the
+   re-armed edit asks normal permission (tool=edit_lines, target=...fixture.txt), y
+   allows, and the REAL in-process edit_lines lands "BETA EDITED" on disk; re-entering
+   plan mode and rejecting (PlanAnswer{Reject}) notes "still gated" and the second
+   fixture line is never written ("ALPHA EDITED" absent).
+   -> PASS
+
+7. Scroll dispatch
+   Observable (task-19 injection pattern â€” pure client dispatch): scroll_offset 0 ->
+   5 after five ArrowUp; the body window lifts to line-18..line-37 with the tail
+   (line-39) gone; five ArrowDown return to offset 0 and the tail; a new frame resets
+   the offset (auto-follow) and line-40 renders.
+   -> PASS
+
+SUMMARY: 7/7 tests green; 10 of 11 mechanism observables PASS; 1 FAIL is a real,
+reproduced product defect (u128 cost frames undecodable by the TUI client) plus two
+recorded gaps (omnibar has no /launch grammar; in-process executors emit no Diff frames).
+
+Run command
+-----------
+cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p
+harness-tui --test f3_cell_tui --success-output immediate"
+Result: Summary [0.401s] 7 tests run: 7 passed, 0 skipped.
+
+Cleanup
+-------
+- harness-tui/tests/f3_cell_tui.rs DELETED after the run; `git status --short` shows no
+  f3_cell_tui.rs entry (the remaining harness-tui entries â€” `M harness-tui/Cargo.toml`
+  and `?? harness-tui/tests/f3_qa.rs` â€” pre-date this cell and belong to the earlier F3
+  effort; this task added and removed only its own file).
+- No stray processes: the daemon was in-process (test task); no cargo/nextest/harness
+  processes survived the run.
+- No product edits, no commits.
+
+================================================================================
+THROWAWAY TEST SOURCE (harness-tui/tests/f3_cell_tui.rs, as run, then deleted)
+================================================================================
+//! THROWAWAY F3 manual-QA cell â€” the TUI frontend. DELETED after the
+//! evidence run; follows tests/daemon_e2e.rs (real in-process daemon,
+//! real client task over the WS wire, App driven by key scripts) plus
+//! the task-19 frame-injection pattern for pure-client mechanisms.
+//! Prints every observable surface to stdout for the evidence file.
+
+mod common;
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use harness_core::agent_loop::inference::{PendingCall, TASK_COMPLETED_TOOL};
+use harness_core::agent_loop::{
+    AssistantTurn, CancelToken, Inference, InferenceError, InferenceRequest,
+};
+use harness_core::event::ContentBlock;
+use harness_daemon::config::DaemonConfig;
+use harness_daemon::protocol::{Frame, ServerMsg, SessionEvent};
+use harness_daemon::routing::{ModelSource, RoutingIntake};
+use harness_daemon::server::{DaemonState, build_router};
+use harness_daemon::usage::ComposedInference;
+use harness_daemon::worker::{DaemonToWorker, ToolGrant};
+use harness_intel::catalog::Catalog;
+use harness_intel::routing::RoutingTable;
+use harness_providers::identity::ModelIdentity;
+use harness_tui::app::{App, Conn, UiAction, UiEvent, DEFAULT_CONTEXT_WINDOW};
+use harness_tui::client::ClientCmd;
+use harness_tui::keys::Key;
+
+use common::{screen, wait_until, wire, Wired};
+
+fn plain(code: crossterm::event::KeyCode) -> Key {
+    Key {
+        code,
+        mods: crossterm::event::KeyModifiers::NONE,
+    }
+}
+
+fn ctrl(c: char) -> UiEvent {
+    UiEvent::Key(Key {
+        code: crossterm::event::KeyCode::Char(c),
+        mods: crossterm::event::KeyModifiers::CONTROL,
+    })
+}
+
+fn type_and_submit(app: &mut App, text: &str) -> Vec<UiAction> {
+    let mut actions = Vec::new();
+    actions.extend(app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('i')))));
+    for c in text.chars() {
+        actions.extend(app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char(c)))));
+    }
+    actions.extend(app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Enter))));
+    actions
+}
+
+async fn dispatch(wired: &Wired, actions: Vec<UiAction>) {
+    for action in actions {
+        let cmd = match action {
+            UiAction::Send(msg) => ClientCmd::Send(msg),
+            UiAction::Reconnect => ClientCmd::Reconnect,
+            UiAction::Shutdown => ClientCmd::Shutdown,
+        };
+        let _ = wired.cmd.send(cmd).await;
+    }
+}
+
+async fn serve(state: Arc<DaemonState>) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let app = build_router(Arc::clone(&state));
+    tokio::spawn(async move {
+        let serve = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        );
+        let _ = serve.await;
+    });
+    format!("127.0.0.1:{port}")
+}
+
+async fn attach(base: &str, session: &str, token: &str) -> (App, Wired) {
+    let wired = wire(base, session, token);
+    let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| matches!(a.conn, Conn::Attached),
+            Duration::from_secs(5)
+        ),
+        "attach; conn {:?}",
+        app.conn
+    );
+    (app, wired)
+}
+
+/// All user-visible transcript/notice lines (entries + client notes).
+fn surface_join(app: &App) -> String {
+    use harness_tui::transcript::Entry;
+    let mut lines: Vec<String> = app
+        .view
+        .entries()
+        .iter()
+        .map(|e| match e {
+            Entry::User(t) | Entry::Assistant(t) | Entry::System(t) | Entry::Notice(t)
+            | Entry::Condensed(t) => t.clone(),
+        })
+        .collect();
+    lines.extend(app.view.notes().iter().cloned());
+    lines.join("\n")
+}
+
+enum Step {
+    Turn(AssistantTurn),
+    Fail(String),
+}
+
+struct ScriptStack {
+    steps: std::sync::Mutex<std::collections::VecDeque<Step>>,
+}
+
+#[async_trait]
+impl Inference for ScriptStack {
+    async fn infer(
+        &mut self,
+        _request: &InferenceRequest<'_>,
+        _cancel: &CancelToken,
+    ) -> Result<AssistantTurn, InferenceError> {
+        match self.steps.lock().expect("steps").pop_front() {
+            Some(Step::Turn(turn)) => Ok(turn),
+            Some(Step::Fail(reason)) => Err(InferenceError::Failure(reason)),
+            None => Err(InferenceError::Failure("script exhausted".to_owned())),
+        }
+    }
+}
+
+fn call(id: &str, tool: &str, arguments: serde_json::Value) -> PendingCall {
+    PendingCall {
+        call_id: id.into(),
+        tool: tool.into(),
+        arguments,
+    }
+}
+
+fn text_turn(text: &str, calls: Vec<PendingCall>) -> AssistantTurn {
+    AssistantTurn {
+        blocks: vec![ContentBlock::Text { text: text.to_owned() }],
+        tool_calls: calls,
+        usage: None,
+    }
+}
+
+/// The per-model provider-stack source for routed daemons (the
+/// dispatcher-live pattern): hands each model its scripted stack once.
+fn script_source(
+    scripts: Vec<(&str, Vec<Step>)>,
+) -> ModelSource {
+    let map: std::collections::HashMap<String, Vec<Step>> = scripts
+        .into_iter()
+        .map(|(model, steps)| (model.to_owned(), steps))
+        .collect();
+    let map = std::sync::Mutex::new(map);
+    Arc::new(move |model: &str| {
+        let mut guard = map.lock().expect("scripts");
+        guard.remove(model).map(|steps| {
+            Box::new(ScriptStack {
+                steps: std::sync::Mutex::new(steps.into()),
+            }) as Box<dyn Inference>
+        })
+    })
+}
+
+fn base_config(dir: &tempfile::TempDir, ask_timeout: Duration) -> DaemonConfig {
+    DaemonConfig {
+        data_dir: dir.path().to_owned(),
+        token: Some("f3-cell-token".into()),
+        ask_timeout,
+        ..DaemonConfig::default()
+    }
+}
+
+// routing.json: the session `default` role on grok-4-7 with a
+// one-hop chain onto grok-4-6. Both price through the builtin xai
+// table's grok-4 alias (version-boundary prefix match), so an
+// acknowledged hop is visible in the HUD cost row with real dollars.
+const ROUTING: &str = r#"
+{
+  "provider": "xai",
+  "roles": [ { "role": "default", "model": "grok-4-7" } ],
+  "fallbacks": [ { "model": "grok-4-7", "chain": ["grok-4-6"] } ],
+  "rate_limit_wait_out_secs": 1,
+  "retry_attempts": 1
+}
+"#;
+
+/// A routed daemon over the scripted per-model stacks (the configured
+/// identity is openai/gpt-6-sol â€” distinct from every routed model so
+/// a mis-route would be unambiguous; the routed path replaces the
+/// factory stack entirely).
+fn routed_daemon(
+    ask_timeout: Duration,
+    scripts: Vec<(&str, Vec<Step>)>,
+) -> (Arc<DaemonState>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let factory: harness_daemon::usage::InferenceFactory = Arc::new(|| ComposedInference {
+        inference: Box::new(NeverServes),
+        identity: Some(ModelIdentity::new("openai", "gpt-6-sol")),
+    });
+    let mut state = DaemonState::new(base_config(&dir, ask_timeout), factory).expect("state");
+    let table = RoutingTable::from_json(ROUTING, &Catalog::seeded()).expect("routing doc");
+    state.routing = Some(Arc::new(RoutingIntake {
+        table,
+        models: script_source(scripts),
+    }));
+    (Arc::new(state), dir)
+}
+
+struct NeverServes;
+
+#[async_trait]
+impl Inference for NeverServes {
+    async fn infer(
+        &mut self,
+        _request: &InferenceRequest<'_>,
+        _cancel: &CancelToken,
+    ) -> Result<AssistantTurn, InferenceError> {
+        Err(InferenceError::Failure(
+            "factory stack must never serve on the routed path".to_owned(),
+        ))
+    }
+}
+
+fn outage() -> Step {
+    Step::Fail("provider unreachable: connection refused".to_owned())
+}
+
+/// Priced usage at xai grok-4 list rates: 800k in / 50k out / 160k
+/// cache-read = 3,198,000 micro-USD ($3.20) per turn, cache hit 20.0%.
+fn priced_usage() -> Option<harness_core::agent_loop::inference::TurnUsage> {
+    Some(harness_core::agent_loop::inference::TurnUsage {
+        input_tokens: 800_000,
+        output_tokens: 50_000,
+        cache_read_tokens: 160_000,
+        cache_write_tokens: 0,
+    })
+}
+
+fn priced_turn(text: &str) -> AssistantTurn {
+    AssistantTurn {
+        blocks: vec![ContentBlock::Text { text: text.to_owned() }],
+        tool_calls: Vec::new(),
+        usage: priced_usage(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism 1: routed turn â€” submit -> assistant chunk rendered, turn
+// lifecycle observable, Usage frame cites the ROUTED model.
+// ---------------------------------------------------------------------------
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cell1_routed_turn_renders_assistant_chunk() {
+    let (state, _dir) = routed_daemon(
+        Duration::from_secs(30),
+        vec![("grok-4-7", vec![Step::Turn(priced_turn("routed reply chunk"))])],
+    );
+    let base = serve(state).await;
+    let (mut app, wired) = attach(&base, "f3-cell1", "f3-cell-token").await;
+
+    dispatch(&wired, type_and_submit(&mut app, "do the routed thing")).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.view.turns().last().is_some_and(|t| t.outcome.is_some()),
+            Duration::from_secs(10)
+        ),
+        "turn finished; turns {:?} surface:\n{}",
+        app.view.turns(),
+        surface_join(&app)
+    );
+    let surface = surface_join(&app);
+    println!("=== cell1 surface ===\n{surface}");
+    assert!(
+        surface.contains("you: do the routed thing") || surface.contains("do the routed thing"),
+        "user submit recorded: {surface}"
+    );
+    assert!(
+        app.view.entries().iter().any(
+            |e| matches!(e, harness_tui::transcript::Entry::Assistant(t) if t.contains("routed reply chunk"))
+        ),
+        "assistant chunk rendered in entries: {:?}",
+        app.view.entries()
+    );
+    // The routed identity's usage went live: cache and cost leave n/a.
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.hud.cache_line() == "cache: 20.0%"
+                && a.hud.cost_line().contains("grok-4-7 $3.20"),
+            Duration::from_secs(5)
+        ),
+        "usage frame applied; cache={} cost={}",
+        app.hud.cache_line(),
+        app.hud.cost_line()
+    );
+    println!(
+        "=== cell1 hud: cache={} cost={}",
+        app.hud.cache_line(),
+        app.hud.cost_line()
+    );
+    let rendered = {
+        app.step(ctrl('1'));
+        screen(&app, 110, 30)
+    };
+    println!("=== cell1 screen ===\n{rendered}");
+    assert!(
+        rendered.contains("routed reply chunk"),
+        "rendered assistant chunk: {rendered}"
+    );
+    assert!(rendered.contains("ctx:"), "HUD rendered");
+    let _ = wired.cmd.send(ClientCmd::Shutdown).await;
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism 2: fallback ask â€” modal, y HOPS to the proposed model (the
+// turn is then SERVED by the hop: Usage/HUD cite grok-4-6).
+// ---------------------------------------------------------------------------
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cell2a_fallback_ask_hop_answer_reroutes() {
+    let (state, _dir) = routed_daemon(
+        Duration::from_secs(30),
+        vec![
+            ("grok-4-7", vec![outage()]),
+            ("grok-4-6", vec![Step::Turn(priced_turn("served on the hop"))]),
+        ],
+    );
+    let base = serve(Arc::clone(&state)).await;
+    let (mut app, wired) = attach(&base, "f3-cell2a", "f3-cell-token").await;
+    let mut hub = state.session("f3-cell2a").hub_subscribe();
+
+    dispatch(&wired, type_and_submit(&mut app, "needs a hop")).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.fallback_gate().is_some(),
+            Duration::from_secs(10)
+        ),
+        "fallback ask modal; surface:\n{}",
+        surface_join(&app)
+    );
+    let ask = app.fallback_gate().expect("ask").clone();
+    println!(
+        "=== cell2a ask: current={} proposed={} reason={}",
+        ask.current.model, ask.proposed.model, ask.reason
+    );
+    let modal = screen(&app, 110, 30);
+    println!("=== cell2a modal ===\n{modal}");
+    assert!(
+        modal.contains("fallback proposed: grok-4-7 -> grok-4-6"),
+        "modal names the hop: {modal}"
+    );
+    assert!(
+        modal.contains("[y] hop to grok-4-6  [n] keep grok-4-7"),
+        "hop/keep affordances: {modal}"
+    );
+    // Modal is modal: typing is swallowed.
+    app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('i'))));
+    assert!(!app.bar_focused(), "fallback modal swallows typing");
+
+    let answer = app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('y'))));
+    match answer.as_slice() {
+        [UiAction::Send(harness_daemon::protocol::ClientMsg::FallbackAnswer { ask: id, chosen })] => {
+            assert_eq!(*id, ask.ask_id);
+            assert_eq!(chosen.model, "grok-4-6", "y answers the PROPOSED hop");
+        }
+        other => panic!("expected one fallback answer, got {other:?}"),
+    }
+    dispatch(&wired, answer).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.fallback_gate().is_none()
+                && a.view.turns().last().is_some_and(|t| t.outcome.is_some()),
+            Duration::from_secs(10)
+        ),
+        "hop resolved, turn finished; surface:\n{}",
+        surface_join(&app)
+    );
+    let surface = surface_join(&app);
+    println!("=== cell2a surface after hop ===\n{surface}");
+    assert!(
+        surface.contains("model fallback proposed: grok-4-7 -> grok-4-6"),
+        "proposed notification: {surface}"
+    );
+    assert!(
+        surface.contains("next model grok-4-6"),
+        "resolution names the hop: {surface}"
+    );
+    assert!(
+        surface.contains("served on the hop"),
+        "turn served by the hop model: {surface}"
+    );
+    // Identity contract observable: the HUD cost row cites the HOP
+    // model with real dollars (grok-4-6 is priced). The Usage
+    // frame rides the events lane and may trail the control-bus
+    // resolution, so wait for it explicitly.
+    let mut hub_seen: Vec<String> = Vec::new();
+    while let Ok(msg) = hub.try_recv() {
+        hub_seen.push(serde_json::to_string(&msg).unwrap_or_default());
+    }
+    println!("=== cell2a hub ===\n{}", hub_seen.join("\n"));
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.hud.cost_line().contains("grok-4-6 $"),
+            Duration::from_secs(5)
+        ),
+        "HUD cites the hopped model; hud: {} surface:\n{}",
+        app.hud.cost_line(),
+        surface_join(&app)
+    );
+    println!("=== cell2a hud: {}", app.hud.cost_line());
+    let _ = wired.cmd.send(ClientCmd::Shutdown).await;
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism 2 (deny + unacknowledged): n KEEPS the current model; an
+// unanswered ask times out, the session publishes the VERBATIM
+// degraded-mode retry notice, and the SAME model is retried â€” the hop
+// model never serves (no Usage row for it).
+// ---------------------------------------------------------------------------
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cell2b_fallback_deny_keeps_and_timeout_retries_same_model() {
+    const DEGRADED: &str =
+        "model fallback asked; no interactive client â€” retrying same model";
+    let (state, _dir) = routed_daemon(
+        Duration::from_millis(200),
+        vec![
+            ("grok-4-7", vec![outage(), outage(), outage()]),
+            ("grok-4-6", vec![Step::Turn(priced_turn("never"))]),
+        ],
+    );
+    let base = serve(state).await;
+    let (mut app, wired) = attach(&base, "f3-cell2b", "f3-cell-token").await;
+
+    dispatch(&wired, type_and_submit(&mut app, "deny then ignore")).await;
+    // Ask 1: answer n â€” the answer pins the CURRENT identity.
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.fallback_gate().is_some(),
+            Duration::from_secs(10)
+        ),
+        "first ask; surface:\n{}",
+        surface_join(&app)
+    );
+    let deny = app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('n'))));
+    match deny.as_slice() {
+        [UiAction::Send(harness_daemon::protocol::ClientMsg::FallbackAnswer { chosen, .. })] => {
+            assert_eq!(
+                chosen.model, "grok-4-7",
+                "n keeps the current model (never a silent hop)"
+            );
+        }
+        other => panic!("expected a fallback answer, got {other:?}"),
+    }
+    dispatch(&wired, deny).await;
+    // Ask 2: leave it UNACKNOWLEDGED â€” it times out (200 ms), the
+    // degraded-mode notice publishes verbatim, the modal reopens once
+    // and then the turn fails typed instead of looping.
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| surface_join(a).matches(DEGRADED).count() >= 1,
+            Duration::from_secs(10)
+        ),
+        "verbatim degraded retry notice; surface:\n{}",
+        surface_join(&app)
+    );
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.view.turns().last().is_some_and(|t| t.outcome.is_some()),
+            Duration::from_secs(15)
+        ),
+        "turn finished after unacknowledged retries; surface:\n{}",
+        surface_join(&app)
+    );
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| surface_join(a).matches("resolved: next model grok-4-7").count() >= 2,
+            Duration::from_secs(5)
+        ),
+        "both resolutions kept the CURRENT model; surface:\n{}",
+        surface_join(&app)
+    );
+    let surface = surface_join(&app);
+    println!("=== cell2b surface ===\n{surface}");
+    let degraded = surface.matches(DEGRADED).count();
+    println!("=== cell2b degraded notices: {degraded}");
+    assert!(degraded >= 2, "retry notice repeated per unacknowledged ask: {surface}");
+    assert!(
+        !surface.contains("next model grok-4-6"),
+        "no resolution ever named the hop: {surface}"
+    );
+    // ZERO substitution events: the hop model has no Usage row.
+    assert!(
+        !app.hud.cost_line().contains("grok-4-6"),
+        "hop never served: {}",
+        app.hud.cost_line()
+    );
+    let _ = wired.cmd.send(ClientCmd::Shutdown).await;
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism 3: cost governance â€” Usage frames past a tiny cap: HUD cost
+// updates, CostWarning at 80%, CostStop at 100%, further submits typed
+// refused naming the cap. Uses a PRICED identity (claude-sonnet-4-5)
+// with per-turn usage of 25,920 micro-USD against a 30,000 cap.
+// ---------------------------------------------------------------------------
+/// Cyclic script: edit_lines call (priced usage), then task_completed
+/// (unpriced) â€” repeats for every turn.
+struct CycleEditInference {
+    edit_args: serde_json::Value,
+    first: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl Inference for CycleEditInference {
+    async fn infer(
+        &mut self,
+        _request: &InferenceRequest<'_>,
+        _cancel: &CancelToken,
+    ) -> Result<AssistantTurn, InferenceError> {
+        let first = self
+            .first
+            .swap(false, std::sync::atomic::Ordering::SeqCst);
+        Ok(if first {
+            AssistantTurn {
+                blocks: vec![ContentBlock::Text {
+                    text: "editing now".into(),
+                }],
+                tool_calls: vec![call("t1", "edit_lines", self.edit_args.clone())],
+                usage: Some(harness_core::agent_loop::inference::TurnUsage {
+                    input_tokens: 7_600,
+                    output_tokens: 80,
+                    cache_read_tokens: 6_400,
+                    cache_write_tokens: 0,
+                }),
+            }
+        } else {
+            self.first
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            AssistantTurn {
+                blocks: vec![ContentBlock::Text {
+                    text: "done: turn completed".into(),
+                }],
+                tool_calls: Vec::new(),
+                usage: None,
+            }
+        })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cell3_cost_warning_stop_and_typed_refusal() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = DaemonConfig {
+        session_cost_cap_micros: 30_000,
+        ..base_config(&dir, Duration::from_secs(30))
+    };
+    let edit_args = serde_json::json!({"path": "src/demo.rs", "edits": []});
+    let factory: harness_daemon::usage::InferenceFactory = {
+        let edit_args = edit_args.clone();
+        Arc::new(move || ComposedInference {
+            inference: Box::new(CycleEditInference {
+                edit_args: edit_args.clone(),
+                first: std::sync::atomic::AtomicBool::new(true),
+            }),
+            identity: Some(ModelIdentity::new("anthropic", "claude-sonnet-4-5")),
+        })
+    };
+    let state = Arc::new(DaemonState::new(config, factory).expect("state"));
+    // The split-brain worker serving edit_lines; its diff payload is
+    // what surfaces the Diff frame (in-process executors do not emit
+    // SessionEvent::Diff â€” recorded in the evidence).
+    let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+    state
+        .worker_router
+        .register("f3-worker", vec![ToolGrant { tool: "edit_lines".into() }], tx);
+    {
+        let router = Arc::clone(&state.worker_router);
+        tokio::spawn(async move {
+            while let Some(call) = rx.recv().await {
+                if let DaemonToWorker::ToolCall { call_id, .. } = call {
+                    router.deliver(
+                        &call_id,
+                        true,
+                        serde_json::json!({
+                            "text": "edited by mock worker",
+                            "diff": {
+                                "path": "src/demo.rs",
+                                "before_hash": "",
+                                "after_hash": "0123456789ab",
+                                "hunks": [
+                                    "@@ -1,2 +1,3 @@\n context\n-old line\n+new line\n+second add",
+                                    "@@ -10 +10 @@\n-sole removal"
+                                ]
+                            }
+                        }),
+                    );
+                }
+            }
+        });
+    }
+    let base = serve(Arc::clone(&state)).await;
+    let (mut app, wired) = attach(&base, "f3-cell3", "f3-cell-token").await;
+    let mut hub = state.session("f3-cell3").hub_subscribe();
+
+    // --- turn 1: crosses 80% -> CostWarning (25,920 of 30,000).
+    dispatch(&wired, type_and_submit(&mut app, "edit the file")).await;
+    assert!(
+        wait_until(&mut app, &wired, |a| a.gate().is_some(), Duration::from_secs(10)),
+        "edit_lines permission ask; surface:\n{}",
+        surface_join(&app)
+    );
+    dispatch(&wired, app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('y'))))).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.view.turns().last().is_some_and(|t| t.outcome.is_some()),
+            Duration::from_secs(10)
+        ),
+        "turn 1 finished; surface:\n{}",
+        surface_join(&app)
+    );
+    let mut hub_seen: Vec<String> = Vec::new();
+    while let Ok(msg) = hub.try_recv() {
+        hub_seen.push(serde_json::to_string(&msg).unwrap_or_default());
+    }
+    println!("=== cell3 hub after turn 1 ===\n{}", hub_seen.join("\n"));
+    println!(
+        "=== cell3 hud after turn 1: {} | {}",
+        app.hud.cost_line(),
+        app.hud.cache_line()
+    );
+    assert!(
+        hub_seen.iter().any(|m| m.contains("\"cost_warning\"") && m.contains("25920")),
+        "daemon published cost_warning(25920/30000)"
+    );
+    assert!(
+        app.hud.cost_line().contains("claude-sonnet-4-5 $"),
+        "HUD cost row live: {}",
+        app.hud.cost_line()
+    );
+    assert_eq!(app.hud.cache_line(), "cache: 84.2%");
+
+    // u128 wire-decode probe (the prior F3 cell found these frames
+    // undecodable; serde 1.0.229 should round-trip them now).
+    let probe = harness_daemon::protocol::decode_server(
+        br#"{"type":"event","frame":{"id":99,"event":{"type":"cost_warning","consumed_micros":25920,"cap_micros":30000}}}"#,
+    );
+    println!("=== cell3 u128 decode probe: {probe:?}");
+
+    // --- turn 2: crosses 100% -> CostStop (51,840 of 30,000).
+    dispatch(&wired, type_and_submit(&mut app, "edit again")).await;
+    assert!(
+        wait_until(&mut app, &wired, |a| a.gate().is_some(), Duration::from_secs(10)),
+        "second edit ask; surface:\n{}",
+        surface_join(&app)
+    );
+    dispatch(&wired, app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('y'))))).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.view.turns().last().is_some_and(|t| t.outcome.is_some()),
+            Duration::from_secs(10)
+        ),
+        "turn 2 finished; surface:\n{}",
+        surface_join(&app)
+    );
+    hub_seen.clear();
+    while let Ok(msg) = hub.try_recv() {
+        hub_seen.push(serde_json::to_string(&msg).unwrap_or_default());
+    }
+    println!("=== cell3 hub after turn 2 ===\n{}", hub_seen.join("\n"));
+    assert!(
+        hub_seen.iter().any(|m| m.contains("\"cost_stop\"") && m.contains("51840")),
+        "daemon published cost_stop(51840/30000)"
+    );
+
+    // --- turn 3: submit refused at intake, typed, naming the cap.
+    dispatch(&wired, type_and_submit(&mut app, "one more")).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| surface_join(a).contains("money budget exhausted"),
+            Duration::from_secs(5)
+        ),
+        "typed cap refusal; surface:\n{}",
+        surface_join(&app)
+    );
+    let surface = surface_join(&app);
+    println!("=== cell3 surface ===\n{surface}");
+    assert!(
+        surface.contains("micro-USD"),
+        "refusal names consumed/cap in micro-USD: {surface}"
+    );
+    // If the u128 frames decode, the badge notices must have surfaced.
+    if probe.is_ok() {
+        assert!(
+            surface.contains("cost warning: 25920 of 30000 micro-USD"),
+            "cost warning notice surfaced: {surface}"
+        );
+        assert!(
+            surface.contains("cost stop: cap reached"),
+            "cost stop notice surfaced: {surface}"
+        );
+        println!("=== cell3 cost notices surfaced in TUI: PASS");
+    } else {
+        println!(
+            "=== cell3 COST-FRAME DECODE BUG still present: u128 frames dropped by the client"
+        );
+    }
+
+    // --- Mechanism 4: the diffs accordion fed by the edit_lines calls
+    // (one Diff frame per executed edit â€” two turns, two entries).
+    assert_eq!(app.view.diffs().len(), 2, "one diff per executed edit");
+    assert!(app.view.diffs().iter().all(|d| d.path == "src/demo.rs"));
+    let diff_screen = {
+        app.step(ctrl('5'));
+        screen(&app, 110, 34)
+    };
+    println!("=== cell3 diffs accordion ===\n{diff_screen}");
+    assert!(diff_screen.contains("diffs (2)"), "accordion header: {diff_screen}");
+    assert!(diff_screen.contains("src/demo.rs"), "path rendered: {diff_screen}");
+    assert!(diff_screen.contains("+2/-2"), "diffstat (both hunks) rendered: {diff_screen}");
+    assert!(diff_screen.contains("+new line"), "hunk body rendered: {diff_screen}");
+    // y accepts, n rejects â€” per-hunk decisions, first pending first.
+    assert_eq!(app.view.pending_hunks(), 4);
+    let accept = app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('y'))));
+    assert!(accept.is_empty(), "hunk decisions are client-side state");
+    assert_eq!(
+        app.view.diffs()[0].hunks[0].decision,
+        harness_tui::diffs::HunkDecision::Accepted
+    );
+    app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('n'))));
+    assert_eq!(
+        app.view.diffs()[0].hunks[1].decision,
+        harness_tui::diffs::HunkDecision::Rejected
+    );
+    // The second diff's hunks decide the same way.
+    app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('y'))));
+    app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('n'))));
+    assert_eq!(app.view.pending_hunks(), 0);
+    let decided = screen(&app, 110, 34);
+    assert!(decided.contains("[accepted]"), "decision renders: {decided}");
+    assert!(decided.contains("[rejected]"), "decision renders: {decided}");
+    let surface = surface_join(&app);
+    println!("=== cell3 hunk notes ===\n{surface}");
+    assert!(surface.contains("hunk accepted: src/demo.rs"));
+    assert!(surface.contains("hunk rejected: src/demo.rs"));
+    app.step(ctrl('5'));
+
+    let _ = wired.cmd.send(ClientCmd::Shutdown).await;
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism 5: agents accordion â€” a REAL /launch through the daemon
+// (two children, disjoint write sets): ChildStarted/ChildFinished ride
+// the wire, rows + Warp-precedence status render, budget row shows.
+// NOTE: the TUI omnibar's local grammar rejects "/launch" (unknown
+// command), so the launch submit rides the wire lane directly â€” the
+// same Submit text the CLI/HTTP surfaces send.
+// ---------------------------------------------------------------------------
+struct SlowCompleteInference;
+
+#[async_trait]
+impl Inference for SlowCompleteInference {
+    async fn infer(
+        &mut self,
+        _request: &InferenceRequest<'_>,
+        _cancel: &CancelToken,
+    ) -> Result<AssistantTurn, InferenceError> {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        Ok(AssistantTurn {
+            blocks: Vec::new(),
+            tool_calls: vec![call("c", TASK_COMPLETED_TOOL, serde_json::json!({}))],
+            usage: None,
+        })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cell5_agents_accordion_children_rows_and_status() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let factory: harness_daemon::usage::InferenceFactory =
+        Arc::new(|| ComposedInference::plain(Box::new(SlowCompleteInference)));
+    let state = Arc::new(DaemonState::new(
+        base_config(&dir, Duration::from_secs(30)),
+        factory,
+    )
+    .expect("state"));
+    let spec_path = dir.path().join("ship.md");
+    std::fs::write(
+        &spec_path,
+        "objective: prove the launch path\ntask t1:\n  role: worker\n  objective: map the layout\n  writes: src/**\ntask t2:\n  role: worker\n  objective: write the docs\n  writes: docs/**\n",
+    )
+    .expect("spec fixture");
+    let base = serve(Arc::clone(&state)).await;
+    let (mut app, wired) = attach(&base, "f3-cell5", "f3-cell-token").await;
+
+    // The omnibar's local parse would eat "/launch" â€” record that.
+    let local = type_and_submit(&mut app, &format!("/launch {}", spec_path.display()));
+    println!("=== cell5 omnibar /launch actions: {local:?}");
+    assert!(
+        local.is_empty(),
+        "omnibar refuses /launch locally (grammar gap, recorded)"
+    );
+    assert!(
+        surface_join(&app).contains("unknown command /launch"),
+        "local unknown-command note: {}",
+        surface_join(&app)
+    );
+    // Drive the SAME submit text through the wire (CLI/HTTP parity).
+    dispatch(
+        &wired,
+        vec![UiAction::Send(harness_daemon::protocol::ClientMsg::Command {
+            command: harness_daemon::protocol::SessionCommand::Submit {
+                text: format!("/launch {}", spec_path.display()),
+            },
+        })],
+    )
+    .await;
+
+    // Mid-run: children started, aggregate in_progress (the 250 ms
+    // child turn guarantees the window).
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| !a.view.children().is_empty()
+                && a.view.team_status() == harness_daemon::team::TeamStatus::InProgress,
+            Duration::from_secs(10)
+        ),
+        "children running mid-launch; children {:?}",
+        app.view.children()
+    );
+    println!(
+        "=== cell5 mid-run: children {:?} status {:?}",
+        app.view.children(),
+        app.view.team_status()
+    );
+    // Terminal: both succeed, aggregate flips to success.
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.view.children().len() == 2
+                && a.view.children().iter().all(|c| c.state == "success")
+                && a.view.team_status() == harness_daemon::team::TeamStatus::Success,
+            Duration::from_secs(20)
+        ),
+        "both children succeeded; children {:?}",
+        app.view.children()
+    );
+    // The task-delegation budget frame (todo-15 typed event) published
+    // through the host â€” the row the accordion renders beside rows.
+    state
+        .session("f3-cell5")
+        .publish(SessionEvent::TeamBudget {
+            spawned: 2,
+            tokens_spent: 512,
+            fan_out_cap: 4,
+            token_budget: 100_000,
+        });
+    assert!(
+        wait_until(&mut app, &wired, |a| a.view.team_budget().is_some(), Duration::from_secs(5)),
+        "budget frame arrived"
+    );
+    let team_screen = {
+        app.step(ctrl('3'));
+        screen(&app, 110, 30)
+    };
+    println!("=== cell5 agents accordion ===\n{team_screen}");
+    assert!(team_screen.contains("status: success"), "aggregate: {team_screen}");
+    assert!(team_screen.contains("ship-child-t1"), "child row 1: {team_screen}");
+    assert!(team_screen.contains("ship-child-t2"), "child row 2: {team_screen}");
+    assert!(team_screen.contains("budget: 2/4 children"), "budget row: {team_screen}");
+    let _ = wired.cmd.send(ClientCmd::Shutdown).await;
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism 6: plan mode â€” modal approve re-arms writes (a REAL
+// in-process edit_lines lands on disk after the normal permission
+// ask), reject keeps writes gated.
+// ---------------------------------------------------------------------------
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cell6_plan_modal_approve_and_reject() {
+    let sid = "f3-cell6";
+    let dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = dir.path().join("sessions").join(sid);
+    std::fs::create_dir_all(&session_dir).expect("session dir");
+    let fixture = session_dir.join("fixture.txt");
+    std::fs::write(&fixture, "alpha\nbeta\ngamma\n").expect("fixture");
+    let fixture_path = fixture.to_string_lossy().replace('\\', "/");
+    let edit_call = |cid: &str, path: &str, old: &str, new: &str| {
+        call(
+            cid,
+            "edit_lines",
+            serde_json::json!({
+                "path": path,
+                "edits": [{ "line": 2, "old_text": old, "new_text": new }]
+            }),
+        )
+    };
+    let owned_path = fixture_path.clone();
+    let steps_factory = move || {
+        Box::new(ScriptStack {
+            steps: std::sync::Mutex::new(
+                vec![
+                    Step::Turn(text_turn("planning", vec![edit_call("e1", &owned_path, "beta", "BETA EDITED")])),
+                    Step::Turn(text_turn("plan drafted", Vec::new())),
+                    Step::Turn(text_turn("executing", vec![edit_call("e2", &owned_path, "beta", "BETA EDITED")])),
+                    Step::Turn(text_turn("done editing", Vec::new())),
+                    Step::Turn(text_turn("planning two", vec![edit_call("e3", &owned_path, "alpha", "ALPHA EDITED")])),
+                    Step::Turn(text_turn("still gated", Vec::new())),
+                ]
+                .into(),
+            ),
+        }) as Box<dyn Inference>
+    };
+    let factory: harness_daemon::usage::InferenceFactory =
+        Arc::new(move || ComposedInference::plain(steps_factory()));
+    let mut state =
+        DaemonState::new(base_config(&dir, Duration::from_secs(30)), factory).expect("state");
+    let executors = Arc::new(harness_daemon::tools::CoreExecutors::in_process());
+    state.executor_factory = executors.executor_factory();
+    let state = Arc::new(state);
+    let base = serve(state).await;
+    let (mut app, wired) = attach(&base, sid, "f3-cell-token").await;
+
+    // Enter plan mode through the omnibar.
+    dispatch(&wired, type_and_submit(&mut app, "/mode plan")).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| surface_join(a).contains("plan mode entered"),
+            Duration::from_secs(5)
+        ),
+        "plan mode entered; surface:\n{}",
+        surface_join(&app)
+    );
+
+    // A write-tool turn in plan mode: blocked + plan ask modal.
+    dispatch(&wired, type_and_submit(&mut app, "plan then edit")).await;
+    assert!(
+        wait_until(&mut app, &wired, |a| a.plan_gate().is_some(), Duration::from_secs(10)),
+        "plan ask modal; surface:\n{}",
+        surface_join(&app)
+    );
+    let modal = screen(&app, 110, 30);
+    println!("=== cell6 plan modal ===\n{modal}");
+    assert!(modal.contains("awaiting approval"), "modal: {modal}");
+    assert!(modal.contains("[y] approve"), "approve affordance: {modal}");
+    app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('i'))));
+    assert!(!app.bar_focused(), "plan modal swallows typing");
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.view.turns().last().is_some_and(|t| t.outcome.is_some()),
+            Duration::from_secs(10)
+        ),
+        "turn 1 finished; surface:\n{}",
+        surface_join(&app)
+    );
+    assert!(
+        surface_join(&app).contains("blocked"),
+        "blocked-write notice: {}",
+        surface_join(&app)
+    );
+    assert!(
+        !std::fs::read_to_string(&fixture).expect("read").contains("BETA EDITED"),
+        "pre-approval write must not touch disk"
+    );
+
+    // y approves through the mediator wire message.
+    let answer = app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('y'))));
+    match answer.as_slice() {
+        [UiAction::Send(harness_daemon::protocol::ClientMsg::PlanAnswer { decision, .. })] => {
+            assert_eq!(*decision, harness_daemon::protocol::PlanDecision::Approve);
+        }
+        other => panic!("expected approve, got {other:?}"),
+    }
+    dispatch(&wired, answer).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| surface_join(a).contains("writes re-armed"),
+            Duration::from_secs(5)
+        ),
+        "approval note; surface:\n{}",
+        surface_join(&app)
+    );
+
+    // The re-armed edit runs for real: permission ask, then disk edit.
+    dispatch(&wired, type_and_submit(&mut app, "now edit")).await;
+    assert!(
+        wait_until(&mut app, &wired, |a| a.gate().is_some(), Duration::from_secs(10)),
+        "post-approval edit asks permission; surface:\n{}",
+        surface_join(&app)
+    );
+    let ask = app.gate().expect("gate").clone();
+    println!("=== cell6 edit ask: tool={} target={:?}", ask.tool, ask.target);
+    dispatch(&wired, app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('y'))))).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| a.view.turns().last().is_some_and(|t| t.outcome.is_some()),
+            Duration::from_secs(10)
+        ),
+        "turn 2 finished; surface:\n{}",
+        surface_join(&app)
+    );
+    let on_disk = std::fs::read_to_string(&fixture).expect("read");
+    println!("=== cell6 fixture after approve ===\n{on_disk}");
+    assert!(on_disk.contains("BETA EDITED"), "REAL edit_lines landed after approval");
+
+    // Re-enter plan mode; the second ask is REJECTED: writes stay gated.
+    dispatch(&wired, type_and_submit(&mut app, "/mode plan")).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| surface_join(a).matches("plan mode entered").count() >= 2,
+            Duration::from_secs(5)
+        ),
+        "plan mode re-entered"
+    );
+    dispatch(&wired, type_and_submit(&mut app, "edit again")).await;
+    assert!(
+        wait_until(&mut app, &wired, |a| a.plan_gate().is_some(), Duration::from_secs(10)),
+        "second plan ask; surface:\n{}",
+        surface_join(&app)
+    );
+    let reject = app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Char('n'))));
+    match reject.as_slice() {
+        [UiAction::Send(harness_daemon::protocol::ClientMsg::PlanAnswer { decision, .. })] => {
+            assert_eq!(*decision, harness_daemon::protocol::PlanDecision::Reject);
+        }
+        other => panic!("expected reject, got {other:?}"),
+    }
+    dispatch(&wired, reject).await;
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| surface_join(a).contains("still gated") && a.plan_gate().is_none(),
+            Duration::from_secs(5)
+        ),
+        "rejection keeps plan mode; surface:\n{}",
+        surface_join(&app)
+    );
+    let on_disk = std::fs::read_to_string(&fixture).expect("read");
+    println!("=== cell6 fixture after reject ===\n{on_disk}");
+    assert!(
+        !on_disk.contains("ALPHA EDITED"),
+        "rejected plan keeps writes gated"
+    );
+    let _ = wired.cmd.send(ClientCmd::Shutdown).await;
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism 7: scroll dispatch â€” arrows move the body window off the
+// tail and back, and a new frame resets to auto-follow (task-19 frame
+// injection: the scroll path is pure client dispatch).
+// ---------------------------------------------------------------------------
+fn user_frame(id: u64, text: &str) -> ServerMsg {
+    ServerMsg::Event {
+        frame: Frame {
+            id,
+            event: SessionEvent::Recorded {
+                seq: id,
+                event: harness_core::event::Event::User {
+                    blocks: vec![ContentBlock::Text { text: text.to_owned() }],
+                },
+            },
+        },
+    }
+}
+
+#[test]
+fn cell7_scroll_dispatch_moves_window_and_refollows() {
+    let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+    for i in 0..40u64 {
+        app.step(UiEvent::Server(user_frame(i, &format!("line-{i:02}"))));
+    }
+    app.step(ctrl('1'));
+    assert_eq!(app.scroll_offset(), 0, "auto-follow at the tail");
+    let tail = screen(&app, 80, 24);
+    assert!(tail.contains("you: line-39"), "tail:\n{tail}");
+    for _ in 0..5 {
+        app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Up)));
+    }
+    println!("=== cell7 scroll_offset after 5x Up: {}", app.scroll_offset());
+    assert!(app.scroll_offset() > 0, "window lifted off the tail");
+    let scrolled = screen(&app, 80, 24);
+    println!("=== cell7 scrolled screen ===\n{scrolled}");
+    assert!(scrolled.contains("you: line-18"), "scrolled:\n{scrolled}");
+    assert!(!scrolled.contains("you: line-39"), "tail left: {scrolled}");
+    for _ in 0..5 {
+        app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Down)));
+    }
+    assert_eq!(app.scroll_offset(), 0, "back at the tail");
+    let back = screen(&app, 80, 24);
+    assert!(back.contains("you: line-39"), "back:\n{back}");
+    for _ in 0..3 {
+        app.step(UiEvent::Key(plain(crossterm::event::KeyCode::Up)));
+    }
+    assert!(app.scroll_offset() > 0);
+    app.step(UiEvent::Server(user_frame(40, "line-40")));
+    assert_eq!(app.scroll_offset(), 0, "new frame refollows");
+    let followed = screen(&app, 80, 24);
+    println!("=== cell7 refollow screen ===\n{followed}");
+    assert!(followed.contains("you: line-40"), "followed:\n{followed}");
+}
+
+================================================================================
+RUN OUTPUT (nextest, --success-output immediate; CRLF/console noise normalized;
+box-drawing glyphs repaired from the console codepage)
+================================================================================
+cmd :     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+At line:1 char:1
++ cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Finished `t...get(s) in 0.56s:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ Nextest run ID 701ab698-83f7-49c6-9748-2af9ba3559ec with nextest profile: default
+    Starting 7 tests across 1 binary
+        PASS [   0.055s] (1/7) harness-tui::f3_cell_tui cell7_scroll_dispatch_moves_window_and_refollows
+  stdout ΓöÇΓöÇΓöÇ
+
+    running 1 test
+    === cell7 scroll_offset after 5x Up: 5
+    === cell7 scrolled screen ===
+    you: line-18
+    you: line-19
+    you: line-20
+    you: line-21
+    you: line-22
+    you: line-23
+    you: line-24
+    you: line-25
+    you: line-26
+    you: line-27
+    you: line-28
+    you: line-29
+    you: line-30
+    you: line-31
+    you: line-32
+    you: line-33
+    you: line-34
+    you: line-35
+    you: line-36
+    you: line-37
+    disconnected (ctrl+r reconnect) ctx: Γëê70/200000 (0%) | cache: n/a | cost: unpric
+    harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+    === cell7 refollow screen ===
+    you: line-24
+    you: line-25
+    you: line-26
+    you: line-27
+    you: line-28
+    you: line-29
+    you: line-30
+    you: line-31
+    you: line-32
+    you: line-33
+    you: line-34
+    you: line-35
+    you: line-36
+    you: line-37
+    you: line-38
+    you: line-39
+    you: line-40
+    > tools (0)
+    > diffs (0)
+    > agents (0)
+    disconnected (ctrl+r reconnect) ctx: Γëê71/200000 (0%) | cache: n/a | cost: unpric
+    harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+    test cell7_scroll_dispatch_moves_window_and_refollows ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+
+
+        PASS [   0.094s] (2/7) harness-tui::f3_cell_tui cell2a_fallback_ask_hop_answer_reroutes
+  stdout ΓöÇΓöÇΓöÇ
+
+    running 1 test
+    === cell2a ask: current=grok-4-7 proposed=grok-4-6 reason=outage; verbatim hop 1 of 1
+    === cell2a modal ===
+    fallback proposed: grok-4-7 -> grok-4-6
+    outage; verbatim hop 1 of 1
+    [y] hop to grok-4-6  [n] keep grok-4-7
+
+    > transcript (1)
+    > tools (0)
+    > diffs (0)
+    > agents (0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ctx: Γëê25/200000 (0%) | cache: n/a | cost: unpriced (no usage events yet)
+    harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö
+ÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+    === cell2a surface after hop ===
+    fallback: model fallback proposed: grok-4-7 -> grok-4-6 (outage; verbatim hop 1 of 1); awaiting answer
+    fallback: model fallback resolved; next requests target grok-4-6
+    needs a hop
+    served on the hop
+    fallback 1 resolved: next model grok-4-6
+    === cell2a hub ===
+    {"type":"event","frame":{"id":1,"event":{"type":"turn_started","turn":1}}}
+    {"type":"event","frame":{"id":2,"event":{"type":"notification","kind":"fallback","message":"model fallback 
+proposed: grok-4-7 -> grok-4-6 (outage; verbatim hop 1 of 1); awaiting answer"}}}
+    {"type":"event","frame":{"id":3,"event":{"type":"notification","kind":"fallback","message":"model fallback 
+resolved; next requests target grok-4-6"}}}
+    {"type":"usage","turn":1,"model":{"provider":"xai","model":"grok-4-6"},"effort":"high","input_tokens":800000,"outpu
+t_tokens":50000,"cache_read":160000,"cache_write":0,"cost_usd_micros":3198000}
+    {"type":"event","frame":{"id":4,"event":{"type":"recorded","seq":1,"event":{"type":"user","blocks":[{"type":"text",
+"text":"needs a hop"}]}}}}
+    {"type":"event","frame":{"id":5,"event":{"type":"recorded","seq":2,"event":{"type":"assistant","blocks":[{"type":"t
+ext","text":"served on the hop"}]}}}}
+    {"type":"event","frame":{"id":6,"event":{"type":"turn_finished","turn":1,"outcome":"turn_complete"}}}
+    === cell2a hud: cost: grok-4-6 $3.20
+    test cell2a_fallback_ask_hop_answer_reroutes ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.03s
+
+
+        PASS [   0.122s] (3/7) harness-tui::f3_cell_tui cell1_routed_turn_renders_assistant_chunk
+  stdout ΓöÇΓöÇΓöÇ
+
+    running 1 test
+    === cell1 surface ===
+    do the routed thing
+    routed reply chunk
+    === cell1 hud: cache=cache: 20.0% cost=cost: grok-4-7 $3.20
+    === cell1 screen ===
+    v transcript (2)
+    you: do the routed thing
+    routed reply chunk
+    > tools (0)
+    > diffs (0)
+    > agents (0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ctx: Γëê9/200000 (0%) | cache: 20.0% | cost: grok-4-7 $3.20
+    harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö
+ÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+    test cell1_routed_turn_renders_assistant_chunk ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.02s
+
+
+        PASS [   0.169s] (4/7) harness-tui::f3_cell_tui cell3_cost_warning_stop_and_typed_refusal
+  stdout ΓöÇΓöÇΓöÇ
+
+    running 1 test
+    === cell3 hub after turn 1 ===
+    {"type":"event","frame":{"id":1,"event":{"type":"turn_started","turn":1}}}
+    {"type":"usage","turn":1,"model":{"provider":"anthropic","model":"claude-sonnet-4-5"},"effort":null,"input_tokens":
+7600,"output_tokens":80,"cache_read":6400,"cache_write":0,"cost_usd_micros":25920}
+    {"type":"event","frame":{"id":2,"event":{"type":"cost_warning","consumed_micros":25920,"cap_micros":30000}}}
+    {"type":"event","frame":{"id":3,"event":{"type":"recorded","seq":1,"event":{"type":"user","blocks":[{"type":"text",
+"text":"edit the file"}]}}}}
+    {"type":"event","frame":{"id":4,"event":{"type":"recorded","seq":2,"event":{"type":"assistant","blocks":[{"type":"t
+ext","text":"editing now"}]}}}}
+    {"type":"event","frame":{"id":5,"event":{"type":"recorded","seq":3,"event":{"type":"tool_call","call_id":"t1","tool
+":"edit_lines","arguments":{"edits":[],"path":"src/demo.rs"}}}}}
+    {"type":"event","frame":{"id":6,"event":{"type":"recorded","seq":4,"event":{"type":"tool_result","call_id":"t1","bl
+ocks":[{"type":"text","text":"{\"diff\":{\"after_hash\":\"0123456789ab\",\"before_hash\":\"\",\"hunks\":[\"@@ -1,2 
++1,3 @@\\n context\\n-old line\\n+new line\\n+second add\",\"@@ -10 +10 @@\\n-sole 
+removal\"],\"path\":\"src/demo.rs\"},\"text\":\"edited by mock worker\"}"}]}}}}
+    {"type":"event","frame":{"id":7,"event":{"type":"recorded","seq":5,"event":{"type":"assistant","blocks":[{"type":"t
+ext","text":"done: turn completed"}]}}}}
+    {"type":"event","frame":{"id":8,"event":{"type":"turn_finished","turn":1,"outcome":"turn_complete"}}}
+    {"type":"event","frame":{"id":9,"event":{"type":"diff","path":"src/demo.rs","before_hash":"","after_hash":"01234567
+89ab","hunks":["@@ -1,2 +1,3 @@\n context\n-old line\n+new line\n+second add","@@ -10 +10 @@\n-sole removal"]}}}
+    === cell3 hud after turn 1: cost: claude-sonnet-4-5 $0.03 | cache: 84.2%
+    === cell3 u128 decode probe: Err(Malformed("u128 is not supported"))
+    === cell3 hub after turn 2 ===
+    {"type":"event","frame":{"id":10,"event":{"type":"turn_started","turn":2}}}
+    {"type":"usage","turn":2,"model":{"provider":"anthropic","model":"claude-sonnet-4-5"},"effort":null,"input_tokens":
+7600,"output_tokens":80,"cache_read":6400,"cache_write":0,"cost_usd_micros":25920}
+    {"type":"event","frame":{"id":11,"event":{"type":"cost_stop","consumed_micros":51840,"cap_micros":30000}}}
+    {"type":"event","frame":{"id":12,"event":{"type":"recorded","seq":6,"event":{"type":"user","blocks":[{"type":"text"
+,"text":"edit again"}]}}}}
+    {"type":"event","frame":{"id":13,"event":{"type":"recorded","seq":7,"event":{"type":"assistant","blocks":[{"type":"
+text","text":"editing now"}]}}}}
+    {"type":"event","frame":{"id":14,"event":{"type":"recorded","seq":8,"event":{"type":"tool_call","call_id":"t1","too
+l":"edit_lines","arguments":{"edits":[],"path":"src/demo.rs"}}}}}
+    {"type":"event","frame":{"id":15,"event":{"type":"recorded","seq":9,"event":{"type":"tool_result","call_id":"t1","b
+locks":[{"type":"text","text":"{\"diff\":{\"after_hash\":\"0123456789ab\",\"before_hash\":\"\",\"hunks\":[\"@@ -1,2 
++1,3 @@\\n context\\n-old line\\n+new line\\n+second add\",\"@@ -10 +10 @@\\n-sole 
+removal\"],\"path\":\"src/demo.rs\"},\"text\":\"edited by mock worker\"}"}]}}}}
+    {"type":"event","frame":{"id":16,"event":{"type":"turn_finished","turn":2,"outcome":"failed::InferenceExhausted { 
+cause: \"money budget exhausted for session period: consumed 51840 of 30000 micro-USD\", retries: 0 }"}}}
+    {"type":"event","frame":{"id":17,"event":{"type":"diff","path":"src/demo.rs","before_hash":"","after_hash":"0123456
+789ab","hunks":["@@ -1,2 +1,3 @@\n context\n-old line\n+new line\n+second add","@@ -10 +10 @@\n-sole removal"]}}}
+    === cell3 surface ===
+    edit the file
+    editing now
+    done: turn completed
+    edit again
+    editing now
+    ask 1 allowed by tui-test
+    ask 2 allowed by tui-test
+    daemon error (MalformedFrame): money budget exhausted for session period: consumed 51840 of 30000 micro-USD
+    === cell3 COST-FRAME DECODE BUG still present: u128 frames dropped by the client
+    === cell3 diffs accordion ===
+    > transcript (5)
+    > tools (2)
+    v diffs (2)
+    src/demo.rs +2/-2 (2 pending)
+      [pending] @@ -1,2 +1,3 @@
+       context
+      -old line
+      +new line
+      +second add
+      [pending] @@ -10 +10 @@
+      -sole removal
+    src/demo.rs +2/-2 (2 pending)
+      [pending] @@ -1,2 +1,3 @@
+       context
+      -old line
+      +new line
+      +second add
+      [pending] @@ -10 +10 @@
+      -sole removal
+    > agents (0)
+    * ask 1 allowed by tui-test
+    * ask 2 allowed by tui-test
+    * daemon error (MalformedFrame): money budget exhausted for session period: consumed 51840 of 30000 micro-USD
+
+
+
+
+
+
+
+    ctx: Γëê16/200000 (0%) | cache: 84.2% | cost: claude-sonnet-4-5 $0.06
+    harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö
+ÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+    === cell3 hunk notes ===
+    edit the file
+    editing now
+    done: turn completed
+    edit again
+    editing now
+    ask 1 allowed by tui-test
+    ask 2 allowed by tui-test
+    daemon error (MalformedFrame): money budget exhausted for session period: consumed 51840 of 30000 micro-USD
+    hunk accepted: src/demo.rs
+    hunk rejected: src/demo.rs
+    hunk accepted: src/demo.rs
+    hunk rejected: src/demo.rs
+    test cell3_cost_warning_stop_and_typed_refusal ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.03s
+
+
+        PASS [   0.213s] (5/7) harness-tui::f3_cell_tui cell6_plan_modal_approve_and_reject
+  stdout ΓöÇΓöÇΓöÇ
+
+    running 1 test
+    === cell6 plan modal ===
+    plan 1 (revision 1) awaiting approval
+    [y] approve  [n] reject (plan mode stays active)
+
+    > transcript (5)
+    > tools (1)
+    > diffs (0)
+    > agents (0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ctx: Γëê56/200000 (0%) | cache: n/a | cost: unpriced (no usage events yet)
+    harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö
+ÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+    === cell6 edit ask: tool=edit_lines 
+target=Some("C:/Users/vsbb1/AppData/Local/Temp/.tmp1gM6tJ/sessions/f3-cell6/fixture.txt")
+    === cell6 fixture after approve ===
+    alpha
+    BETA EDITED
+    gamma
+
+    === cell6 fixture after reject ===
+    alpha
+    BETA EDITED
+    gamma
+
+    test cell6_plan_modal_approve_and_reject ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.03s
+
+
+        PASS [   0.376s] (6/7) harness-tui::f3_cell_tui cell2b_fallback_deny_keeps_and_timeout_retries_same_model
+  stdout ΓöÇΓöÇΓöÇ
+
+    running 1 test
+    === cell2b surface ===
+    fallback: model fallback proposed: grok-4-7 -> grok-4-6 (outage; verbatim hop 1 of 1); awaiting answer
+    fallback: model fallback resolved; next requests target grok-4-7
+    fallback: model fallback asked; no interactive client ΓÇö retrying same model
+    fallback: model fallback proposed: grok-4-7 -> grok-4-6 (outage; verbatim hop 1 of 1); awaiting answer
+    fallback: model fallback resolved; next requests target grok-4-7
+    fallback: model fallback asked; no interactive client ΓÇö retrying same model
+    deny then ignore
+    fallback 1 resolved: next model grok-4-7
+    fallback 2 resolved: next model grok-4-7
+    === cell2b degraded notices: 2
+    test cell2b_fallback_deny_keeps_and_timeout_retries_same_model ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.22s
+
+
+        PASS [   0.400s] (7/7) harness-tui::f3_cell_tui cell5_agents_accordion_children_rows_and_status
+  stdout ΓöÇΓöÇΓöÇ
+
+    running 1 test
+    === cell5 omnibar /launch actions: []
+    === cell5 mid-run: children [ChildCell { child: "ship-child-t1", task: "t1", state: "running", detail: "" }] 
+status InProgress
+    === cell5 agents accordion ===
+    > transcript (3)
+    > tools (0)
+    > diffs (0)
+    v agents (2)
+    status: success
+    budget: 2/4 children | 512/100000 tokens
+    t1               ship-child-t1 success completed
+    t2               ship-child-t2 success completed
+    * unknown command /launch ΓÇö /help lists commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ctx: Γëê44/200000 (0%) | cache: n/a | cost: unpriced (no usage events yet)
+    harness (i to type, q quits)ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö
+ÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+
+    test cell5_agents_accordion_children_rows_and_status ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.28s
+
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     Summary [   0.401s] 7 tests run: 7 passed, 0 skipped
+
+## U128 wire fix re-proof
+
+**Defect (F3 TUI QA cell):** `SessionEvent::CostWarning`/`CostStop` carried
+`consumed_micros`/`cap_micros` as u128 on the wire. serde's internally-tagged
+enum deserialization buffers variant content into `Content` first, and
+`Content` cannot represent u128 - so every client's `decode_server` rejected
+the frames with `Err(Malformed("u128 is not supported"))` and the TUI silently
+dropped cost events: the cost Warning/Stop badge never surfaced.
+
+**Fix:** wire fields of the cost event variants are u64 (micro-USD fits u64
+comfortably: max ~18 trillion USD). harness-core `MicroUsd`/budget internals
+stay u128; the conversion happens once at the event-construction boundary
+(`cost_ledger.rs` `wire_micros`: `u64::try_from(..).unwrap_or(u64::MAX)`,
+documented saturation - a spend past u64::MAX micros is a budget that already
+exploded and the event still fires). compat.rs v1 downgrade, TUI transcript,
+CLI render consume sites are type-agnostic (literals/format) - unchanged except
+the new decode test mirrors. Warning at 80% / Stop at 100% semantics untouched.
+
+**RED proof (before fix):** new test
+`protocol::tests::cost_event_frames_decode_through_internally_tagged_content`
+decoded a real `cost_warning`/`cost_stop` wire frame through `decode_server`
+and failed exactly as the cell observed::
+
+    cost frame must decode, got Malformed("u128 is not supported")
+
+**GREEN proof (after fix):**
+- the decode test passes (frame arrives intact: 850000/1000000 warning,
+  1100000/1000000 stop).
+- `cargo nextest run -p harness-daemon -p harness-tui -p harness-cli`:
+  523 tests run: 523 passed, 2 skipped (incl. cost_ledger 8/8, team_events,
+  protocol_frames, v1_replay corpus byte-identity).
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+
+**TUI badge re-proof (throwaway test, captured then deleted -
+`harness-tui/tests/f3_reproof.rs`, f3_cell pattern: real wire JSON ->
+`decode_server` -> `App::step` -> TestBackend render):**
+
+`
+PASS harness-tui::f3_reproof cost_warning_frame_from_the_wire_surfaces_the_badge
+PASS harness-tui::f3_reproof cost_stop_frame_from_the_wire_surfaces_the_badge
+Summary 2 tests run: 2 passed
+`
+
+rendered transcript rows asserted (ctrl+1 open):
+`note: cost warning: 850000 of 1000000 micro-USD (80% of cap)` and
+`note: cost stop: cap reached (1100000 of 1000000 micro-USD)`.
+File deleted after capture; `git status --short` clean of it.

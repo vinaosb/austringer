@@ -1,0 +1,183 @@
+F3 manual-QA CELL: VS Code frontend (harness-vscode)
+====================================================
+Date: 2026-10-22
+Working tree: C:\Users\vsbb1\source\repos\harness (HEAD ee4b9df)
+Environment: Windows (win32), node v25.9.0, npm 11.12.1
+Scope: run the harness-vscode suite + typecheck, map results to matrix cells.
+No product edits, no commits, no new npm deps (node_modules already present;
+npm ci not needed).
+
+--------------------------------------------------------------------------------
+COMMAND 1: npm test --prefix harness-vscode
+EXIT: 0
+--------------------------------------------------------------------------------
+
+> harness-vscode@0.1.0 test
+> node --test "test/*.test.ts"
+
+✔ search reaches the IDE provider and returns its matches (110.3272ms)
+✔ definition bridging answers with the IDE's language server result (9.4997ms)
+✔ missing or wrong token is refused 401 before touching the provider (8.4615ms)
+✔ malformed body is a typed 400, provider never called (6.7743ms)
+✔ unknown route is 404, wrong method is 405 (10.2794ms)
+✔ sse parser buffers split chunks, ignores comments, joins data lines (2.5709ms)
+✔ attach reaches connected, delivers ordered frames, tracks cursor (116.0612ms)
+✔ submit posts the exact client message with the token header (20.36ms)
+✔ oversized submit text is refused client-side, no request sent (2.3599ms)
+✔ wrong token is a typed auth failure with no retry loop (23.8499ms)
+✔ full session: attach, frames, steer, permission answer, turn completes (75.0715ms)
+✔ permission ask and resolution surface as client events (46.9303ms)
+✔ black-holed command post fails typed within the post timeout (218.454ms)
+✔ connected and idle shows the session is live (0.8596ms)
+✔ mid-turn shows the turn number (0.1677ms)
+✔ a pending permission ask outranks the turn in the gauge (0.1463ms)
+✔ connecting shows the retry attempt count (0.1057ms)
+✔ disconnected says so plainly (0.1497ms)
+✔ grammar: TS table is pinned byte-for-byte to grammar.json (1.3383ms)
+✔ grammar: cheat sheet renders one line per command with cli-only marks (0.1618ms)
+✔ grammar: unknown-command help is the cross-frontend contract string (0.1400ms)
+✔ grammar: parse recognizes every core command (0.4363ms)
+✔ grammar: malformed and unknown commands are typed, never silent submits (0.1593ms)
+✔ grammar: cli-local words are known-but-local everywhere (0.1119ms)
+✔ grammar: mode arguments map and vote-cancel feedback is typed (0.2717ms)
+✔ diff event plans one lens/decoration range per hunk on its new-side lines (1.5687ms)
+✔ unparseable hunk headers are skipped, not guessed at (0.2389ms)
+✔ accept on a clean file proceeds (0.1501ms)
+✔ accept on a dirty file demands explicit confirmation, never a silent apply (0.114ms)
+✔ hunk accept answers the pending ask when one targets the file (0.1681ms)
+✔ hunk accept with no pending ask falls back to a steer instruction (0.108ms)
+✔ hunk reject denies the pending ask or steers a rejection (0.1029ms)
+✔ plain text parses to a submit intent (1.513ms)
+✔ whitespace-only input is a typed empty intent (0.1288ms)
+✔ /steer with text parses to a steer intent (0.2364ms)
+✔ /steer without text is the table usage error (todo 23) (0.139ms)
+✔ /cancel parses to a cancel intent and ignores stray text (0.1046ms)
+✔ unknown slash command is the shared help string (todo 23) (0.1195ms)
+✔ intent maps onto the exact daemon client message shape (0.1064ms)
+✔ todo 23: every core command parses to a typed intent (0.2734ms)
+✔ todo 23: malformed commands surface the table usage; unknown ones the shared help string (0.2498ms)
+✔ todo 23: cli-local words are recognized but marked cli-only (0.1916ms)
+✔ Esc (dismissed prompt) leaves the permission ask pending — never denies (1.0111ms)
+✔ explicit permission picks map to their answers (todo 23 canonical labels) (0.4015ms)
+✔ vote-cancel is a withdraw pick, never an answer (0.1632ms)
+✔ deny is only reachable through the explicit deny pick (0.2172ms)
+✔ fallback ask: Esc stays pending; explicit picks choose hop or keep (0.2647ms)
+✔ fallback buttons are derived from the ask identities so picks are unambiguous (0.1092ms)
+✔ plan ask: Esc stays pending; explicit picks approve or reject (0.1059ms)
+✔ hello encodes to the exact daemon wire shape (3.804ms)
+✔ submit command encodes with nested snake_case tag (0.3036ms)
+✔ permission answer encodes with snake_case answer (0.2433ms)
+✔ oversized submit text is refused before it reaches the daemon (0.2412ms)
+✔ oversized token is refused client-side (0.2885ms)
+✔ client id over the bound or with control bytes is refused (0.1915ms)
+✔ server frame over 1 MiB is rejected before parsing (0.2878ms)
+✔ garbage and unknown tags decode to typed malformed errors (0.2253ms)
+✔ hello_ack frame decodes (0.1493ms)
+✔ event frame carrying a turn event decodes (0.4153ms)
+✔ recorded engine events decode across all seven kinds (0.3926ms)
+✔ diff event decodes with path and rendered hunks (0.1722ms)
+✔ permission ask and resolved (both payload and unit resolutions) decode (0.2587ms)
+✔ resync, snapshot, error, pong, and bye decode (0.1642ms)
+✔ malformed nested event inside a frame is rejected, not silently passed (0.0813ms)
+✔ daemon absent retries with capped exponential backoff (101.1137ms)
+✔ flaky daemon: three drops, exact-once resume from cursor (173.4472ms)
+✔ gap in the frame ids forces a resume from the last cursor (45.0675ms)
+✔ state_resync_required is accepted with its snapshot replacing deltas (31.2157ms)
+✔ malformed server frame is surfaced and does not kill the stream (30.8993ms)
+✔ unknown ask answer maps to a typed unknown_ask error (18.4625ms)
+✔ stop resolves promptly after a live attach instead of hanging on a dead socket (12.4932ms)
+✔ clean server-side stream end surfaces as disconnected and reconnects (31.2135ms)
+✔ telemetry disabled (the default) sends nothing (0.9901ms)
+✔ enabled telemetry emits file, position, selection, and diagnostics (0.5473ms)
+✔ 'fix this' with telemetry carries the file so the agent never asks which file (0.1969ms)
+✔ enabled but no editor focus yields null, not an empty block (0.1967ms)
+✔ selection is bounded: an enormous selection is truncated, not shipped whole (0.2563ms)
+✔ transcript renders tool, condensation, notification, and team entries from a fixture stream (1.5288ms)
+✔ every fixture frame either renders an entry or is explicitly silent — none crash (0.1633ms)
+✔ diff frames stay silent in the transcript (they render as editor decorations) (0.108ms)
+✔ html rendering escapes entry text — a hostile frame cannot inject markup (0.1183ms)
+✔ rendering an empty transcript produces a valid empty list, not an error (0.0976ms)
+✔ the connection negotiates protocol version 2 on the SSE URL (62.0271ms)
+✔ v2 hello_ack (version 2) is accepted and reaches connected (12.8469ms)
+✔ team frames (child_started/progress/finished) decode and advance the cursor without a reconnect loop (32.9002ms)
+✔ fallback ask surfaces as a client event; answering posts fallback_answer with the chosen identity (45.7224ms)
+✔ plan ask surfaces as a client event; approving posts plan_answer approve (46.8312ms)
+✔ plan mode toggle posts plan_mode on/off (17.2575ms)
+✔ a malformed raw line mid-stream is ignored and later frames still arrive (webview stream never breaks) (28.9981ms)
+ℹ tests 89
+ℹ suites 0
+ℹ pass 89
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5550.7202
+
+Summary: 89/89 tests pass, 0 fail, 0 skipped. 12 suite files (bridge, client,
+gauge, grammar, hunks, omnibar, prompts, protocol, reconnect, telemetry,
+transcript, v2), including the fakedaemon roundtrips in client/protocol/
+reconnect/v2 (attach, resume, permission answer, fallback/plan asks, team
+frames).
+
+--------------------------------------------------------------------------------
+COMMAND 2: npm run typecheck --prefix harness-vscode
+EXIT: 0
+--------------------------------------------------------------------------------
+
+> harness-vscode@0.1.0 typecheck
+> tsc -p ./ --noEmit
+
+(no output — clean, exit 0)
+
+--------------------------------------------------------------------------------
+MATRIX CELL MAPPING (mechanism -> test name -> PASS / N-A-reason)
+--------------------------------------------------------------------------------
+
+CELL: routed turns/frames (protocol-v2 negotiation + frame decode)
+| Mechanism | Test (suite) | Result |
+| Protocol-v2 negotiation | test/v2.test.ts: "the connection negotiates protocol version 2 on the SSE URL" | PASS |
+| Protocol-v2 acceptance | test/v2.test.ts: "v2 hello_ack (version 2) is accepted and reaches connected" | PASS |
+| Frame decode over live stream | test/v2.test.ts: "a malformed raw line mid-stream is ignored and later frames still arrive (webview stream never breaks)" | PASS |
+| (supporting, v1 wire codec) | test/protocol.test.ts: "hello encodes to the exact daemon wire shape", "event frame carrying a turn event decodes", "recorded engine events decode across all seven kinds", "diff event decodes with path and rendered hunks", "resync, snapshot, error, pong, and bye decode", "malformed nested event inside a frame is rejected, not silently passed" | PASS |
+| (supporting, fakedaemon roundtrip) | test/client.test.ts: "attach reaches connected, delivers ordered frames, tracks cursor", "full session: attach, frames, steer, permission answer, turn completes"; test/reconnect.test.ts: "flaky daemon: three drops, exact-once resume from cursor", "gap in the frame ids forces a resume from the last cursor", "state_resync_required is accepted with its snapshot replacing deltas" | PASS |
+
+CELL: fallback asks / ask flow (allow-deny picks AND Esc->pending)
+| Mechanism | Test (suite) | Result |
+| Esc leaves ask pending (never denies) | test/prompts.test.ts: "Esc (dismissed prompt) leaves the permission ask pending — never denies" | PASS |
+| Allow/deny explicit picks | test/prompts.test.ts: "explicit permission picks map to their answers (todo 23 canonical labels)" | PASS |
+| Deny only via explicit pick | test/prompts.test.ts: "deny is only reachable through the explicit deny pick" | PASS |
+| Fallback ask: Esc/picks | test/prompts.test.ts: "fallback ask: Esc stays pending; explicit picks choose hop or keep" | PASS |
+| Fallback ask: unambiguous picks | test/prompts.test.ts: "fallback buttons are derived from the ask identities so picks are unambiguous" | PASS |
+| Plan ask: Esc/picks | test/prompts.test.ts: "plan ask: Esc stays pending; explicit picks approve or reject" | PASS |
+| Fallback answer wiring (fakedaemon) | test/v2.test.ts: "fallback ask surfaces as a client event; answering posts fallback_answer with the chosen identity" | PASS |
+| Plan answer wiring (fakedaemon) | test/v2.test.ts: "plan ask surfaces as a client event; approving posts plan_answer approve" | PASS |
+| (supporting roundtrips) | test/client.test.ts: "permission ask and resolution surface as client events", "full session: attach, frames, steer, permission answer, turn completes" | PASS |
+
+HONEST LIMITATION (this cell): the daemon's HTTP route refuses typed
+fallback/plan ANSWERS until a WS carrier exists; the v2 tests prove the
+client-side wiring end-to-end against fakedaemon (ask surfaces as event,
+answer posts fallback_answer/plan_answer), not against the production daemon
+transport.
+
+CELL: delegation / team-status
+| Mechanism | Test (suite) | Result |
+| Team frame decode + stream stability | test/v2.test.ts: "team frames (child_started/progress/finished) decode and advance the cursor without a reconnect loop" | PASS |
+| Team entries rendered in transcript | test/transcript.test.ts: "transcript renders tool, condensation, notification, and team entries from a fixture stream" | PASS |
+| (supporting) fixture coverage | test/transcript.test.ts: "every fixture frame either renders an entry or is explicitly silent — none crash" | PASS |
+
+CELL: hunk/plan surfaces (where covered by vscode tests)
+| Mechanism | Test (suite) | Result |
+| Hunk lens/decoration planning | test/hunks.test.ts: "diff event plans one lens/decoration range per hunk on its new-side lines" | PASS |
+| Unparseable hunk headers skipped | test/hunks.test.ts: "unparseable hunk headers are skipped, not guessed at" | PASS |
+| Accept clean / confirm dirty | test/hunks.test.ts: "accept on a clean file proceeds", "accept on a dirty file demands explicit confirmation, never a silent apply" | PASS |
+| Accept answers pending ask / steer fallback | test/hunks.test.ts: "hunk accept answers the pending ask when one targets the file", "hunk accept with no pending ask falls back to a steer instruction" | PASS |
+| Reject path | test/hunks.test.ts: "hunk reject denies the pending ask or steers a rejection" | PASS |
+| Plan ask surface | test/prompts.test.ts: "plan ask: Esc stays pending; explicit picks approve or reject"; test/v2.test.ts: "plan ask surfaces as a client event; approving posts plan_answer approve" | PASS |
+| Plan mode toggle | test/v2.test.ts: "plan mode toggle posts plan_mode on/off" | PASS |
+| Diff renders as decorations, not transcript noise | test/transcript.test.ts: "diff frames stay silent in the transcript (they render as editor decorations)" | PASS |
+
+CELLS NOT EXERCISED BY THE VSCODE TESTS (N-A for this frontend)
+| Mechanism | Result / reason |
+| Cross-session search UI | N-A — surface not present in the extension; CLI/web cells cover it. |
+| Cost badge | N-A — surface not present in the extension; CLI/web cells cover it. |
+| run_tests | N-A — surface not present in the extension; CLI/web cells cover it. |

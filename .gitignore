@@ -13,3 +13,7 @@ target-task-*/
 
 # snapshot test-run debris (runtime checkpoint litter)
 harness-snapshots/
+
+# daemon runtime data dir (QA-run residue)
+.harness-daemon/
+

@@ -1,0 +1,180 @@
+F3 manual-QA CELL: web frontend (harness-web SPA)
+Date: 2026-10-22
+Cell: web dashboard SPA served by the daemon (browser surface)
+
+ENVIRONMENT
+- e2e fixture daemon: C:\ct\debug\examples\e2e_daemon.exe (pre-built 2026-10-22 08:12, no rebuild needed)
+- Command: node harness-web/e2e/run-e2e.mjs
+  HARNESS_E2E_EXE=C:\ct\debug\examples\e2e_daemon.exe
+  NODE_PATH=C:\Users\vsbb1\AppData\Roaming\npm\node_modules (npm root -g; playwright-core global)
+- Store/grammar tests: node --test harness-web/tests/js/store.test.mjs harness-web/tests/js/grammar.test.mjs
+  (files passed explicitly, never the directory — Node directory-mode quirk)
+- Note: first e2e attempt aborted before any scenario ran — fixture daemon bind on
+  127.0.0.1:18937 failed with os error 10048 (transient port holder, gone by the next
+  probe). Retry ran clean. Both raw outputs below.
+
+================================================================================
+RUN 1 (aborted pre-scenario, port conflict, no scenarios executed)
+================================================================================
+Error: "bind: Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)"
+E2E RESULT: FATAL daemon exited early: 1
+
+================================================================================
+RUN 2 (clean, full suite) — FULL OUTPUT
+================================================================================
+PASS happy: two browsers attach, approve gate, HUD + hunk update in both
+PASS happy: history cost+verdict, timeline files per turn, workers, trends, focus view (todo 20)
+PASS failure: empty history renders an empty-state, not a spinner
+PASS failure: expired share link renders 410 Gone
+PASS failure: auth negatives (401/403) and wrong-token page never sees events
+PASS absent-daemon observed reconnecting
+PASS failure: absent daemon -> reconnecting state
+E2E RESULT: ALL PASS
+
+================================================================================
+store.test.mjs + grammar.test.mjs — FULL OUTPUT
+================================================================================
+ok grammar: JS table is pinned byte-for-byte to grammar.json (1.9144ms)
+ok grammar: cheat sheet renders one line per command with cli-only marks (0.1539ms)
+ok grammar: unknown-command help is the cross-frontend contract string (0.1413ms)
+ok grammar: parse recognizes every core command (0.4215ms)
+ok grammar: malformed and unknown commands are typed, never silent submits (0.1413ms)
+ok grammar: cli-local words are known-but-local everywhere (0.0817ms)
+ok grammar: mode arguments map and vote-cancel feedback is typed (0.2162ms)
+ok grammar: routing maps every command onto its wire message (todo 23) (0.3816ms)
+ok store: happy stream renders transcript, HUD, diff, and ask lifecycle (1.8174ms)
+ok store: CJK and emoji text survive the reducer byte-for-byte (0.1738ms)
+ok store: malformed and unknown frames never throw; they count as anomalies (0.1552ms)
+ok store: state_resync_required + snapshot replaces history entirely (0.2113ms)
+ok store: auth error raises the unauthorized flag; bye marks transport closed (0.1175ms)
+ok store: cancel-vote resolution withdraws the ask without allowing it (0.1124ms)
+ok store: rewind-point markers render the disambiguated label (todo 23) (0.1049ms)
+ok store: image blocks render as their typed text marker (0.1273ms)
+ok store: team frames build workers, budget, and exhaustion state (0.2351ms)
+ok proto: decode is total — garbage in, typed failure out (0.6777ms)
+ok proto: the web client negotiates protocol version 2 (0.0975ms)
+ok store: v2 usage frames accumulate per-session cost/model totals (0.2703ms)
+ok store: fallback ask lands pending; resolution retires it into the log (0.117ms)
+ok store: verdict frames carry their evidence links (0.1097ms)
+ok store: plan ask lands pending; resolution records the outcome (0.1153ms)
+ok store: diffs group under their turn for the changed-files timeline (0.1415ms)
+ok store: v2 session events render as notifications, not anomalies (0.3449ms)
+# tests 25, pass 25, fail 0 (duration 301.7ms)
+(runner printed check-marks; normalized to "ok" for grep-ability)
+
+================================================================================
+CELL MAPPING — mechanism -> observable -> status
+================================================================================
+
+1. Routed turns + asks (permission gate, ALLOW path)
+   e2e PASS "happy: two browsers attach, approve gate, HUD + hunk update in both"
+   (composer turn -> .gate-ask renders in BOTH browsers -> "y (once)" -> turn
+   completed, HUD events/turns increase, both browsers converge to identical
+   event count, zero page errors)                                        PASS
+
+2. Permission gate DENY/withdraw path
+   store PASS "cancel-vote resolution withdraws the ask without allowing it"
+   (e2e suite approves only; deny observable is store-level)         STORE-LEVEL
+
+3. Hunk review (diff rendered after gate approval)
+   e2e PASS "happy: two browsers attach, approve gate, HUD + hunk update in both"
+   (.diff selector awaited in both browsers post-approval)
+   + store PASS "happy stream renders transcript, HUD, diff, and ask lifecycle" PASS
+
+4. History cost + verdict (v2 usage frames -> session totals; scheduled-run verdict)
+   e2e PASS "happy: history cost+verdict, timeline files per turn, workers,
+   trends, focus view (todo 20)" — history shows "confirmed" verdict and exact
+   cost $0.013440 (two inferences at 6720 micro-USD each)                  PASS
+
+5. Changed-files timeline (files grouped per turn)
+   e2e PASS "happy: history cost+verdict, ..." (timeline matches /turn 1/ and
+   /src\/demo\.rs/)
+   + store PASS "diffs group under their turn for the changed-files timeline" PASS
+
+6. Workers panel (delegation children + team aggregate)
+   e2e PASS "happy: history cost+verdict, ..." ([data-testid=team] renders
+   >=2 fixture children; team aggregate in_progress per Warp precedence)   PASS
+   Team budget frames + exhaustion state: store PASS "team frames build
+   workers, budget, and exhaustion state" (spawned/tokensSpent/fanOutCap/
+   tokenBudget asserted, budgetExhausted=true)               STORE-LEVEL (budget)
+
+7. Trends (model identity + cost per model)
+   e2e PASS "happy: history cost+verdict, ..." (trends names claude-sonnet-4-5,
+   carries $)
+   + store PASS "v2 usage frames accumulate per-session cost/model totals"
+   (13440 micros accumulated; unpriced model stays 0, never NaN)           PASS
+
+8. Focus view (collapsed-by-default transcript, expand on demand)
+   e2e PASS "happy: history cost+verdict, ..." (entry-collapsed default,
+   focus click -> entry-open)                                              PASS
+
+9. Empty-history empty-state
+   e2e PASS "failure: empty history renders an empty-state, not a spinner"
+   (/no scheduled runs/ rendered; zero busy/loading elements)               PASS
+
+10. Share link expiry
+    e2e PASS "failure: expired share link renders 410 Gone"                PASS
+
+11. Auth negatives (token/Host checks; no event leak)
+    e2e PASS "failure: auth negatives (401/403) and wrong-token page never
+    sees events" (no token 401, wrong bearer 401, spoofed Host + valid token
+    403, wrong-token page shows no events while reconnecting)              PASS
+
+12. Reconnect (absent daemon)
+    e2e PASS "failure: absent daemon -> reconnecting state"
+    + "PASS absent-daemon observed reconnecting" (status flips to
+    reconnecting/connecting/error after daemon kill)                       PASS
+
+13. Cost governance Warning badge (80% of session cap)
+    store PASS "v2 session events render as notifications, not anomalies"
+    (cost_warning frame fed; notification kind+message asserted, no anomaly)
+    e2e fixture never breaches the cap -> no browser-level badge observable STORE-LEVEL
+
+14. Cost governance Stop badge (100% cap, further turns refused)
+    Reducer case assets/store.js:350 maps cost_stop -> "session spend cap
+    reached (...) — further turns refused" notification on the same asserted
+    notification path as cost_warning, but no store test feeds cost_stop and
+    e2e never breaches the cap.                                STORE-LEVEL (reducer
+    path present; cost_warning sibling asserted, cost_stop itself not fed
+    by any test — noted for honesty)
+
+15. Fallback ask (no silent model substitution)
+    store PASS "fallback ask lands pending; resolution retires it into the
+    log" (mediated FallbackAsk/FallbackResolved frames)          STORE-LEVEL
+
+16. Verdict evidence links
+    store PASS "verdict frames carry their evidence links"
+    (e2e also shows the verdict itself in history — row 4)         STORE-LEVEL
+
+17. Plan ask (approve/edit/reject mediation)
+    store PASS "plan ask lands pending; resolution records the outcome" STORE-LEVEL
+
+18. Cross-session search UI
+    N-A: the web SPA has no search surface — grep of harness-web/assets finds
+    no search UI (only URLSearchParams in app.js); the mechanism ships as
+    GET /sessions/search + `harness sessions search` CLI + search_sessions
+    model tool (task-11), exercised in their own cells, not the web cell.
+                                                          N-A-justified (web cell)
+
+19. Protocol v2 negotiation
+    e2e (inside row-4 scenario): [data-testid=proto-version] == "v2"
+    + proto PASS "the web client negotiates protocol version 2"             PASS
+
+20. Unified command grammar (web composer side)
+    grammar PASS x8 incl. "routing maps every command onto its wire message
+    (todo 23)" and "malformed and unknown commands are typed, never silent
+    submits"                                                     STORE-LEVEL
+
+================================================================================
+CLEANUP
+================================================================================
+Post-run verification: Get-Process e2e_daemon -> none;
+Get-NetTCPConnection -LocalPort 18937 -> nothing listening.
+The runner's finally block (browser.close + daemon.child.kill) held; no
+orphaned fixture daemon or listener remains. The RUN 1 port conflict was an
+external transient holder (no e2e_daemon process was alive at probe time).
+
+Legend: PASS = exercised in the browser via the e2e suite; STORE-LEVEL =
+exercised by store/grammar/proto unit tests over the SPA's reducer/codec (the
+browser cell's own logic layer); N-A-justified = no web surface exists for the
+mechanism in this cell.
