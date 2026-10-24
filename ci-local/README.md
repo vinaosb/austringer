@@ -141,3 +141,21 @@ cargo wrapper when present, plain `cargo` otherwise).
   image can approximate it; CI remains the only gate for that leg.
 - **actions/upload-artifact steps** — nothing to upload locally; the
   nextest archive itself IS run (from `%TEMP%`) in the test phases.
+
+## Merge gating (client-side, the last line)
+
+Server-side branch protection is unavailable here: the repo is private on
+a free GitHub plan, and the settings API answers **HTTP 403 — "Upgrade to
+GitHub Pro or make this repository public"** (receipt, 2026-10-24). Until
+the plan changes, the merge contract is discipline —
+`scripts/merge-gate.ps1 <PR>` must print PASS immediately before every
+`gh pr merge`: it re-reads the PR's `statusCheckRollup` and refuses unless
+every check is `COMPLETED`/`SUCCESS` (SKIPPED/NEUTRAL entries are
+informational; scheduled workflows like deep-qa and evals-scheduled never
+gate PRs by policy anyway). The pre-push gate above remains the first
+line of defense; this script is the last.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/merge-gate.ps1 3   # must print PASS...
+gh pr merge 3 --merge                                                          # ...before this runs
+```
