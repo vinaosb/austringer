@@ -233,7 +233,7 @@ an eval table, harness-matched rows only:
 
 ## Status
 
-Works at this commit (HEAD `ee4b9df`; every production-wired row is verified
+Works at this commit (HEAD `63bc222`; every production-wired row is verified
 against the daemon/CLI/TUI/web/VS Code source and carries recorded task
 evidence in `.omo/evidence/`). The distinction that matters to a reader:
 **production-wired** means the mechanism is reachable through the shipped

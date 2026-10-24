@@ -21,7 +21,19 @@
                                                 "worktree_path":  null,
                                                 "status":  "active",
                                                 "plan_name":  "media-formats-wave"
-                                            }
+                                            },
+                  "ecosystem-alignment-v1":  {
+                                                 "session_ids":  [
+                                                                     "opencode:ses_ea774e945ffe45I9Wp629UGOW1"
+                                                                 ],
+                                                 "active_plan":  ".omo/plans/ecosystem-alignment.md",
+                                                 "work_id":  "ecosystem-alignment-v1",
+                                                 "worktree_path":  null,
+                                                 "status":  "completed",
+                                                 "plan_name":  "ecosystem-alignment",
+                                                 "completed_at":  "2026-10-23",
+                                                 "note":  "37/37 todos + F1-F4 APPROVE; delivery PR opened after completion"
+                                             }
               },
     "active_work_id":  "media-formats-wave-v1"
 }
