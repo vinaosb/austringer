@@ -5,3 +5,12 @@
 # overrides autocrlf on every platform; the committed blob is LF.
 # (Same discipline as harness-media/.gitattributes for binary fixtures.)
 harness-daemon/src/grammar.json text eol=lf
+
+# Byte-pinned test fixture: harness-daemon's plan_mode_tests
+# byte-compare a freshly driven transcript against the committed
+# task16_golden_session_transcript.json via read_to_string (Rust does
+# no newline translation), so a CRLF checkout (git autocrlf on Windows,
+# the CI runner default) must not rewrite its line endings. eol=lf
+# overrides autocrlf on every platform; the committed blobs are LF.
+# (Same discipline as grammar.json above, commit c836542.)
+harness-daemon/tests/fixtures/** text eol=lf
