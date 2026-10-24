@@ -12,10 +12,16 @@ mod pack {
     use harness_evals::scenarios::{self, PINNED_CASES, ScenarioError};
     use std::path::{Path, PathBuf};
 
-    const PACK_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "\\scenarios");
+    /// Compile-time-anchored pack dir (nextest archive mode and
+    /// llvm-cov run test binaries from a different CWD, and a
+    /// hardcoded `"\\scenarios"` suffix breaks on unix, where the
+    /// backslash is not a path separator).
+    fn pack_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("scenarios")
+    }
 
     fn copy_pack(dest: &Path) -> PathBuf {
-        let src = Path::new(PACK_DIR);
+        let src = &pack_dir();
         let out = dest.join("scenarios");
         std::fs::create_dir_all(out.join("cassettes")).unwrap();
         for entry in std::fs::read_dir(src).unwrap() {
@@ -36,7 +42,7 @@ mod pack {
     /// pins exactly the two golden-prefix cases.
     #[test]
     fn committed_pack_covers_the_five_mechanisms_with_cassettes() {
-        let pack = scenarios::load(Path::new(PACK_DIR)).unwrap_or_else(|e| panic!("{e}"));
+        let pack = scenarios::load(&pack_dir()).unwrap_or_else(|e| panic!("{e}"));
         let ids: Vec<&str> = pack.dataset.cases.iter().map(|c| c.id.as_str()).collect();
         assert_eq!(
             ids,
@@ -60,7 +66,7 @@ mod pack {
     /// its committed golden prefix.
     #[test]
     fn every_pinned_case_conforms_to_its_golden_prefix() {
-        let pack = scenarios::load(Path::new(PACK_DIR)).unwrap_or_else(|e| panic!("{e}"));
+        let pack = scenarios::load(&pack_dir()).unwrap_or_else(|e| panic!("{e}"));
         let findings = pack.conformance_findings();
         assert!(
             findings.is_empty(),
@@ -153,10 +159,16 @@ mod driver {
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
-    const PACK_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "\\scenarios");
+    /// Compile-time-anchored pack dir (nextest archive mode and
+    /// llvm-cov run test binaries from a different CWD, and a
+    /// hardcoded `"\\scenarios"` suffix breaks on unix, where the
+    /// backslash is not a path separator).
+    fn pack_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("scenarios")
+    }
 
     fn copy_pack(dest: &Path) -> PathBuf {
-        let src = Path::new(PACK_DIR);
+        let src = &pack_dir();
         let out = dest.join("scenarios");
         std::fs::create_dir_all(out.join("cassettes")).unwrap();
         for entry in std::fs::read_dir(src).unwrap() {
@@ -188,7 +200,7 @@ mod driver {
         let tmp = tempfile::tempdir().unwrap();
         let args = DriverArgs {
             trigger: Trigger::Manual,
-            fixtures: PathBuf::from(PACK_DIR),
+            fixtures: pack_dir(),
             report: tmp.path().join("report.json"),
         };
         let verdict = driver::run(&args, &source()).unwrap_or_else(|e| panic!("{e}"));
@@ -252,7 +264,7 @@ mod driver {
         let tmp = tempfile::tempdir().unwrap();
         let args = DriverArgs {
             trigger: Trigger::Scheduled,
-            fixtures: PathBuf::from(PACK_DIR),
+            fixtures: pack_dir(),
             report: tmp.path().join("report.json"),
         };
         let dirty = SourceFingerprint {
