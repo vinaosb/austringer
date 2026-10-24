@@ -251,10 +251,12 @@ fn generation(spec: &StepSpec) -> GenerationSpec {
 }
 
 fn fixture_bytes(name: &str) -> Vec<u8> {
-    std::fs::read(format!(
-        concat!(env!("CARGO_MANIFEST_DIR"), "\\fixtures\\step\\", "{}"),
-        name
-    ))
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("step")
+            .join(name),
+    )
     .unwrap_or_else(|error| panic!("fixture {name}: {error}"))
 }
 
@@ -321,8 +323,12 @@ fn hand_committed_fixture_extracts_pinned_tree() {
 /// entities, no products, no bbox - never a fabricated structure.
 #[test]
 fn header_only_probe_stub_extracts_an_empty_skeleton() {
-    let stub = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "\\fixtures\\step.stp"))
-        .expect("committed probe stub");
+    let stub = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("step.stp"),
+    )
+    .expect("committed probe stub");
     let extracted = step::extract(&stub, Default::default()).expect("header-only extract");
     assert_eq!(extracted.tree["entity_count"], 0);
     assert_eq!(extracted.tree["products"].as_array().map(Vec::len), Some(0));

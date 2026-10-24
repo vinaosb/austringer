@@ -6,6 +6,7 @@
 //! duration tolerance max(1 frame, 1%).
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use harness_core::event::MediaStore;
 use harness_media::adapter::ffmpeg::{
@@ -15,17 +16,22 @@ use harness_media::error::MediaError;
 use harness_media::format::FormatId;
 use harness_media::tool::{ToolConfig, ToolExecutor, ToolOverride};
 
-const GOLDEN_DIR: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "\\..\\harness-test-support\\golden\\mocktool"
-);
-const INPUT_DIR: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "\\..\\harness-test-support\\golden\\mocktool\\_input"
-);
+/// Compile-time-anchored golden dirs (hardcoded `"\\..\\..."` backslash
+/// suffixes break on unix, where the backslash is not a path separator).
+fn golden_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("harness-test-support")
+        .join("golden")
+        .join("mocktool")
+}
+
+fn input_dir() -> PathBuf {
+    golden_dir().join("_input")
+}
 
 fn fixture(name: &str) -> Vec<u8> {
-    std::fs::read(format!("{INPUT_DIR}\\{name}")).unwrap_or_default()
+    std::fs::read(input_dir().join(name)).unwrap_or_default()
 }
 
 /// T40-style re-exec child entries: one per TOOL so a single adapter
@@ -91,7 +97,7 @@ fn lane(ffmpeg_mode: &str, ffprobe_mode: &str) -> Lane {
     );
     env.insert(
         "HARNESS_MOCKTOOL_GOLDEN_DIR".to_owned(),
-        GOLDEN_DIR.to_owned(),
+        golden_dir().display().to_string(),
     );
     Lane { tools, env }
 }

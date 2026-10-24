@@ -340,10 +340,11 @@ fn default_config_extract_is_typed_tool_unavailable_probe_still_works() {
         }
         other => panic!("expected ToolUnavailable, got {other:?}"),
     }
-    let fixture = std::fs::read(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "\\fixtures\\blend.blend"
-    ))
+    let fixture = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("blend.blend"),
+    )
     .expect("committed blend fixture");
     let probed = registry
         .dispatch(
@@ -554,10 +555,11 @@ fn generated_builder_scripts_parse_as_python() {
 #[test]
 fn blend_bytes_without_census_fail_typed_not_faked() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let fixture = std::fs::read(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "\\fixtures\\blend.blend"
-    ))
+    let fixture = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("blend.blend"),
+    )
     .expect("committed blend fixture");
     let error = blend::extract(
         &blend_exec("blenddump", temp.path()),

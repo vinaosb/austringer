@@ -5,7 +5,7 @@
 //! routing through the executor. Hermetic: no network, no real tools.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use harness_media::error::{InstallFailure, MediaError};
 use harness_media::format::FormatId;
@@ -13,10 +13,15 @@ use harness_media::tool::{
     OP_VERSION_CHECK, ToolCall, ToolConfig, ToolError, ToolExecutor, ToolOverride, manifests,
 };
 
-const GOLDEN_DIR: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "\\..\\harness-test-support\\golden\\mocktool"
-);
+/// Compile-time-anchored golden dir (a hardcoded `"\\..\\..."` suffix
+/// breaks on unix, where the backslash is not a path separator).
+fn golden_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("harness-test-support")
+        .join("golden")
+        .join("mocktool")
+}
 
 /// T40-style re-exec entry: when HARNESS_MOCKTOOL_ARGV is set, THIS test
 /// becomes a mocktool child; the executor spawns this binary as the
@@ -135,10 +140,11 @@ fn enabled_mocktool_runs_and_serves_the_real_golden_capture() {
         mocktool_override(None),
         temp.path().to_path_buf(),
     );
+    let golden = golden_dir().display().to_string();
     let env = env_map(&[
         ("PATH", "C:\\Windows"),
         ("HARNESS_MOCKTOOL_ARGV", "golden ffprobe/probe-av-json"),
-        ("HARNESS_MOCKTOOL_GOLDEN_DIR", GOLDEN_DIR),
+        ("HARNESS_MOCKTOOL_GOLDEN_DIR", golden.as_str()),
     ]);
     let run = executor
         .run(&ToolCall::new("ffprobe", OP_VERSION_CHECK).env(&env))

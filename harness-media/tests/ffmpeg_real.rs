@@ -4,20 +4,26 @@
 //! (plan: probe + one transcode + decode-back).
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use harness_media::adapter::ffmpeg::{
     self, Caps, FFMPEG_TOOL, FFPROBE_TOOL, Target, TranscodeSpec,
 };
 use harness_media::tool::{ToolConfig, ToolExecutor, ToolOverride};
 
-const INPUT_DIR: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "\\..\\harness-test-support\\golden\\mocktool\\_input"
-);
+/// Compile-time-anchored input dir (a hardcoded `"\\..\\..."` suffix
+/// breaks on unix, where the backslash is not a path separator).
+fn input_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("harness-test-support")
+        .join("golden")
+        .join("mocktool")
+        .join("_input")
+}
 
 fn fixture(name: &str) -> Vec<u8> {
-    std::fs::read(format!("{INPUT_DIR}\\{name}")).unwrap_or_default()
+    std::fs::read(input_dir().join(name)).unwrap_or_default()
 }
 
 fn real_executor() -> Option<ToolExecutor> {

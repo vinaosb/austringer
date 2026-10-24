@@ -3,11 +3,18 @@
 //! provides for other crates' harnesses (T40 precedent). Golden modes
 //! serve the committed REAL captures (see golden/mocktool/capture.md).
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use harness_test_support::mocktool;
 
-const GOLDEN_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "\\golden\\mocktool");
+/// Compile-time-anchored golden dir (a hardcoded `"\\golden\\mocktool"`
+/// suffix breaks on unix, where the backslash is not a path separator).
+fn golden_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("golden")
+        .join("mocktool")
+}
 
 fn run(args: &[&str], envs: &[(&str, &str)]) -> (i32, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_mocktool"));
@@ -36,9 +43,10 @@ fn mocktool_child_entry() {
 /// Golden mode: the committed REAL ffprobe capture is served verbatim.
 #[test]
 fn golden_mode_serves_real_capture() {
+    let golden = golden_dir().display().to_string();
     let (code, stdout, stderr) = run(
         &["golden", "ffprobe/probe-av-json"],
-        &[("HARNESS_MOCKTOOL_GOLDEN_DIR", GOLDEN_DIR)],
+        &[("HARNESS_MOCKTOOL_GOLDEN_DIR", golden.as_str())],
     );
     assert_eq!(code, 0, "stderr: {stderr}");
     let parsed: serde_json::Value =

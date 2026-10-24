@@ -53,10 +53,11 @@ fn gdal_exec(mode: &str, temp: &Path) -> harness_media::tool::ToolExecutor {
 }
 
 fn fixture(name: &str) -> Vec<u8> {
-    std::fs::read(format!(
-        concat!(env!("CARGO_MANIFEST_DIR"), "\\fixtures\\", "{}"),
-        name
-    ))
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join(name),
+    )
     .unwrap_or_else(|error| panic!("committed fixture {name}: {error}"))
 }
 
