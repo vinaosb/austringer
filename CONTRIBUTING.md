@@ -25,6 +25,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
 ```
 
+Before pushing, you can run the repo's local CI parity harness — the
+ubuntu legs of the CI workflow inside an `ubuntu:24.04` container with the
+pinned toolchain and tools, the windows legs natively — so runner-environment
+divergences (ANSI codes, path separators, fixture eol, process layout; the
+receipt chain behind it) surface on your PC instead of on billed Actions
+minutes: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts/install-hooks.ps1` wires a fast `pre-commit` (fmt) and a full
+`pre-push` gate; see [ci-local/README.md](ci-local/README.md) for the phase
+table and the `HARNESS_SKIP_LOCAL_CI=1` bypass.
+
 The workspace lints (`Cargo.toml`) already escalate `warnings = "deny"` and
 `clippy::all = "deny"` for every crate, so a clean `cargo check` is a
 lint-clean check.
