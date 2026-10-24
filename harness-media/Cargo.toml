@@ -110,7 +110,7 @@ thiserror.workspace = true
 # M10 resolve pipeline: wall-clock timeouts around model-mediated
 # projection calls (workspace baseline already carries sync/time/macros).
 tokio = { workspace = true }
-zip = { version = "8", default-features = false, features = ["deflate"], optional = true }
+zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
 # M12: khronos glTF 2.0 reader (pure Rust; validated by cargo-deny).
 # default-features off: the `import` feature pulls the image crate.
 gltf = { version = "1.4.1", default-features = false, features = ["names"], optional = true }

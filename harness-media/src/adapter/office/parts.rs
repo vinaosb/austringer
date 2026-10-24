@@ -76,9 +76,12 @@ impl<'a> Package<'a> {
     }
 
     /// Whether a part with this exact name exists (the vbaProject.bin
-    /// macro disclosure).
+    /// macro disclosure). zip 9 file names decode lazily and may fail;
+    /// an undecodable name is by definition not the part.
     pub(super) fn has_part(&self, name: &str) -> bool {
-        self.archive.file_names().any(|part| part == name)
+        self.archive
+            .file_names()
+            .any(|part| part.as_deref().is_ok_and(|decoded| decoded == name))
     }
 
     /// Reads one part under the per-part cap; a missing part or a read
