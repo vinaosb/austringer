@@ -162,10 +162,8 @@ fn media_format_override_rows_are_strictly_typed() {
 #[test]
 fn committed_budgets_json_parses_with_the_avif_override() {
     // The file of record stays parseable under the strict schema.
-    let bytes = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("budgets.json"),
-    )
-    .expect("budgets.json present");
+    let bytes = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("budgets.json"))
+        .expect("budgets.json present");
     let cfg = BudgetConfig::from_json_str(&bytes).expect("committed budgets parse");
     assert_eq!(
         cfg.media_format_overrides
