@@ -265,6 +265,52 @@ async fn run_tests_fixture_crate_report_has_exact_entries() {
 }
 
 // ---------------------------------------------------------------------------
+// Spawn-seam env contract: plain runner output
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn run_tests_spawn_seam_forces_no_color_and_dumb_term() {
+    // The PR-1 CI failure class: runners colorize NON-tty nextest
+    // output and the human-format parser contracted on plain text
+    // (locally blind — the dev machine's scrubbed inner PATH lacked
+    // nextest, so the libtest fallback lane masked it). A fixture test
+    // observing its own env pins the seam contract on the real cargo
+    // lane, every OS: the child env must carry NO_COLOR=1 + TERM=dumb.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lib = concat!(
+        "#[test]\n",
+        "fn plain_output_env_contract() {\n",
+        "    assert_eq!(\n",
+        "        std::env::var(\"NO_COLOR\").as_deref(),\n",
+        "        Ok(\"1\"),\n",
+        "        \"spawn seam forces NO_COLOR=1\"\n",
+        "    );\n",
+        "    assert_eq!(\n",
+        "        std::env::var(\"TERM\").as_deref(),\n",
+        "        Ok(\"dumb\"),\n",
+        "        \"spawn seam forces TERM=dumb\"\n",
+        "    );\n",
+        "}\n",
+    );
+    let fixture = write_fixture_crate(&dir.path().join("crate"), "rtfx_env", lib);
+    let tool = RunTestsTool::new(fixture.clone(), None);
+
+    let bytes = tool
+        .execute(&serde_json::json!({ "path": path_string(&fixture) }))
+        .await
+        .expect("run_tests must succeed on the fixture");
+    let text = String::from_utf8(bytes).expect("report is utf-8");
+    let report: TestReport =
+        serde_json::from_str(text.lines().next().expect("report json is the first line"))
+            .expect("observation must deserialize as a TestReport");
+    assert_eq!(
+        report.summary.failed, 0,
+        "the env-contract fixture test must pass: {report:?}"
+    );
+    assert_eq!(report.summary.passed, 1, "{report:?}");
+}
+
+// ---------------------------------------------------------------------------
 // (b) Unknown framework -> typed error with config instructions
 // ---------------------------------------------------------------------------
 

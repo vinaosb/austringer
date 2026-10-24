@@ -27,6 +27,8 @@
 //! test result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; ...
 //! ```
 
+use std::borrow::Cow;
+
 use super::report::TestEntry;
 
 /// Parses nextest's human per-test lines. The status vocabulary is
@@ -35,13 +37,13 @@ use super::report::TestEntry;
 pub(super) fn parse_nextest_human(text: &str) -> Vec<TestEntry> {
     let mut entries = Vec::new();
     for raw in text.lines() {
-        let line = raw.trim_end_matches('\r');
+        let line = strip_ansi(raw.trim_end_matches('\r'));
         if line.trim_start().starts_with("Summary [") {
             // The failure recap follows the summary; entries above it
             // are the authoritative per-test record.
             break;
         }
-        let Some(entry) = parse_nextest_line(line) else {
+        let Some(entry) = parse_nextest_line(&line) else {
             continue;
         };
         entries.push(entry);
@@ -81,7 +83,7 @@ fn parse_nextest_line(line: &str) -> Option<TestEntry> {
 pub(super) fn parse_libtest(text: &str) -> Vec<TestEntry> {
     let mut entries = Vec::new();
     for raw in text.lines() {
-        let line = raw.trim_end_matches('\r');
+        let line = strip_ansi(raw.trim_end_matches('\r'));
         let Some(rest) = line.strip_prefix("test ") else {
             continue;
         };
@@ -109,6 +111,36 @@ pub(super) fn parse_libtest(text: &str) -> Vec<TestEntry> {
         });
     }
     entries
+}
+
+/// Strips ANSI escape sequences from one output line before matching.
+/// Defense-in-depth: the spawn seam forces `NO_COLOR=1` + `TERM=dumb`,
+/// but a runner that colorizes anyway (CI runners color non-tty
+/// output) must not break line matching. Covers CSI sequences
+/// (SGR color/cursor, e.g. `ESC[35mESC[1m`) and drops other
+/// two-character escape introducers.
+fn strip_ansi(line: &str) -> Cow<'_, str> {
+    if !line.contains('\u{1b}') {
+        return Cow::Borrowed(line);
+    }
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        if chars.next() == Some('[') {
+            // CSI: parameter/intermediate bytes, then one final byte
+            // in 0x40..=0x7E terminates the sequence.
+            for b in chars.by_ref() {
+                if ('\u{40}'..='\u{7e}').contains(&b) {
+                    break;
+                }
+            }
+        }
+    }
+    Cow::Owned(out)
 }
 
 /// `0.051s`-style seconds to whole milliseconds (rounded).
@@ -168,6 +200,45 @@ error: test run failed
             " Nextest run ID 8a9b2c80 with nextest profile: default\n    Starting 2 tests across 1 binary\n",
         );
         assert!(entries.is_empty());
+    }
+
+    // The PR-1 CI failure: runners colorize nextest's piped (non-tty)
+    // human output — exact escape codes from the CI log — and the
+    // parser contracted on plain text, yielding "no parseable per-test
+    // results" on all three OSes. The parser strips ANSI as
+    // defense-in-depth; run.rs additionally forces NO_COLOR=1 +
+    // TERM=dumb at the spawn seam.
+    const NEXTEST_HUMAN_ANSI: &str = "\
+\u{1b}[1m\u{1b}[92m   Compiling\u{1b}[0m rtfx_direct v0.1.0
+\u{1b}[31m\u{1b}[1m        FAIL\u{1b}[0m \u{1b}[1m[   0.051s]\u{1b}[0m \u{1b}[2m(1/2)\u{1b}[0m \u{1b}[35m\u{1b}[1mrtfx_direct\u{1b}[0m \u{1b}[34m\u{1b}[1mfails\u{1b}[0m
+\u{1b}[32m\u{1b}[1m        PASS\u{1b}[0m \u{1b}[1m[   0.070s]\u{1b}[0m \u{1b}[2m(2/2)\u{1b}[0m \u{1b}[35m\u{1b}[1mrtfx_direct\u{1b}[0m \u{1b}[34m\u{1b}[1mpasses\u{1b}[0m
+\u{1b}[1m     Summary\u{1b}[0m \u{1b}[1m[   0.070s]\u{1b}[0m 2 tests run: 1 passed, 1 failed, 0 skipped
+";
+
+    #[test]
+    fn nextest_human_parses_ansi_wrapped_lines() {
+        let entries = parse_nextest_human(NEXTEST_HUMAN_ANSI);
+        assert_eq!(
+            entries.len(),
+            2,
+            "ANSI-wrapped per-test lines must parse (the CI failure): {entries:?}"
+        );
+        assert_eq!(entries[0].name, "rtfx_direct fails");
+        assert_eq!(entries[0].status, "failed");
+        assert_eq!(entries[0].duration_ms, Some(51));
+        assert_eq!(entries[1].name, "rtfx_direct passes");
+        assert_eq!(entries[1].status, "passed");
+        assert_eq!(entries[1].duration_ms, Some(70));
+    }
+
+    #[test]
+    fn libtest_text_parses_ansi_wrapped_lines() {
+        let entries = parse_libtest(
+            "running 1 test\ntest \u{1b}[32m\u{1b}[1mpasses\u{1b}[0m ... \u{1b}[32m\u{1b}[1mok\u{1b}[0m\n",
+        );
+        assert_eq!(entries.len(), 1, "ANSI-wrapped libtest lines must parse");
+        assert_eq!(entries[0].name, "passes");
+        assert_eq!(entries[0].status, "passed");
     }
 
     const LIBTEST_TEXT: &str = "

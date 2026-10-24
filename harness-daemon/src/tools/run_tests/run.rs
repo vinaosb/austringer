@@ -77,6 +77,12 @@ pub(super) fn run_gated(
         .args(args)
         .env_clear()
         .envs(scrubbed.kept)
+        // CI runners colorize NON-tty runner output, and the output
+        // parsers contract on plain text — force color off at this
+        // seam rather than trusting the runner's tty detection (the
+        // parser additionally strips ANSI as defense-in-depth).
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb")
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
