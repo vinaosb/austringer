@@ -43,27 +43,51 @@ fn config(root: &TempDir) -> LspConfig {
     cfg
 }
 
-/// One goto request, retrying JSON-RPC -32801 `ContentModified` a
-/// bounded number of times. Per the LSP spec, -32801 means the server's
-/// state changed under the in-flight request (rust-analyzer applying a
+/// One request, retrying JSON-RPC -32801 `ContentModified` a bounded
+/// number of times. Per the LSP spec, -32801 means the server's state
+/// changed under the in-flight request (rust-analyzer applying a
 /// didChange or reloading its VFS) and the client SHOULD retry — a slow
 /// runner can race that window. On the final attempt the original error
 /// surfaces unchanged.
-async fn goto_retrying_content_modified(
-    router: &LspRouter,
+async fn retrying_content_modified<F>(
+    mut request: impl FnMut(DocumentPosition) -> F,
     position: DocumentPosition,
-) -> Result<Answer, LspError> {
+) -> Result<Answer, LspError>
+where
+    F: std::future::Future<Output = Result<Answer, LspError>>,
+{
     const ATTEMPTS: u32 = 5;
     let mut attempt = 0;
     loop {
         attempt += 1;
-        match router.goto_definition(position.clone()).await {
+        match request(position.clone()).await {
             Err(LspError::RequestFailed { code: -32801, .. }) if attempt < ATTEMPTS => {
                 tokio::time::sleep(Duration::from_millis(150)).await;
             }
             other => return other,
         }
     }
+}
+
+async fn goto_retrying_content_modified(
+    router: &LspRouter,
+    position: DocumentPosition,
+) -> Result<Answer, LspError> {
+    retrying_content_modified(|pos| router.goto_definition(pos), position).await
+}
+
+async fn references_retrying_content_modified(
+    router: &LspRouter,
+    position: DocumentPosition,
+) -> Result<Answer, LspError> {
+    retrying_content_modified(|pos| router.find_references(pos), position).await
+}
+
+async fn hover_retrying_content_modified(
+    router: &LspRouter,
+    position: DocumentPosition,
+) -> Result<Answer, LspError> {
+    retrying_content_modified(|pos| router.hover(pos), position).await
 }
 
 /// Polls a navigation until it resolves non-empty, or panics at the
@@ -85,6 +109,32 @@ async fn goto_until_ready(router: &LspRouter, position: DocumentPosition) -> Vec
         assert!(
             std::time::Instant::now() < deadline,
             "rust-analyzer never resolved the definition (still loading?)"
+        );
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+/// Polls find_references until it resolves non-empty, or panics at the
+/// deadline — the same readiness discipline as `goto_until_ready`:
+/// rust-analyzer legitimately answers `[]` while the crate graph is
+/// still settling (CI receipt 2026-10-24: a single-shot references call
+/// came back empty on a slow ubuntu runner).
+async fn references_until_ready(router: &LspRouter, position: DocumentPosition) -> Vec<Location> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(45);
+    loop {
+        let Answer::Locations(refs) =
+            references_retrying_content_modified(router, position.clone())
+                .await
+                .expect("references request itself succeeds")
+        else {
+            panic!("expected locations");
+        };
+        if !refs.is_empty() {
+            return refs;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "rust-analyzer never resolved references (still loading?)"
         );
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
@@ -143,15 +193,16 @@ async fn golden_hover_is_bounded_and_names_the_symbol() {
 
     let deadline = std::time::Instant::now() + Duration::from_secs(45);
     let text = loop {
-        let Answer::Hover(hover) = router
-            .hover(DocumentPosition {
+        let Answer::Hover(hover) = hover_retrying_content_modified(
+            &router,
+            DocumentPosition {
                 file: lib.clone(),
                 line: 1,
                 column: 8,
-            })
-            .await
-            .expect("hover over the definition")
-        else {
+            },
+        )
+        .await
+        .expect("hover over the definition") else {
             panic!("expected hover");
         };
         if !hover.as_str().trim().is_empty() {
@@ -167,17 +218,15 @@ async fn golden_hover_is_bounded_and_names_the_symbol() {
         "hover text stays within budget"
     );
 
-    let Answer::Locations(refs) = router
-        .find_references(DocumentPosition {
+    let refs = references_until_ready(
+        &router,
+        DocumentPosition {
             file: lib.clone(),
             line: 1,
             column: 8,
-        })
-        .await
-        .expect("references")
-    else {
-        panic!("expected locations");
-    };
+        },
+    )
+    .await;
     println!("golden find_references -> {} locations", refs.len());
     assert!(
         refs.len() >= 2,
@@ -223,8 +272,7 @@ async fn did_change_refreshes_positions_in_the_live_server() {
             },
         )
         .await
-        .expect("goto after")
-        else {
+        .expect("goto after") else {
             panic!("expected locations")
         };
         if !after.is_empty() {

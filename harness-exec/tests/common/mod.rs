@@ -73,6 +73,34 @@ pub fn count_processes(system: &mut sysinfo::System, name: &str) -> usize {
         .count()
 }
 
+/// Count live processes whose executable name equals `name`
+/// (case-insensitive) AND whose command line contains `needle` — the
+/// marker-scoped orphan oracle. Nextest runs each test in its own
+/// process, so sibling chaos tests' transient ping/tail trees run
+/// concurrently and a bare name count snapshots their noise into the
+/// baseline (CI receipt 2026-10-24: baseline 1 -> after 0 inverted the
+/// straggler assert on a shared windows runner). A unique marker in
+/// each test's child argv makes the count hermetic.
+pub fn count_processes_marked(system: &mut sysinfo::System, name: &str, needle: &str) -> usize {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+    );
+    system
+        .processes()
+        .values()
+        .filter(|process| {
+            process.name().to_string_lossy().eq_ignore_ascii_case(name)
+                && process
+                    .cmd()
+                    .iter()
+                    .any(|arg| arg.to_string_lossy().contains(needle))
+        })
+        .count()
+}
+
 /// Poll until `predicate` holds or an 8 s deadline passes; returns the
 /// last observation.
 pub fn wait_until<T>(mut probe: impl FnMut() -> T, predicate: impl Fn(&T) -> bool) -> T {
