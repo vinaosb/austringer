@@ -288,14 +288,10 @@ jobs:
       plan: ${{ needs.plan.outputs.val }}
     secrets: inherit
     # publish jobs get escalated permissions
-    # NOTE (local edit, 2026-09-21): contents:read is required here — a
-    # job-level permissions block resets unlisted scopes to none, and the
-    # reusable workflow's checkout of this private repo failed with
-    # "Repository not found" without it. Re-add if dist regenerates this file.
     permissions:
+      "contents": "read"
       "id-token": "write"
       "packages": "write"
-      "contents": "read"
 
   announce:
     needs:

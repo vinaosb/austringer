@@ -31,5 +31,17 @@ publish-jobs = ["./publish-container"]
 # PRs touching release config only re-run `dist plan` (cheap dry-run), never
 # a full artifact build.
 pr-run-mode = "plan"
+# The publish-container reusable workflow checks out this private repo,
+# and GitHub refuses a called workflow that asks for more than its caller
+# grants: contents:read must ride the custom-publish-container job's
+# permissions block (a job-level block resets unlisted scopes to none —
+# the 2026-09-21 "Repository not found" release failure). Declared here
+# so `dist generate-ci` emits it natively instead of as a hand edit that
+# regeneration strips (the template-drift CI red).
+[dist.github-custom-job-permissions]
+# Keyed by the publish-jobs entry name ("./publish-container" ->
+# "publish-container"), not the generated job id; the entry REPLACES
+# the default { id-token, packages } pair, so all three ride here.
+"publish-container" = { contents = "read", "id-token" = "write", packages = "write" }
 # dist requires all distable packages to share the release tag's version;
 # the whole workspace moves in lockstep at 0.x (workspace.version).
