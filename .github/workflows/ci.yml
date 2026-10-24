@@ -142,8 +142,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo nextest run --locked -p harness-wasm --features wasm-plugins 2>&1 | tee wasm-nextest.log
-          runs=$(grep -Eo '[0-9]+ tests? run' wasm-nextest.log | tail -n1 | grep -Eo '^[0-9]+')
+          NO_COLOR=1 cargo nextest run --locked -p harness-wasm --features wasm-plugins 2>&1 | tee wasm-nextest.log
+          runs=$(sed $'s/\x1b\[[0-9;]*m//g' wasm-nextest.log | grep -Eo '[0-9]+ tests? run' | tail -n1 | grep -Eo '^[0-9]+')
           if [ -z "$runs" ] || [ "$runs" -eq 0 ]; then
             echo "::error::harness-wasm --features wasm-plugins ran ${runs:-0} tests (expected >0)"
             exit 1
