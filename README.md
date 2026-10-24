@@ -6,8 +6,11 @@
 
 **One small Rust daemon runs an AI coding agent; four thin clients attach to it — terminal, TUI, browser, VS Code — under hard, CI-enforced performance budgets, and every design decision is a receipt from a studied post-mortem of another harness.**
 
-- Pre-release (0.1.x, workspace scaffold through wave 9). No releases have been
-  tagged yet; see [Status](#status) for exactly what works at this commit.
+- Pre-release (0.1.x, workspace scaffold through wave 9). `v0.1.0` (tagged
+  2026-09-21) is the first snapshot, cut when the release pipeline went
+  green; see [Status](#status) for exactly what works at this commit and
+  [Release transparency](#release-transparency) for what every tag
+  publishes.
 - The claims on this page cite their evidence: research sections refer to
   [.omo/research/harness-research.md](.omo/research/harness-research.md)
   (the in-repo study of 25+ harnesses this project is built from); shipped
@@ -50,8 +53,22 @@ cargo build --release -p harness-daemon -p harness-cli -p harness-tui
 cargo nextest run --workspace     # full test suite: hermetic, zero API keys, zero network
 ```
 
-Talking to a live model additionally requires provider wiring in the daemon's
-session factory — see [Status](#status).
+Talking to a live model is opt-in per daemon (the key value itself never
+appears in any committed file). Environment variables the daemon reads:
+
+| Variable | Meaning |
+| --- | --- |
+| `HARNESS_PROVIDER` | provider family: `anthropic` \| `openai` \| `google` \| `xai` \| `compat` |
+| `HARNESS_MODEL` | model id from the seeded catalog (effort may be pinned with the `model[effort=xhigh]` bracket grammar) |
+| `HARNESS_PROVIDER_KEY_ENV` | name of the environment variable holding the API key |
+| `HARNESS_PROVIDER_BASE_URL` | `compat` family only: the OpenAI-compatible base URL |
+| `HARNESS_PROVIDER_TIMEOUT_SECS` | inference timeout in whole seconds |
+| `HARNESS_SESSION_COST_CAP_USD` | per-session spend cap in decimal dollars (default 20.00); warning at 80%, typed stop at 100% |
+| `HARNESS_TEST_COMMAND` | user-global override of the `run_tests` tool's framework detection (a repo-local override file is refused with a typed error) |
+| `HARNESS_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint — never on by default |
+
+An unconfigured daemon stays fully servable and answers inference with a
+typed, actionable error naming those keys.
 
 ## Four frontends, one engine
 
@@ -62,7 +79,7 @@ a local-socket IPC carrier):
 | Frontend | What it is | Entry point |
 | --- | --- | --- |
 | CLI | headless `run`/`capture`, REPL, `attach` event tail, `doctor`, `--output-json` NDJSON for eval drivers | `harness-cli` |
-| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/mode`, `/rewind`), hunk review gates | `harness-tui` |
+| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`), hunk review gates | `harness-tui` |
 | Web | dashboard SPA served by the daemon itself (no node server): live session, hunk review, cost/cache/context dashboards | daemon URL in a browser |
 | VS Code | TypeScript thin client: native diff decorations, per-hunk code lenses, editor telemetry (opt-in), command palette | `harness-vscode` |
 
@@ -95,7 +112,7 @@ allocation metrics. All numbers above are reproducible:
 
 ## Architecture
 
-One daemon, a 24-crate Cargo workspace, four thin clients:
+One daemon, a 25-crate Cargo workspace, four thin clients:
 
 ```
                      ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
@@ -107,19 +124,19 @@ One daemon, a 24-crate Cargo workspace, four thin clients:
                                  └────────────┴─────────────────┘
                                               │
                                        harness-daemon
-                    (event log, sessions, permissions, scheduler, sandbox)
-                                              │
+                     (event log, sessions, permissions, scheduler, sandbox)
+                                               │
         ┌───────────────┬──────────────┬──────┴──────┬───────────────┬────────────┐
         │ engine        │ models       │ context     │ exec + safety │ extension  │
         │ harness-core  │ harness-     │ harness-ast │ harness-exec  │ harness-mcp│
-        │ (events, loop,│  providers   │ harness-    │ harness-vfs   │ harness-   │
-        │  tools, com-  │ harness-     │  repomap    │ harness-      │  skills    │
-        │  paction)     │  intel       │ harness-    │  snapshots    │            │
-        │               │ harness-     │  search     │ harness-safety│           │
+        │ harness-tools │  providers   │ harness-    │ harness-vfs   │ harness-   │
+        │ (events, loop,│ harness-     │  repomap    │ harness-      │  skills    │
+        │  tools, com-  │  intel       │ harness-    │  snapshots    │            │
+        │  paction)     │ harness-     │  search     │ harness-safety│           │
         │               │  orchestration│ harness-lsp│ harness-wasm  │           │
         └───────────────┴──────────────┴─────────────┴───────────────┴────────────┘
-                persistence: harness-sessions   meta: harness-test-support,
-                                                    harness-bench, harness-evals
+      persistence: harness-sessions   media: harness-media (daemon-served)
+      meta: harness-test-support, harness-bench, harness-evals
 ```
 
 Crate-by-crate map with the plan decision each implements:
@@ -145,6 +162,20 @@ failure it exists to avoid, both cited from the
 | Byte-stable prompt prefixes + cache-violation tracker make cache misses observable events | hermes cache-control engineering (research §27); jcode stable-prefix hash chain (research §32) | silent cache-miss cost spikes (research §32) |
 | Sandboxed runs report requested-vs-enforced isolation honestly | harness-rs isolation reporting (research §26) | vendor-escape domains hidden inside a "sandbox" proxy (research §16) |
 | Private security reporting channel shipped with the scaffold | dsh missing-SECURITY.md lesson (research §6) | no private channel when the first escape report arrives (research §6) |
+| Daemon + thin clients as the day-one shape | the fall-2026 convergence: OpenCode 2.0 daemon-by-default, Codex `/daemon` (rust-v0.163.0, 2026-10-15), Amp shared runners (2026-09-17–24), Cursor agent-host distribution (2026-10-01) (research §34.2) | rewriting the architecture mid-course under ecosystem pressure — OpenCode's plugin-API break cost (research §34.3) |
+| Model pinning: workflow-level pins + profile Stickiness across resume | Claude Code 2.1.296 workflow-level model pinning (2026-10-09); Plandex per-task profile pinning (research §13) | silent model drift mid-task — Claude Code downgrades #40269, Droid silent failover (research §2, research §16) |
+| Team status precedence: InProgress > Blocked > Error > Cancelled > Success plus WaitingForEvents; never terminal while a child runs | Warp PR #11367/#12084 (UI/UX pattern catalog 2026-10-20, research §35.6) | an aggregate flipping to Success while a child is still blocked |
+| Collapsed-by-default transcripts: one line per tool, expand on demand, diffstats on the collapsed line | five-project convergence — Amp, Antigravity, Claude Code, Devin, goose (UI/UX pattern catalog 2026-10-20, research §35.6) | wall-of-noise transcripts burying decisions under raw tool output |
+| Changed-files timeline per turn | OpenCode #55064 Changed-files-by-turn; Devin Session Insights (research §22.3) | an unanswerable "what did this turn touch?" at review time |
+| task(category) delegation with ask-first chains | OmO categories (research §35.2–35.3); our no-silent-substitution contract (research §2) | silent chain-walking fallbacks — the exact refusal of research §35.4 |
+| ACP stdio surface: the harness hostable as an editor-side agent | ACP as the LSP-of-agents — Claude Code E2E 2025-07-18, five SDKs, registry + JetBrains co-launch (research §23.3, research §23.8) | every editor reimplementing agent hosting against a private protocol (research §23.2) |
+| Plan-as-artifact: opt-in plan mode, approve/edit/reject before any write | Antigravity artifact-centric UX (research §21.2); JetBrains committed `.junie/plans` artifacts + Confirm gate (research §24); Claude Code plan mode, Zed roadmap Plan Mode, Cursor Rollouts (recorded 2026-10-21, task-16) | skip-permissions surfaces auto-approving plans (Antigravity v1.3.2 receipt, task-16) |
+| OSC program-status emission (777 now, 7501 alongside as it standardizes) | OpenCode #55172 + Warp + Antigravity (research §35.6 WATCH, dated 2026-10-20) | terminal tabs blind to blocked-on-permission states |
+| Cross-session transcript search over the maintained event_fts index | Zed #58686 roadmap ticket (recorded 2026-10-21 — a reader over an already-maintained index, the lightweight clause); Zed threads.db lineage (research §23) | sessions as write-only archives nobody can query |
+| Test-runner evidence bound into the completion gate | Zed #5242 (886 upvotes, recorded 2026-10-21); Qwen Test Failure Explorer (shipped 2026-10) | prose-spiral "done" claims on unattended runs (research §15) |
+| Curated cheap-pool agents (explore, librarian) behind read-only allowlists | OmO curated agents (research §35.2–35.3) plus our utility-roles-must-be-cheap routing validation | utility roles quietly burning frontier-model budget |
+| Snapshot rewind: files and history restored together, search truncated to the restore point | Zed host-side uniform checkpoints — auto-update on repo change, terminal-kill on restore (research §23.8 ADOPT) | conversation-only rewind leaving worktree and history diverged |
+| Session cost governance: warning at 80%, typed stop at 100% | ANTI-RECEIPT: Zed's "cost HUD with zero budget/cap enforcement" (research §23.8 AVOID) — refused to recreate it; the micro-USD ledger is wired instead (task-33) | spend visibility without spend control — a HUD no mechanism bounds |
 
 Shipped-at-HEAD receipts — the differentiating mechanics and the commits that
 landed them (provenance: recorded task evidence in `.omo/evidence/`, cited as
@@ -163,7 +194,7 @@ task-N, internal):
 ## Built on post-mortems
 
 The research file — [.omo/research/harness-research.md](.omo/research/harness-research.md)
-— is the working artifact this project was designed from: a 33-section study of
+— is the working artifact this project was designed from: a 40-section study of
 25+ harnesses (Claude Code, Codex, goose, opencode, aider, Gemini CLI, Qwen
 Code, crush, OpenHands, SWE-agent, Mentat, Plandex, Pi, Grok Build, Droid,
 Amp, Cursor, Copilot, Antigravity, Devin, Zed, JetBrains, Warp, forge,
@@ -202,21 +233,32 @@ an eval table, harness-matched rows only:
 
 ## Status
 
-Works at this commit (HEAD `c8926a4`, all with recorded task evidence): the
-full engine crate set (events, operation-pipeline loop, tool registry with
-schema hydration, inspector chain, autonomy modes, compaction, tiered
-eviction, budgets, hooks), five cassette-tested provider adapters, ast /
-repomap / search / lsp, exec + ConPTY + WSL2 bridge, transactional shadows,
-snapshots, encrypted sessions store, sandboxes, permission engine, MCP
-client + server mode, skills + Skill Forge + registry, model profiles,
-daemon protocol (multi-client, token auth, scheduler), TUI, web dashboard,
-VS Code extension, CLI, WASM plugin runtime, perf gates, evals crate.
+Works at this commit (HEAD `63bc222`; every production-wired row is verified
+against the daemon/CLI/TUI/web/VS Code source and carries recorded task
+evidence in `.omo/evidence/`). The distinction that matters to a reader:
+**production-wired** means the mechanism is reachable through the shipped
+binaries (daemon, CLI, TUI, web dashboard, VS Code extension) — not merely
+implemented and tested inside a library crate.
 
-Pending: live provider wiring into the daemon's session factory — the daemon
-binary currently returns a typed `no provider configured` error at inference
-time; the adapters exist and are cassette-tested, composing them into the
-shipped daemon loop is the remaining work. Live-model eval sweeps are
-scheduled-only by policy and never gate PRs.
+| Production-wired at HEAD (exercised through the shipped surfaces) | Library-tested (crate tests green; not wired into the shipped binaries) |
+| --- | --- |
+| All six CORE_TOOLS served in-process: `view_window`/`edit_lines` (harness-tools), `execute_command` (harness-exec under a harness-safety sandbox/egress policy), `lsp_query` (harness-lsp) — no NoExecutor path in production (task-3/4) | `harness-repomap` — CSR + SIMD PageRank repo map; its only consumer today is harness-bench's committed baselines, not the daemon's context pipeline |
+| Provider composition from env (five cassette-tested adapters on the production reqwest transport); typed, actionable no-provider error when unconfigured (M32) | `harness-search` — Tantivy BM25 lexical index; zero dependents (the shipped `tool_search` is core-internal) |
+| Protocol v2 frames: per-turn usage (model/effort/tokens/cost), FallbackAsk/FallbackResolved (mediated, v1-withheld), Verdict with evidence ids (task-1) | `harness-wasm` — wasmtime/WASI 0.2 plugin runtime; feature-gated, off by default, zero dependents |
+| Dispatcher live in the daemon loop: routing.json roles/tiers/categories/fallbacks/cheap-pool, ask-first fallback, same-model retry on timeout (task-9/13) | OAuth device-flow subscription auth (providers `device_flow.rs`, RFC 8628 + PKCE); cassette-tested in the crate, not yet composed into the daemon's env-based selection |
+| 2026-10 model catalog wave (GPT-6 Sol, GPT-6.1 Sol, GPT-6 Luna, Gemini 4 Argon, Grok 4.7, Claude Opus/Sonnet/Haiku 5.5 beside the existing 12; fail-closed effort grids) (task-10) | Orchestration best-of-N (same prompt on up to four models) and plan-branch comparison; the spec-driven launch path and fork-join children ARE wired (task-8) |
+| Cross-session transcript search over the maintained `event_fts` index: `GET /sessions/search`, `harness sessions search`, session-scoped `search_sessions` model tool, ranked rendering (task-11). Search surface production-wired; the live-session feed is library-tested/unwired — the daemon engine does not insert live conversation turns into `event_fts`, so searches see seeded/test data only (follow-up logged to wire the recorded-event path) | Worker (out-of-process executor) protocol — deliberately reserved; in-process executors are the production path (task-3) |
+| ACP stdio agent mode (`harness-daemon --acp`): initialize, session/prompt, session/update, fs read; mediation through the same queues (task-12) | |
+| `task(category)` delegation (depth cap, fresh grant state, per-parent fan-out/budget caps) + curated read-only `explore`/`librarian` cheap-pool agents + team surfacing with Warp-style status precedence (task-13/14/15) | |
+| Opt-in interactive plan mode (off by default; write tools gated until approve/edit/reject; session grants suspended while planning) (task-16) | |
+| `run_tests` tool (cargo test/nextest detection, `HARNESS_TEST_COMMAND` user-global override, typed TestReport) with test evidence bound into the completion gate — REFUTED verdicts cite failing test ids (task-17/18) | |
+| Snapshot rewind: `ClientMsg::Rewind`, TUI `/rewind`, event_fts truncated to the restore point (task-5) | |
+| Skills runtime: pack loading behind trust gates + quarantine, `/skill` invocation, `GET /packs`; pack MCP entries land disabled (task-6) | |
+| Session cost governance: micro-USD ledger keyed off usage frames, default $20/session cap (`HARNESS_SESSION_COST_CAP_USD`), warning at 80%, typed stop at 100%; children and automations aggregate (task-33) | |
+| History + automations surfaces: `GET /s/{sid}/history`, `GET /automations`, sched/verdict notifications on the event stream; declarative `automations.json` (task-2) | |
+| MCP CLI family (`harness mcp list\|scan\|serve\|call`) (task-7); run-history + automations + team events in the four frontends; unified command grammar; OSC 777 + 7501 program-status emission (task-23/24) | |
+| Media surface: daemon-served upload/fetch with delivery-cap projection, nine adapter families enabled (image, svg, pdf, audio, office, gltf, georaster, data, text) | |
+| Encrypted sessions store (XChaCha20-Poly1305, lazy paging), transactional shadows, sandboxes, permission engine, TUI/web/VS Code/CLI surfaces, perf gates, evals sweep (hermetic, scheduled-only by policy; live-model sweeps never gate PRs) | |
 
 ## Roadmap
 

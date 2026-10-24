@@ -1,0 +1,197 @@
+Task 16 evidence — Interactive plan mode (main session)
+========================================================
+Date: 2026-10-21T19:52Z | HEAD at recording: ccbb1b1 (pre-task-16) | Executor: Sisyphus-junior
+
+ORDER OF WORK (per the todo's mandate)
+--------------------------------------
+1. Golden fixture recorded FIRST at pre-task-16 HEAD ccbb1b1, before any
+   implementation edit:
+     - driver test written (harness-daemon/tests/plan_mode_tests.rs::
+       drive_golden_scenario + golden_transcript_unchanged_with_plan_mode_off)
+     - recorded with HARNESS_UPDATE_GOLDEN=1 ->
+       harness-daemon/tests/fixtures/task16_golden_session_transcript.json
+         (2,508 bytes; two scripted turns: an edit_lines turn answered by an
+         AllowOnce permission ask through the REAL in-process registry
+         executor, then a plain text turn; the unique-per-run tempdir root is
+         scrubbed to <SESSION-ROOT> so the bytes are portable)
+     - byte-stability verified by re-running the compare mode twice at HEAD
+       before implementation began (green both times)
+2. RED tests written against the not-yet-existing plan-mode API:
+     - harness-core/tests/autonomy_plan_grants.rs
+       cargo test -p harness-core --test autonomy_plan_grants
+         -> error[E0599]: no method named `honors_grant` found ... (5 errors)
+     - harness-daemon/tests/plan_mode_tests.rs (e2e a-d)
+       cargo test -p harness-daemon --test plan_mode_tests
+         -> E0432 unresolved import `harness_daemon::plan`
+         -> E0432 unresolved import `harness_daemon::protocol::PlanDecision`
+         -> E0433 cannot find `PlanOutcome` in `protocol`
+         -> E0599 no variant named `PlanAsk` found for enum `ServerMsg`
+         -> E0599 no method named `answer_plan` ... `plan_gate`
+     - harness-tui/src/app.rs tests (RED via cargo test -p harness-tui:
+         E0433/E0599 `PlanMode`/`PlanResolved`/`PlanAskPayload` not found)
+   RED is compile-shaped (the API did not exist) — the right reason.
+3. Implementation, then green (below).
+
+VERIFICATION (the todo's command, verbatim)
+-------------------------------------------
+cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-core -p harness-daemon -p harness-tui"
+  Summary [  37.917s] 811 tests run: 811 passed, 6 skipped
+  (6 skipped are pre-existing platform skips; 810 pre-existed+new before the
+   final HTTP test, 811 after — the pre-existing daemon suite passes
+   UNCHANGED alongside the new plan-mode tests)
+cmd /c "... cargo clippy --workspace --all-targets -- -D warnings"
+  -> Finished, EXIT 0 (zero warnings)
+Extra compat signal: v1_ws_corpus_replays_byte_identically_against_current_daemon
+  PASS — the ServerMsg/SessionEvent additions left v1 wires byte-identical.
+
+NEW TESTS (all green)
+---------------------
+harness-core (4): autonomy_plan_grants::
+  entering_plan_mode_suspends_session_grants        (invariant e)
+  approval_restores_the_suspended_session_grant     (invariant e: until approval)
+  forever_grants_survive_plan_mode                  (invariant e: scope split)
+  matrix_honors_grant_encodes_the_suspension        (pure contract)
+harness-daemon lib (14): mediation::tests::
+  plan_first_responder_approve_resolves_exactly_once (invariants g + N1)
+  plan_local_only_ignores_remote_approve             (invariant g: policy gate)
+  plan_edit_resolves_with_the_edited_artifact
+  plan_reject_resolves_rejected
+  plan_cancel_withdraws_without_deciding
+  plan_timeout_never_approve                         (Antigravity v1.3.2 receipt)
+  plan_quorum_requires_explicit_approves_and_reject_fails_closed (invariant g)
+  mediate_plan_broadcasts_ask_and_kind_checks_are_typed
+  plan::tests::
+  gate_is_off_by_default_and_write_tools_are_named   (invariant d)
+  blocked_write_carries_plan_id_and_reason           (invariant a, unit)
+  enter_is_idempotent_and_exit_abandons
+  approve_ends_the_mode_and_reject_stays             (approve flips / reject stays)
+  edit_bumps_revision_and_the_stale_edit_is_ignored  (invariant c, unit)
+  timeout_keeps_the_plan_pending_and_refires         (timeout re-gates + re-asks)
+harness-daemon e2e (6): plan_mode_tests::
+  golden_transcript_unchanged_with_plan_mode_off     (invariant d: byte-compare)
+  plan_mode_blocks_edit_pre_approval_with_plan_id    (invariant a + failure QA)
+  plan_approval_lets_subsequent_edit_proceed         (invariant b + happy QA)
+  plan_edit_updates_artifact_and_re_gates            (invariant c)
+  plan_ask_timeout_does_not_approve                  (skip-permissions receipt)
+  plan_answer_over_http_is_typed_rejected_but_mode_flips_work
+harness-tui (2): app::tests::
+  mode_command_wires_daemon_plan_mode                (TUI /mode wiring)
+  plan_ask_and_resolution_surface_as_notes           (frames render)
+
+INVARIANT -> OBSERVABLE MAP
+---------------------------
+(a) pre-approval block carries the plan id: e2e asserts the typed
+    plan_blocked SessionEvent with "plan":1 + tool edit_lines AND the
+    tool-result deny reason contains "plan 1"; disk untouched; NO
+    PermissionAsk fired (the block precedes the mediated ask).
+(b) approve -> edit proceeds: e2e turn 1 blocked, PlanAsk answered
+    Approve -> plan_approved frame, plan_gate inactive, turn 2 edit runs
+    through the NORMAL permission path (ask + AllowOnce) and lands on disk.
+(c) edit-the-plan re-gates: PlanAsk answered Edit{artifact} ->
+    plan_updated revision 2 on the stream, fresh PlanAsk carries the
+    edited artifact (same plan id), turn 2 edit blocked again.
+(d) OFF by default: pre-existing suite green (811/811) AND the golden
+    session-transcript fixture recorded at pre-task-16 HEAD byte-compares
+    equal with mode off (the strongest no-default-change proof available).
+(e) session-grant suspension: harness-core chain-level tests — a
+    session-scoped view_window grant allows, enter_plan() suspends it
+    (falls to the mode ask), the approval flip (set_mode) restores it;
+    forever grants never suspend. Enforcement:
+    AutonomyMatrix::honors_grant (matrix.rs — the single source) consulted
+    by AutonomyGate before its stored-grant allow (gate.rs step 5).
+(f) execution-time re-check: PlanGatedExecutor wraps EVERY session's
+    executor (engine.rs standard_stages) and consults check_write at
+    execute() time on the CURRENT gate state — an in-flight call approved
+    before plan entry blocks there (unit: the gate reads live state, never
+    an approval snapshot; e2e: approval-stage deny + executor re-check are
+    the same single-source check).
+(g) mediation-policy machinery: plan asks ride PermissionMediator with a
+    third AskKind; FirstResponder/Designated/LocalOnly/ConsensusQuorum
+    all enforced by unit tests (local-only ignores a remote approve;
+    quorum requires explicit approves, any reject fails closed); answers
+    key on the pump's server-assigned connection id; the identity-less
+    HTTP route refuses PlanAnswer typed 400 (the FallbackAnswer precedent
+    + the Antigravity v1.3.2 receipt: no surface auto-approves a plan).
+
+QA SCENARIOS (the todo's prose)
+-------------------------------
+happy  — plan -> approve -> execute completes: plan_approval_lets_subsequent_edit_proceed.
+failure — write attempt before approval typed-blocked, never silently
+         allowed: plan_mode_blocks_edit_pre_approval_with_plan_id
+         (typed plan_blocked event + deny reason naming plan 1 + disk
+         untouched + no permission ask bypass).
+
+RECEIPTS (per the todo)
+-----------------------
+- Claude Code plan mode (shipped): the plan->approve->execute loop shape.
+- Zed roadmap "Plan Mode" (Coming Up Next; roadmap ticket): opt-in mode
+  gating writes until approval.
+- Antigravity artifacts: plan-as-editable-artifact with inline comments —
+  the Edit decision path (PlanDecision::Edit replaces the artifact,
+  revision bumps, writes re-gate, fresh ask).
+- Antigravity v1.3.2: skip-permissions must NOT auto-approve plans —
+  timeout resolves Timeout and keeps the plan pending (test), the HTTP
+  identity-less route refuses plan answers (test), nothing in the
+  MediatedAskPolicy path can produce Approved without an explicit
+  answer_plan decision.
+- Cursor Rollouts editable plan artifact: same Edit semantics as above.
+
+FILES (mine; concurrent todo-17 worker's files untouched)
+--------------------------------------------------------
+harness-core/src/autonomy/matrix.rs   honors_grant + enter_plan suspension contract
+harness-core/src/autonomy/gate.rs     stored-grant consult honors the suspension
+harness-daemon/src/ask.rs             PlanDecision / PlanOutcome / PlanAskPayload
+harness-daemon/src/protocol.rs        ClientMsg::PlanMode/PlanAnswer (bounded),
+                                      ServerMsg::PlanAsk/PlanResolved (v2-only)
+harness-daemon/src/events.rs          6 plan SessionEvents
+harness-daemon/src/compat.rs          withheld frames + plan_* notification downgrades
+harness-daemon/src/mediation.rs       AskKind::Plan lane: mediate_plan/answer_plan
+harness-daemon/src/plan.rs            NEW: PlanGate + PlanAwareApproval +
+                                      PlanGatedExecutor + ask loop (249 pure-prod LOC)
+harness-daemon/src/attach.rs          plan field + plan_gate accessor
+harness-daemon/src/engine.rs          standard_stages wraps approval+execution
+harness-daemon/src/transport.rs       pump arms (PlanMode/PlanAnswer)
+harness-daemon/src/handlers.rs        post_command arms (400 / 202)
+harness-daemon/src/lib.rs             one-line `pub mod plan;`
+harness-tui/src/app_input.rs          /mode plan|off|exit wiring (stub replaced)
+harness-tui/src/app.rs                PlanAsk/PlanResolved arms + resolution notes
+harness-tui/src/transcript.rs         6 plan event arms (t33 sibling)
+harness-cli/src/render.rs             human() + human_event() arms (t33 sibling)
+harness-daemon/tests/plan_mode_tests.rs + tests/fixtures/task16_golden_session_transcript.json
+harness-core/tests/autonomy_plan_grants.rs
+
+DECISIONS + DEVIATIONS (for orchestrator sign-off)
+--------------------------------------------------
+1. phases.rs (harness-orchestration) intentionally UNTOUCHED: BoostPhase
+   Strategy->Execution->Verification already expresses the phase
+   vocabulary and is referenced as the building block; forcing the
+   orchestration enum into the daemon plan state machine would add a
+   cross-crate dependency for zero behavior (the daemon's pending->approved
+   transition IS the Strategy->Execution boundary at session level).
+2. "mode flag on session start (OFF by default)" implemented as the
+   ClientMsg::PlanMode command available from session start: the flag
+   exists per-session (PlanGate, default inactive) and flips on command;
+   Hello's wire shape stays frozen (a Hello field would churn every
+   constructor site for no additional invariant — the acceptance criteria
+   test OFF-by-default behavior, not the entry mechanism).
+3. Reject KEEPS plan mode active (only approval flips autonomy back per
+   the matrix — the todo names approval as the flip); the user exits via
+   /mode off (PlanMode{on:false}).
+4. The plan artifact seeds empty at entry; the agent drafts the plan in
+   the transcript and clients materialize it onto the artifact through
+   PlanDecision::Edit (the Antigravity editable-artifact receipt). A
+   transcript-to-artifact auto-capture is deliberately NOT invented.
+5. mediation.rs is now 496 pure-prod LOC (pre-existing ~330 + the plan
+   lane). Over the 250 ceiling; the natural split (permission lane /
+   plan lane / policies into mediation/) is flagged for the orchestrator
+   (issues.md) — not improvised mid-task with the concurrent run_tests
+   worker building in the same crate.
+6. ACP (todo 12) sees plan asks NOT at all (its hub reader is if-let over
+   PermissionAsk) and can never answer one — exactly the todo-12 contract
+   "plan approval is NOT answerable over ACP v1".
+7. Stale-answer safety: approve/reject/apply_edit/close_ask all check the
+   plan id — an answer to an exited (or re-entered, new-id) plan applies
+   nothing (unit-tested).
+
+Stop condition met: gates green + this evidence written. Not committed
+(per instruction — the orchestrator commits).

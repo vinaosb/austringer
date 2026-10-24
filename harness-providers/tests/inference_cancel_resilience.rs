@@ -123,6 +123,13 @@ async fn mid_stream_drop_recovers_inside_one_infer_call() {
                 text: "survives disconnects".to_owned()
             }],
             tool_calls: Vec::new(),
+            // ev_usage(2, 2) survives the resume verbatim.
+            usage: Some(harness_core::agent_loop::TurnUsage {
+                input_tokens: 2,
+                output_tokens: 2,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            }),
         }
     );
     assert_eq!(

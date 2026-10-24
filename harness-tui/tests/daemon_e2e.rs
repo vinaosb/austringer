@@ -149,6 +149,36 @@ async fn auth_failure_is_typed_refused() {
     let _ = wired.cmd.send(ClientCmd::Shutdown).await;
 }
 
+/// Task 19: the attach negotiates protocol version 2. The daemon
+/// echoes the CLIENT's proposed Hello version in HelloAck, so this
+/// fails the moment a frontend proposes 1 (v1 wires would silently
+/// lose the usage/fallback/verdict surface).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn attach_negotiates_protocol_version_two() {
+    let Ok(daemon) = spawn_daemon().await else {
+        panic!("daemon spawn failed")
+    };
+    let wired = wire(&daemon.base, "qa-version", &daemon.token);
+    let mut app = App::new(harness_tui::app::DEFAULT_CONTEXT_WINDOW);
+    assert!(
+        wait_until(
+            &mut app,
+            &wired,
+            |a| matches!(a.conn, Conn::Attached) && a.negotiated_version().is_some(),
+            Duration::from_secs(5)
+        ),
+        "attached; conn {:?} version {:?}",
+        app.conn,
+        app.negotiated_version()
+    );
+    assert_eq!(
+        app.negotiated_version(),
+        Some(harness_daemon::protocol::PROTOCOL_VERSION),
+        "negotiated wire version must be 2"
+    );
+    let _ = wired.cmd.send(ClientCmd::Shutdown).await;
+}
+
 /// FAILURE + stale_state channel: a fresh client attaching to a
 /// session with history gets the resync marker + snapshot and
 /// rebuilds identical state (reconnect-and-replay path).

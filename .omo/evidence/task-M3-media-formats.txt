@@ -1,0 +1,189 @@
+TASK M3 - generalized media content blocks in harness-core (media-formats-wave)
+===============================================================================
+
+Worker: M3 implementation worker (Sisyphus-junior). Date: 2026-09-21.
+Base: HEAD 54f150b on main. Plan authority: .omo/plans/media-formats-wave.md
+todo 3 (M3), lines 103-109. Pre-existing dirty state (.omo/* runtime files,
+harness-snapshots temp files, msvc-probe.obj, target-task-36/) untouched;
+this commit stages only harness-core/{src,tests}, the two forced one-arm
+migrations (harness-providers/src/adapter.rs, harness-sessions/src/meta.rs),
+and this evidence file.
+
+ENVIRONMENT INCIDENT (disclosed; same one task-M1 recorded)
+-------------------------------------------------------------------------------
+`cargo test -p harness-core` first failed in libsqlite3-sys cc build: VS18
+Insiders cl.exe 14.50.35717 + C1083 "Cannot open include file: 'stdarg.h'"
+(machine-wide VS servicing damage, task-13 precedent). Recipe applied = the
+task-13/task-M1 INCLUDE-order variant: shell-scoped INCLUDE starting at the
+surviving VS18 ScopeCppSDK vc15 include
+(C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include)
+plus Windows SDK 10.0.26100.0 shared/ucrt/um/winrt/cppwinrt; LIB at the
+working onecore+ucrt+um set. NOTHING repo-side changed; every cargo command
+below ran with that shell-scoped environment.
+
+BASELINE FIRST (characterization, GREEN on UNCHANGED code)
+-------------------------------------------------------------------------------
+No recorded v0.1 image-event fixture existed anywhere (grep over *.jsonl /
+fixtures = zero hits), so one was recorded from unchanged code per the task
+instructions: a throwaway test serialized a RecordedEvent{seq:1,
+Event::User{[Text, Image(image/png 800x600, blake3 of
+b"harness v0.1 image-event fixture")]}} and printed it; the throwaway was
+then deleted (the fixture is frozen, never regenerated).
+
+  tests/fixtures/v01_image_event.jsonl (verbatim, one line + newline):
+    {"seq":1,"event":{"type":"user","blocks":[{"type":"text","text":"describe this diagram"},{"type":"image","mime":"image/png","width":800,"height":600,"media":{"hash":"blake3:636ca83a67253e2cab7738d7b7ed32e3400acd794298c8c08633212b5d31be7a","bytes":32}}]}}
+
+  tests/content_v01_compat.rs (3 tests, all GREEN before ANY src change):
+    cargo nextest run -p harness-core --test content_v01_compat
+      PASS fixture_file_matches_embedded_frozen_line
+      PASS v01_image_event_deserializes_and_reserializes_byte_stably
+      PASS v01_image_marker_format_is_untouched
+    Summary: 3 tests run: 3 passed
+  The same 3 tests stayed GREEN after the change (byte-stability proof
+  BEFORE and AFTER; final run quoted below). Anti-drift record: the frozen
+  line + the v0.1 marker string
+  "[image: image/png 800x600 blake3:636ca83a67253e2c…]" are embedded as
+  constants in the test, so any serialization/marker drift fails CI.
+
+TDD RED (compile-level red for additive API, verbatim)
+-------------------------------------------------------------------------------
+tests/media_blocks.rs written FIRST in full (11 tests over the intended
+API). Command + verbatim first errors:
+
+  cargo nextest run -p harness-core --test media_blocks
+    error[E0432]: unresolved imports `harness_core::event::content::InvalidMediaMeta`,
+    `harness_core::event::content::MediaBlock`
+    error[E0599]: no variant, associated function, or constant named `InvalidStructure`
+    found for enum `InvalidMimeType` in the current scope
+    error[E0599]: no associated function or constant named `image` found for struct
+    `MimeType` in the current scope
+    error[E0599]: no variant, associated function, or constant named `NotImage` found
+    for enum `InvalidMimeType` in the current scope
+    (... same class for the remaining new surface)
+
+Right-reason check: every error names API that did not exist yet; no typos
+or import mistakes in the failing set.
+
+DELIVERABLE (per plan lines 104-107)
+-------------------------------------------------------------------------------
+harness-core/src/event/content.rs (194 pure LOC):
+  - MimeType::new widened: any lowercase `major/subtype`, both parts
+    non-empty tokens over [a-z0-9+\-.], exactly one slash (a/b/c rejected);
+    canonicalizing (uppercase input lowercased). Image constructors
+    png/jpeg/gif/webp byte-identical and untouched.
+  - InvalidMimeType::NotAnImage RENAMED -> InvalidStructure (Display:
+    "invalid MIME structure (expected major/subtype): {raw:?}"); new
+    NotImage arm ("not an image MIME type: {raw:?}") owned by the image
+    boundary. git grep NotAnImage over tracked *.rs = zero stale hits.
+  - MimeType::image(raw): parses via new() then enforces major=="image"
+    (typed NotImage otherwise); MimeType::is_image() query.
+  - ImageBlock::new(raw_mime, width, height, media): image-only typed
+    constructor (routes through MimeType::image). ImageBlock fields,
+    serde shape, and text_marker format UNTOUCHED (characterization pins
+    the exact bytes).
+  - MediaBlock {mime, media, meta: BTreeMap<String,String>} + additive
+    ContentBlock::Media(MediaBlock) variant (serde tag "media").
+    BTreeMap => sorted-key serde stability (pinned test). Bounds at the
+    typed constructor MediaBlock::new ONLY (serde stays permissive for
+    replay): <=16 entries (MAX_META_ENTRIES), key and value <=128 bytes
+    each (MAX_META_BYTES), typed InvalidMediaMeta::{TooManyEntries,
+    KeyTooLong, ValueTooLong}; boundaries inclusive (16 entries / 128
+    bytes accepted, 17 / 129 rejected).
+  - MediaBlock::text_marker: "[media: <mime> <short-hash> k=v ...]" with
+    BTreeMap-sorted k=v pairs; deterministic.
+  - NO dependency on harness-media (meta carries plain strings like
+    "format"; FormatId mapping stays in harness-media per plan).
+
+Forced migrations (smallest correct diff; additive enum variant breaks
+exhaustive matches - all new arms render Media as the Image arm did,
+None, until M8/M9 own plan-driven rendering):
+  harness-core/src/event/media.rs (184 pure LOC): MediaStore::store now
+    enforces the image invariant (is_image check -> io::Error
+    InvalidInput carrying InvalidMimeType::NotImage) so a widened mime can
+    never be stored as an ImageBlock; doc updated. Image store path
+    unchanged (all existing store tests green).
+  harness-core/src/event/mod.rs: re-exports += MediaBlock,
+    InvalidMediaMeta.
+  harness-core/src/hooks/gates.rs, harness-providers/src/adapter.rs,
+    harness-sessions/src/meta.rs, and 9 harness-core test helpers
+    (common/loopkit, common/inspectorkit, hooks_gates, hooks_events x2,
+    hooks_adversarial, loop_pipeline, loop_pipeline_policy,
+    loop_qa_transcript, inspectors_safe_outputs): one match arm
+    `ContentBlock::Image(_) | ContentBlock::Media(_) => None` each.
+    NOTE: harness-providers/src/adapter.rs and harness-sessions/src/meta.rs
+    are outside the nominal file scope; they were FORCED by the additive
+    variant (compile break otherwise) - disclosed here, one arm each,
+    zero behavior change.
+
+VERIFICATION (all with the shell-scoped INCLUDE above)
+-------------------------------------------------------------------------------
+  cargo nextest run -p harness-core
+    Summary: 380 tests run: 380 passed, 5 skipped   (was 369-ish before;
+    +3 characterization, +11 media_blocks, +1 rewritten unit test)
+  cargo clippy -p harness-core --all-targets -- -D warnings
+    Finished `dev` profile ... (zero warnings)
+  cargo clippy -p harness-providers -p harness-sessions -p harness-tui --all-targets
+    Finished (zero warnings; validates the forced migrations)
+  cargo check --workspace --all-targets --exclude harness-intel
+    Finished (entire workspace compiles; harness-intel EXCLUDED because the
+    PARALLEL M7 lane has a mid-flight broken edit there - E0716 in their
+    tests/capabilities.rs over their catalog.rs/seed.rs changes, NOT this
+    task's files; disclosed as the parallel-lane conflict the task
+    anticipated. Root Cargo.toml untouched by this lane.)
+  lsp_diagnostics content.rs: no errors.
+  LOC: content.rs 194, media.rs 184 (both <=250). No unwrap/expect/panic
+    added in src.
+
+ACCEPTANCE MAPPING (plan line 107)
+-------------------------------------------------------------------------------
+  v0.1 image-event fixture deserializes byte-stably ......... PASS
+    (content_v01_compat::v01_image_event_deserializes_and_reserializes_byte_stably,
+    green before AND after the change)
+  media block round-trips ................................... PASS
+    (media_content_block_roundtrips_through_serde_when_in_event: tag
+    "media", decode==encode, double-serialize byte-stable, meta keys
+    serialize sorted)
+  marker deterministic (snapshot) ........................... PASS
+    (media_block_marker_is_deterministic_snapshot; inline snapshot
+    recorded below; + media_block_marker_lists_meta_keys_sorted pins the
+    full sorted string)
+  oversized meta rejected typed at construction ............. PASS
+    (media_block_rejects_oversized_meta_typed_at_construction: 17 entries,
+    129-byte key, 129-byte value -> exact typed variants)
+  non-image mime into ImageBlock -> typed error (PINNED) ..... PASS
+    (image_block_new_rejects_non_image_mime_when_pinned: audio/wav ->
+    InvalidMimeType::NotImage("audio/wav"))
+  not-a-mime still rejected; audio/wav + model/gltf+json accepted ... PASS
+    (mime_type_rejects_structural_garbage_typed_when_widened /
+     mime_type_accepts_any_major_subtype_when_widened)
+
+ADVERSARIAL
+-------------------------------------------------------------------------------
+  malformed-input loop (zero panics, typed outcomes only), 16 garbage
+  strings fed to MimeType::new: "", " ", "/", "//", "a/", "/b", "a/b/c",
+  "a/b c", "A B/C", "image//png", "image/png/", "/image/png", ";;;",
+  "привет/мир", "image\tpng", "image/png\n" -> PASS
+  (mime_type_garbage_loop_never_panics_when_adversarial_inputs_fed).
+  misleading-success-output: N/A-by-construction - the byte-stability
+  snapshot IS the anti-drift proof and is recorded above (frozen fixture +
+  frozen marker constants in-tree).
+  stale-state: N/A - pre-existing dirty files enumerated at top, untouched;
+  only this task's paths staged. dirty-worktree: same one-liner.
+  concurrent-lane: harness-media (M1, already committed separately) NOT a
+  dependency here; harness-intel (M7) mid-edit excluded from the workspace
+  check with reason recorded above; root Cargo.toml NOT edited by this lane.
+
+MANUAL-QA ARTIFACT (new marker, inline snapshot via tiny test)
+-------------------------------------------------------------------------------
+  harness-core::media_blocks::media_block_marker_is_deterministic_snapshot
+  PASS - pinned strings, byte-exact:
+    [media: audio/wav blake3:390869c344ddd280… format=wav]
+    [media: model/gltf+json blake3:390869c344ddd280…]
+    [media: application/pdf blake3:390869c344ddd280… aa=first mm=mid zz=last]
+  (blake3:390869c344ddd280… = short_ref of b"harness m3 media fixture",
+  recorded once from ContentHash and frozen independently of the marker
+  implementation.)
+
+  Final combined run:
+    cargo nextest run -p harness-core --test content_v01_compat --test media_blocks
+    Summary: 14 tests run: 14 passed, 0 skipped

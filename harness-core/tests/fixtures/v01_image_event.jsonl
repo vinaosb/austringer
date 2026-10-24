@@ -1,0 +1,1 @@
+{"seq":1,"event":{"type":"user","blocks":[{"type":"text","text":"describe this diagram"},{"type":"image","mime":"image/png","width":800,"height":600,"media":{"hash":"blake3:636ca83a67253e2cab7738d7b7ed32e3400acd794298c8c08633212b5d31be7a","bytes":32}}]}}

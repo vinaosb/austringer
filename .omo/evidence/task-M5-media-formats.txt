@@ -1,0 +1,198 @@
+TASK M5 - structural diff engine + round-trip verifier (media-formats-wave)
+==========================================================================
+
+Worker: M5 implementation worker (Sisyphus-junior). Date: 2026-09-22.
+Base: HEAD 437a71c on main (feat(daemon): config-driven provider wiring in the session factory);
+M1 landed at a61d372. Plan authority: .omo/plans/media-formats-wave.md todo 5 (M5), lines 119-125.
+Pre-existing dirty state (.omo/* runtime files, harness-snapshots temp files, msvc-probe.obj,
+target-task-36/) left untouched; this commit stages only harness-media/ and this evidence file.
+
+ENVIRONMENT INCIDENT (disclosed, per task-13/M1 precedent)
+-------------------------------------------------------------------------------
+No target/ dir existed (cold build): first `cargo nextest run -p harness-media` recompiled
+libsqlite3-sys via harness-core -> rusqlite/bundled and hit the known machine-wide VS servicing
+damage (gutted stdarg.h; task-13/M1 evidence). Recipe applied = the M1 INCLUDE-order variant,
+shell-scoped for every cargo command in this evidence:
+  INCLUDE = C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include;
+            <WinSDK 10.0.26100.0> shared/ucrt/um/winrt/cppwinrt (all appended)
+  Env:CC removed. NOTHING repo-side changed. libsqlite3-sys then compiled clean.
+
+TDD RED (true red, before any diff implementation existed)
+-------------------------------------------------------------------------------
+Four test files written FIRST against the intended API (13 + 6 + 2 + 6 tests); src had no diff
+module and no DiffTooLarge variant. Command + verbatim error classes:
+
+  cargo nextest run -p harness-media
+    error[E0432]: unresolved import `harness_media::diff`      (diff_semantics, diff_property,
+                                                                roundtrip)
+    error[E0433]: cannot find `diff` in `harness_media`         (diff_tolerances)
+    error[E0599]: no variant ... `DiffTooLarge` ... for enum `MediaError` (diff_tolerances x2)
+    error: could not compile `harness-media` (test "diff_tolerances") due to 4 previous errors
+    error: could not compile `harness-media` (test "diff_property") due to 1 previous error
+    error: could not compile `harness-media` (test "roundtrip") due to 1 previous error
+    error: command `...cargo.exe' ... --package harness-media` exited with code 101
+
+Right-reason check: every failure names the missing implementation (nonexistent module or error
+variant). An unused-import wart in the first RED run was fixed and RED re-recorded so it fails
+ONLY for missing implementation.
+
+DELIVERABLE (all <=250 pure LOC/file; zero unwrap/expect/panic in src - scanned)
+-------------------------------------------------------------------------------
+  src/diff/mod.rs    (49)  module doctrine: canonical-tree structural diff (NEVER textual/line),
+                            unbounded-allocation ban, caps as typed errors; ROUND-TRIP SEMANTICS
+                            (empty diff = semantic-equivalence PASS, not byte identity;
+                            unordered_at is the ONLY reordering escape; spec-driven writes
+                            ordered-exact incl. parquet single-row-group, M22-aligned;
+                            external-file extracts verify head-sample only); EXPECTED-TREE
+                            PROVENANCE CONTRACT (plan amendment): expected trees come from an
+                            INDEPENDENT spec->tree projection, never from the adapter's own
+                            extractor over its own output (circularity = vacuous gate);
+                            PINNED DECISIONS (serde_json cannot hold NaN/inf -> they land as
+                            Null and diff as type changes; all numbers meet in f64 space after
+                            an exact-representation shortcut so 1 == 1.0 and ints beyond 2^53
+                            compare as f64 neighbors; null vs missing is Removal/Addition,
+                            never equality; unordered leftovers pair in sorted canonical order
+                            under the ACTUAL index so mutations report sub-pointers; one-sided
+                            subtrees reported whole without traversal). API:
+                            structural_diff(&Value,&Value,&Tolerances)->Result<StructuralDiff,
+                            MediaError>; spec_tree(&GenerationSpec)->Value (generic {format,
+                            params} canonical wrap; per-format projections supersede M11+);
+                            RoundTripVerdict {Pass | Fail(StructuralDiff)} + is_pass();
+                            verify_roundtrip(expected_tree, produced_bytes, extract_fn: FnOnce
+                            (&[u8])->Result<Extracted,MediaError>, profile) composition helper
+                            (extract errors propagate typed, never a silent pass)
+  src/diff/types.rs  (61)  Tolerances {float_epsilon, unordered_at: BTreeSet<pointer>,
+                            ignored_at: BTreeSet<pointer>} (serde-serializable for the M25
+                            tolerance tables; Default = EXACT: eps 0.0, empty sets); Addition
+                            {path, actual}; Removal {path, expected}; Change {path, expected,
+                            actual}; StructuralDiff {added, removed, changed} + is_empty() +
+                            Display (deterministic one-line-per-entry report, exact pointers,
+                            compact JSON values); MAX_DIFF_DEPTH=64, MAX_DIFF_NODES=100_000
+  src/diff/walk.rs  (239)  the walker: object pairs by key (sorted BTreeMap order); arrays
+                            ordered-exact by default (index-wise pairs, tail added/removed);
+                            unordered arrays = canonical-serialization multiset matching
+                            (sort + linear merge, O(n log n)), identical elements consumed
+                            untraversed (counted once per pair), leftovers paired in sorted
+                            canonical order and diffed under the ACTUAL element index, excess
+                            reported as index-bearing Addition/Removal; epsilon-aware number
+                            equality (exact representation first, then |a-b| <= eps in f64
+                            space); RFC 6901 pointer building with ~0/~1 escaping; depth+node
+                            caps checked at every compared pair -> Err(MediaError::DiffTooLarge)
+                            immediately (no unbounded work); recursion bounded by the depth cap
+  src/error.rs       (59)  MediaError += DiffTooLarge variant (12th), Display actionable:
+                            "structural diff exceeded its budget (depth or node cap): project or
+                            split the trees into smaller canonical forms and diff those"
+  src/lib.rs         (15)  pub mod diff + re-exports; crate doc updated (M5 no longer pending;
+                            provenance + pinned-decisions summary sections added)
+  tests/diff_semantics.rs (175) 13 tests: empty diff on identical trees; single-token change ->
+                            exactly ONE entry at /asset/version with both values; added/removed
+                            keys with whole-subtree values; null-vs-missing distinction (both
+                            directions + null vs 0); negatives exact + -0.0 == 0.0; 0.3 vs
+                            0.1+0.2 passes at eps 1e-9 and trips at eps 0 (exact pointer);
+                            0.1+0.2 vs 0.30000000000000004 = SAME f64 (passes exact); 1 vs 1.0
+                            equal; type mismatches (scalar/container/bool-vs-number) carry both
+                            subtrees; RFC 6901 escaping (/a~1b, /m~0n); canonical key order
+                            (opposite insertion orders equal - BTreeMap backing pinned);
+                            ordered-exact default arrays (index paths, tail add/remove);
+                            NaN/inf -> Null pinned (from_f64 None, Value::from Null, diff
+                            0.3-vs-Null = changed at /f); human-readable report rendering
+  tests/diff_tolerances.rs (121) 6 tests: /materials shuffle (glTF use case) empty under
+                            unordered_at; duplicates = multiset; sibling ordered arrays stay
+                            order-sensitive; unordered element mutation reports sub-pointer
+                            /materials/1/baseColorFactor/0 (actual index) + epsilon applies
+                            inside leftover pairing (1e-12 drift passes at 1e-9, trips exact);
+                            unordered length changes report index-bearing entries; ignored_at
+                            hides exactly the named subtree (root "" = vacuous pass, pinned);
+                            depth cap: AT 64 ok, 65 -> Err(DiffTooLarge) via matches!, one-sided
+                            deep subtree reported whole without traversal; node cap: exactly
+                            100_000 compared nodes ok, 100_002 -> Err(DiffTooLarge)
+  tests/diff_property.rs  (193) seeded xorshift64* property loop (SEED = 0x00C0FFE000000005,
+                            PINNED; 240 iterations, no proptest/rand dep - none in workspace):
+                            random trees (objects/arrays/scalars, negatives, bools, nulls, keys
+                            with '/' and '~'), inject add/remove/mutate at RANDOM pointers ->
+                            exactly ONE diff entry at the EXACT injected pointer with exact
+                            expected/actual values, every iteration; control diff on identical
+                            twins empty every iteration. Plus 100 seeded Fisher-Yates shuffles:
+                            empty under /tags unordered, non-empty without it (not-vacuous
+                            guard: identity shuffles rotated)
+  tests/roundtrip.rs   (93) 6 tests: verify_roundtrip Pass on matching extract; Fail with exact
+                            pointer /pages/0/text on one-token change; extract ParseFailure
+                            propagates typed (never fake pass); spec_tree deterministic +
+                            canonical (sorted format<params) + spec-faithful + format-distinct;
+                            PROVENANCE demo: extractor watermark key caught as Addition at
+                            /extractor_watermark (a circular expected tree would hide it);
+                            default tolerances exact (0.3 vs 0.1+0.2 = 1 changed)
+  tests/contract.rs  (238) every_error_variant() += MediaError::DiffTooLarge (variant list
+                            stays complete; Display action-marker test covers it via "split")
+
+VERIFICATION (all commands run with the shell-scoped INCLUDE workaround above)
+-------------------------------------------------------------------------------
+1. cargo nextest run -p harness-media
+     Summary [  0.482s] 41 tests run: 41 passed, 0 skipped
+   (14 M1 contract + 13 semantics + 6 tolerances + 2 property + 6 roundtrip; all hermetic,
+   deterministic, zero flake - pinned seeds, no clock/fs/network)
+2. cargo clippy -p harness-media --all-targets -- -D warnings
+     Finished `dev` profile [unoptimized + debuginfo] target(s)   (zero warnings)
+3. cargo deny check
+     advisories ok, bans ok, licenses ok, sources ok
+4. Pure LOC audit (non-blank, non-comment): mod.rs 49, types.rs 61, walk.rs 239, error.rs 59,
+   lib.rs 15, tests 175/121/193/93/238 - all <= 250. walk.rs sits in the 200-250 warning band
+   (cohesive single walker; a further edit that adds lines should split unordered matching out).
+5. Zero unwrap/expect/panic/unreachable in src (Select-String scan over src/*.rs + src/diff/*).
+
+MANUAL QA (printed example diff - human-readable proof of exact-pointer reporting)
+-------------------------------------------------------------------------------
+cargo test -p harness-media --test diff_semantics report_renders -- --nocapture:
+
+  --- structural diff (example) ---
+  added   /scene: 0
+  removed /scale: 1.0
+  changed /asset/version: expected "2.0", actual "2.1"
+  --- end ---
+
+(expected tree {"asset":{"version":"2.0"},"materials":[{"name":"red"}],"scale":1.0} vs an actual
+with one token changed, one key added, one key removed - three entry kinds, exact RFC 6901
+pointers, both values on changed lines; empty diffs render "no differences".)
+
+ADVERSARIAL CLASSES (probe + record)
+-------------------------------------------------------------------------------
+- malformed-input: PROBED and pinned. (a) non-canonical trees: unrepresentable - serde_json's
+  default Map is BTreeMap (preserve_order banned workspace-wide); opposite-insertion-order
+  objects diff empty (test-pinned). (b) NaN/inf: DECIDED + PINNED - serde_json cannot hold them
+  (Number::from_f64 -> None; Value::from -> Null); a writer emitting one lands as Null and
+  diffs as a plain type change at that pointer (test asserts changed at /f with actual null).
+  (c) type mismatches at any pointer (scalar/container/bool-vs-number/mixed) -> Changed with
+  both subtrees, zero panics. (d) ints beyond 2^53 compare as f64 neighbors (documented
+  module-level pinned decision).
+- misleading-success-output: PROBED. Empty diff happens ONLY on true semantic equivalence:
+  identical trees -> empty; single-token change -> exactly ONE non-empty entry with the exact
+  pointer and both values (asserted); extract_fn failure -> typed Err propagation, never a
+  fake Pass; watermark probe: an extractor that adds a key FAILS the gate at the exact added
+  pointer (provenance contract demonstrated, a circular expected tree would have passed it);
+  default tolerances are exact so epsilon can never silently absorb gross mismatches (0.3 vs
+  0.9 stays 1 changed at eps 1e-9).
+- stale-state: N/A - the diff engine is pure (trees + tolerances in, report out); no persisted
+  state exists at M5.
+- dirty-worktree: N/A for the deliverable - pre-existing unrelated dirty files (.omo runtime,
+  snapshot temps) left untouched; only harness-media/ + this evidence file staged (verified
+  via git diff --cached before commit).
+- flaky-tests: N/A - all 41 tests deterministic (pinned xorshift64* seeds 0x00C0FFE000000005 /
+  ^0x5A17000000000001, no clock, no fs, no network); 0.482s total. The property loop's shuffle
+  test carries a not-vacuous guard (identity permutation rotated before the strict assertion).
+- hung-commands: N/A - no wall-clock deadline needed at M5: the walk is bounded by construction
+  (depth 64 / node 100k hard stops, Err on first breach); no I/O, no sleeps.
+- interrupts: N/A - pure in-memory computation over caller-owned trees.
+- injection: N/A - no process spawning, no shell, no paths; deps unchanged (harness-core/
+  serde/serde_json/thiserror only).
+
+HOUSE-RULE COMPLIANCE
+-------------------------------------------------------------------------------
+No new deps (proptest/rand checked absent from the workspace -> hand-rolled seeded xorshift per
+plan); edition 2024 workspace lints (warnings=deny, clippy all=deny) pass; <=250 pure LOC/file
+(max 239 in src); zero unwrap/expect/panic in src; hermetic tests; serde sorted-key stability
+(BTreeMap everywhere, preserve_order never enabled); RFC 6901 pointers with ~0/~1 escaping;
+no textual/line diff anywhere; no unbounded allocation (caps trip typed, one-sided subtrees are
+input-bounded clones documented as such); expected-tree provenance contract documented in
+module docs + demonstrated by test.
+
+Commit: feat(media): structural diff engine + round-trip verifier

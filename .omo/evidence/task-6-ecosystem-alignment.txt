@@ -1,0 +1,157 @@
+Task 6 — Skills runtime activation + packs endpoint (ecosystem-alignment)
+=========================================================================
+Date: 2026-10-21 | Session: opencode:ses_ea774e945ffe45I9Wp629UGOW1
+Machine: all cargo via `cmd /c %TEMP%\opencode\cargo-env.cmd <cmd>`, CARGO_BUILD_JOBS=3
+
+RED PHASE (failing-first)
+-------------------------
+Tests written first:
+- harness-skills/tests/pack_mcp_disabled.rs (3 tests)
+- harness-daemon/tests/skills_packs_tests.rs (6 tests)
+- harness-tui/src/app.rs::tests (2 tests: skill_command_sends_submit_text_verbatim,
+  skill_command_never_steers_mid_turn)
+
+RED run: cargo nextest run -p harness-skills lands_disabled user_authored
+  2 tests run: 0 passed, 2 failed
+  - pack_claiming_trusted_autostart_lands_disabled:
+      left: Bool(true)  right: false
+      {"mcpServers":{"probe-server":{"args":[],"command":"never-starts","trusted_autostart":true}}}
+      => the pack's trusted_autostart:true SURVIVES install (the failure mode under test)
+  - user_authored_entries_keep_their_own_autostart_fields:
+      pack entry marker Null (absent) — no explicit disabled declaration written
+
+RED run: cargo nextest run -p harness-daemon packs_endpoint quarantined trusted_pack mcp_pack
+  6 tests run: 1 passed, 5 failed
+  - packs_endpoint_lists_tiers_and_trust_status: GET /packs -> 404 (no route)
+  - packs_endpoint_requires_auth: PASS (existing auth layer already covers; expected pre-green)
+  - quarantined_pack_refuses_skill_invocation_with_tier: /skill draft-pack -> 202 accepted
+  - quarantined_trigger_in_second_session_refuses_like_skill_path: trigger submit -> 202 accepted
+  - trusted_pack_skill_invocation_injects_context: no skill context ever reached the event stream
+  - mcp_pack_install_lands_disabled_declaration_and_renders_disabled:
+      mcp.json carries "trusted_autostart": true from the pack
+
+RED run: cargo nextest run -p harness-tui skill_command
+  2 tests run: 0 passed, 2 failed
+  - both: left: [] right: [Send(Command{Submit{"/skill ..."}})] — stub prints a note, sends nothing
+
+IMPLEMENTATION
+--------------
+harness-skills:
+- index.rs: pub fn SkillIndex::empty() (typed empty constructor for embedders;
+  fields are pub(crate), the daemon needs a fail-soft empty on scan error)
+- registry/writes.rs: WriteSet::add_pack forces "trusted_autostart": false into
+  every pack-sourced mcp/ entry (object values only; non-objects left for the
+  scanner's diagnostics). User-authored entries are untouched (merge preserves).
+
+harness-daemon:
+- Cargo.toml: +harness-skills dep, +harness-mcp dev-dep (autostart_for composition proof)
+- src/skills.rs (NEW): SkillsRuntime { data_dir, index: SkillIndex, gate: FilePackGate,
+  consent: ConsentGate }
+    * load(data_dir): SkillLoader::new().vendor_root(data_dir).lock_mode(Record)
+      (content-hash pinning, the ClawHavoc ledger) — scan error => eprintln + empty
+    * tier gate: FilePackGate over {data_dir}/pack-tiers.json (existing vocabulary;
+      unknown pack = Draft, fail-closed)
+    * consent: ConsentGate loaded from {data_dir}/skill-consent.json (absent = empty;
+      nothing routes-activates unconsented; no grant path in this todo)
+    * invoke(name): tier gate first (Draft => SkillRefusal::Quarantined{tier}),
+      then index.invoke (progressive disclosure)
+    * route_submit(text): /skill parse + trigger routing through
+      index.route_with(.., Some(&consent)); matched+Draft => same typed refusal
+      (trigger-driven activation governed); matched+approved+consented => activation;
+      pending_consent => inert pass (consent gate honored, fail-closed)
+    * render_context(): <skill name="..."> body </skill> + caller args
+    * packs_json(): { packs: [{name, tier, trusted, vendor, version, description,
+      triggers}], mcp_servers: [{server, disabled}] } — disabled = trusted_autostart
+      != true (composes with ScanReport::autostart_for's DeferredOnFirstUse)
+- src/attach.rs: SessionHost.skills OnceLock<Arc<SkillsRuntime>> (set by session
+  factory like media_dir/projection); handle_command Submit arm intercepts:
+    "/skill name args" => invoke (inject blocks via queue_blocks, same lane as
+    SubmitMedia) or typed CommandRejected::SkillRefused(SkillRefusal);
+    other text => route_submit (trigger gate) before queueing
+- CommandRejected::SkillRefused — typed, carries SkillRefusal (tier inside)
+- src/server.rs: DaemonState.skills: Arc<SkillsRuntime> built in DaemonState::new;
+  route GET /packs -> handlers::list_packs (rides existing auth middleware)
+- src/lib.rs: pub mod skills
+
+harness-tui:
+- src/app_input.rs Parsed::Skill arm: sends Submit { text: "/skill <name> <rest>" }
+  verbatim (NEVER Steer — steering would bypass the daemon-side gate)
+
+harness-web:
+- assets/ui.js: packsPanel(state, props) renders packs (name, tier, trusted) and
+  mcp servers with a disabled marker; textContent-only (no-cloud + XSS rules hold)
+- assets/app.js: app.packs + loadPacks() fetch GET /packs with bearer token,
+  called beside loadSessions on the dashboard boot path
+
+GREEN PHASE
+-----------
+cargo nextest run -p harness-skills -p harness-daemon -p harness-tui --no-fail-fast
+  => Summary [  18.238s] 408 tests run: 408 passed, 1 skipped
+  (the 1 skip is pre-existing; an earlier fail-fast run had a one-off
+   provider_binary_tests flake under 3-way parallel binary spawns —
+   passes in isolation AND in the final full run; contention, not code)
+
+cargo nextest run -p harness-web
+  => Summary 13 tests run: 13 passed (content-addressed routes re-derive
+     from the edited ui.js/app.js bytes; no-cloud + substantive-module
+     guards green)
+
+cargo clippy -p harness-skills -p harness-daemon -p harness-tui --all-targets -- -D warnings
+  => Finished, zero warnings
+
+Acceptance mapping (plan todo 6 criteria -> test):
+1. quarantined pack LISTED but not invocable (typed refusal w/ tier)
+   -> skills_packs_tests::packs_endpoint_lists_tiers_and_trust_status (listed,
+      tier "draft", trusted false)
+   -> skills_packs_tests::quarantined_pack_refuses_skill_invocation_with_tier
+      (400 + "draft-tier" + "draft-pack" in the refusal text)
+2. trusted pack invocable via /skill, invocation injects skill context
+   -> skills_packs_tests::trusted_pack_skill_invocation_injects_context
+      (202; the turn's User event carries the progressive-disclosure body
+      marker "trusted-pack-body" AND the caller args "ship it")
+3. quarantined TRIGGER match in a second/child session => same typed refusal
+   -> skills_packs_tests::quarantined_trigger_in_second_session_refuses_like_skill_path
+      (session "child-delegated", trigger phrase submit, 400, byte-identical
+      refusal text to the /skill path — gates govern trigger-driven activation)
+4. GET /packs returns tiers + trust status
+   -> skills_packs_tests::packs_endpoint_lists_tiers_and_trust_status
+      (+ packs_endpoint_requires_auth: 401 without token — rides the auth layer)
+5. pack with mcp/ entry: declaration written, NO process, disabled marker
+   -> skills_packs_tests::mcp_pack_install_lands_disabled_declaration_and_renders_disabled
+      (offline RegistryManager::install; mcp.json entry present with
+      trusted_autostart:false even though the pack declared true;
+      harness-mcp scan_directories finds it and ScanReport::autostart_for
+      == DeferredOnFirstUse — the marker composes with todo-7's renderer;
+      GET /packs renders {"server":"pack-server","disabled":true}; the pack's
+      skill lists as draft-tier)
+   -> harness-skills tests pack_mcp_disabled::{pack_claiming_trusted_autostart_lands_disabled,
+      pack_entry_without_marker_lands_explicitly_disabled,
+      user_authored_entries_keep_their_own_autostart_fields}
+      (the DISABLED contract holds at the harness-skills write seam for EVERY
+      consumer, and user-authored entries keep their own fields)
+TUI wiring: app::tests::skill_command_sends_submit_text_verbatim +
+  skill_command_never_steers_mid_turn (Submit verbatim, never Steer mid-turn)
+
+Gate-contract notes (reviewer-facing):
+- No activation path bypasses trust/consent: /skill consults the tier gate;
+  trigger routing consults tier AND consent (route_with_consent), with
+  quarantine REFUSAL outranking the consent partition (a draft-tier trigger
+  match refuses even when consent is unrecorded — checked in both `matched`
+  and `pending_consent` buckets).
+- Consent: loaded from {data_dir}/skill-consent.json; absent file = nothing
+  consented = no trigger-driven activation ever fires (fail-closed). No
+  consent-granting surface shipped in this todo.
+- Loader runs with LockMode::Record (content-hash pinning; tampered skills
+  shadow out of routing). A fresh data dir gains an empty
+  .harness/skills-lock.json ledger — benign, expected.
+- Engine/compat/protocol untouched: /skill rides SessionCommand::Submit; the
+  interception lives at SessionHost::handle_command (the one intake seam both
+  HTTP and WS/IPC pumps already call).
+- Plain submits with no trigger match queue in their ORIGINAL HostCommand
+  form (only activations become SubmitBlocks) — zero regression surface for
+  existing submit semantics.
+
+LOC: skills.rs 194, attach.rs 295 (warning band — pre-existing hosting module
++~70; a further split is left as a follow-up, not improvised mid-task),
+server.rs/handlers.rs 248 each, tests 255/91.
+

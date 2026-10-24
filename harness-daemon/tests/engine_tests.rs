@@ -40,6 +40,7 @@ fn text_turn(text: &str, calls: Vec<PendingCall>) -> AssistantTurn {
             text: text.to_owned(),
         }],
         tool_calls: calls,
+        usage: None,
     }
 }
 
@@ -61,7 +62,6 @@ fn completion_turn() -> AssistantTurn {
         }],
     )
 }
-
 #[async_trait]
 impl Inference for ScriptedInference {
     async fn infer(
@@ -248,7 +248,7 @@ async fn two_clients_see_identical_streams_and_shared_permission() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )
@@ -273,7 +273,8 @@ async fn two_clients_see_identical_streams_and_shared_permission() {
     let reader_a = tokio::spawn(read_stream(attachment_a.events.live, attachment_a.control));
     let reader_b = tokio::spawn(read_stream(attachment_b.events.live, attachment_b.control));
 
-    host.handle_command(HostCommand::Submit("hello".into()))
+    let _ = host
+        .handle_command(HostCommand::Submit("hello".into()))
         .await;
 
     let joined = (reader_a.await.ok(), reader_b.await.ok());
@@ -323,7 +324,7 @@ async fn denied_permission_produces_typed_tool_result_for_all_clients() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )
@@ -338,7 +339,8 @@ async fn denied_permission_produces_typed_tool_result_for_all_clients() {
     let reader_a = tokio::spawn(read_stream(attachment_a.events.live, attachment_a.control));
     let reader_b = tokio::spawn(read_stream(attachment_b.events.live, attachment_b.control));
 
-    host.handle_command(HostCommand::Submit("hello".into()))
+    let _ = host
+        .handle_command(HostCommand::Submit("hello".into()))
         .await;
 
     let joined = (reader_a.await.ok(), reader_b.await.ok());
@@ -381,7 +383,7 @@ async fn steer_mid_turn_is_absorbed_into_the_live_turn() {
     // pipeline iterations).
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(SteerAbsorbingInference {
             queue: host.steer_queue(),
             marker: "while running".into(),
@@ -407,10 +409,12 @@ async fn steer_mid_turn_is_absorbed_into_the_live_turn() {
     };
     let reader = tokio::spawn(read_stream(attachment.events.live, attachment.control));
 
-    host.handle_command(HostCommand::Submit("start".into()))
+    let _ = host
+        .handle_command(HostCommand::Submit("start".into()))
         .await;
     tokio::time::sleep(Duration::from_millis(50)).await;
-    host.handle_command(HostCommand::Steer("while running".into()))
+    let _ = host
+        .handle_command(HostCommand::Steer("while running".into()))
         .await;
 
     let collected = tokio::time::timeout(Duration::from_secs(10), reader)
@@ -467,7 +471,7 @@ async fn journal_records_the_turn_workflow() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )
@@ -478,7 +482,8 @@ async fn journal_records_the_turn_workflow() {
         return;
     };
     let reader = tokio::spawn(read_stream(attachment.events.live, attachment.control));
-    host.handle_command(HostCommand::Submit("journal me".into()))
+    let _ = host
+        .handle_command(HostCommand::Submit("journal me".into()))
         .await;
     let collected = tokio::time::timeout(Duration::from_secs(10), reader)
         .await
@@ -523,7 +528,7 @@ async fn worker_activities_are_journaled_content_addressed() {
 
     host.spawn_engine(
         session_dir,
-        host.standard_stages(executor),
+        host.standard_stages(Box::new(executor)),
         Box::new(inference),
         cmd_rx,
     )
@@ -546,7 +551,8 @@ async fn worker_activities_are_journaled_content_addressed() {
         })
     };
     let reader = tokio::spawn(read_stream(attachment.events.live, attachment.control));
-    host.handle_command(HostCommand::Submit("run tool".into()))
+    let _ = host
+        .handle_command(HostCommand::Submit("run tool".into()))
         .await;
     let collected = tokio::time::timeout(Duration::from_secs(10), reader)
         .await

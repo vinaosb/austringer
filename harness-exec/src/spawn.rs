@@ -103,6 +103,22 @@ fn spawn_error(program: &str, source: impl Into<io::Error>) -> ExecError {
     }
 }
 
+/// The variables the spec's scrub drops from the child environment:
+/// the additions AND the inherited ambient set (the CommandBuilder
+/// base is the full ambient), filtered through the policy. Empty when
+/// no scrub is attached.
+fn scrubbed_names(spec: &ExecSpec) -> Vec<String> {
+    let Some(scrub) = &spec.env_scrub else {
+        return Vec::new();
+    };
+    spec.env
+        .keys()
+        .cloned()
+        .chain(std::env::vars().map(|(name, _)| name))
+        .filter(|name| scrub.drops(name))
+        .collect()
+}
+
 /// Windows: ConPTY spawn + Job-Object tree domain.
 #[cfg(windows)]
 pub(crate) fn spawn_pty(
@@ -117,6 +133,9 @@ pub(crate) fn spawn_pty(
     builder.args(&command.args);
     for (key, value) in &spec.env {
         builder.env(key, value);
+    }
+    for name in scrubbed_names(spec) {
+        builder.env_remove(name);
     }
     if let Some(cwd) = &spec.cwd {
         builder.cwd(cwd);
@@ -181,6 +200,9 @@ pub(crate) fn spawn_pty(
     process.stderr(slave);
     for (key, value) in &spec.env {
         process.env(key, value);
+    }
+    for name in scrubbed_names(spec) {
+        process.env_remove(name);
     }
     if let Some(cwd) = &spec.cwd {
         process.current_dir(cwd);

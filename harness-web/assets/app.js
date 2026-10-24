@@ -3,6 +3,7 @@
 // (deep-linked session, token hand-off, share fragments), connects
 // the transport, and re-renders on store changes.
 import { connect } from "spa/proto";
+import { routeCommand } from "spa/grammar";
 import { createStore } from "spa/store";
 import { mintShare, parseShare } from "spa/share";
 import { render } from "spa/ui";
@@ -36,10 +37,16 @@ function boot() {
     status: "idle",
     transport: "",
     sessions: [],
+    packs: [],
+    mcpServers: [],
     replayIdx: null,
+    history: [],
+    historyLoaded: false,
+    expanded: new Set(),
     session: sessionFromPath(location.pathname),
     shareHash: location.hash.startsWith("#share=") ? location.hash : null,
     token: initialToken(),
+    feedback: null,
   };
 
   const props = () => ({
@@ -48,8 +55,14 @@ function boot() {
     status: app.status,
     transport: app.transport,
     sessions: app.sessions,
+    packs: app.packs,
+    mcpServers: app.mcpServers,
     replayIdx: app.replayIdx ?? (app.store.getState().frames.length - 1),
+    history: app.history,
+    historyLoaded: app.historyLoaded,
+    expanded: app.expanded,
     share: app.shareParsed,
+    feedback: app.feedback,
   });
 
   const view = () => {
@@ -71,10 +84,17 @@ function boot() {
     openSession(id) {
       location.assign(`/s/${encodeURIComponent(id)}`);
     },
-    submit(text, localImages) {
-      // Protocol v1 submit carries text only; localImages stay in the
-      // composer preview (disclosed limitation, see composer hint).
-      send({ type: "command", command: { type: "submit", text } });
+    // Composer entry point (todo 23): the shared grammar routes the
+    // line; feedback renders under the composer. Protocol v1 submit
+    // carries text only — local images stay in the composer preview
+    // (disclosed limitation, see composer hint).
+    input(text) {
+      const { sends, feedback } = routeCommand(text, Object.keys(store.getState().asks));
+      for (const msg of sends) {
+        send(msg);
+      }
+      app.feedback = feedback;
+      repaint();
     },
     steer(text) {
       if (!text) return;
@@ -88,6 +108,25 @@ function boot() {
     },
     cancelVote(askId) {
       send({ type: "permission_cancel", ask_id: askId });
+    },
+    // FallbackAnswer keys on the SERVER-assigned connection identity at
+    // the transport pump — the identity object is echoed verbatim from
+    // the ask (garbage resolves deny-side server-side).
+    answerFallback(askId, chosen) {
+      send({ type: "fallback_answer", ask: askId, chosen });
+    },
+    answerPlan(askId, decision) {
+      // PlanDecision is externally tagged on the wire: "approve" |
+      // "reject" ride as bare strings.
+      send({ type: "plan_answer", ask: askId, decision });
+    },
+    toggleFocus(seq) {
+      if (app.expanded.has(seq)) {
+        app.expanded.delete(seq);
+      } else {
+        app.expanded.add(seq);
+      }
+      repaint();
     },
     replaySeek(index) {
       app.replayIdx = index;
@@ -121,6 +160,48 @@ function boot() {
         repaint();
       }
     },
+    async loadPacks() {
+      if (!app.token) return;
+      try {
+        const response = await fetch("/packs", {
+          headers: { authorization: `Bearer ${app.token}` },
+        });
+        if (response.status === 401) {
+          store.dispatch(JSON.stringify({ type: "error", code: "auth", message: "unauthorized" }));
+          return;
+        }
+        const body = await response.json();
+        app.packs = Array.isArray(body.packs) ? body.packs : [];
+        app.mcpServers = Array.isArray(body.mcp_servers) ? body.mcp_servers : [];
+        repaint();
+      } catch {
+        app.status = "error";
+        repaint();
+      }
+    },
+    // GET /s/{sid}/history (task-2 route). A typed 404 (unknown
+    // session, e.g. raced ahead of the WS attach) renders the same
+    // empty-state as an empty run list — never a stuck spinner.
+    async loadHistory() {
+      if (!app.token || !app.session) return;
+      try {
+        const response = await fetch(`/s/${encodeURIComponent(app.session)}/history`, {
+          headers: { authorization: `Bearer ${app.token}` },
+        });
+        if (response.status === 401) {
+          store.dispatch(JSON.stringify({ type: "error", code: "auth", message: "unauthorized" }));
+          return;
+        }
+        const body = await response.json();
+        app.history = Array.isArray(body) ? body : [];
+        app.historyLoaded = true;
+        repaint();
+      } catch {
+        app.history = [];
+        app.historyLoaded = true;
+        repaint();
+      }
+    },
     reconnect() {
       connectAll();
     },
@@ -146,6 +227,12 @@ function boot() {
       onStatus: (state, controller) => {
         app.status = state;
         app.transport = controller.mode === "ws" ? "websocket" : controller.mode === "sse" ? "sse" : "";
+        // The history route needs the session to exist server-side; a
+        // fetch raced ahead of the attach gets a typed 404, so retry
+        // once the connection is open.
+        if (state === "open" && !app.historyLoaded) {
+          actions.loadHistory();
+        }
         repaint();
       },
     });
@@ -160,6 +247,7 @@ function boot() {
     connectAll();
   } else if (app.token) {
     actions.loadSessions();
+    actions.loadPacks();
   }
 
   window.addEventListener("hashchange", () => {

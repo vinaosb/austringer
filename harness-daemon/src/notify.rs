@@ -28,6 +28,68 @@ impl NotificationKind {
             Self::WorkerLost => "worker_lost",
         }
     }
+
+    /// Todo 24 kind→status mapping: the terminal program status this
+    /// kind represents on the OSC emission lanes. Every current kind
+    /// maps; a future kind without a terminal status returns `None`
+    /// and the OSC sink emits NOTHING for it (fail silent — never a
+    /// garbage sequence). The exhaustive match forces that decision at
+    /// compile time.
+    #[must_use]
+    pub const fn program_status(self) -> Option<ProgramStatus> {
+        match self {
+            Self::ScheduledFired => Some(ProgramStatus::Working),
+            Self::ApprovalNeeded => Some(ProgramStatus::Blocked),
+            Self::TurnComplete => Some(ProgramStatus::Done),
+            Self::WorkerLost => Some(ProgramStatus::Error),
+        }
+    }
+}
+
+/// Terminal program status (todo 24): the four-state lifecycle a
+/// listening terminal renders — working / blocked (attention needed:
+/// permission or input) / done / error. Receipts: OpenCode #55172,
+/// Antigravity v1.4.0, Warp OSC-777 lifecycle, Warp issue #16407.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramStatus {
+    /// Running (Warp lifecycle `prompt_submit`; OSC 7501 `working`).
+    Working,
+    /// Cannot continue until the user acts (Warp `permission_request`;
+    /// OSC 7501 `blocked` with `kind=permission` — today's only blocked
+    /// source is the permission ask; question/auth arrive when their
+    /// notification kinds do).
+    Blocked,
+    /// Finished (Warp `stop`; OSC 7501 `done`).
+    Done,
+    /// Failed and stopped (Warp `stop_failure`; OSC 7501 `error`).
+    Error,
+}
+
+impl ProgramStatus {
+    /// Warp's structured OSC 777 cli-agent lifecycle event name (the
+    /// vocabulary Warp's listener parses, event/v1.rs).
+    #[must_use]
+    pub const fn warp_event(self) -> &'static str {
+        match self {
+            Self::Working => "prompt_submit",
+            Self::Blocked => "permission_request",
+            Self::Done => "stop",
+            Self::Error => "stop_failure",
+        }
+    }
+
+    /// OSC 7501 `state` token (spec: idle | working | done | blocked |
+    /// error; the daemon never reports idle — a finished run stays
+    /// `done` until replaced).
+    #[must_use]
+    pub const fn osc7501_state(self) -> &'static str {
+        match self {
+            Self::Working => "working",
+            Self::Blocked => "blocked",
+            Self::Done => "done",
+            Self::Error => "error",
+        }
+    }
 }
 
 /// One emitted notification.
@@ -202,5 +264,37 @@ mod tests {
         assert_eq!(NotificationKind::ApprovalNeeded.as_str(), "approval_needed");
         assert_eq!(NotificationKind::ScheduledFired.as_str(), "scheduled_fired");
         assert_eq!(NotificationKind::WorkerLost.as_str(), "worker_lost");
+    }
+
+    #[test]
+    fn kind_to_status_mapping_covers_every_kind() {
+        assert_eq!(
+            NotificationKind::ScheduledFired.program_status(),
+            Some(ProgramStatus::Working)
+        );
+        assert_eq!(
+            NotificationKind::ApprovalNeeded.program_status(),
+            Some(ProgramStatus::Blocked)
+        );
+        assert_eq!(
+            NotificationKind::TurnComplete.program_status(),
+            Some(ProgramStatus::Done)
+        );
+        assert_eq!(
+            NotificationKind::WorkerLost.program_status(),
+            Some(ProgramStatus::Error)
+        );
+    }
+
+    #[test]
+    fn program_status_wire_tokens_are_stable() {
+        assert_eq!(ProgramStatus::Working.osc7501_state(), "working");
+        assert_eq!(ProgramStatus::Blocked.osc7501_state(), "blocked");
+        assert_eq!(ProgramStatus::Done.osc7501_state(), "done");
+        assert_eq!(ProgramStatus::Error.osc7501_state(), "error");
+        assert_eq!(ProgramStatus::Working.warp_event(), "prompt_submit");
+        assert_eq!(ProgramStatus::Blocked.warp_event(), "permission_request");
+        assert_eq!(ProgramStatus::Done.warp_event(), "stop");
+        assert_eq!(ProgramStatus::Error.warp_event(), "stop_failure");
     }
 }

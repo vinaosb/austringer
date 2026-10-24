@@ -1,0 +1,144 @@
+Task 23 — Grammar unification: one command table across all four frontends (ecosystem alignment)
+====================================================================================================
+Date: 2026-10-22
+Worker: Sisyphus-junior (todo 23, .omo/plans/ecosystem-alignment.md)
+No commit (orchestrator commits).
+
+WHAT LANDED
+-----------
+1. harness-daemon/src/grammar.rs (NEW, 203 pure LOC): const SlashCommand table
+   {word, usage, help, local} (7 core + /exit + /image marked local), allow-scope
+   canonical labels (ALLOW_ONCE "y (once)", ALLOW_SESSION "a (session)", DENY
+   "n (deny)", VOTE_CANCEL "c (vote-cancel)"), vocabulary terms (agents /
+   rewind point / redacted share link / state replayed), find(), core_command_words(),
+   cheat_sheet(), unknown_help(), local_only_note(), mode_on(), mode_note().
+2. harness-daemon/src/grammar.json (NEW): serde pretty serialization of the table,
+   BYTE-PINNED by grammar::tests::grammar_json_is_byte_pinned_to_the_const_table
+   (to_string_pretty == include_str trim_end). Hand-written; matched on first run.
+3. Mirrored ports, each pinned deep-equal to the same grammar.json by fs-reading
+   tests (drift fails any direction):
+   - harness-web/assets/grammar.js (+ tests/js/grammar.test.mjs)
+   - harness-vscode/src/grammar.ts (+ test/grammar.test.ts)
+4. Frontend wiring (spellings/labels/copy only — wire + daemon team.rs internals
+   UNCHANGED):
+   - TUI: new src/commands.rs (Parsed enum + parse against the shared table; split
+     from omnibar.rs for the 250-LOC ceiling) and src/app_submit.rs (submit dispatch;
+     split from app_input.rs). /help notes the cheat sheet line-by-line; /steer always
+     Steer (implicit mid-turn steering kept for plain text); /cancel Cancel;
+     /vote-cancel [id] (explicit id, or the single tracked gate; modal 'c' key is the
+     bound surface while a gate is open — the modal swallows omnibar keys, so the
+     no-id omnibar path is reachable only with the modal closed); /mode via
+     grammar::mode_on + mode_note; /exit,/image -> CliOnly note. Modal hints line now
+     ALLOW_SCOPES.join("  ") = "y (once)  a (session)  n (deny)  c (vote-cancel)".
+     Accordion title "team" -> grammar::VOCAB_AGENTS ("agents"; data-testids and
+     keys.rs internals unchanged). transcript.rs snapshot marker "snapshot: {label}"
+     -> "rewind point: {label}". 4 insta snapshots updated (accordion line only —
+     verified by diff before accepting).
+   - CLI: repl banner fixed ("/cancel steers" lie -> "harness repl — /help lists
+     commands"); new src/repl_input.rs parses every core word + local /exit,/image
+     with table usage; repl.rs restructured to ReplSession (handle/vote_cancel/
+     mode_command/attach/submit_and_wait); client.rs gains steer/permission_cancel/
+     plan_mode/rewind (all pre-existing wire messages); run.rs wait_turn grouped into
+     TurnWait{json,stdin,deadline,open_asks} — the ask tracker maintains open ask ids
+     across the REPL so /vote-cancel without an id resolves 0/1/many (zero ->
+     "no open ask to cancel"; many -> count + y/s/n prompt pointer). render.rs copy:
+     "team budget:" -> "agents budget:", "team budget exhausted" -> "agents budget
+     exhausted", "— snapshot received —" -> "— state replayed —".
+   - Web: composer now parses (was: raw text submit). grammar.js routeCommand(text,
+     openAskIds) -> {sends, feedback} (pure, unit-tested); app.js input() executes
+     sends + renders feedback under the composer (data-testid=command-feedback).
+     Gate button 'cancel-vote' relabeled 'vote-cancel' (action name cancelVote
+     unchanged); panel heading 'team' -> 'agents' (data-testid=team kept — e2e
+     untouched, per the conditional in the task); share copy 'redacted snapshot
+     link' -> 'redacted share link'; store.js snapshot entry role 'snapshot' ->
+     'rewind point' (text = label; wire case "snapshot" unchanged).
+   - VS Code: omnibar parses ALL core commands (was /steer,/cancel only); dispatch
+     extracted to pure runOmnibar(input, deps) in omnibar.ts (session.ts wires deps);
+     /skill submits verbatim WITHOUT telemetry context (trust gate parses "/skill"
+     prefix off the submit lane; context would ride args). prompts.ts picks are the
+     canonical labels + new VOTE_CANCEL pick (askdialogs cancels the ask on it;
+     dismissal still never denies). transcript.ts "team budget" lines -> "agents
+     budget". protocol.ts ClientMsg gains the existing {type:"rewind"} + codec case +
+     client.rewind(). Input-box prompt: "harness omnibar — /help lists commands".
+5. README omnibar line: (`@file`, `/mode`, `/rewind`) -> (`@file`, `/help`, `/steer`,
+   `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`).
+
+RED CAPTURE (before implementation; full logs: %TEMP%\opencode\t23-red-rust.log + runs below)
+-------------------------------------------------------------------------------------------
+- web:  node --test grammar.test.mjs -> module not found (whole file fail);
+        store.test.mjs "rewind-point markers render the disambiguated label" ->
+        actual 'snapshot' != expected 'rewind point'. 16 pass / 2 fail.
+- vscode: grammar.test.ts module-not-found; omnibar.test.ts new todo-23 cases fail
+        ("/help" -> kind 'unknown'; "/exit" -> 'unknown' + stale usage string).
+        3 failing tests pre-implementation.
+- cli:  render::tests::human_lines_render_agents_budget_and_state_replayed_copy FAIL
+        (copy pins; starts_with("agents budget:") vs "team budget:").
+- tui:  transcript::tests::snapshot_marker_and_restore_notice_render FAIL
+        ("rewind point: turn-2" vs "snapshot: turn-2").
+- Rust red run: 159 tests run: 157 passed, 2 failed (the two copy pins).
+
+GATES (all green)
+-----------------
+- cargo nextest -p harness-tui -p harness-cli -p harness-daemon
+  (via cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run ...")
+  -> Summary: 522 tests run: 522 passed, 0 skipped (final run; one transient
+  provider_binary_tests flake under parallel load passed on immediate rerun and in
+  isolation — pre-existing binary-spawn timing, unrelated to this change).
+- cargo clippy --workspace --all-targets -- -D warnings -> exit 0.
+- npm test --prefix harness-vscode -> 89/89 (+ tsc -p ./ --noEmit clean).
+- node --test "harness-web/tests/js/*.test.mjs" -> 31/31.
+- node harness-web/e2e/run-e2e.mjs (HARNESS_E2E_EXE=C:\ct\debug\examples\e2e_daemon.exe
+  REBUILT with CARGO_TARGET_DIR=C:\ct after the asset edits — the daemon embeds SPA
+  JS via include_str; NODE_PATH=global npm root) -> E2E RESULT: ALL PASS (7 scenarios;
+  composer plain-text submit path exercised live through the new routeCommand lane).
+
+CROSS-FRONTEND PROOFS
+---------------------
+- Byte pin: grammar::tests::grammar_json_is_byte_pinned_to_the_const_table;
+  web grammar.test.mjs + vscode grammar.test.ts deep-equal {commands, allow_scopes,
+  vocabulary} against the same grammar.json.
+- Cheat sheet renders IDENTICALLY from all implementations: Rust test literal ==
+  JS cheatSheet() == TS cheatSheet() — 481 chars, byte-identical (proven by
+  node -e compare against the Rust test literal read as UTF-8).
+- Identical unknown help: "unknown command /model — /help lists commands" pinned in
+  Rust (grammar::tests), JS, TS tests AND asserted equal across JS/TS at runtime.
+- Parse parity: JS parseCommand == TS parseCommand on a 23-input corpus (0 drifts);
+  Rust parity pinned by commands.rs / repl_input.rs / grammar tests covering every
+  core word, malformed-usage-from-table, cli-only, and unknown.
+- Grep-clean (parse sites per frontend): every word /help /steer /cancel /vote-cancel
+  /mode /rewind /skill /exit /image parses in TUI commands.rs, CLI repl_input.rs, WEB
+  grammar.js, VSCODE grammar.ts — all True x9 words x4 frontends (table above).
+  No frontend mentions a grammar the others lack; stale strings gone (grep clean for
+  "cancel steers", "cancel-vote", "snapshot link", "snapshot received",
+  "anything else submits" across all four frontend sources).
+- Cheat-sheet render tests per frontend: daemon grammar::tests::cheat_sheet_*,
+  TUI app::tests::todo_23_help_notes_the_shared_cheat_sheet (9 notes, first/last
+  pinned), CLI repl_input parse + grammar::cheat_sheet println path, WEB/TS
+  grammar.test cheatSheet() literal arrays.
+
+SIZE DISCIPLINE (post-write review)
+-----------------------------------
+New/changed files, pure LOC (non-blank non-comment):
+  grammar.rs 203 | grammar.js 138 | grammar.ts 120 | repl_input.rs 108 | repl.rs 127
+  | omnibar.ts 117 | app_submit.rs 93 | commands.rs 187 | omnibar.rs 208
+  | app_input.rs 188 | app.js 228 — all under 250 after three todo-23 splits
+  (tui commands.rs from omnibar.rs; tui app_submit.rs from app_input.rs; web
+  routeCommand into grammar.js from app.js).
+Pre-existing over-ceiling files touched surgically (not split — out of scope, noted):
+  harness-web/assets/ui.js (685 pure; +8 lines of copy relabels),
+  harness-cli/src/render.rs (444 pure; 2 copy strings + 1 test),
+  harness-vscode/src/session.ts (270 pure with pre-existing SIZE_OK note; net
+  smaller after dispatch extraction to omnibar.ts).
+
+DEVIATIONS / NOTES
+------------------
+- Web rewind-point marker renders as role "rewind point" + text {label} (the role
+  span carries the phrase; TUI renders the single line "rewind point: {label}").
+  Wire event type "snapshot" everywhere unchanged.
+- vscode /mode with an unwired name shows the shared honest note as a warning
+  (there is no transcript to note into; same sentence as TUI/CLI/Web feedback).
+- Web vote-cancel "many" note points at the gate-card vote-cancel button; vscode at
+  the permission prompt pick; CLI at the y/s/n prompt (canonical prefix
+  "multiple open asks (N) — " everywhere; task allowed per-surface pointers).
+- data-testid=team intentionally KEPT (task made the e2e rename conditional on
+  renaming it; heading text alone satisfies the copy change with zero e2e churn).

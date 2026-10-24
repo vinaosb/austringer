@@ -30,6 +30,7 @@ fn help_lists_the_full_surface() {
         .stdout(predicate::str::contains("repl"))
         .stdout(predicate::str::contains("attach"))
         .stdout(predicate::str::contains("doctor"))
+        .stdout(predicate::str::contains("mcp"))
         .stdout(predicate::str::contains("--output-json"))
         .stdout(predicate::str::contains("--image"));
 }

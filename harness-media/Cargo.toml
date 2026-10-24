@@ -1,0 +1,215 @@
+[package]
+name = "harness-media"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Media family topology (plan M1): every codec family is opt-in; the empty
+# default keeps the crate (and anything that depends on it) free of format
+# codecs until a caller names the families it wants.
+#
+# The daemon's `media-core` set is:
+#     image, svg, pdf, audio, office, gltf, georaster, data, text
+# `avif` and `geovector` are deliberately NON-DEFAULT opt-ins (avif carries
+# rav1e's 10-25 MB encoder; geovector carries rusqlite's bundled sqlite3.c,
+# the single digest-sanctioned C build, which must stay out of the default
+# tree). The M27 honesty matrix discloses feature-gated rows as such.
+default = []
+# M28 image family (plan digest 3.2): png (APNG write, 16-bit, eXIf/iTXt
+# chunks - W3C 3rd ed), zune-jpeg decode + jpeg-encoder encode, image-webp
+# (lossless R/W; lossy/animated encode is the M17 ffmpeg redirect),
+# kamadak-exif (EXIF R/W layer), jxl-oxide (extract-only), blake3 (the
+# lossless round-trip pixel hash).
+image = [
+    "dep:png",
+    "dep:zune-jpeg",
+    "dep:jpeg-encoder",
+    "dep:image-webp",
+    "dep:kamadak-exif",
+    "dep:jxl-oxide",
+    "dep:blake3",
+]
+svg = ["dep:quick-xml", "dep:usvg"]
+# M12 gltf lane: read via the khronos-ecosystem `gltf` crate (import-only
+# by design); write via its re-exported gltf-json serde types + Glb
+# container writer. default-features=false keeps the `image` crate (a
+# raster codec, out of this module's lane) out of the tree; `names`
+# exposes the name fields the name-keyed tree view needs.
+gltf = ["dep:gltf", "dep:base64"]
+# M13 pdf lane: lopdf for the extract surface (DOM + ToUnicode text decode),
+# krilla for the writer (subsetted embedded fonts + ToUnicode CMaps). Both
+# pure Rust; rationale recorded in src/adapter/pdf.rs module docs.
+pdf = ["dep:lopdf", "dep:krilla"]
+# M14 audio lane: symphonia for decode (pure Rust, Excellent for
+# wav/pcm, flac, mp3, ogg/vorbis - OPUS IS UNIMPLEMENTED in symphonia,
+# so opus decode routes to the M17 ffmpeg subprocess lane, typed in the
+# pure path); hound for WAV read/write (decode to f32; write
+# pcm16/32/f32); flacenc for FLAC ENCODE (the only A/V format fully
+# generable in pure Rust, digest 3.4). default-features=false everywhere:
+# symphonia keeps exactly the four family codecs + their containers
+# (no aac/alac/isomp4/mkv trees), flacenc stays single-threaded +
+# log-free (deterministic encode, smaller tree).
+audio = [
+    "dep:symphonia",
+    "dep:hound",
+    "dep:flacenc",
+]
+# M2: the OOXML zip lane reads the central directory via the zip crate
+# (pure-Rust deflate backend); without this feature a zip is honestly
+# Unknown with a note naming it. M18 adds quick-xml for the office
+# extract walk (the same parser the svg lane uses).
+office = ["dep:zip", "dep:quick-xml"]
+# M28: ravif encode is pure Rust but SLOW (rav1e); non-default per M1
+# feature topology (10-25 MB binary cost, its own budgets.json encode
+# timeout). default-features=false keeps the tree off rav1e's nasm/asm
+# lane (MSVC-safe, deterministic single-thread) and rayon.
+avif = ["image", "dep:ravif"]
+# M21 georaster lane: GeoTIFF extract via the image-rs tiff crate (pure
+# Rust). default-features off: exactly deflate + lzw - the two pure-Rust
+# codecs a GDAL-written GeoTIFF/COG carries by default - come along
+# (fax/jpeg-in-tiff stay out; a raster under them reports its structure
+# with the head sample honestly omitted). Generation routes through the
+# gdal subprocess lane (no codec dep here).
+georaster = ["dep:tiff"]
+geovector = []
+# M22 columnar data lane: Apache Parquet + Arrow IPC via arrow-rs (the
+# reference implementation - shipped in lockstep with the Java/C++
+# lines; digest 3.5 GREEN). Only the PURE-RUST codecs are compiled in
+# (snap/brotli/flate2 rust backend); lz4/zstd stay C-backed-off and a
+# file declaring them refuses typed at the metadata stage (the M12
+# compressed-primitive law, applied to codecs).
+data = ["dep:arrow", "dep:parquet", "dep:bytes"]
+# M30 text-substrate lane: comrak (CommonMark 0.31.2 + GFM) for markdown
+# parse/render; maud for self-contained single-file HTML5 generation
+# (compile-time templates, escaping built in); html5gum for the html5
+# reparse/tag-census (tokenizer-only by design - a full DOM tree is
+# unnecessary for a census and tokenizer-only is the bounded untrusted-
+# input posture); csv for RFC 4180; toml for TOML 1.0. All pure Rust.
+text = ["dep:comrak", "dep:maud", "dep:html5gum", "dep:csv", "dep:toml"]
+# M17 ffmpeg lane: the subprocess A/V adapter (probe census, codec-clean
+# transcode policy, keyframe thumbnail, pcm-md5 decode hash). Carries NO
+# dependency - the codec work happens in the opt-in external tool through
+# the M15 executor; the feature keeps the family-per-module topology and
+# lets callers opt the lane into their build.
+ffmpeg = []
+
+[dependencies]
+harness-core = { path = "../harness-core", version = "0.1.0" }
+# M15 tool executor: sandbox policy vocabulary + the promoted supply-chain
+# primitives (ReleaseAsset/verify_sha256/redact_env - plan decision 5).
+harness-safety = { path = "../harness-safety", version = "0.1.0" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# M10 resolve pipeline: wall-clock timeouts around model-mediated
+# projection calls (workspace baseline already carries sync/time/macros).
+tokio = { workspace = true }
+zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
+# M12: khronos glTF 2.0 reader (pure Rust; validated by cargo-deny).
+# default-features off: the `import` feature pulls the image crate.
+gltf = { version = "1.4.1", default-features = false, features = ["names"], optional = true }
+# M12: .gltf writer inlines the buffer as a base64 data URI.
+base64 = { version = "0.22", default-features = false, features = ["std"], optional = true }
+# M13: >=0.42 required - 0.40/0.41 carry RUSTSEC-2026-0187 (stack
+# overflow in load_mem via deeply nested objects - this adapter's exact
+# untrusted-parse surface).
+lopdf = { version = "0.42", default-features = false, optional = true }
+krilla = { version = "0.8.2", default-features = false, features = ["simple-text"], optional = true }
+# M11 svg adapter: quick-xml pulls the structure walk (pure Rust, no
+# default features - utf8 in, no encoding_rs); usvg is the digest's
+# stage-1 strict-parse verify hook (text-less: font-dependent rendering is
+# the deferred resvg stage, so no fontdb/harfrust tree lands here).
+quick-xml = { version = "0.42", default-features = false, optional = true }
+usvg = { version = "0.48", default-features = false, optional = true }
+# M28 image family (all pure Rust; cargo-deny verified).
+# W3C-PNG 3rd-ed codec: APNG write (set_animated), 16-bit, custom chunks.
+png = { version = "0.18", default-features = false, optional = true }
+# JPEG decode lane (image-rs's decoder; RUSTSEC-clean 0.5 line).
+zune-jpeg = { version = "0.5", default-features = false, optional = true }
+# JPEG encode lane: quality + progressive spec knobs.
+jpeg-encoder = { version = "0.7", default-features = false, optional = true }
+# WebP lossless R/W (libwebp CVE-2023-4863 is the operational reason to
+# prefer the Rust decoder).
+image-webp = { version = "0.2", default-features = false, optional = true }
+# EXIF R/W layer (read via reader, TIFF payloads via experimental Writer).
+kamadak-exif = { version = "0.6", optional = true }
+# JXL extract-only (spec-conforming pure decode; generation gated on the
+# digest adoption trigger). default-features=false drops rayon.
+jxl-oxide = { version = "0.12", default-features = false, optional = true }
+# AVIF encode (rav1e, SLOW - carries its own budgets.json timeout).
+ravif = { version = "0.13", default-features = false, optional = true }
+# Lossless round-trip pixel hash (workspace-pinned).
+blake3 = { workspace = true, optional = true }
+# M14: 0.6 split the codecs/formats into bundle crates behind features;
+# exactly the four family codecs + their containers are enabled (mp3 is
+# NOT in symphonia's default set). MPL-2.0 (already in deny.toml's
+# allow-list, dhat precedent).
+symphonia = { version = "0.6", default-features = false, features = ["flac", "mp3", "ogg", "pcm", "vorbis", "wav"], optional = true }
+# M14: WAV read/write (decode to f32; write pcm16/32/f32).
+hound = { version = "3.5", optional = true }
+# M14: FLAC encode, pure Rust (Apache-2.0). default-features=false drops
+# the par (crossbeam) + log lanes: single-threaded, log-free, and
+# byte-deterministic.
+flacenc = { version = "0.5", default-features = false, optional = true }
+# M30: CommonMark 0.31.2 + GFM parse/render (BSD-2-Clause; cmark-gfm
+# port; default features are the builder API only - no syntect/clap
+# trees).
+comrak = { version = "0.55", default-features = false, optional = true }
+# M30: compile-time HTML templates for the self-contained single-file
+# html5 writer (escaping is built into text interpolation).
+maud = { version = "0.27", optional = true }
+# M30: WHATWG-conforming html5 tokenizer for the tag-census extract +
+# reparse verify (zero-dep beyond jetscii SIMD scanning).
+html5gum = { version = "0.8", default-features = false, optional = true }
+# M30: RFC 4180 CSV read/write (MIT OR Unlicense; the OR satisfies the
+# deny allow-list via MIT).
+csv = { version = "1.4", optional = true }
+# M30: TOML 1.0 parse/display (workspace-pinned).
+toml = { workspace = true, optional = true }
+# M22: Apache Arrow facade (arrow-rs, Apache-2.0). default-features off:
+# the ipc file-format reader/writer (magic ARROW1) is this lane's only
+# arrow surface - no csv/json/prettyprint trees come along.
+arrow = { version = "60", default-features = false, features = ["ipc"], optional = true }
+# M22: Apache Parquet (arrow-rs, Apache-2.0). default-features off drops
+# the C-backed codecs: lz4/zstd are deliberately absent (a file that
+# declares them refuses typed - UnsupportedFeature at the metadata
+# stage); snap/brotli/flate2 (rust backend) cover the pure-Rust codec
+# set, `arrow` enables the RecordBatch read/write path.
+parquet = { version = "60", default-features = false, features = ["arrow", "snap", "brotli", "flate2-rust_backend"], optional = true }
+# M22: the parquet RecordBatch reader constructor takes a `Bytes`
+# chunk-reader (workspace-pinned).
+bytes = { workspace = true, optional = true }
+# M21: image-rs TIFF codec (MIT; pure Rust, MSVC-safe) - IFD/GeoKey tag
+# walk + the u8 head-pixel sample + the gdal_translate baseline raster
+# writer. deflate rides flate2's rust backend (same crate the parquet
+# lane pins); lzw via weezl. zstd/lz4 stay out (C-backed-off).
+tiff = { version = "0.11", default-features = false, features = ["deflate", "lzw"], optional = true }
+
+[dev-dependencies]
+# Self-reference so a bare `cargo nextest run -p harness-media` compiles
+# the integration tests with the landed adapter features on
+# (feature-unification across dev-deps); the library default stays
+# feature-empty. Append per-lane features as their todos land.
+harness-media = { path = ".", features = ["office", "pdf", "gltf", "svg", "audio", "text", "image", "avif", "ffmpeg", "data", "georaster"] }
+# M10 pipeline tests: scripted Inference impls + async test runtime.
+async-trait.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+tempfile.workspace = true
+# M15 tool-executor tests: mocktool stand-in + synthetic install-pin
+# digests.
+harness-test-support = { path = "../harness-test-support", version = "0.1.0" }
+sha2.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# M15 kill-tree: Job Object (KILL_ON_JOB_CLOSE) tree termination.
+win32job.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# M15 kill-tree: process-group kill of the session leader.
+libc.workspace = true

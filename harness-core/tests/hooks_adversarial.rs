@@ -42,7 +42,7 @@ fn result_texts(session: &AgentLoop) -> Vec<String> {
         .filter_map(|r| match &r.event {
             Event::ToolResult { blocks, .. } => blocks.first().and_then(|b| match b {
                 ContentBlock::Text { text } => Some(text.clone()),
-                ContentBlock::Image(_) => None,
+                ContentBlock::Image(_) | ContentBlock::Media(_) => None,
             }),
             _ => None,
         })

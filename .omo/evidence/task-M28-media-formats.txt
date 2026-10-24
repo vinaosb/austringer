@@ -1,0 +1,176 @@
+M28 evidence log
+
+2026-09-24 exploration
+- Read plan authority from `.omo/plans/media-formats-wave.md` lines 303-309.
+- Read current image lane files under `harness-media/src/adapter/image/` and tests `tests/image_*.rs`.
+
+2026-09-24 RED evidence
+- Command: `cargo nextest run -p harness-media image_`
+- Result: blocked before test execution by host MSVC mismatch in `libsqlite3-sys` bundled sqlite build.
+- Symptom: build script invoked `C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Tools\MSVC\14.50.35717\bin\HostX64\x64\cl.exe` while using Enterprise include/lib paths, producing `fatal error C1083: Cannot open include file: 'stdarg.h'`.
+- Follow-up attempts: ran under `VsDevCmd.bat`, then forced matching PATH for Enterprise `cl.exe`; harness still selected the Insiders compiler in the nested build step, so no trustworthy runtime RED bar yet.
+
+2026-09-24 code fixes from static review
+- Fixed AVIF `ftyp` major-brand extraction in `harness-media/src/adapter/image/avif.rs` (was incorrectly reading the minor-version bytes).
+- Fixed image tests to use the committed top-level fixture paths instead of the nonexistent `fixtures/image/` directory.
+- Replaced APNG / 16-bit PNG / progressive JPEG extract fixture expectations with generated-at-test-time bytes where committed fixture files are absent.
+- Fixed projection assertions to check canonical format prefixes (`jpeg`, not `.jpg`).
+- Fixed invalid-spec coverage so per-format failures assert `ImageSpec::check(...)` when the family-wide parse is expected to succeed first.
+- Fixed APNG verify expectations in `tests/image_roundtrip.rs` to read `frame.delay.delay_num` / `frame.delay.delay_den` from the actual verify-tree shape.
+
+2026-09-24 verification blocker narrowed
+- `lsp_diagnostics` is clean for the changed image files/tests:
+  - `src/adapter/image/avif.rs`
+  - `tests/image_registry.rs`
+  - `tests/image_extract.rs`
+  - `tests/image_generate.rs`
+  - `tests/image_roundtrip.rs`
+- Repro command still fails before harness-media tests execute:
+  - `cargo test -p harness-media --test image_extract --no-run`
+- Forcing `CC_x86_64_pc_windows_msvc` to the VS2022 Enterprise compiler changed `cc-rs` to invoke that exact `cl.exe`, but the compile still failed with the same header error.
+- Filesystem check found the deeper host defect: `C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\stdarg.h` does not exist on this machine, so the configured Enterprise MSVC include tree is incomplete.
+- A `stdarg.h` header does exist under the unrelated VS18 Insiders ScopeCpp SDK (`C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include\stdarg.h`), confirming the failure is environmental, not in the M28 crate changes.
+
+2026-09-25 RECOVERY EXECUTION (executor died mid-flight 2026-09-24; model outage)
+- Environmental: prepending `C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include`
+  to INCLUDE resolves the host MSVC defect for every cargo command below (the
+  session-start flake recipe; sqlite3.c bundled build compiles clean).
+
+ABSORBED from the partial (dead executor's work, verified sound and kept):
+- harness-media/src/adapter/image/* (11 modules: png+png_write, jpeg, webp,
+  avif+avif_write, jxl, meta EXIF/XMP sidecars, pixels, spec, mod) - architecture
+  and ~95% of code as written.
+- tests/image_{extract,generate,registry,roundtrip}.rs suites.
+- Executor bindings + descriptor flips (probe/registry.rs, executor/wiring.rs),
+  the dispatch-pin move Wav->Xlsx (M18), the dev-dep feature line, Cargo.toml
+  image/avif feature + dep table, budgets.json avif encode_timeout_ms override +
+  budgets.rs MediaFormatOverride (with its perf-gate Copy fallout repaired).
+- M14 AUDIO SALVAGE (not M28 work, but HEAD is broken without it): the audio
+  lane's commit 29689d2 landed adapter/tests/fixtures but NOT its
+  Cargo.toml deps, dev-dep feature enablement, probe-registry audio flip,
+  executor audio bindings, or the probe_registry.rs audio skip - HEAD fails
+  `cargo check -p harness-media --all-targets` (audio tests reference a
+  cfg'd-out module). The debris carried those hunks; they are absorbed here so
+  the tree at this commit compiles and the audio suite actually runs.
+  Also fixed audio_extract.rs's clippy type_complexity (CORPUS type alias),
+  exposed by the feature being enabled for the first time.
+
+REWRITTEN / fixed during recovery (each driven by a RED test):
+- spec.rs: `Pattern::color_b` gained `#[serde(default)]` + solid-kind exemption
+  in validate() - every solid-pattern spec (most of the corpus) was the typed
+  InvalidSpec ("missing field color_b"); 17 suite failures traced to this.
+- png.rs frames_tree: APNG decode-back loop reordered to the png-crate contract
+  (next_frame decodes the CURRENT fcTL and never advances; next_frame_info
+  advances and read_info already positioned frame 0) - the old order burned
+  frame 0's control and errored PolledAfterEndOfImage one frame early.
+- diff/walk.rs (M5 engine): Removal/Addition paths now honor `ignored_at`
+  (objects AND ordered-array tails) - one-sided keys under an ignored pointer
+  were reported despite "subtrees skipped entirely"; jpeg verify's /pattern
+  reference block was the failing consumer.
+- avif_write.rs: explicit `.with_bit_depth(BitDepth::Eight)` - ravif's default
+  (Auto -> 10-bit) wrote 10-bit files, breaking the lane's 8-bit contract
+  (extractor pixi honestly read 10).
+- avif.rs: `ftyp` major-brand extraction fixed earlier by the dead executor
+  (kept; verified against the real ravif output).
+- probe/registry.rs: jxl Generate/Verify Unsupported reasons now carry the
+  adoption-gate honesty text (mirrors wiring's JXL_ADOPTION /
+  JXL_EXTRACT_ONLY_VERIFY; the generic M2 placeholder text named no gate).
+- tests: invalid-spec jpeg-ceiling case restructured (family cap rejects at
+  parse; the 65535 format ceiling exercised via a direct ImageSpec value);
+  1x1 corpus entry gained its missing "color": "gray"; zero_deadline() is
+  Duration::ZERO (1ns could read as not-yet-elapsed on coarse timers - flake);
+  meta.rs unit tests moved into tests/image_extract.rs (src keeps the
+  no-unwrap/expect bar even in cfg(test)).
+- 8 clippy -D warnings errors fixed (is_multiple_of, useless conversion,
+  Limits struct literals, div_ceil, as_chunks) - the sibling lane's
+  "compile errors" report matched this class.
+- jpeg.rs split at the 250-LOC canonical ceiling: the lossy verify lane
+  (verify/verify_tree/diff_profile) lives in jpeg_verify.rs (mirrors the
+  pdf/gltf lane file shapes); jpeg.rs re-exports so all call sites stay
+  stable. Every image module is <=203 pure LOC.
+- perf-gate.rs: budgets moved before ScenarioContext (BudgetConfig lost Copy
+  to the BTreeMap override field; read the tolerance scalar first).
+
+FIXTURES (real committed bytes replacing the M2 magic-only stubs; audio-lane
+precedent of dev-time generation + commit, tests stay hermetic):
+- png.png (98 B) / jpeg.jpg (658 B) / webp.webp (82 B): generated by this
+  repo's own writers with the specs pinned in
+  committed_lossless_fixtures_are_byte_identical_to_regeneration.
+- avif.avif (283 B): ravif 8-bit, 8x6, quality 60, speed 10 (encode: 8.3 ms
+  at this size on the dev machine).
+- jxl.jxl (104 B): dev-time download from the libjxl reference-implementation
+  public test corpus (github.com/libjxl/testdata, jxl/boxes/
+  square-extended-size-container.jxl): container-format file, 8x8, 1 frame,
+  xyb-encoded VarDCT - exercises the container probe magic and the aux-box
+  walk. Provenance recorded here per the fixtures/fonts precedent.
+- Probe corpus compatibility re-verified: probe_fixtures + probe_adversarial
+  (incl. truncation sweeps over the new real fixtures) stay green.
+
+2026-09-25 RED evidence (before the recovery fixes, with the debris applied)
+- Command: `cargo nextest run -p harness-media --features image,avif`
+- Result: 17 FAILED / 111 passed (missing real fixtures: ParseFailure on the
+  stub bytes; color_b InvalidSpec; APNG PolledAfterEndOfImage; ravif 10-bit
+  pixi mismatch; jpeg /pattern removal; jxl descriptor reason text).
+
+2026-09-25 GREEN evidence (after fixes; main tree, dev-dep feature set)
+- `cargo nextest run -p harness-media` -> 306 run: 306 passed, 3 skipped.
+- `cargo nextest run -p harness-bench` -> 64 run: 64 passed, 0 skipped
+  (includes the new budgets media_format_overrides parse/round-trip/strict/
+  committed-file tests).
+- `cargo clippy -p harness-media --all-targets -- -D warnings` clean;
+  `cargo clippy -p harness-bench --all-targets -- -D warnings` clean.
+- `cargo deny check` -> advisories ok, bans ok, licenses ok, sources ok
+  (denied licenses resolved by reviewed deny.toml additions: IJG via
+  jpeg-encoder, NCSA via rav1e's libfuzzer-sys, RUSTSEC-2024-0436 ignored:
+  paste via rav1e, unmaintained-not-vulnerable build-lane proc-macro).
+- My-lane files formatted with the CI-pinned 1.98 rustfmt (the repo carries
+  pre-existing cross-version fmt drift in other lanes' files - NOT normalized
+  here; out of M28 scope).
+
+2026-09-25 real-tool tier (at-todo-time, dev machine; #[ignore] tests)
+- avif_real_ffmpeg_decode_back_pixel_hash PASS with ffmpeg 8.1.1
+  (gyan.dev essentials build): ravif-encoded 8x6 avif decodes back through
+  real ffmpeg to a png whose dims pin 8x6.
+- size_canary PASS (see line below). NOTE: khronos glTF validator test (M12
+  lane) fails for missing GLTF_VALIDATOR_BIN on this machine - pre-existing,
+  unrelated to M28, not re-run.
+
+2026-09-25 BINARY-SIZE CANARY (plan M28: recorded AT THIS TODO, not first at M27)
+- SIZE_CANARY daemon=6.20 baseline=5.97 delta=+0.23MiB(+3.9%) budget=40.00
+  verdict=OK   (daemon as wired at HEAD: image feature ON, avif OFF)
+- Daemon with `avif` additionally enabled (temporary local build):
+  6.202 MiB / 6,502,912 bytes. Caveat recorded honestly: the daemon's shipped
+  media surface is probe/projection only until M31 wires the executor tools,
+  so the unreferenced codec trees (incl. rav1e) are dead-stripped today -
+  this number is a floor, not the rav1e cost.
+- Engine-surface probe (temporary example forcing the full pure-handler table
+  to link, workspace fat-LTO stripped release, then deleted):
+  - office,pdf,gltf,svg,audio,text,image        -> 10,854,400 bytes (10.35 MiB)
+  - office,pdf,gltf,svg,audio,text,image,avif   -> 12,163,584 bytes (11.60 MiB)
+  - ravif/rav1e marginal cost = 1,309,184 bytes (~1.25 MiB) - far below the
+    digest's 10-25 MB warning (default-features=false keeps rav1e off the
+    nasm/asm + rayon lanes). M27 may budget accordingly.
+
+2026-09-25 isolated-worktree verification at the commit content
+- Fresh worktree at commit 9b9b351 (parent 0aa840d), zero other lanes' dirt:
+  - `cargo nextest run -p harness-media`  -> 306 run: 306 passed, 3 skipped
+  - `cargo nextest run -p harness-bench`  -> 64 run: 64 passed, 0 skipped
+  - `cargo clippy -p harness-media -p harness-bench -p harness-daemon
+    --all-targets -- -D warnings` clean (daemon compiles against the
+    media feature set as wired at HEAD)
+  - `cargo deny check` -> advisories ok, bans ok, licenses ok, sources ok
+  - rustfmt --check (CI-pinned 1.98) over the commit's .rs files: 0 diffs.
+    Workspace-wide `cargo fmt --all -- --check` flags PRE-EXISTING drift in
+    other lanes' already-committed files (e.g. harness-daemon M32 code at
+    HEAD); present at the parent commit, untouched by M28, out of scope.
+
+DEVIATIONS from the plan text (recorded, none fatal):
+1. The jxl fixture is a libjxl testdata file (no pure-Rust JXL writer exists
+   anywhere, which is the whole point of extract-only); plan said "jxl fixture
+   extracts" without naming provenance - this is the honest dev-time route.
+2. The audio-lane salvage rides this commit (HEAD was broken without it);
+   the commit message discloses it.
+3. gif honesty row: unchanged permanent vision-only refusals (test-pinned in
+   image_registry.rs); gif extract refusal reason names the vision lane.
+4. RED-format coverage: heic-brand bytes probe typed-Unknown (no FormatId
+   exists for HEIC/DNG/RAW/FLIF/JPEG2000/QOI - generation unrepresentable).

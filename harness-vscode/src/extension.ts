@@ -20,6 +20,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         gauge,
         vscode.commands.registerCommand("harness.open", () => void session.omnibar()),
+        vscode.commands.registerCommand("harness.showTranscript", () => session.showTranscript()),
         vscode.commands.registerCommand("harness.hunkAccept", (path: string, header: string) =>
             void session.hunkCommand(path, header, true)),
         vscode.commands.registerCommand("harness.hunkReject", (path: string, header: string) =>

@@ -36,6 +36,7 @@ pub struct AgentLoop {
     pub(super) focus: FocusChain,
     pub(super) plan_gate: PlanGate,
     pub(super) steer_queue: VecDeque<String>,
+    pub(super) block_queue: VecDeque<Vec<crate::event::ContentBlock>>,
     pub(super) pending_calls: Vec<PendingCall>,
     pub(super) force_inference: bool,
     pub(super) steered: bool,
@@ -74,6 +75,7 @@ impl AgentLoop {
             focus: FocusChain::new(),
             plan_gate: PlanGate::new(),
             steer_queue: VecDeque::new(),
+            block_queue: VecDeque::new(),
             force_inference: false,
             steered: false,
             turn_ended: false,
@@ -90,6 +92,13 @@ impl AgentLoop {
     /// conversation on the next iteration.
     pub fn submit(&mut self, text: impl Into<String>) {
         self.steer_queue.push_back(text.into());
+    }
+
+    /// Queues a user turn as typed content blocks (protocol v2 media
+    /// submits; the durable event keeps the typed form and the daemon
+    /// downgrades per-connection at the wire).
+    pub fn submit_blocks(&mut self, blocks: Vec<crate::event::ContentBlock>) {
+        self.block_queue.push_back(blocks);
     }
 
     /// An external cancel handle for a running loop.
@@ -177,6 +186,7 @@ impl AgentLoop {
             let has_work = self.force_inference
                 || !self.pending_calls.is_empty()
                 || !self.steer_queue.is_empty()
+                || !self.block_queue.is_empty()
                 || self.last_error.is_some()
                 || self.turn_ended;
             if !has_work {

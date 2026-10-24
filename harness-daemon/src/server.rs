@@ -18,13 +18,12 @@ use axum::routing::{get, post};
 
 use serde::Deserialize;
 
-use harness_core::agent_loop::Inference;
-
 use crate::attach::SessionHost;
 use crate::auth::{self, AuthVerdict};
 use crate::config::DaemonConfig;
-
 use crate::stages::WorkerToolExecutor;
+use crate::tools::ExecutorFactory;
+use crate::usage::{ComposedInference, InferenceFactory, IntoSessionFactory};
 
 use crate::worker::WorkerRouter;
 
@@ -35,14 +34,40 @@ pub struct DaemonState {
     /// The live auth token.
     pub token: String,
     /// Inference factory for new sessions (scripted in tests, provider
-    /// adapter in the binary).
-    pub inference_factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>,
+    /// adapter in the binary); yields each session's stack WITH its
+    /// model identity so the session can emit Usage frames.
+    pub inference_factory: InferenceFactory,
+    /// Submit-time projection intake factory for new sessions (M10):
+    /// composes each session's mediation candidates against its session
+    /// dir. The default keeps the submit path marker-only; the binary
+    /// wires the provider + T42 routing seam.
+    pub projection_factory: crate::projection::IntakeFactory,
+    /// Tool-execution stage factory for new sessions (todo 3,
+    /// ecosystem alignment). The default keeps the split-brain worker
+    /// executor (out-of-process execution, worker protocol preserved);
+    /// the binary injects the in-process CORE_TOOLS registry factory.
+    pub executor_factory: ExecutorFactory,
+    /// The dispatcher intake for new sessions (todo 9, ecosystem
+    /// alignment): routing table + per-model provider stacks. When
+    /// present (and the session factory is identity-bearing), every
+    /// session turn dispatches through harness-intel's `Dispatcher` —
+    /// role routes from routing.json, stickiness pins, and mediated
+    /// ask-first fallbacks. `None` (default) keeps the direct
+    /// session-model path.
+    pub routing: Option<Arc<crate::routing::RoutingIntake>>,
     /// Session hosts by URL-addressable session id.
     pub hosts: Mutex<HashMap<String, Arc<SessionHost>>>,
     /// Engine session dirs root.
     pub sessions_root: PathBuf,
     /// Remote-worker router (split-brain tool execution).
     pub worker_router: Arc<WorkerRouter>,
+    /// The startup-loaded skills surface (todo 6): every session's
+    /// submit lane routes through its trust/consent gates.
+    pub skills: Arc<crate::skills::SkillsRuntime>,
+    /// Launch services for `/launch` child sessions (todo 8): the
+    /// same injected factories and permission policy the session
+    /// factory uses, rooted at the sessions dir.
+    pub launch_services: Arc<crate::launch::LaunchServices>,
     /// The bound listener kept for zero-downtime reload handoff.
     pub listener: Mutex<Option<std::net::TcpListener>>,
     /// Fired when a reload completed handing the socket off.
@@ -51,25 +76,51 @@ pub struct DaemonState {
 
 impl DaemonState {
     /// Build state (generating a token when the config has none).
+    /// Accepts an [`InferenceFactory`] or a legacy identity-less
+    /// factory (adapted; those sessions emit no Usage frames).
     ///
     /// # Errors
     /// token generation failure.
     pub fn new(
         config: DaemonConfig,
-        inference_factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync>,
+        inference_factory: impl IntoSessionFactory,
     ) -> Result<Self, auth::AuthError> {
         let token = match &config.token {
             Some(fixed) => fixed.clone(),
             None => auth::generate_token()?,
         };
         let worker_router = Arc::new(WorkerRouter::new(config.worker_call_timeout));
+        let skills = Arc::new(crate::skills::SkillsRuntime::load(&config.data_dir));
         let (drain, _) = tokio::sync::watch::channel(false);
+        let executor_factory: ExecutorFactory = Arc::new({
+            let worker_router = Arc::clone(&worker_router);
+            move |_session_dir, event_sink| {
+                Box::new(WorkerToolExecutor::new(
+                    Arc::clone(&worker_router),
+                    None,
+                    event_sink,
+                ))
+            }
+        });
+        let inference_factory = inference_factory.into_factory();
+        let launch_services = Arc::new(crate::launch::LaunchServices {
+            inference_factory: Arc::clone(&inference_factory),
+            executor_factory: Arc::clone(&executor_factory),
+            sessions_root: config.data_dir.join("sessions"),
+            ask_policy: config.ask_policy.clone(),
+            ask_timeout: config.ask_timeout,
+        });
         Ok(Self {
             token,
             worker_router,
+            skills,
+            launch_services,
             sessions_root: config.data_dir.join("sessions"),
             config,
             inference_factory,
+            projection_factory: crate::projection::disabled_factory(),
+            executor_factory,
+            routing: None,
             hosts: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             drain,
@@ -119,12 +170,67 @@ impl DaemonState {
         );
         let session_dir = self.sessions_root.join(id);
         let _ = std::fs::create_dir_all(&session_dir);
-        let executor =
-            WorkerToolExecutor::new(Arc::clone(&self.worker_router), None, host.event_sink());
+        // The projection intake must be set BEFORE the engine spawns:
+        // the steer stage captures its notice queue at stage construction.
+        let _ = host.media_dir.set(session_dir.clone());
+        let _ = host.skills.set(Arc::clone(&self.skills));
+        let _ = host.launcher.set(Arc::clone(&self.launch_services));
+        // Todo 33: the per-session cost ledger binds before the engine
+        // spawns — the submit intake gate and HUD consumers read it, and
+        // the inference decorator below enforces it (preflight halt +
+        // threshold events). Scheduled sessions get the same daemon-wide
+        // cap: an automation owns its ledger exactly like a live one.
+        let cost_ledger = Arc::new(crate::cost_ledger::SessionLedger::new(
+            self.config.session_cost_cap_micros,
+        ));
+        let _ = host.cost_ledger.set(Arc::clone(&cost_ledger));
+        if let Some(intake) = (self.projection_factory)(&session_dir) {
+            let _ = host.projection.set(intake);
+        }
+        let executor = (self.executor_factory)(&session_dir, host.event_sink());
+        let ComposedInference {
+            inference,
+            identity,
+        } = (self.inference_factory)();
+        // Identity-bearing stacks (the shipped provider composition)
+        // emit one Usage frame per assistant turn; identity-less
+        // scripted stacks stay bare. The cost ledger wraps the
+        // Usage-accounted stack: its preflight gate halts further
+        // provider calls once the cap is reached, and priced spend
+        // books into the session ledger (todo 33). With a routing
+        // intake bound (todo 9), the SessionRouter OWNS that wrap per
+        // dispatched model instead — identity, Usage frames, and spend
+        // follow the dispatch, and an acknowledged fallback hop
+        // re-cites the new model.
+        let inference = match (&self.routing, identity) {
+            (Some(intake), Some(configured)) => Box::new(crate::routing::SessionRouter::new(
+                Arc::clone(intake),
+                id,
+                Arc::clone(&host),
+                Arc::clone(&cost_ledger),
+                configured,
+            ))
+                as Box<dyn harness_core::agent_loop::Inference>,
+            (None, Some(identity)) => {
+                let usage = crate::usage::UsageInference::new(
+                    Arc::clone(&host),
+                    identity.clone(),
+                    None,
+                    inference,
+                );
+                Box::new(crate::cost_ledger::CostLedgerInference::new(
+                    Arc::clone(&host),
+                    cost_ledger,
+                    identity,
+                    Box::new(usage),
+                ))
+            }
+            (_, None) => inference,
+        };
         let _ = host.spawn_engine_with_config(
             session_dir,
             host.standard_stages(executor),
-            (self.inference_factory)(),
+            inference,
             cmd_rx,
             loop_config,
         );
@@ -141,6 +247,16 @@ impl DaemonState {
         }
     }
 
+    /// Look up a live session host WITHOUT creating one (read-only
+    /// routes and notification resolvers; unknown ids stay unknown).
+    #[must_use]
+    pub fn try_session(&self, id: &str) -> Option<Arc<SessionHost>> {
+        match self.hosts.lock() {
+            Ok(guard) => guard.get(id).cloned(),
+            Err(poisoned) => poisoned.into_inner().get(id).cloned(),
+        }
+    }
+
     /// Register the bound listener for reload handoff.
     pub fn register_listener(&self, listener: std::net::TcpListener) {
         match self.listener.lock() {
@@ -153,6 +269,10 @@ impl DaemonState {
 #[derive(Deserialize)]
 pub(crate) struct TokenQuery {
     pub(crate) after: Option<u64>,
+    /// SSE wire-version opt-in: the event stream carries no Hello, so
+    /// v2 (typed media frames + media results) is opt-in via
+    /// `?version=2`; anything else serves the v1 downgrade.
+    pub(crate) version: Option<u32>,
 }
 
 fn query_token(uri: &axum::http::Uri) -> Option<String> {
@@ -247,10 +367,16 @@ pub fn build_router(state: Arc<DaemonState>) -> Router {
     Router::new()
         .route("/", get(crate::handlers::root))
         .route("/sessions", get(crate::handlers::list_sessions))
+        .route("/sessions/search", get(crate::search::sessions_search))
         .route("/s/{sid}", get(crate::handlers::session_page))
         .route("/s/{sid}/attach", get(crate::handlers::attach_ws))
         .route("/s/{sid}/events", get(crate::handlers::sse_events))
+        .route("/s/{sid}/history", get(crate::handlers::session_history))
         .route("/s/{sid}/cmd", post(crate::handlers::post_command))
+        .route("/s/{sid}/media", post(crate::media::upload_media))
+        .route("/s/{sid}/media/{hash}", get(crate::media::get_media))
+        .route("/automations", get(crate::handlers::list_automations))
+        .route("/packs", get(crate::handlers::list_packs))
         .route("/worker", get(crate::ws::worker_ws))
         .route("/admin/reload", post(crate::handlers::reload_endpoint))
         .layer(middleware::from_fn_with_state(Arc::clone(&state), auth_mw))

@@ -1,0 +1,3 @@
+sweep trigger=manual
+model/profile	pass^k	mean@k	tokens/solved	disclosure
+fake-scripted/conformance-hermetic	1.0000	1.0000	-	baseline=hermetic-scenario-pack-v1 source=dirty:6 files

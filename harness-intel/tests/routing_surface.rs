@@ -40,14 +40,23 @@ fn catalog_search_hydrates_bounded_matches() {
     let matches = search(&catalog, "opus");
     // Then: bounded, sorted, structured results — never the full catalog.
     let ids: Vec<&str> = matches.iter().map(|m| m.model.as_str()).collect();
-    assert_eq!(ids, ["claude-opus-4-6", "claude-opus-4-7", "claude-opus-5"]);
+    assert_eq!(
+        ids,
+        [
+            "claude-opus-4-6",
+            "claude-opus-4-7",
+            "claude-opus-5",
+            "claude-opus-5-5"
+        ]
+    );
     assert!(matches.len() <= MATCH_LIMIT);
     assert_eq!(matches[0].family, "anthropic");
     assert_eq!(matches[0].default_effort.to_string(), "high");
     assert_eq!(MODEL_CATALOG_SEARCH_TOOL, "model_catalog_search");
-    // And family-word queries match too.
-    assert_eq!(search(&catalog, "gemini").len(), 3);
-    assert_eq!(search(&catalog, "grok").len(), 1);
+    // And family-word queries match too (todo-10 wave added a fourth
+    // gemini and a second grok).
+    assert_eq!(search(&catalog, "gemini").len(), 4);
+    assert_eq!(search(&catalog, "grok").len(), 2);
 }
 
 #[test]
@@ -60,12 +69,14 @@ fn catalog_search_never_dumps_the_full_catalog() {
     assert!(search(&catalog, "banana").is_empty());
     // Unicode garbage is safe and hydrates nothing.
     assert!(search(&catalog, "\u{1f916}\u{2728}").is_empty());
-    // The render is bounded by the matches it was handed.
+    // The render is bounded by the matches it was handed (two grok
+    // models since the todo-10 wave).
     let none = render_observation(&[]);
     assert!(none.contains("no models matched"));
     let some = render_observation(&search(&catalog, "grok"));
-    assert_eq!(some.lines().count(), 1);
+    assert_eq!(some.lines().count(), 2);
     assert!(some.contains("grok-4-6"));
+    assert!(some.contains("grok-4-7"));
     assert!(some.contains("xai"));
 }
 

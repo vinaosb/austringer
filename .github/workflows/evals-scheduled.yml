@@ -1,0 +1,79 @@
+# Evals — scheduled HERMETIC conformance sweep (plan todo 26).
+#
+# This workflow finally honors the ci.yml promise (lines 12-15): eval
+# sweeps live in a SEPARATE SCHEDULED-ONLY workflow and NEVER gate
+# pull requests. There is deliberately NO `pull_request` or `push`
+# trigger here — the ci.yml:12-15 comment ("live-model evals jobs DO
+# NOT belong here ... separate SCHEDULED-only workflow, never PR
+# gates") is the contract this file implements.
+#
+# What runs here is the HERMETIC conformance sweep only: the
+# run_sweep bin over the committed scenario pack (scripted fake
+# provider, zero network, zero API keys — same hermetic discipline as
+# the test suite). Live-model sweeps stay scheduled-only by policy
+# (sweep::Trigger has no PR variant by design); when live subjects
+# arrive they are driven by the daemon's cron (todo 41), not this
+# file's PR path — this file has no PR path.
+#
+# Publication: the sweep writes docs/release/evals-conformance-report.json
+# (the evals.adoc publication source — harness-matched rows only) and the
+# rendered table is uploaded as a workflow artifact. The in-repo
+# docs/release copy is refreshed by a maintainer commit, never pushed
+# from CI (persist-credentials: false).
+
+name: evals-scheduled
+
+on:
+  schedule:
+    # Daily 03:17 UTC — off the hour to dodge top-of-hour cron load.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      trigger:
+        description: 'Trigger semantics recorded in the report artifact'
+        type: choice
+        options: [scheduled, manual]
+        default: scheduled
+
+concurrency:
+  group: evals-scheduled
+  # Scheduled sweeps must never cancel each other mid-run.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  conformance-sweep:
+    name: hermetic conformance sweep (run_sweep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the hermetic conformance sweep
+        # Exit 0 = every pinned mechanism conforms + no unpinned
+        # regression; exit 2 = drift/regression surfaced; exit 3 =
+        # fixture/config error. Any non-zero fails this job loudly.
+        run: >-
+          cargo run -p harness-evals --bin run_sweep --
+          --conformance
+          --trigger ${{ github.event_name == 'schedule' && 'scheduled' || inputs.trigger || 'scheduled' }}
+          --report docs/release/evals-conformance-report.json
+      - name: Show the rendered table
+        run: cat docs/release/evals-conformance-report.table.txt
+      - name: Upload sweep report artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evals-conformance-report
+          path: |
+            docs/release/evals-conformance-report.json
+            docs/release/evals-conformance-report.table.txt
+          retention-days: 30

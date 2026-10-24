@@ -1,0 +1,136 @@
+Task 9 evidence — Dispatcher live in the daemon main loop (ecosystem-alignment, Wave R)
+=====================================================================================
+Date: 2026-10-21. Executor session: opencode:ses_ea774e945ffe45I9Wp629UGOW1.
+Machine contract: every cargo invocation via `cmd /c %TEMP%\opencode\cargo-env.cmd ...`
+with CARGO_BUILD_JOBS=3. No commit made (stopping condition: no commit).
+
+What landed
+-----------
+- harness-daemon/src/routing.rs (NEW, 234 pure LOC): `RoutingIntake`
+  (validated RoutingTable + per-model `ModelSource` provider stacks),
+  `SessionRouter` — the outermost inference of a routed session. Per
+  infer() call: `Dispatcher::dispatch_turn` under Role::Default (first
+  call pins — stickiness; acknowledged override retargets with the
+  effort grid revalidated), per-dispatch identity composes provider ->
+  UsageInference -> CostLedgerInference (identity/Usage/spend follow
+  the DISPATCH; a hop re-cites the new model), then
+  `Dispatcher::observe_turn` drives Retry / WaitOut / AskFallback /
+  Fail. EVERY ask flows through todo-1's
+  `SessionHost::mediate_fallback` (FallbackAsk on v2 wires + the
+  v1-decodable Notification pair; never bypassed, never modified).
+  Unacknowledged (deny/cancel/timeout) => SAME model retried, the
+  verbatim degraded-mode notice published, and after
+  MAX_UNACKNOWLEDGED_ASKS=1 the attempt surfaces instead of looping —
+  zero substitution paths exist in the file.
+- harness-daemon/src/server.rs: `DaemonState.routing` field (default
+  None — injectable seam like projection_factory/executor_factory);
+  `session_with_config` routed branch constructs the SessionRouter when
+  an intake is bound AND the factory is identity-bearing; the direct
+  identity wrap is byte-identical otherwise.
+- harness-daemon/src/bin/harness-daemon.rs: routing.json read ONCE,
+  feeding both the projection utility route and the NEW dispatcher
+  intake (`routing_intake`): full-spec consumption — roles, tiers,
+  chains, benchmarks, cheap pool, wait-out, retries, sidekick all flow
+  through RoutingTable::from_json + Dispatcher (previously only the
+  summarizer utility route was read). Absent doc = silence; present but
+  unusable = loud eprintln, never fatal (un-routed path serves).
+- harness-daemon/tests/dispatcher_live_tests.rs (NEW): 5 e2e tests
+  through the REAL DaemonState session factory + engine driver.
+
+RED-first (captured before any implementation existed)
+------------------------------------------------------
+Command: cargo nextest run -p harness-daemon dispatcher_live
+         fallback_no_silent_substitution
+Result: compile failure — exactly the missing seam:
+  error[E0432]: unresolved import `harness_daemon::routing`
+      --> harness-daemon\tests\dispatcher_live_tests.rs:24:21
+  error[E0609]: no field `routing` on type `DaemonState`
+      --> harness-daemon\tests\dispatcher_live_tests.rs:197:11
+  error[E0277]: `Arc<{closure}>: IntoSessionFactory` not satisfied
+  (full raw capture: .omo/evidence/task-9-red-raw.txt)
+Third error was the known closure-annotation idiom (todo-1 learning),
+fixed by typing the factory as `harness_daemon::usage::InferenceFactory`.
+
+Every invocation (chronological, all via cargo-env wrapper)
+-----------------------------------------------------------
+1.  cargo nextest run -p harness-daemon dispatcher_live fallback_no_silent_substitution
+    -> RED (compile errors above; evidence captured to task-9-red-raw.txt)
+2.  cargo check -p harness-daemon --all-targets
+    -> 2x unused-must-use on handle_command (missing `let _ =`); fixed
+3.  cargo check -p harness-daemon --all-targets -> clean
+4.  cargo nextest run -p harness-daemon dispatcher_live fallback_no_silent_substitution
+    -> 5/5 PASS:
+       dispatcher_live_acknowledged_hop_revalidates_effort_grid      0.098s
+       dispatcher_live_unrouted_role_falls_back_to_configured_model  0.254s
+       dispatcher_live_stickiness_resume_keeps_pinned_model          0.257s
+       dispatcher_live_role_routed_turn_resolves_via_routing_json    0.257s
+       fallback_no_silent_substitution_unacknowledged_ask_retries_same_model 0.677s
+5.  cargo nextest run -p harness-intel -p harness-daemon
+    -> 342 run: 342 passed, 1 skipped (pre-existing skip)
+6.  cargo clippy -p harness-intel -p harness-daemon --all-targets -- -D warnings
+    -> clippy::large_enum_variant on ActiveDispatch::Routed(TurnDispatch)
+       -> boxed the variant payload (same fix shape as todo-4's
+       SafetyDecision); re-run -> field_reassign_with_default in the
+       test fixture -> DaemonConfig{..default()} struct-update syntax
+7.  cargo clippy (same) -> clean
+8.  cargo nextest run -p harness-daemon dispatcher_live stickiness_resume
+    (plan's happy QA filter, verbatim) -> 4/4 PASS
+9.  cargo nextest run -p harness-daemon fallback_no_silent_substitution fallback_mediation_policy
+    -> 2/2 PASS — todo-1's
+    protocol_frames_tests::fallback_mediation_policy_local_only_and_exactly_once
+    GREEN UNTOUCHED (ask machinery unmodified)
+10. cargo nextest run -p harness-intel -p harness-daemon
+    -> 342 run: 342 passed, 1 skipped (final, post-clippy fixes; ran
+    against the todo-10 worker's in-flight seed.rs/catalog edits —
+    no interference either direction)
+
+Happy scenarios (asserted in dispatcher_live_tests.rs)
+------------------------------------------------------
+Role-routed turn: routing.json `default` -> claude-opus-4-7 (catalog
+default xhigh); session's CONFIGURED model is xai/grok-4-6 (also
+scripted, so a mis-route would be visible). One submit: Usage frame
+cites (anthropic, claude-opus-4-7, Some("xhigh")); model-source
+lookups == ["claude-opus-4-7"]; grok never composed.
+Stickiness across resume: two submits, one session: both Usage frames
+cite the pinned opus-4-7; exactly ONE stack lookup (the pin never
+moved) and two infer calls on that stack.
+Acknowledged hop + effort grid revalidation: origin hard-fails ->
+FallbackAsk (current=claude-opus-4-7, proposed=gemini-3-pro) -> client
+answers with the proposal -> acknowledge_fallback -> next dispatch
+carries gemini-3-pro with the pinned xhigh rung REVALIDATED down to
+gemini-3-pro's documented default (high) — the dispatch.rs:94-117 path
+live end to end. Usage cites (anthropic, gemini-3-pro, Some("high"));
+lookups == [opus, gemini] (substitution only AFTER the ack).
+Unrouted role: routing.json without a `default` entry -> the session's
+configured xai/grok-4-6 serves EXPLICITLY (own provider identity, no
+routing effort, zero asks) — no implicit hop.
+
+Failure scenario (the zero-tolerance contract)
+----------------------------------------------
+fallback_no_silent_substitution_unacknowledged_ask_retries_same_model:
+origin hard-fails EVERY attempt, NO client answers (ask_timeout 200ms —
+the documented Wave-R→Wave-U interim). Asserted:
+- 2 FallbackAsk frames (both proposing the verbatim chain hop),
+  every FallbackResolved chose the CURRENT model
+- infer_calls == ["claude-opus-4-7", "claude-opus-4-7"] — the SAME
+  model retried; lookups == ["claude-opus-4-7"] — the hop model never
+  composed a stack
+- ZERO Usage frames (no completed turn ever cited the hop)
+- 2 v1-decodable Notifications carrying the plan's verbatim sentence:
+  "model fallback asked; no interactive client — retrying same model"
+- after the second unacknowledged ask the turn fails typed instead of
+  looping (bounded ask/wait/retry cycle; never substitutes)
+
+Degraded mode + honest limitations (module docs in routing.rs)
+--------------------------------------------------------------
+- The Wave-R→Wave-U interim wording is carried verbatim
+  (DEGRADED_FALLBACK_RETRY_NOTICE) and rides the v1-decodable
+  Notification lane alongside todo-1's ask/resolved pair.
+- The daemon Inference seam carries no finish reason: a COMPLETED turn
+  observes as StopReason::EndTurn — refusal/length retries cannot
+  trigger from this layer (intel-side semantics stay unit-tested).
+- InferenceError is stringly at this seam: rate-limit classification
+  is a bounded 429/"rate limit" text match; everything else observes
+  as outage (classifier unit-tested both ways).
+Receipt for the commit body (repo receipt discipline): Claude Code
+2.1.296 workflow-level model pinning (2026-10-09).

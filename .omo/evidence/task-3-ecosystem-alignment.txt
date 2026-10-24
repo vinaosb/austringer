@@ -1,0 +1,200 @@
+Task 3 — ecosystem-alignment: Bind CORE_TOOLS executors in-process
+==================================================================
+Session: opencode:ses_ea774e945ffe45I9Wp629UGOW1
+Machine quirk honored: every cargo invocation went through
+`cmd /c %TEMP%\opencode\cargo-env.cmd <cmd>` (MSVC 14.44 BuildTools pin);
+test/clippy/release builds prepended `set CARGO_BUILD_JOBS=3&&` (LNK1102 guard).
+
+--------------------------------------------------------------------------
+1. BEFORE budgets (baseline, pre-change tree)
+--------------------------------------------------------------------------
+> cmd /c %TEMP%\opencode\cargo-env.cmd cargo build --release -p harness-cli -p harness-daemon -p harness-bench
+  Finished `release` profile [optimized] target(s) in 6m 11s
+
+> cmd /c %TEMP%\opencode\cargo-env.cmd cargo run --release -q -p harness-bench --bin perf-gate --
+    --budgets harness-bench/budgets.json --baseline harness-bench/baselines/gate_baseline.json
+    --cli-bin C:\ct\release\harness.exe --daemon-bin C:\ct\release\harness-daemon.exe
+    --binary harness=C:\ct\release\harness.exe --binary harness-daemon=C:\ct\release\harness-daemon.exe
+    --report %TEMP%\opencode\perf-report-before.json
+  perf-gate: 10 scenarios, 0 breaches, 0 skipped, verdict PASS
+  Key metrics (perf-report-before.json):
+    binary.harness_mb        = 10.519   (budget 40)
+    binary.harness-daemon_mb =  6.311   (budget 40)
+    cold_start_ms            = 18.09    (budget 50, min-of-7)
+    rss_mb (daemon ready)    =  9.129   (budget 80)
+    All deterministic counters exactly at baseline (regression 0.0%):
+    repomap 965 tokens, eviction 523 events, prompt 570,834 bytes,
+    pty 10,592 bytes, sessions 103,500 bytes.
+
+> cmd /c %TEMP%\opencode\cargo-env.cmd cargo run --release -q -p harness-bench --bin heap-profile --features dhat --
+    --check harness-bench/baselines/heap_profile.json --report %TEMP%\opencode\heap-profile-before.json
+  FIRST ATTEMPT FAILED TO COMPILE — pre-existing at clean HEAD (c8926a4-era
+  file, harness-bench is untouched by todos 1-2):
+    error[E0382]: use of moved value: `budgets`
+      --> harness-bench\src\bin\heap-profile.rs:103:13
+  Fix applied (mirrors perf-gate.rs's own pattern one screen above):
+  hoisted `let regression_tolerance_pct = budgets.regression_tolerance_pct;`
+  before `budgets` moves into ScenarioContext. This fix is REQUIRED by this
+  todo's mandate to record heap-profile before/after (the CI heap-profile job
+  would fail to compile the same way). Flagged for the commit message.
+  AFTER FIX:
+  heap-profile: 6 scenarios, 0 breaches, 0 skipped, verdict PASS
+  dhat: Total: 68,023,268 bytes in 506,222 blocks
+
+--------------------------------------------------------------------------
+2. RED — failing-first e2e (current API, before any implementation)
+--------------------------------------------------------------------------
+Wrote harness-daemon/tests/executor_bound_tests.rs asserting that a session
+turn invoking view_window (via DaemonState::session — the production session
+factory) returns the real window view.
+
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon executor_bound"
+  FAIL [0.048s] executor_bound_view_window_returns_real_result
+  panicked: view_window must return the real window view:
+    {...{"type":"tool_call","call_id":"t1","tool":"view_window",
+         "arguments":{"path":".../sessions/s-bound-red/fixture.txt","start_line":1}}}
+    {...{"type":"tool_result","call_id":"t1","blocks":[{"type":"text",
+         "text":"(remote worker: no worker connected)"}]}}
+  => The production gap, captured: CORE_TOOLS calls had no in-process
+     executor; the worker executor answered with a connect failure.
+
+--------------------------------------------------------------------------
+3. Implementation
+--------------------------------------------------------------------------
+Files:
+  harness-daemon/Cargo.toml          + harness-tools / harness-exec / harness-lsp deps
+  harness-core/src/tools/mod.rs       + `pub use schema::core_schema` (seam-required:
+                                       ToolProvider::schema for core tools must return
+                                       the canonical day-one contract, not a drifting copy)
+  harness-daemon/src/tools/mod.rs     NEW — CoreExecutors (constructed once at startup:
+                                       one PtyRunner, one LspRouter per daemon, lazy
+                                       server spawn), open_registry (per-session
+                                       ToolRegistry::open + 4x bind_executor),
+                                       executor_factory (the injectable seam),
+                                       RegistryToolExecutor (the ToolExecutor stage
+                                       adapter; dispatch failures become tool text —
+                                       split-brain preserve), ExecutorFactory alias,
+                                       2 unit tests
+  harness-daemon/src/tools/providers.rs NEW — ViewWindowTool/EditLinesTool/
+                                       ExecuteCommandTool/LspQueryTool
+                                       (harness-tools window/edit, harness-exec PTY
+                                       under the resolved default shell with
+                                       spawn_blocking + 120s default timeout clamped
+                                       to MAX_COMMAND_TIMEOUT, harness-lsp router with
+                                       1-based-line/0-based-character -> DocumentPosition)
+  harness-daemon/src/lib.rs           + pub mod tools
+  harness-daemon/src/server.rs        DaemonState.executor_factory field; default =
+                                       worker executor (protocol preserved); session_
+                                       with_config now builds stages.execution through
+                                       the injected factory (replacing the inline
+                                       WorkerToolExecutor::new)
+  harness-daemon/src/engine.rs        standard_stages takes Box<dyn ToolExecutor>
+                                       (worker- or registry-backed)
+  harness-daemon/src/bin/harness-daemon.rs  startup wiring: CoreExecutors::in_process()
+                                       constructed once, start_lsp_guard() (sysinfo RSS
+                                       guard), executor_factory injected
+  harness-daemon/tests/engine_tests.rs, protocol_frames_tests.rs
+                                       6x `standard_stages(executor)` ->
+                                       `standard_stages(Box::new(executor))`
+
+Dispatch paths after the change (all six CORE_TOOLS production-served):
+  view_window / edit_lines / execute_command / lsp_query -> bound in-process executors
+  tool_search     -> registry-internal (registry.rs run_tool_search, unchanged)
+  task_completed  -> loop-intercepted (harness-core/src/agent_loop/tools.rs, unchanged)
+Worker protocol: WorkerToDaemon/WorkerRouter/WorkerToolExecutor all retained; the
+default DaemonState factory still builds the worker executor (ws_e2e/ipc worker
+round-trip tests prove it end-to-end and stayed green).
+
+--------------------------------------------------------------------------
+4. Deviation found and resolved during test development (lsp hermeticity)
+--------------------------------------------------------------------------
+The first lsp_query e2e used a .py fixture. On THIS machine a foreign-venv
+`pyright-langserver.exe` sits on PATH; a bounded standalone probe proved the
+executor itself works and is fast:
+  PROBE elapsed=1.0061827s outcome=Ok("(variable) value: Literal[1]")
+...but the test process then hung >19min in runtime teardown (spawned pyright
+child + kill_on_drop on a current-thread test runtime; harness-lsp's own suites
+never spawn real servers — that's what set_server_factory exists for).
+Resolution: the e2e uses an unroutable `.zzz` extension — the router's typed
+NoServer error through the bound executor, hermetic and fast on every machine.
+Recorded in .omo/notepads/ecosystem-alignment/issues.md.
+
+--------------------------------------------------------------------------
+5. GREEN — acceptance runs
+--------------------------------------------------------------------------
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon executor_bound"
+  9 tests run: 9 passed
+    executor_bound_view_window_returns_real_result         (real window view, no NoExecutor)
+    executor_bound_edit_lines_edits_fixture_file           (fringe result AND on-disk edit)
+    executor_bound_execute_command_runs_hermetic_command   (echo through the PTY, exit code 0)
+    executor_bound_lsp_query_is_bound_not_no_executor      (typed NoServer via bound router)
+    executor_bound_tool_search_hydrates_core_schema        (internal dispatch, day-one schema)
+    executor_bound_task_completed_is_loop_intercepted      (outcome task_completed)
+    executor_bound_unknown_tool_returns_typed_unknown_error (typed UnknownTool + suggestions)
+    tools::executor_bound_no_executor_path_preserved_for_unbound_tools (NoExecutor preserved)
+    tools::executor_bound_registry_opens_with_all_four_bound
+
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon"
+  218 tests run: 218 passed, 1 skipped  (0 failed — worker-protocol e2e included)
+
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-core"
+  412 tests run: 412 passed, 5 skipped  (core_schema export regression check)
+
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy -p harness-daemon -p harness-core --all-targets -- -D warnings"
+  Finished — zero warnings
+> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy -p harness-bench --all-targets --features dhat -- -D warnings"
+  Finished — zero warnings
+
+Grep acceptance (bind_executor from non-test daemon src):
+  harness-daemon/src/tools/mod.rs:
+    .bind_executor("view_window", ...)
+    .bind_executor("edit_lines", ...)
+    .bind_executor("execute_command", ...)
+    .bind_executor("lsp_query", ...)
+  (4 production call sites; only other callers are harness-core's own tests)
+
+Module size discipline: tools.rs measured 345 pure LOC (>250 defect) -> split into
+tools/mod.rs (149) + tools/providers.rs (207).
+
+--------------------------------------------------------------------------
+6. AFTER budgets
+--------------------------------------------------------------------------
+> cmd /c %TEMP%\opencode\cargo-env.cmd cargo build --release -p harness-cli -p harness-daemon -p harness-bench
+  Finished `release` profile [optimized] target(s) in 3m 07s
+
+> perf-gate (same invocation as BEFORE; --report %TEMP%\opencode\perf-report-after.json)
+  perf-gate: 10 scenarios, 0 breaches, 0 skipped, verdict PASS
+
+> heap-profile --check (same invocation as BEFORE; --report %TEMP%\opencode\heap-profile-after.json)
+  heap-profile: 6 scenarios, 0 breaches, 0 skipped, verdict PASS
+  dhat: Total: 68,027,258 bytes in 506,229 blocks
+
+Before/after comparison:
+  metric                     before      after       delta      verdict
+  binary.harness_mb          10.519      10.519       0.000      PASS (budget 40)
+  binary.harness-daemon_mb    6.311      11.032      +4.721      PASS (budget 40; tree-sitter
+                                                                    grammars + portable-pty +
+                                                                    vt100 + harness-lsp stack)
+  cold_start_ms (CLI)        18.09       25.39       wall-clock min-of-7 noise on a
+                                                     loaded machine (CLI binary
+                                                     unchanged, same bytes); rides the
+                                                     absolute 50ms budget only: PASS
+  rss_mb (daemon at ready)    9.129      11.090      +1.961      PASS (budget 80; the
+                                                                    startup-constructed
+                                                                    executors are cheap by
+                                                                    design — PTY runner +
+                                                                    LSP router; servers spawn
+                                                                    lazily on first use)
+  deterministic counters     at baseline at baseline  0.0%       PASS
+  dhat total bytes         68,023,268  68,027,258     +0.0059%   PASS (gate is >10%)
+  dhat blocks                506,222    506,229       +7         PASS
+
+Gate verdict: the >10% dhat gate did NOT trip; no baseline re-record was needed
+and none was made (gate_baseline.json and heap_profile.json are untouched).
+
+--------------------------------------------------------------------------
+7. Stopping condition
+--------------------------------------------------------------------------
+All six CORE_TOOLS production-served; acceptance green (218/218 daemon,
+412/412 core, clippy -D warnings clean); budgets recorded before and after with
+both gates PASS; no commit made (per instructions).

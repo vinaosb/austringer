@@ -1,0 +1,107 @@
+Task 32 evidence - README receipt rows for adopted mechanisms (convergence receipts)
+Date: 2026-10-22 | HEAD at recording: c836542
+Executor: Sisyphus-junior (unspecified-high)
+
+========================================================================
+§ cross-check (every cited section greps to exactly one header in
+.omo/research/harness-research.md, post-renumber numbering)
+========================================================================
+$ Select-String -Path .omo\research\harness-research.md -Pattern '^## N.' | count
+  40 unique headers (§1-§40; §34/§35 landed in task-29, renumber in task-30)
+
+Cited in the 14 new rows -> grep result:
+  research §34.2  -> ### 34.2 The Service - daemon-by-default (the convergence receipt ...)
+  research §34.3  -> ### 34.3 The plugin-API break and the OmO Native pivot (cautionary ...)
+  research §13    -> ## 13. Iteration 6 findings - Plandex death autopsy
+  research §2     -> ## 2. Git-history / reversal lessons
+  research §16    -> ## 16. Iteration 9 findings - Factory Droid
+  research §35.6  -> ### 35.6 WATCH ledger (13 entries, decided 2026-10-20)
+  research §35.2  -> ### 35.2 The agent-model matching scheme
+  research §35.3  -> ### 35.3 What this plan adopts (todos 13-14, Wave D)
+  research §35.4  -> ### 35.4 What this plan refuses
+  research §22.3  -> ### 22.3 Knowledge loop (DeepWiki / Playbooks / Knowledge / Session Insights)
+  research §23.3  -> ### 23.3 ACP authorship + registry
+  research §23.8  -> ### 23.8 ADOPT / AVOID / WATCH deltas (contains BOTH the
+                     "host-side uniform checkpoints" ADOPT and the "cost HUD with
+                     zero budget/cap enforcement" AVOID - grep-verified)
+  research §23.2  -> ### 23.2 Agent architecture (Parallel Agents, subagents, ...)
+  research §21.2  -> ### 21.2 Architecture - 2.0 app, artifact-centric UX, ...
+  research §24    -> ## 24. Iteration 17 findings - JetBrains (contains "plans as
+                     committed .junie/plans artifacts w/ Confirm gate" ADOPT)
+  research §23    -> ## 23. Iteration 16 findings - Zed
+  research §15    -> ## 15. Iteration 8 findings - Grok Build (prose-spiral /goal)
+  ALL PRESENT - zero nonexistent citations.
+
+Dated external sources used where the receipt is not a research section:
+  Codex /daemon rust-v0.163.0 (2026-10-15); Amp runners (2026-09-17-24);
+  Cursor agent-host (2026-10-01) - all recorded inside research §34.2.
+  Claude Code 2.1.296 workflow-level model pinning (2026-10-09) - recorded in
+    task-9 evidence + draft C2.
+  UI/UX pattern catalog (2026-10-20) - the catalog that carries Warp PR#11367,
+  OpenCode #55064, OpenCode #55172, and the 5-project transcript-collapse
+  convergence is dated inside research §35.6 ("external UI/UX pattern
+  catalog, draft C9, 2026-10-20"), so the rows cite §35.6 + catalog date.
+  Zed #5242 (886 upvotes; recorded 2026-10-21, task-17 evidence + draft C6 -
+  NOTE: the plan text for this checkbox says "888-upvote"; the repo's recorded
+  sources both say 886, so the row uses 886, repo-grounded).
+  Qwen Test Failure Explorer (shipped 2026-10; task-17 evidence + draft C6).
+  Zed #58686 roadmap ticket (recorded 2026-10-21, task-11 evidence - justified
+  under the lightweight clause: a reader over an already-maintained index).
+
+========================================================================
+The 14 rows added to the README design-receipts table
+========================================================================
+(mechanism | proven-by | failure-avoided; full text in README.md)
+ 1 daemon+thin-client convergence (§34.2 / §34.3)
+ 2 model pinning + Stickiness (CC 2.1.296 2026-10-09; §13 / §2+§16)
+ 3 team status precedence (Warp PR#11367/#12084, catalog 2026-10-20, §35.6)
+ 4 collapsed-by-default transcripts (5-project convergence, §35.6)
+ 5 changed-files timeline (OpenCode #55064; Devin §22.3)
+ 6 task(category) ask-first chains (OmO §35.2-35.3; §2 / §35.4 refusal)
+ 7 ACP stdio surface (§23.3 + §23.8 / §23.2)
+ 8 plan-as-artifact (Antigravity §21.2; JetBrains §24; CC plan mode, Zed
+   roadmap, Cursor Rollouts recorded 2026-10-21 / Antigravity v1.3.2 receipt)
+ 9 OSC program-status 777+7501 (OpenCode #55172 + Warp + Antigravity, §35.6)
+10 cross-session event_fts search (Zed #58686 recorded 2026-10-21; §23)
+11 test-runner evidence -> completion gate (Zed #5242 886-upvote recorded
+   2026-10-21; Qwen Test Failure Explorer 2026-10 / §15)
+12 curated cheap-pool agents explore/librarian (OmO §35.2-35.3 + our
+   utility-roles-must-be-cheap validation)
+13 snapshot rewind (Zed host-side checkpoints §23.8 ADOPT)
+14 session cost governance - ANTI-RECEIPT row (§23.8 AVOID "cost HUD with
+   zero budget/cap enforcement" - the repo's own research; task-33 wires
+   the ledger that closes it)
+
+========================================================================
+Table renders (markdown integrity)
+========================================================================
+$ README table structural check (unescaped-pipe count per row vs header):
+  OK table@line59:  10 rows x 2 cols   (env vars)
+  OK table@line79:   6 rows x 3 cols   (frontends)
+  OK table@line98:   8 rows x 3 cols   (perf budgets)
+  OK table@line151: 28 rows x 3 cols   (design receipts: 12 original + 14 new
+                                       data rows + header + separator)
+  OK table@line184:  9 rows x 3 cols   (shipped-at-HEAD receipts)
+  OK table@line214:  9 rows x 6 cols   (honest comparison)
+  OK table@line243: 19 rows x 2 cols   (status distinction, 31)
+  OK table@line269: 12 rows x 2 cols   (roadmap waves)
+  tables checked: 8, mismatches: 0
+$ powershell -File .github\scripts\linkcheck.ps1
+  linkcheck: OK (4 Markdown + 13 AsciiDoc files, zero broken relative
+  links / includes / xrefs)
+Docs build: asciidoctor site build runs in CI (docs.yml, ubuntu, gem
+asciidoctor --failure-level WARN); no local asciidoctor on this Windows
+host - validated structurally (linkcheck + anchors + table integrity)
+instead; no AsciiDoc content changed in this todo (README-only rows).
+
+========================================================================
+Files changed (no commit - orchestrator commits)
+========================================================================
+EDIT README.md (14 rows appended to the design-receipts table; no other
+                section touched by this todo)
+QA happy: every row cites a grep-verified research § or a dated external
+  source; table renders with uniform 3 columns.
+QA failure-mode check: grep for a cited § that does not resolve -> zero
+  (17/17 citations resolve uniquely); no row claims wiring status (that is
+  todo-31's table - the snapshot-rewind row says "wiring" only in the
+  sense of naming the crate class, matching the plan's prescribed text).

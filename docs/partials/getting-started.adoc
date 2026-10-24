@@ -70,13 +70,78 @@ The whole suite is hermetic: the mock provider, cassettes, and fake clocks
 mean zero API keys and zero network. This is the same suite CI runs from
 the nextest archive.
 
+Separate from the developer suite, the agent-facing `run_tests` tool
+detects the framework (cargo test / cargo nextest) and returns a typed
+per-test report that the completion gate binds as evidence. Its
+detection can be replaced with a custom command line through the
+user-global `HARNESS_TEST_COMMAND` environment variable (read by the
+daemon at startup) — a repo-local override file is refused with a typed
+error, so a repository under review can never redefine how its own
+tests run.
+
+[[gs-automations]]
+== Automations
+
+Schedules are declarative, terraform-style definitions persisted as
+`automations.json` under the daemon data dir (default
+`.harness-daemon/automations.json`): each entry names a cron expression,
+the job action, and its network policy (offline wins any intersection).
+Definitions are validated on registration and reload; a draft-tier or
+unknown pack is never schedulable — the gate fails closed. The running
+set is visible over the protocol at `GET /automations` (name, cron,
+next-fire, last verdict), and the daemon surfaces `sched`/`verdict`
+notifications to attached clients on the event stream.
+
 [[gs-status]]
 == What runs without a provider
 
-The daemon binary currently hosts a typed no-provider stub at its session
-factory: frontends, the protocol layer, permissions, sessions, snapshots,
-and the scheduler are fully exercisable, and an inference request returns a
-typed `no provider configured` error rather than a guess. The five provider
-adapters exist and are cassette-tested; composing them into the shipped
-daemon loop is the remaining wiring. The manual marks the affected
-capabilities where they are described.
+A daemon without `HARNESS_PROVIDER` set is fully servable: frontends, the
+protocol layer, permissions, sessions, snapshots, the scheduler, and
+automations all work, and an inference request returns a typed
+`no provider configured` error rather than a guess. With the provider
+variables set, the five cassette-tested adapters are composed into the
+session factory on the production transport (see the README quickstart
+table for the full environment-variable list). What remains
+library-tested — built and green inside its crate, not wired into the
+shipped binaries — is tracked honestly in the README status table: the
+repomap, the lexical search index, the WASM plugin runtime, subscription
+device-flow auth, and orchestration best-of-N / plan-branch.
+
+[[gs-whats-new]]
+== What's new on first run
+
+A first-run orientation for the mechanisms this workspace added on top of
+the foundation waves (each is production-wired; receipts in the README
+design-receipts table):
+
+* *Delegation categories* — the model can spawn child sessions through
+  the `task` tool with a category (`quick`, `deep`, ...); categories map
+  to models and effort in `routing.json`, children run with fresh grant
+  state under per-parent fan-out and budget caps, and every fallback hop
+  on the way asks first.
+* *Plan mode* — opt-in (off by default): in plan mode the agent produces
+  a plan artifact and every write tool stays gated until you approve,
+  edit, or reject it; answerable from any attached frontend.
+* *`/rewind`* — restores files and history together from a snapshot
+  (conversation-only rewinds that leave the worktree behind are the
+  failure this avoids); the search index is truncated to the restore
+  point, so search never returns un-happened events.
+* *`/skill`* — invokes a loaded skill pack; packs activate only through
+  the trust gates, and any MCP entries a pack declares land disabled
+  until separately consented.
+* *One command grammar everywhere* — the same verbs in TUI, web, VS Code,
+  and CLI: `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`,
+  `/skill`, `@file`; unknown slash commands give identical help in every
+  frontend.
+* *Automations* — declarative schedules (`automations.json`) with cron,
+  network policy, and pack-tier gating; visible at `GET /automations`.
+* *Cost caps* — every session governs its spend against a micro-USD
+  ledger: default cap $20 (override with `HARNESS_SESSION_COST_CAP_USD`),
+  a warning at 80%, and a typed stop at 100%. A stop is a terminal
+  event, never a silent model substitution.
+
+NOTE: Release notes live under `docs/release/` (leaderboard + eval
+tables) rather than in-product: OpenCode V2's `/highlights` pattern was
+evaluated and deliberately WATCH-recorded as not adopted (research
+§35.6) — our release surface stays the published, harness-matched
+tables.

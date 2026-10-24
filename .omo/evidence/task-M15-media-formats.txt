@@ -1,0 +1,183 @@
+M15: external tool executor (subprocess tier; supply-chain promoted to harness-safety) — TDD evidence
+=========================================================================================
+Date: 2026-09-24  Runner: Sisyphus-junior (task M15, .omo/plans/media-formats-wave.md todo 15)
+Shell note: cargo runs through C:\Users\vsbb1\AppData\Local\Temp\opencode\msvc-cargo.cmd
+(BuildTools vcvars64; same recipe as M32 evidence — plain shells lack MSVC INCLUDE/LIB and
+the first harness-orchestration build failed with the documented libsqlite3-sys C1083
+stdarg.h cold flake until the wrapper was used).
+
+================================================================
+PHASE 1 — SUPPLY-CHAIN PROMOTION (harness-orchestration -> harness-safety, decision 5)
+================================================================
+RED first: harness-safety/tests/supply.rs written before any implementation.
+
+  cargo nextest run -p harness-safety --test supply
+  -> error[E0432]: unresolved import `harness_safety::supply`
+  (RED for the right reason: the module does not exist.)
+
+GREEN: harness-safety/src/supply.rs = ReleaseAsset / verify_sha256 / redact_env /
+DEFAULT_REDACT_PATTERNS moved VERBATIM from harness-orchestration/src/backend/install.rs;
+install.rs is now a `pub use harness_safety::supply::{...}` re-export shim (T40 callers
+source-compatible, zero behavior change).
+
+  cargo nextest run -p harness-safety --test supply
+  -> Summary 4 tests run: 4 passed
+  cargo nextest run -p harness-orchestration
+  -> Summary 42 tests run: 42 passed   (T40 suite stays green post-promotion)
+
+One test-side correction during the loop (test bug, not code bug): a mixed-case probe key
+"MY_anthropic_key" does NOT contain the deny substring "ANTHROPIC_API_KEY" (no "_API_"),
+so it correctly survives redaction; replaced with "my_openai_api_key" which does match.
+
+================================================================
+PHASE 2 — REAL-TOOL GOLDEN CAPTURES (mock-drift law)
+================================================================
+Tool availability on this machine (2026-09-24, probed with Get-Command):
+  PRESENT : ffmpeg 8.1.1, ffprobe 8.1.1 (chocolatey), pandoc 3.9.0.2
+  ABSENT  : blender, soffice (LibreOffice), freecadcmd, gdalinfo/gdal_translate,
+            whisper-cpp (whisper-cli)
+
+Honesty table — captured vs pending (authoritative copy: 
+harness-test-support/golden/mocktool/capture.md):
+
+  CAPTURED (real tool, one run, command committed):
+    ffprobe/probe-av-json.golden
+      input fixture: ffmpeg -y -hide_banner -loglevel error -f lavfi \
+        -i "sine=frequency=440:duration=0.2" -c:a pcm_s16le -ar 16000 \
+        harness-test-support\golden\mocktool\_input\tiny.wav
+      capture: ffprobe -v error -show_format -show_streams -of json \
+        harness-test-support\golden\mocktool\_input\tiny.wav
+      (tiny.wav committed; probe asserts codec_name=pcm_s16le, 16000 Hz)
+    ffmpeg/version.golden   — ffmpeg -version (first 6 lines)
+    pandoc/version.golden   — pandoc --version (first 6 lines)
+
+  PENDING (tool absent locally — NO golden committed, none faked; tests for
+  these tools use only structural mock modes; first capture owner named):
+    blender (M16 real-Blender run), whisper-cpp (M14/M25), libreoffice (M18/M19
+    hooks), freecadcmd (M20), gdal (M21)
+
+Manifest version pins reflect the same honesty: ffmpeg/ffprobe "8.1.1" and
+pandoc "3.9.0.2" (actually exercised today); the rest carry the literal
+"pending-first-real-run" pin. No manifest ships a ReleaseAsset (a real pin
+needs a researched URL+SHA pair; an invented digest is never committed).
+
+================================================================
+PHASE 3 — MOCKTOOL (harness-test-support, T40 mock-child precedent)
+================================================================
+One implementation, two entries: harness_test_support::mocktool (lib) +
+src/bin/mocktool.rs (binary; dist=false) + the T40-style re-exec entry
+(HARNESS_MOCKTOOL_ARGV). Modes: env (key names only, sorted — the redaction
+assert surface), golden <name> (byte-for-byte real captures), exit <code>
+[msg], write <path> <text>, hang [n] (spawns n grandchildren, records
+child+self pids — the kill-tree ps-check surface), sleep <secs>.
+
+  cargo nextest run -p harness-test-support
+  -> Summary 35 tests run: 35 passed (incl. golden_mode_serves_real_capture
+     parsing the REAL ffprobe JSON)
+
+Platform note discovered by a failing assert (fixed in the test, not the tool):
+Windows `=C:` per-drive pseudo env vars legitimately contain '=' inside the
+NAME, so "no '=' in a line" is not a valid keys-only proof; the contract is
+pinned as exact set equality with the child's inherited environment instead.
+
+================================================================
+PHASE 4 — THE EXECUTOR (harness-media/src/tool/) — RED THEN GREEN
+================================================================
+RED: harness-media/tests/tool_executor.rs written first:
+
+  cargo nextest run -p harness-media --test tool_executor
+  -> error[E0432]: unresolved import `harness_media::error::InstallFailure`
+  -> error[E0432]: unresolved import `harness_media::tool`
+  -> error[E0599]: no method named `tools` found for struct
+     `ExecutorRegistryBuilder`
+  (RED for the right reasons: module/vocabulary/seam absent.)
+
+GREEN implementation:
+  tool/manifest.rs   — declarative manifests: blender, ffmpeg, ffprobe,
+                       whisper-cpp, libreoffice, pandoc, freecadcmd, gdal
+                       (h5dump dropped per digest §6); ALL disabled by
+                       default (ToolConfig::default().enabled is empty);
+                       version-check op templates; {placeholder} argv
+                       rendering (unfilled placeholders stay visible).
+  tool/executor.rs   — ToolExecutor: availability (enabled map FIRST — a
+                       tool on PATH but not opted in is Unavailable),
+                       fail-closed sandbox gate (harness-safety
+                       SandboxPolicy: writable = session temp only,
+                       egress none; violation -> typed
+                       ToolError::SandboxDenied{violation: ViolationEvent}
+                       audit), env_clear + redact_env(DEFAULT_REDACT_PATTERNS
+                       + extra denies) child env, bounded spawn, timeout.
+  tool/spawn.rs      — reader threads (stdout cap 1 MiB, stderr head cap
+                       4 KiB), wait-poll deadline, kernel kill-tree on
+                       overrun, PATH lookup.
+  tool/guard.rs      — Job Object KILL_ON_JOB_CLOSE on Windows (todo-19
+                       TreeGuard pattern for std::process::Child); Unix
+                       process_group(0) + killpg.
+  tool/types.rs      — ToolAvailability / ToolError (+From<ToolError> for
+                       MediaError) / ToolRun (+producer() disclosure).
+  error.rs           — InstallFailed{reason: ShaMismatch|Download};
+                       NEW NonZeroExit{code, stderr_head<=4096}.
+  executor/registry.rs — Subprocess bindings route through the executor:
+                       refuse_binding() consults ToolExecutor availability;
+                       ToolUnavailable only when genuinely not
+                       enabled/installed (keeps install_hint); available
+                       tool + unbound adapter reports the pending M16-M21
+                       adapter honestly. ExecutorRegistry::with_tools()
+                       rebind seam; builder .tools().
+
+  cargo nextest run -p harness-media --test tool_executor
+  -> Summary 11 tests run: 11 passed
+
+Acceptance mapping (all pinned in tool_executor.rs / executor_dispatch.rs):
+  mocktool lifecycle green ................ enabled_mocktool_runs_and_serves_the_real_golden_capture
+  wrong-sha asset -> InstallFailed,
+    nothing executed ....................... wrong_sha_asset_fails_closed_nothing_executed
+                                            (store dir asserted empty; malformed pin "zz"
+                                            also fails closed; install opt-in flag test)
+  ANTHROPIC_API_KEY absent from child env . child_environment_is_redacted
+  timeout kills tree, ps check, no orphans  timeout_kills_the_whole_tree_no_orphans
+                                            (hang 2 grandchildren; tasklist PID poll
+                                            proves child+grandchildren all dead)
+  sandbox violation -> typed denial+audit . sandbox_violation_is_typed_denial_with_audit
+  v0.1 orchestration suite still green ..... 42/42 (phase 1)
+  registry routing ........................ registry_routes_subprocess_bindings_through_the_tool_executor
+                                            + subprocess_dispatch_routes_through_the_m15_tool_executor
+                                            (renamed from the pre-M15 stub test; assertions
+                                            kept, not weakened)
+
+Where each guarantee is enforced (recorded decision): env redaction at THIS
+exec-layer command seam — the exact seam T26's Windows report names, because
+LowBox (AppContainer) spawns on this build reject custom environments (os
+error 203) and can therefore never honor the never-pass-unredacted-env
+constraint; the sandbox policy (harness-safety vocabulary, fail-closed
+validate) gates every spawn; kill-tree/timeout are kernel-enforced (Job
+Object / killpg); FS/network kernel confinement via AppContainer is NOT
+claimed at this seam (documented in tool/mod.rs — isolation is never claimed
+where it was not established).
+
+================================================================
+VERIFICATION (final, all-green)
+================================================================
+  cargo nextest run -p harness-media -p harness-safety -p harness-orchestration
+    -> Summary 375 tests run: 375 passed, 2 skipped
+       (skips = pre-existing #[ignore] real-tool tiers: gltf Khronos validator,
+        size canary — not this todo's tests)
+  cargo nextest run -p harness-test-support
+    -> Summary 35 tests run: 35 passed
+  cargo clippy -p harness-media -p harness-safety -p harness-orchestration \
+    -p harness-test-support --all-targets -- -D warnings
+    -> clean (one collapsible-if in mocktool + one in executor.argv fixed)
+  cargo deny --workspace check
+    -> advisories ok, bans ok, licenses ok, sources ok
+    (one deny fix: harness-test-support dev-dep needed version="0.1.0"
+     pinned — wildcard-dependency ban)
+  Canonical LOC (non-blank non-comment): executor.rs 238, types.rs 82,
+    manifest.rs 119, spawn.rs 126, guard.rs 39, mod.rs 10, supply.rs 45,
+    install.rs shim 3, mocktool.rs 142 — all <=250.
+  No unwrap/expect/panic!/unreachable! in any touched src file (grep-pinned).
+
+Pre-existing, not caused by this todo (reported, not fixed — outside scope):
+  * libsqlite3-sys cold-build C1083 in plain shells (machine-wide MSVC env
+    issue; msvc-cargo.cmd recipe, M32 evidence).
+  * cargo deny duplicate-crate WARNINGS for thiserror 1.x/2.x (pre-existing
+    lock duplication via portable-pty; warnings, not failures).

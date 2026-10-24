@@ -80,7 +80,7 @@ impl Dispatcher {
         let profile = match self.sticky.resolve(task) {
             Some(pinned) => pinned.clone(),
             None => {
-                let resolution = self.table.resolve(request)?;
+                let resolution = self.table.resolve(request.clone())?;
                 self.sticky.launch(
                     task.clone(),
                     PinnedProfile {

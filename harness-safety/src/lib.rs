@@ -21,3 +21,4 @@ pub mod perm;
 pub mod policy;
 pub mod report;
 pub mod scrub;
+pub mod supply;

@@ -1,0 +1,206 @@
+TASK 25 — CI additions: wasm, vscode+web-e2e, doctests, --locked (plan .omo/plans/ecosystem-alignment.md, Wave Q)
+Date: 2026-10-22 (local dev machine, Windows; runner evidence from GitHub Actions on origin vinaosb/harness)
+Files changed: .github/workflows/ci.yml, harness-web/e2e/run-e2e.mjs
+No commit made (orchestrator commits: "ci: wasm/vscode/web-e2e/doctests coverage").
+
+================================================================================
+1. WHAT CHANGED
+================================================================================
+
+.github/workflows/ci.yml
+  (a) lint job: new step "clippy (harness-wasm feature: wasm-plugins)"
+      cargo clippy --locked -p harness-wasm --all-targets --features wasm-plugins -- -D warnings
+      test job: new step "Run wasm-plugin tests (feature-gated out of the archive)"
+      cargo nextest run --locked -p harness-wasm --features wasm-plugins, piped through tee,
+      followed by a run-count assertion (grep of nextest's "N tests run" summary; step fails
+      if 0 tests ran) — guards against the wasm suites silently compiling away again.
+  (b) new job "frontends" on windows-latest: actions/setup-node@v7 (node 25, matches dev;
+      node:test needs >=23.6 TS type stripping), Rust 1.98, rust-cache,
+      cargo build --locked -p harness-web --example e2e_daemon,
+      `npm ci` + `npm test` in harness-vscode (working-directory),
+      npm install -g playwright-core@1.63.0 (dev-verified pin) with NODE_PATH=$(npm root -g)
+      exported via GITHUB_ENV (same module resolution as dev), then
+      `node harness-web/e2e/run-e2e.mjs` with
+      HARNESS_E2E_EXE=${{ github.workspace }}\target\debug\examples\e2e_daemon.exe and
+      PLAYWRIGHT_CHROMIUM=C:\Program Files\Google\Chrome\Application\chrome.exe (runner Chrome
+      stable; runners have no ms-playwright cache).
+  (c) test job: new step "Doc tests (ubuntu only)": cargo test --doc --workspace --locked
+      (nextest cannot run doctests; ubuntu-only because the corpus is platform-independent —
+      the Windows gate is the local acceptance below).
+  (d) --locked added to every cargo invocation that resolves dependencies: lint clippy x3,
+      nextest archive, wasm nextest run, doctest step, llvm-cov nextest, perf-gate build x1 +
+      run x2, frontends example build. NOT added: `cargo fmt` (rejects the flag — verified:
+      "error: unexpected argument '--locked' found"), `cargo deny check` (own lockfile
+      discipline), `cargo nextest run --archive-file` (executes prebuilt binaries from the
+      archive, does not resolve the manifest). cargo-llvm-cov's --locked support verified
+      against upstream long-help (README embeds it: "--locked  Require Cargo.lock is up to
+      date"); nextest --locked verified in local `cargo nextest run --help`.
+  (e) header line 1 rewritten (was stale "perf-gate stub" summary): now lists wasm-plugin
+      tests + frontends + doctests; design-notes block extended for the new mechanics; the
+      stale "when todo 44 lands" clause corrected (evals crate already landed; its scheduled
+      workflow is todo 26); Action-versions note extended with actions/setup-node@v7
+      (latest major verified against upstream releases page 2026-10-22).
+
+harness-web/e2e/run-e2e.mjs (env parameterization; dev invocation unchanged in spirit)
+  - HARNESS_E2E_EXE now OPTIONAL: defaults to $CARGO_TARGET_DIR (or <repo>/target when unset,
+    e.g. CI) + /debug/examples/e2e_daemon.exe; fails with a build hint if missing.
+  - CHROMIUM: PLAYWRIGHT_CHROMIUM override first (unchanged); LOCALAPPDATA ms-playwright
+    fallback now guarded (previously join(undefined) crashed on machines without
+    LOCALAPPDATA); fails with an actionable message when neither resolves.
+  - existsSync asserts on both paths (browser path previously unasserted).
+  - NODE_PATH module resolution for playwright-core unchanged (documented in header).
+
+================================================================================
+2. LOCAL ACCEPTANCE GATES
+================================================================================
+
+GATE 1 — wasm clippy (plan acceptance, verbatim + --locked):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy -p harness-wasm --all-targets --features wasm-plugins --locked -- -D warnings"
+  EXIT=0 (11m 00s, finished dev profile; harness-wasm + harness-core + deps checked clean)
+
+GATE 2 — wasm tests run count > 0 (QA happy path, local run output):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run --locked -p harness-wasm --features wasm-plugins"
+  EXIT=0
+  Summary [   0.411s] 52 tests run: 52 passed, 0 skipped
+  -> 52 > 0. wasmtime runtime suites (plugin_sandbox etc.) execute under the feature flag.
+  CI-side count assertion (bash, exactly the workflow snippet) simulated against captured
+  logs with Git bash (bash 5.x):
+    52-test log  -> "harness-wasm feature-gated tests executed: 52" exit 0
+    0-test log   -> "::error::... ran 0 tests (expected >0)"        exit 1
+    missing log  -> grep error + same ::error::                      exit 1
+
+GATE 3 — doctests (plan acceptance, verbatim + --locked):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo test --doc --workspace --locked"
+  EXIT=0 (all suites "test result: ok"; corpus includes >= 2 real doctests ("1 passed" rows),
+  the rest 0-doctest suites — the step guards future doctests and compiles the corpus).
+  NOTE: first attempt failed compiling `harness-evals` (transient: concurrent sibling worker
+  mid-edit on the evals crate — declared [[bin]] run_sweep without its source + a
+  DriverError::Io map_err type mismatch); re-run after the sibling landed: EXIT=0. Not
+  caused by todo 25 (no Rust files touched here).
+
+GATE 4 — YAML validation (no new deps; python 3.14.4 + PyYAML 6.0.3 present locally):
+  python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml', encoding='utf-8'))"
+  -> "YAML OK; jobs: lint, test, frontends, coverage, perf-gate" + step-name listing for
+     test/frontends jobs. EXIT=0.
+  GitHub-side parse proof: Actions accepted the edited workflow and scheduled all six jobs
+     (probe run 39741424221).
+
+GATE 5 — vscode suite (validates the CI step content; harness-vscode):
+  npm ci --dry-run -> EXIT=0 (lockfile in sync)
+  npm test         -> EXIT=0, "# tests 89 / # pass 89 / # fail 0" (node 25.9.0 local)
+
+GATE 6 — web e2e with the parameterized runner (exact local command, no HARNESS_E2E_EXE,
+  no PLAYWRIGHT_CHROMIUM — exe defaults via ambient CARGO_TARGET_DIR=C:\ct, browser via
+  LOCALAPPDATA ms-playwright fallback; playwright-core via NODE_PATH):
+    $env:NODE_PATH="$env:APPDATA\npm\node_modules"; node harness-web\e2e\run-e2e.mjs
+  (from repo root, PowerShell; HARNESS_E2E_EXE/PLAYWRIGHT_CHROMIUM unset)
+  env printed: HARNESS_E2E_EXE=[] PLAYWRIGHT_CHROMIUM=[] CARGO_TARGET_DIR=[C:\ct]
+  resolved exe: C:\ct\debug\examples\e2e_daemon.exe (fresh; rebuilt with
+  `cargo build -p harness-web --example e2e_daemon` earlier today — file mtime 03:32 >
+  last examples change 01:30)
+  OUTPUT: 7/7 scenarios PASS, "E2E RESULT: ALL PASS", EXIT=0.
+  Scenarios: two-browser attach/approve/HUD; history cost+verdict+timeline+workers+trends+
+  focus (todo 20); empty-history empty-state; share 410; auth negatives; absent-daemon
+  reconnect; (absent-daemon observed twice — two scenarios share one log line).
+
+================================================================================
+3. QA FAILURE PATH — ci-probe scratch-ref push (plan-mandated)
+================================================================================
+
+The remote (github.com/vinaosb/harness) DOES have Actions enabled (prior runs exist; gh auth
+as vinaosb with workflow scope), so the probe was attempted for real — not
+environment-unavailable.
+
+PROBE 1 — ref ci-probe/todo25-doctest-probe (commit a726080 = branch HEAD e8dfb32 + this
+task's two files + probe-only tweaks + intentionally broken doctest in harness-wasm/src/lib.rs
+(assert_eq!(2 + 2, 5))). Probe-only tweaks, NOT in the real ci.yml: push trigger extended to
+'ci-probe/**' (workflow only triggers on main/PRs otherwise) and the doctest step condition
+temporarily !cancelled() (so it runs even when earlier steps are red). Run 39741424221:
+  frontends (vscode tests + web e2e): SUCCESS  <- NEW job, green on a real windows runner
+      npm test 89/89; e2e "E2E RESULT: ALL PASS" (all 7 scenarios) via runner Chrome +
+      global playwright-core@1.63.0 + NODE_PATH + parameterized run-e2e.mjs.
+  fmt + clippy + deny: FAILURE at `cargo fmt --all -- --check` — PRE-EXISTING branch debt:
+      diffs in committed files (harness-web/src/lib.rs, harness-cli/src/client.rs, ...).
+      Verified locally: same rustfmt 1.9.0 / rustc 1.98.0 as CI, `cargo fmt --all -- --check`
+      fails identically on the working tree (tasks 1-24 landed without a fmt gate run; the
+      branch was never pushed before). Not introduced by todo 25 (no Rust files touched).
+  nextest archive (ubuntu/macos): FAILURE — PRE-EXISTING: harness-media (lib) does not
+      compile off-Windows: E0599 no method `process_group` on std::process::Command (+ 2
+      unused warnings). Not introduced by todo 25.
+  nextest archive (windows): FAILURE at "Run tests from archive" — PRE-EXISTING test
+      failure: harness-daemon grammar::tests::grammar_json_is_byte_pinned_to_the_const_table
+      ("grammar.json drifted from grammar.rs - regenerate it from the table"). 668 passed
+      before fail-fast. My wasm step is success-gated after it, so it was skipped in CI
+      (local GATE 2 covers it).
+  cargo-llvm-cov: FAILURE — same pre-existing harness-media linux compile error.
+  perf-gate: see section 4.
+  The doctest step (with the probe's !cancelled()) DID run on ubuntu and failed the job —
+  but on the harness-media compile error, not on the broken doctest (the workspace cannot
+  compile on linux). Probe 2 was therefore run for a clean doctest-only proof.
+
+PROBE 2 — ref ci-probe/todo25-doctest-probe-win (commit 66188a5): minimal windows-latest
+workflow running EXACTLY the new CI doctest command (cargo test --doc --workspace --locked)
+on the same probe tree (broken doctest included). Expected: job FAILS naming the doctest.
+  [outcome recorded below in section 4]
+
+================================================================================
+4. REMAINING RUNNER RESULTS + PROBE OUTCOME
+================================================================================
+
+PROBE 1 perf-gate job (validates the --locked additions on a real runner):
+  cargo build --release --locked -p harness-cli -p harness-daemon -p harness-bench  -> built
+  cargo run --release --locked -q -p harness-bench --bin perf-gate ...  -> "perf-gate:
+    10 scenarios, 0 breaches, 0 skipped, verdict PASS" (baselines de-facto current — the
+    data point todo 28 needs).
+  cargo run --release --locked -q -p harness-bench --bin heap-profile --features dhat ...
+    -> "heap-profile: 6 scenarios, 1 breaches, 0 skipped, verdict FAIL" -> job red.
+    PRE-EXISTING branch debt (dhat metric breach from tasks 1-24 daemon changes; todo 28
+    owns re-record/re-baseline). The --locked flags changed no behavior.
+
+PROBE 2 — run 39745026154, 16m18s, windows-latest, job "doctest probe": FAILURE, and the
+failure IS the broken doctest (verbatim from the step log):
+    test harness-wasm\src\lib.rs - _ci_probe_broken_doctest (line 81) ... FAILED
+    ---- harness-wasm\src\lib.rs - _ci_probe_broken_doctest (line 81) stdout ----
+    assertion `left == right` failed
+      left: 4
+     right: 5
+    error: doctest failed, to rerun pass `-p harness-wasm --doc`
+    ##[error]Process completed with exit code 1.
+  => the doctest command shipped in ci.yml catches a broken doctest on a real runner and
+  fails the job naming the file, item, and line. QA failure path CLOSED.
+
+Remote Actions observations recorded for the orchestrator:
+  - artifact storage quota (exhausted 2026-09-28, "Failed to CreateArtifact") had been
+    recalculated by 2026-10-22: probe 1's 1.05 GB windows archive uploaded successfully.
+
+================================================================================
+5. CLEANUP + HANDOFF NOTES
+================================================================================
+
+CLEANUP (verified):
+  git push origin --delete ci-probe/todo25-doctest-probe ci-probe/todo25-doctest-probe-win
+    -> " - [deleted] ci-probe/todo25-doctest-probe" / " - [deleted] ...-win"; EXIT=0
+  git ls-remote --heads origin -> only refs/heads/main remains.
+  git worktree remove --force %TEMP%\opencode\ci-probe-wt + git worktree prune -> clean;
+  no local ci-probe branches. Working branch ecosystem-alignment NEVER pushed. The two
+  probe RUNS (39741424221, 39745026154) remain in Actions history as this evidence's
+  receipts (run logs referenced above); their refs are gone, so nothing can build on them.
+
+ACCEPTANCE vs plan wording:
+  "push branch -> all new jobs green": the NEW frontends job is green in real CI; the wasm
+  and doctest steps are green locally but their CI execution is gated behind PRE-EXISTING
+  red steps on this branch (fmt drift; harness-media off-Windows compile; grammar.json
+  drift test on windows; heap-profile baseline breach). None of those four are introduced
+  by todo 25 (this task touched zero Rust files). They are logged to
+  .omo/notepads/ecosystem-alignment/issues.md for the orchestrator: the branch cannot be
+  CI-green until they are fixed (candidates: fmt sweep + grammar.json regen belong to the
+  commit strategy's "no commit lands with failing tests" bar; media compile + heap-profile
+  re-baseline map to todo 27/28 territory).
+
+Local-vs-CI matrix for the new surface:
+  wasm clippy feature gate: local EXIT=0 (CI lint job failed earlier at fmt, step skipped)
+  wasm nextest feature run: local 52/52 (CI skipped behind archive-test red on windows)
+  doctest step:            local EXIT=0; CI failure path PROVEN on windows runner
+  frontends job:           local npm 89/89 + e2e ALL PASS; CI SUCCESS end-to-end
+  --locked:                accepted+exercised by cargo build/run/nextest/llvm-cov on CI
+

@@ -23,7 +23,14 @@ are compared against committed baselines with a 10% tolerance
 perf-gate` re-measures every number below from source.
 
 [[leaderboard-baseline]]
-== Pre-release baseline (HEAD c8926a4)
+== Pre-release baseline (measured at c8926a4, 2026-09-14; dhat heap profile re-recorded 2026-10-22; gate re-validated green at HEAD, task-28)
+
+One baseline re-record has happened since the c8926a4 measurement: the dhat
+heap-profile budget was re-recorded 2026-10-22 at c836542 (named cause:
+`tui.alloc_count` +12.3% from the UI wave's per-frame HUD/panel lines, bytes
++1.7%; per the ci-reds fix). All other baselines remain from c8926a4
+(2026-09-14); the gate re-validated green at HEAD (task-28, 10 scenarios,
+0 breaches).
 
 [cols="2,1,1"]
 |===

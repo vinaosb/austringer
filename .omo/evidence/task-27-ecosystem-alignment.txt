@@ -1,0 +1,292 @@
+TASK 27 — deep-qa.yml: scheduled ignored-tests + bench-smoke
+=============================================================
+Date: 2026-10-22 (local UTC-3). Plan: .omo/plans/ecosystem-alignment.md todo 27.
+Deliverable: .github/workflows/deep-qa.yml (NEW; scheduled + workflow_dispatch
+only). No test-code changes. No commit (orchestrator commits
+`ci: deep-qa + bench-smoke schedules`).
+
+──────────────────────────────────────────────────────────────────────────────
+1. IGNORED-TEST INVENTORY (local, nextest-listed) + PER-OS ASSIGNMENT
+──────────────────────────────────────────────────────────────────────────────
+Method: grep `#[ignore]` across workspace *.rs, then enumerate the ACTUAL
+runnable sets with the exact nextest filters the workflow uses:
+
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd
+    cargo nextest list -p <8 crates holding ignored tests> --run-ignored only --locked"
+  (crates: harness-exec -p harness-lsp -p harness-safety -p harness-daemon
+   -p harness-core -p harness-tools -p harness-vfs -p harness-repomap;
+   harness-evals excluded from the LOCAL listing only because the concurrent
+   task-26 worker had its sources mid-edit and it holds ZERO ignored tests.)
+
+NOTE on workspace-wide listing: `--workspace` was blocked locally at two
+moments by the concurrent task-26 edit state of harness-evals (manifest
+declaring run_sweep before the file existed, then uncompiling sources). The
+per-package listing is complete for the inventory: the remaining workspace
+crates (ast, providers, intel, mcp, orchestration, snapshots, search, wasm,
+test-support, bench, evals, cli, tui, web) contain zero #[ignore] attributes
+(grep-verified; harness-media's 7 are excluded by --exclude in the workflow).
+
+FULL ignored inventory (default features, workspace minus harness-media) —
+26 tests, nextest-listed 2026-10-22, exit 0:
+
+  harness-core::autonomy_qa_verdicts qa_destructive_always_asks_every_mode
+  harness-core::autonomy_qa_verdicts qa_plan_mode_freeze_with_schema_snapshot
+  harness-core::autonomy_qa_verdicts qa_smart_approve_benign_read
+  harness-core::loop_qa_transcript   transcript_cancel_mid_tool_execution
+  harness-core::loop_qa_transcript   transcript_happy_three_turn_conversation
+  harness-daemon::osc_status_tests   real_binary_pty_session_emits_program_status
+  harness-daemon::v1_corpus_capture  capture_v1_ws_and_ipc_corpus
+  harness-exec::pty_qa               qa_100mb_output_spills_bounded
+  harness-exec::pty_qa               qa_happy_cargo_version_through_pty
+  harness-exec::pty_qa               qa_headless_pathology_timings
+  harness-exec::pty_qa               qa_progress_bar_collapses
+  harness-exec::pty_qa               qa_teardown_enumeration_under_new_drop_path
+  harness-exec::pty_qa               qa_timeout_tree_enumeration
+  harness-exec::pty_qa               qa_wsl_typed_statuses
+  harness-lsp::golden_rust_analyzer  did_change_refreshes_positions_in_the_live_server
+  harness-lsp::golden_rust_analyzer  golden_goto_definition_returns_the_exact_location
+  harness-lsp::golden_rust_analyzer  golden_hover_is_bounded_and_names_the_symbol
+  harness-lsp::golden_rust_analyzer  real_kill9_restart_with_backoff_then_degrade
+  harness-repomap::repomap           fifty_k_node_stress_stays_bounded
+  harness-tools::anchor_bench        anchor_scheme_benchmark_harness
+  harness-tools::qa_scenarios        qa_drift_small_shift_reanchors_large_shift_rejects
+  harness-tools::qa_scenarios        qa_happy_three_hunk_selective_with_fringe
+  harness-tools::qa_scenarios        qa_strict_mode_rejects_unread_region
+  harness-vfs::bench                 bench_apply_rollback_10k_files
+  harness-vfs::bench                 bench_apply_rollback_1k_files
+  harness-vfs::bench                 bench_gix_worktree_backing_1k_files
+
+  + 1 feature-gated (see §2): harness-safety::container_args
+    docker_daemon_smoke_run   [needs --features harness-safety/container]
+  => 27 non-media ignored tests total.
+
+Per-OS assignment table (each test to EXACTLY one runner):
+
+| # | Test | Class evidence | Runner |
+|---|------|----------------|--------|
+| 1 | qa_happy_cargo_version_through_pty | pty_qa family (plan: windows job runs pty_qa) | WINDOWS |
+| 2 | qa_progress_bar_collapses | #[cfg(windows)] (pty_qa.rs:34) | WINDOWS |
+| 3 | qa_timeout_tree_enumeration | #[cfg(windows)] (pty_qa.rs:61) | WINDOWS |
+| 4 | qa_100mb_output_spills_bounded | spawns `cmd /c type` (pty_qa.rs:113) | WINDOWS |
+| 5 | qa_headless_pathology_timings | spawns `cmd /c echo` (pty_qa.rs:160) | WINDOWS |
+| 6 | qa_teardown_enumeration_under_new_drop_path | #[cfg(windows)] (pty_qa.rs:173) | WINDOWS |
+| 7 | qa_wsl_typed_statuses | real WSL probe; all statuses handled; probe already exercised un-ignored on GH windows runners (wsl_bridge.rs:267) | WINDOWS |
+| 8 | real_kill9_restart_with_backoff_then_degrade | kill9() shells `taskkill` (golden_rust_analyzer.rs:304) | WINDOWS |
+| 9 | docker_daemon_smoke_run | needs Docker; panics at `.expect("docker binary")` where no docker binary (GH windows runners) | UBUNTU |
+| 10 | golden_goto_definition_returns_the_exact_location | spawns `rust-analyzer` from PATH; cross-platform | UBUNTU |
+| 11 | golden_hover_is_bounded_and_names_the_symbol | idem | UBUNTU |
+| 12 | did_change_refreshes_positions_in_the_live_server | idem | UBUNTU |
+| 13 | real_binary_pty_session_emits_program_status | portable_pty native + CARGO_BIN_EXE daemon; cross-platform (~150s) | UBUNTU |
+| 14 | transcript_happy_three_turn_conversation | FakeApi hermetic | UBUNTU |
+| 15 | transcript_cancel_mid_tool_execution | hermetic (start_paused tokio) | UBUNTU |
+| 16 | qa_smart_approve_benign_read | hermetic | UBUNTU |
+| 17 | qa_plan_mode_freeze_with_schema_snapshot | hermetic | UBUNTU |
+| 18 | qa_destructive_always_asks_every_mode | hermetic | UBUNTU |
+| 19 | qa_happy_three_hunk_selective_with_fringe | tempdir file ops | UBUNTU |
+| 20 | qa_drift_small_shift_reanchors_large_shift_rejects | tempdir file ops | UBUNTU |
+| 21 | qa_strict_mode_rejects_unread_region | pure in-memory ledger | UBUNTU |
+| 22 | anchor_scheme_benchmark_harness | pure string ops | UBUNTU |
+| 23 | bench_apply_rollback_1k_files | tempdir + shadow store | UBUNTU |
+| 24 | bench_apply_rollback_10k_files | idem | UBUNTU |
+| 25 | bench_gix_worktree_backing_1k_files | tempdir + gix fixture | UBUNTU |
+| 26 | fifty_k_node_stress_stays_bounded | synthetic 50k-node graph | UBUNTU |
+| 27 | capture_v1_ws_and_ipc_corpus | NEVER RUN: one-shot fixture recorder (writes ws-session.jsonl/ipc-session.jsonl); its ignore message: "re-running after a protocol change would falsify history" | EXCLUDED |
+
+EXCLUDED BY DESIGN (documented in workflow header):
+  - capture_v1_ws_and_ipc_corpus (above).
+  - harness-media's 7 real-tool tiers (ffmpeg_real, blend_adapter,
+    gltf_roundtrip, georaster_adapter, step_adapter, image_roundtrip,
+    size_canary) — opt-in via FFMPEG_BIN/BLENDER_BIN/FREECAD_BIN/
+    GLTF_VALIDATOR_BIN/GDAL_TRANSLATE_BIN/GDALINFO_BIN; excluded by
+    `--exclude harness-media` and documented in the workflow.
+
+ACCOUNTING (the ≥21 target):
+  WINDOWS job: 8  (nextest-listed with the workflow's exact filter:
+                   -E "package(harness-exec) or test(real_kill9_restart_with_backoff_then_degrade)"
+                   → 8 entries, reproduced verbatim in this file's appendix A)
+  UBUNTU job:  19 (18 nextest-listed with the workflow's exact filter
+                   -E "not (package(harness-exec) or test(real_kill9...) or test(capture_v1_ws_and_ipc_corpus))"
+                   + docker_daemon_smoke_run listed separately with
+                   --features container; appendix A)
+  UNION: 8 + 19 = 27 ≥ 21  ✓   (plan: "the union across both jobs covers it")
+  NEITHER ALONE: 8 < 21, 19 < 21  ✓ (plan: "neither alone does")
+  DISJOINT: windows-filter ∧ ubuntu-filter are complementary by
+  construction (ubuntu = NOT(windows-set ∪ corpus-recorder)); the two
+  listed sets share zero tests. ✓
+
+──────────────────────────────────────────────────────────────────────────────
+2. DISCOVERY: container_args.rs IS FEATURE-GATED (plan's base command alone
+   would silently NOT run the docker smoke)
+──────────────────────────────────────────────────────────────────────────────
+harness-safety/tests/container_args.rs line 3: `#![cfg(feature = "container")]`;
+harness-safety/Cargo.toml: `container = []` — "Off by default; --features
+container opts in." The plan's literal base command
+(`cargo nextest run --workspace --run-ignored only --exclude harness-media`)
+compiles that test binary EMPTY — docker_daemon_smoke_run would not exist,
+a silent skip invisible to the ≥21 accounting. The workflow's ubuntu job
+therefore adds `--features harness-safety/container` (package-scoped feature
+syntax; workspace resolver = "3"), with a comment documenting why removal
+would silently regress. Local proof both ways:
+
+  $ cargo nextest list -p harness-safety --features container --run-ignored only --locked
+  harness-safety::container_args docker_daemon_smoke_run        ← with flag
+  (without the flag: zero entries — reproduced during the inventory run)
+
+──────────────────────────────────────────────────────────────────────────────
+3. QA HAPPY — goldens PASS on the PINNED rust-analyzer (exit 0)
+──────────────────────────────────────────────────────────────────────────────
+Pin verification (assert the PIN matches a real released version):
+  - Web: releases page + prefix.dev/mise channel timelines confirm weekly
+    date-tagged releases 2026-09-21 → 10-05 → 10-12 → 10-19.
+  - Binary: downloaded the exact workflow URL
+    https://github.com/rust-lang/rust-analyzer/releases/download/2026-10-12/rust-analyzer-x86_64-pc-windows-msvc.zip
+    → runs: `rust-analyzer 0.3.3081-standalone (2ad81e72b7 2026-10-11)`.
+    (Local cargo-bin component is 1.98.0/2026-08-18 — DIFFERENT build; the
+    goldens run used a PATH-prepended runner so the pin wins, verified by
+    `where rust-analyzer` inside the run, output below.)
+
+Command: pin-prepended wrapper + `cargo nextest run -p harness-lsp
+--run-ignored only --locked` (CARGO_BUILD_JOBS=3):
+
+  --- which rust-analyzer wins:
+  C:\Users\vsbb1\AppData\Local\Temp\opencode\ra-pin\rust-analyzer.exe
+  C:\Users\vsbb1\.cargo\bin\rust-analyzer.exe
+  rust-analyzer 0.3.3081-standalone (2ad81e72b7 2026-10-11)
+  --- goldens (all 4 ignored tests of harness-lsp) against the pin:
+      Starting 4 tests across 8 binaries (52 tests skipped)
+          PASS [ 5.465s] golden_hover_is_bounded_and_names_the_symbol
+          PASS [ 5.563s] golden_goto_definition_returns_the_exact_location
+          PASS [ 5.633s] did_change_refreshes_positions_in_the_live_server
+          PASS [ 7.161s] real_kill9_restart_with_backoff_then_degrade
+      Summary [ 7.162s] 4 tests run: 4 passed, 52 skipped
+  --- GOLDENS_EXIT=0
+
+(4/4 on the pin, including the windows-assigned taskkill golden.)
+
+──────────────────────────────────────────────────────────────────────────────
+4. QA FAILURE — golden drift surfaces as a NAMED failure (exit 100)
+──────────────────────────────────────────────────────────────────────────────
+Setup: PATH prepended with a shim dir containing an INVALID
+rust-analyzer.exe (63-byte text file — simulates a broken/absent server,
+the same class as a drifted binary). `where rust-analyzer` confirmed the
+shim wins the lookup. Command: `cargo nextest run -p harness-lsp
+--run-ignored only --locked -E "test(golden_goto_definition_returns_the_exact_location)"`:
+
+      Starting 1 test across 8 binaries (55 tests skipped)
+          FAIL [ 0.059s] harness-lsp::golden_rust_analyzer golden_goto_definition_returns_the_exact_location
+    stdout: test golden_goto_definition_returns_the_exact_location ... FAILED
+    stderr: panicked at harness-lsp\tests\golden_rust_analyzer.rs:55:14:
+            goto request itself succeeds: ServerUnavailable { language: Rust, program: "rust-analyzer" }
+      Summary [ 0.060s] 1 test run: 0 passed, 1 failed, 55 skipped
+  --- FAILDEMO_EXIT=100
+
+The failure is NAMED (test id + file:line + typed cause), the run exits
+non-zero — never a silent skip. Same mechanism carries golden drift: an
+assertion mismatch renders as `FAIL <golden-name>` with the diff in the
+Actions log. The only self-skipping test in the swept set
+(docker_daemon_smoke_run, upstream design) runs solely on the Docker-equipped
+ubuntu leg where its skip branch is unreachable; documented in the workflow
+header.
+
+──────────────────────────────────────────────────────────────────────────────
+5. BENCH-SMOKE LOCAL VALIDATION (exit 0)
+──────────────────────────────────────────────────────────────────────────────
+Command (exact workflow flags, one bench file, via cargo-env wrapper,
+CARGO_BUILD_JOBS=3):
+  cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo bench
+    --locked -p harness-bench --bench pty -- --warm-up-time 1
+    --measurement-time 2 --sample-size 10"
+
+First run (cold bench-profile build, 2m13s):
+      Finished `bench` profile [optimized] target(s) in 2m 13s
+      Running benches\pty.rs (...deps\pty-...exe)
+  Benchmarking pty/scrape_300lines
+  Warning: Unable to complete 10 samples in 2.0s. You may wish to increase target time to 2.3s or enable flat sampling.
+  Benchmarking pty/scrape_300lines: Collecting 10 samples in estimated 2.3143 s (55 iterations)
+  pty/scrape_300lines     time:   [41.856 ms 43.707 ms 45.770 ms]
+
+Second run (warm; explicit exit-code capture):
+  pty/scrape_300lines     time:   [44.044 ms 44.380 ms 45.077 ms]
+  BENCH_EXIT=0
+
+All 6 criterion benches (repomap, eviction, prompt, pty, sessions, tui) are
+synthetic/hermetic (read all six bench files — no PTY spawn, no network, no
+Docker), so the ubuntu bench-smoke job runs them all with the same flags.
+The criterion sample-count warning is benign for a smoke (criterion still
+completes and exits 0).
+
+──────────────────────────────────────────────────────────────────────────────
+6. YAML VALIDATION
+──────────────────────────────────────────────────────────────────────────────
+py -3 (PyYAML) safe_load on .github/workflows/deep-qa.yml → OK:
+  name: deep-qa; triggers: ['schedule', 'workflow_dispatch'];
+  cron: '23 4 * * 1' (Mondays 04:23 UTC); permissions: {contents: read};
+  jobs: ignored-windows (windows-latest, 60min, 6 steps),
+        ignored-ubuntu   (ubuntu-latest, 60min, 7 steps),
+        bench-smoke      (ubuntu-latest, 45min, 5 steps);
+  all three run-commands printed back verbatim from the parse (matches
+  §1/§5). No PR/push trigger — the workflow cannot gate PRs.
+
+──────────────────────────────────────────────────────────────────────────────
+7. ACCEPTANCE: workflow_dispatch green in Actions — HONEST STATUS
+──────────────────────────────────────────────────────────────────────────────
+Attempted per plan:
+  $ gh workflow run deep-qa.yml
+  → HTTP 404: workflow deep-qa.yml not found on the default branch
+    (https://api.github.com/repos/vinaosb/harness/actions/workflows/deep-qa.yml)
+
+Actions IS available on the real remote (vinaosb/harness — `gh workflow
+list` shows CI, docs, Publish container image, Release — all active), but
+workflow_dispatch only registers workflows present on the DEFAULT branch,
+and this task does not commit (orchestrator commits per the task contract).
+First dispatch + green run therefore lands with the orchestrator's commit
+`ci: deep-qa + bench-smoke schedules`. Local evidence standing in for the
+dispatch, per task instructions: inventory + accounting (§1), filter
+enumerations (appendix A), pin + goldens green (§3), named-failure demo
+(§4), bench exit 0 (§5), YAML parse (§6).
+
+──────────────────────────────────────────────────────────────────────────────
+8. CONCURRENT-WORKER INTERFERENCE (context, not a defect of this task)
+──────────────────────────────────────────────────────────────────────────────
+Two transient workspace-broken states from the parallel task-26 worker
+(harness-evals run_sweep manifest-before-source, then uncompiling sources)
+blocked workspace-wide cargo metadata/nextest during verification. Worked
+around WITHOUT touching their files: per-package listing (their crate holds
+no ignored tests). By final verification run_sweep.rs existed (still
+uncompiling at last check) — irrelevant to this workflow's CI context: on a
+clean checkout of the committed tree, harness-evals compiles (it was green
+at HEAD before task 26 started).
+
+APPENDIX A — verbatim nextest-list outputs for the workflow's exact filters
+(reproduced from the runs above; Windows host, so the 3 #[cfg(windows)]
+pty_qa tests appear in listings but are irrelevant to the ubuntu filter,
+which excludes all of harness-exec)
+  WINDOWS filter → 8:
+    harness-exec::pty_qa qa_100mb_output_spills_bounded
+    harness-exec::pty_qa qa_happy_cargo_version_through_pty
+    harness-exec::pty_qa qa_headless_pathology_timings
+    harness-exec::pty_qa qa_progress_bar_collapses
+    harness-exec::pty_qa qa_teardown_enumeration_under_new_drop_path
+    harness-exec::pty_qa qa_timeout_tree_enumeration
+    harness-exec::pty_qa qa_wsl_typed_statuses
+    harness-lsp::golden_rust_analyzer real_kill9_restart_with_backoff_then_degrade
+  UBUNTU filter → 18 (… + docker_daemon_smoke_run with the container
+  feature = 19):
+    harness-core::autonomy_qa_verdicts qa_destructive_always_asks_every_mode
+    harness-core::autonomy_qa_verdicts qa_plan_mode_freeze_with_schema_snapshot
+    harness-core::autonomy_qa_verdicts qa_smart_approve_benign_read
+    harness-core::loop_qa_transcript transcript_cancel_mid_tool_execution
+    harness-core::loop_qa_transcript transcript_happy_three_turn_conversation
+    harness-daemon::osc_status_tests real_binary_pty_session_emits_program_status
+    harness-lsp::golden_rust_analyzer did_change_refreshes_positions_in_the_live_server
+    harness-lsp::golden_rust_analyzer golden_goto_definition_returns_the_exact_location
+    harness-lsp::golden_rust_analyzer golden_hover_is_bounded_and_names_the_symbol
+    harness-repomap::repomap fifty_k_node_stress_stays_bounded
+    harness-tools::anchor_bench anchor_scheme_benchmark_harness
+    harness-tools::qa_scenarios qa_drift_small_shift_reanchors_large_shift_rejects
+    harness-tools::qa_scenarios qa_happy_three_hunk_selective_with_fringe
+    harness-tools::qa_scenarios qa_strict_mode_rejects_unread_region
+    harness-vfs::bench bench_apply_rollback_10k_files
+    harness-vfs::bench bench_apply_rollback_1k_files
+    harness-vfs::bench bench_gix_worktree_backing_1k_files
+  (list run EXIT 0)

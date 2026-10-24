@@ -3,3 +3,17 @@ node_modules/
 *.log
 .DS_Store
 dhat-heap.json
+
+# orchestration runtime state (never commit)
+.omo/run-continuation/
+
+# local build debris
+msvc-probe.obj
+target-task-*/
+
+# snapshot test-run debris (runtime checkpoint litter)
+harness-snapshots/
+
+# daemon runtime data dir (QA-run residue)
+.harness-daemon/
+

@@ -1,14 +1,39 @@
-{
-  "schema_version": 2,
-  "active_work_id": "rust-agent-harness-v1",
-  "works": {
-    "rust-agent-harness-v1": {
-      "work_id": "rust-agent-harness-v1",
-      "active_plan": ".omo/plans/rust-agent-harness.md",
-      "plan_name": "rust-agent-harness",
-      "session_ids": ["opencode:orchestrator"],
-      "status": "active",
-      "worktree_path": null
-    }
-  }
+﻿{
+    "schema_version":  2,
+    "works":  {
+                  "rust-agent-harness-v1":  {
+                                                "session_ids":  [
+                                                                    "opencode:orchestrator"
+                                                                ],
+                                                "active_plan":  ".omo/plans/rust-agent-harness.md",
+                                                "note":  "T3 checkbox awaits GitHub artifact-quota recalculation; unblock playbook in .omo/evidence/task-3-rust-agent-harness.txt",
+                                                "work_id":  "rust-agent-harness-v1",
+                                                "worktree_path":  null,
+                                                "status":  "paused",
+                                                "plan_name":  "rust-agent-harness"
+                                            },
+                  "media-formats-wave-v1":  {
+                                                "session_ids":  [
+                                                                    "opencode:orchestrator"
+                                                                ],
+                                                "active_plan":  ".omo/plans/media-formats-wave.md",
+                                                "work_id":  "media-formats-wave-v1",
+                                                "worktree_path":  null,
+                                                "status":  "active",
+                                                "plan_name":  "media-formats-wave"
+                                            },
+                  "ecosystem-alignment-v1":  {
+                                                 "session_ids":  [
+                                                                     "opencode:ses_ea774e945ffe45I9Wp629UGOW1"
+                                                                 ],
+                                                 "active_plan":  ".omo/plans/ecosystem-alignment.md",
+                                                 "work_id":  "ecosystem-alignment-v1",
+                                                 "worktree_path":  null,
+                                                 "status":  "completed",
+                                                 "plan_name":  "ecosystem-alignment",
+                                                 "completed_at":  "2026-10-23",
+                                                 "note":  "37/37 todos + F1-F4 APPROVE; delivery PR opened after completion"
+                                             }
+              },
+    "active_work_id":  "media-formats-wave-v1"
 }

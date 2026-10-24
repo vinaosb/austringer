@@ -1,0 +1,24 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('harness minimal step fixture'),'2;1');
+FILE_NAME('minimal.step','2026-01-01T00:00:00Z',('harness'),('harness'),'harness-media','harness','none');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 3 1 4 }'));
+ENDSEC;
+/* harness block remark the tokenizer must skip;
+   embedded pseudo types like PRODUCT( and CARTESIAN_POINT( live here */
+DATA;
+#1 = PRODUCT('Widget','',(),());
+#2 = PRODUCT('Gadget','',(),());
+#3 = PRODUCT_DEFINITION_FORMATION('','',#1);
+#4 = PRODUCT_DEFINITION_FORMATION('','',#2);
+#5 = PRODUCT_DEFINITION('design','',#3,#9);
+#6 = PRODUCT_DEFINITION('design','',#4,#9);
+#7 = SI_UNIT(.MILLI.,.METRE.);
+#8 = SI_UNIT(.NANO.,.SECOND.);
+#9 = PRODUCT_DEFINITION_CONTEXT('part definition',#10,'design');
+#10 = APPLICATION_CONTEXT('core data for automotive mechanical design processes');
+#11 = CARTESIAN_POINT('',(0.,0.,0.));
+#12 = CARTESIAN_POINT('',(10.,20.,5.));
+#13 = CARTESIAN_POINT('',(-2.5,4.75,1.E+003));
+#14 = MANIFOLD_SOLID_BREP('Widget',#15);
+END-ISO-10303-21;

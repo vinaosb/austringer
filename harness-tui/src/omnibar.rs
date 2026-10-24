@@ -1,6 +1,7 @@
-//! Omnibar: one input line owning @file/@symbol/@git mentions and the
-//! `/mode`, `/rewind`, `/skill` command grammar, with pluggable
-//! completion sources.
+//! Omnibar: one input line owning @file/@symbol/@git mentions with
+//! pluggable completion sources. Submit-time command parsing against
+//! the shared grammar lives in `commands` (todo 23 split; both halves
+//! stay under the size budget).
 
 /// Mention namespace selectable inside chat text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,22 +26,7 @@ impl MentionKind {
     }
 }
 
-/// Parsed omnibar content on submit.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Parsed {
-    /// Chat text (mentions left in place for the engine to consume).
-    Chat(String),
-    /// `/mode <name>`.
-    Mode { name: String },
-    /// `/rewind [steps]`.
-    Rewind { steps: Option<u64> },
-    /// `/skill <name> [args…]`.
-    Skill { name: String, rest: String },
-    /// Unknown slash word.
-    UnknownCommand { word: String },
-    /// Known word, bad arguments.
-    Malformed { usage: &'static str },
-}
+pub use crate::commands::{COMMANDS, Parsed, parse};
 
 /// Provider of completion candidates. The binary wires a real one;
 /// tests wire fixtures.
@@ -67,9 +53,6 @@ impl CompletionSource for NoCompletions {
         Vec::new()
     }
 }
-
-/// Slash commands offered by completion.
-pub const COMMANDS: &[&str] = &["/mode", "/rewind", "/skill"];
 
 /// Cap applied to every completion query regardless of caller bound.
 pub const COMPLETE_LIMIT: usize = 20;
@@ -206,49 +189,6 @@ fn classify_token(token: &str) -> Option<(MentionKind, String)> {
     Some((MentionKind::File, rest.to_owned()))
 }
 
-/// Parse omnibar content on submit.
-#[must_use]
-pub fn parse(input: &str) -> Parsed {
-    let Some(command) = input.strip_prefix('/') else {
-        return Parsed::Chat(input.to_owned());
-    };
-    let (word, rest) = match command.split_once(' ') {
-        Some((word, rest)) => (word, rest.trim()),
-        None => (command, ""),
-    };
-    match word {
-        "mode" => match rest.is_empty() {
-            true => Parsed::Malformed {
-                usage: "usage: /mode <name>",
-            },
-            false => Parsed::Mode {
-                name: rest.to_owned(),
-            },
-        },
-        "rewind" => match rest.is_empty() {
-            true => Parsed::Rewind { steps: None },
-            false => match rest.parse::<u64>() {
-                Ok(steps) => Parsed::Rewind { steps: Some(steps) },
-                Err(_) => Parsed::Malformed {
-                    usage: "usage: /rewind [steps]",
-                },
-            },
-        },
-        "skill" => match rest.split_once(' ') {
-            Some((name, args)) => Parsed::Skill {
-                name: name.to_owned(),
-                rest: args.to_owned(),
-            },
-            None => Parsed::Malformed {
-                usage: "usage: /skill <name> [args]",
-            },
-        },
-        other => Parsed::UnknownCommand {
-            word: other.to_owned(),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,40 +229,6 @@ mod tests {
     }
 
     #[test]
-    fn chat_text_with_mentions_parses_verbatim() {
-        let parsed = parse("look at @file:src/lib.rs and @symbol:Omnibar now");
-        assert_eq!(
-            parsed,
-            Parsed::Chat("look at @file:src/lib.rs and @symbol:Omnibar now".to_owned())
-        );
-    }
-
-    #[test]
-    fn slash_commands_parse_typed() {
-        assert_eq!(
-            parse("/mode auto"),
-            Parsed::Mode {
-                name: "auto".into()
-            }
-        );
-        assert_eq!(parse("/rewind"), Parsed::Rewind { steps: None });
-        assert_eq!(parse("/rewind 3"), Parsed::Rewind { steps: Some(3) });
-        assert_eq!(
-            parse("/skill audit run twice"),
-            Parsed::Skill {
-                name: "audit".into(),
-                rest: "run twice".into()
-            }
-        );
-        assert_eq!(
-            parse("/wat x"),
-            Parsed::UnknownCommand { word: "wat".into() }
-        );
-        assert!(matches!(parse("/rewind x"), Parsed::Malformed { .. }));
-        assert!(matches!(parse("/mode"), Parsed::Malformed { .. }));
-    }
-
-    #[test]
     fn active_token_detects_mention_kinds_and_defaults_to_file() {
         let mut bar = Omnibar::default();
         bar.set_text("fix @fi");
@@ -352,6 +258,9 @@ mod tests {
         bar.set_text("/re");
         let cmds = bar.completions(&Fixture, 5);
         assert_eq!(cmds, vec!["/rewind".to_owned()]);
+        bar.set_text("/v");
+        let vote = bar.completions(&Fixture, 5);
+        assert_eq!(vote, vec!["/vote-cancel".to_owned()]);
     }
 
     #[test]

@@ -487,7 +487,7 @@ coupled core (vscode-shim hack; CLI broke on Windows); telemetry default-on;
 ~daily releases w/o stability gates; cloud-Router monetization coupled to free
 OSS; in-process TS tools; policy-only safety (11 CVEs).
 
-## 11. Iteration 4 findings — Kilo Code (fork→rebuild→acquisition; SHA 3d04228, 2026-09-11)
+## 36. Iteration 4 findings — Kilo Code (fork→rebuild→acquisition; SHA 3d04228, 2026-09-11)
 
 **Identity corrections:** repo = Kilo-Org/kilocode (created 2025-03-10, 27.2k★,
 31,054 commits, MIT). Fork of Roo March 2025 (not Aug). ".roomodes/.roo/rules
@@ -570,7 +570,7 @@ user-count metric drift (trust).
 **WATCH:** Anaconda stewardship effect on OSS pace; gastownhall beads-protocol
 adoption; OpenCode v2 migration outcome; ZooCode trajectory.
 
-## 12. Iteration 5 findings — Mentat death autopsy (combined agent; SHA 3a01f0a, archived)
+## 37. Iteration 5 findings — Mentat death autopsy (combined agent; SHA 3a01f0a, archived)
 
 **DEAD TWICE:** repo renamed AbanteAI/**archive-old-cli-mentat** + archived
 (2,544★, Python, Apache-2.0, created 2023-07-25, 560 commits). Active dev Jul
@@ -626,7 +626,7 @@ grouped hunks. **AVOID:** context-architecture thrash; parallel edit formats
 the OSS asset; unversioned spinout-lib coupling. **WATCH:** insertion-conflict
 ordering UI (niche); mentat.ai domain (dead shell).
 
-## 13. Iteration 6 findings — Plandex death autopsy (combined agent; HEAD e2d7720, dormant)
+## 38. Iteration 6 findings — Plandex death autopsy (combined agent; HEAD e2d7720, dormant)
 
 **DEAD as company, OSS dormant-but-unarchived:** solo founder Dane Schneider
 (danenania; 1,301/1,483 commits) joined Promptfoo Oct 2025 (Promptfoo itself
@@ -680,12 +680,12 @@ reliably produce. **WATCH:** fast-apply fine-tuned models (closed cloud).
 
 ## 8. Iteration 1 source record — DeepSeek Harness (architecture agent's full findings w/ 35 pinned permalinks)
 
-## 6. Iteration 1 findings — DeepSeek Harness (`dsh`)
+## 39. Iteration 1 findings — DeepSeek Harness (`dsh`)
 
 Research date 2026-09-11. Repo pinned at master SHA `c291e7961a515f6d7af9304e7fd1d257929aef26`
 (clone in temp). Per-claim URLs; UNVERIFIED flags where noted.
 
-### 6.1 Identity (VERIFIED unless flagged)
+### 39.1 Identity (VERIFIED unless flagged)
 
 - **What**: official DeepSeek AI open-source agent harness, repo
   [`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness),
@@ -730,7 +730,7 @@ Research date 2026-09-11. Repo pinned at master SHA `c291e7961a515f6d7af9304e7fd
   ([README L7](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/README.md#L7)).
   Cordis is a *pre-existing* framework dsh adopted, not dsh-original.
 
-### 6.2 Architecture (primary sources = in-repo docs @ pinned SHA)
+### 39.2 Architecture (primary sources = in-repo docs @ pinned SHA)
 
 **Kernel — service-locator, not middleware stack.** Cordis: plugins contribute
 services (claim stable `ctx.<key>`), typed events, and reversible effects
@@ -854,7 +854,7 @@ board + mailbox over continuable subagents (`spawn_teammate`, `wait_agent`, ...)
 Hook-protocol compatibility packages for Claude Code & Codex hooks
 (`hooks-claude-code`, `hooks-codex`).
 
-### 6.3 Notable concepts (unique/unusual vs Claude Code/Codex/goose/OpenHands)
+### 39.3 Notable concepts (unique/unusual vs Claude Code/Codex/goose/OpenHands)
 
 1. **The loop is a config row.** Only harness in the field where the agent loop
    itself is swapped via profile/patch (sdk-minimal even ships a different
@@ -913,7 +913,7 @@ Hook-protocol compatibility packages for Claude Code & Codex hooks
     ([wire-extensions L41-72](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/deepseek-llm-api-wire-extensions.md#L41-L72)) —
     conflicts with our AVOID "telemetry default-on" (§3); keep ours default-off.
 
-### 6.4 Memory / performance characteristics
+### 39.4 Memory / performance characteristics
 
 - **Context economics**: append-only derivation + in-history prompt appends keep
   provider prefix caches valid; compaction+pruner + spill keep surfaces small;
@@ -936,7 +936,7 @@ Hook-protocol compatibility packages for Claude Code & Codex hooks
   "because it is interesting, and we would not put a client's release process
   behind it yet"; README caps-locked breaking-changes warning).
 
-### 6.5 Candidate ADOPT/AVOID for OUR Rust harness (evidence above)
+### 39.5 Candidate ADOPT/AVOID for OUR Rust harness (evidence above)
 
 **ADOPT candidates**: "model-visible ⇒ logged" invariant + projection seam;
 versioned session-format generations w/ immutable paths + exclusive publication;
@@ -956,7 +956,7 @@ JS plugins — we prefer process/WASM boundaries; consistent with §3 AVOID
 topic as de-facto plugin standards; whether `dsh_session_log` upload becomes an
 industry pattern (server-side session memory).
 
-### 6.6 Sources
+### 39.6 Sources
 
 Primary (pinned SHA c291e79): README, docs/architecture.md, docs/cordis-primer.md,
 docs/tool-catalog.md, docs/subsystems/{compaction,spill,token-meter,sandbox}.md,
@@ -979,13 +979,13 @@ Secondary: [Winder.AI](https://winder.ai/ai-agent-harness-comparison/) (2026-08-
 
 
 
-## 10. Iteration 3 findings — Roo Code (mode-scoped origin; SHA b867ec9, 2026-09-11)
+## 40. Iteration 3 findings — Roo Code (mode-scoped origin; SHA b867ec9, 2026-09-11)
 
 Research date 2026-09-11. Repo pinned at FINAL main SHA
 `b867ec9145750d0ae1ff7f02d35406e9bf2a0b16` (archived; clone in temp). Repo
 URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
 
-### 10.1 Identity + lifecycle (VERIFIED unless flagged)
+### 40.1 Identity + lifecycle (VERIFIED unless flagged)
 
 - **What**: Roo Code — VS Code agentic-coding extension, Apache-2.0,
   RooCodeInc/Roo-Code, "a whole dev team of AI agents in your code editor".
@@ -1047,7 +1047,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
   positioning is real (see 10.2 auto-approval), but "pioneer" is a vendor
   claim; Cline shipped early auto-approve too (iteration 2).
 
-### 10.2 Architecture (primary = pinned source + docs)
+### 40.2 Architecture (primary = pinned source + docs)
 
 **Modes system — the divergence from Cline.**
 - `DEFAULT_MODES` ordered array: architect / code / ask / debug /
@@ -1174,7 +1174,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
 - Worktrees feature (v3.44.0, credit "thanks Cline!" — upstream
   convergence); core.worktree canonicalization fix (Windows paths).
 
-### 10.3 Notable concepts (unique/unusual vs Cline/Claude Code/goose)
+### 40.3 Notable concepts (unique/unusual vs Cline/Claude Code/goose)
 
 1. **Mode-scoped tool masking** (per-mode tool groups + fileRegex + per-mode
    model) — Roo is the ORIGIN (v3.1.0 Jan 2025, pre-dating Cline plan/act);
@@ -1205,7 +1205,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
 12. **Portable persona bundles** — mode export = YAML w/ inline rulesFiles +
     slug-rename handling (persona+rules as shareable artifact).
 
-### 10.4 Roo vs upstream Cline — better / worse
+### 40.4 Roo vs upstream Cline — better / worse
 
 **BETTER:**
 - Tool-masking + role specialization vs Cline's 2-state plan/act — HN:
@@ -1248,7 +1248,7 @@ URLs = permalinks at that SHA. Per-claim URLs; UNVERIFIED flagged.
   harnesses "burn tokens faster" — per-mode cheap models + lean reads were
   Roo's real economics (aicoderscope). UNVERIFIED.
 
-### 10.5 Candidate ADOPT/AVOID deltas for OUR plan (ledger §3 updated)
+### 40.5 Candidate ADOPT/AVOID deltas for OUR plan (ledger §3 updated)
 
 ADOPT: mode-scoped tool masking + fileRegex (core of plan — provenance
 pinned); per-mode model profiles + sticky binding (todo 42 validated);
@@ -1268,7 +1268,7 @@ Roomote source-available cloud-agent model; Kilo's flat-subagent outcomes
 vs orchestrator; whether Cline absorbs custom-modes (they already adopted
 skills + checkpoints patterns).
 
-### 10.6 Sources
+### 40.6 Sources
 
 Primary (pinned b867ec9145750d0ae1ff7f02d35406e9bf2a0b16):
 packages/types/src/mode.ts · packages/types/src/tool.ts ·
@@ -3052,6 +3052,15 @@ Zed (zed-industries/zed) is an open-core Rust editor whose native agent harness 
 - UNVERIFIED carried: Zed Industries funding; public ACP launch date (git proves only internal commits from 2025-07-09); "exemplary docs" praise for closed PRs; Zed Guild credit in release notes (outside git); which hosted models were retired (2026-02-18 docs commit); McpServer production wiring; Delta app internals.
 - Confidence: HIGH — all in-repo architecture claims (pinned SHAs + line numbers), release-tag lineage, renames/reverts (git-verified), PR states (API). MEDIUM — Delta/DeltaDB details + neutral-host economics framing (scout + partial repo evidence), McpServer wiring absence (grep-based negative), perf commit counts (subject-line methodology). LOW (load-bearing caveats only) — funding, guild credit, external dates.
 
+### 23.10 Addendum — the 1.20→1.24 wave (release-feed verified 2026-10-20; §23 body remains at v1.19.2 / 2026-09-11)
+
+Ecosystem sweep 2026-10-20 (tool-output/tool_158a2e576001N7DLPJHyUvzgZG) + roadmap fetch 2026-10-20 (session ses_ea774e945ffe45I9Wp629UGOW1). The weekly train §23.1 recorded held: v1.20.1 (2026-09-16) through v1.24.3 (2026-10-19), no break in cadence (zed.dev/releases/stable; GitHub releases v1.24.3). Agent-relevant deltas:
+
+- **v1.21.0 (2026-09-23): ACP async-task wakeup handling** (external agents' background tasks can wake the panel — extends the §23.2 ACP host surface); SuperGrok sign-in (Grok models in the Agent Panel); `agent.prevent_idle_sleep`; BYOK Claude Opus 5.5 + GPT-6 family (zed.dev/releases/stable/1.21.0, 2026-09-23).
+- **v1.22.0 (2026-09-30): subagent model selection + automatic subagent compaction** — on-the-fly model choice for newly spawned subagents (extends §23.2's per-role model profiles) and auto-compaction of subagent threads (extends §23.2's AutoCompactThreshold knobs to the delegation path); also **dynamically fetched OpenCode models** — OpenCode's provider catalog usable inside Zed, a neutral-host first (zed.dev/releases/stable/1.22.0, 2026-09-30; sweep 2026-10-20).
+- **v1.24.x (2026-10-14→19): terminal tabs draggable into the Agent Panel** (completes the §23.2 Terminal Threads → panel integration line); Gemini 4 Argon; configurable Bedrock tool-use/thinking (GitHub v1.24.3, 2026-10-19).
+- **Roadmap movement (fetched 2026-10-20):** Skills, Edit Tool Improvements, and UI for Terminal Agents now marked Done; ACP improvements promoted to "Coming Up Next" (cross-ref §35.6 WATCH — ACP investment accelerated in four projects this window); **Plan Mode incoming** (cross-ref plan C5); **Code History as Context in progress** — the git-history-context WATCH entry (§35.6) tracks this; it echoes the §23.8 Delta/DeltaDB watch as the next context substrate.
+
 ## 24. Iteration 17 findings — JetBrains Junie + AI Assistant (scout + 2 detail agents + synth; proprietary, 2026-09-11)
 
 Queue item 17. JetBrains' agent stack — AI Assistant 2026.2, Junie (IDE agent; GA 2026-06-17 after ~17 months in beta), Junie CLI (beta 2026-03-09, LLM-agnostic), Junie Local (2026-08-24, on-device Qwen3.6-27B), Air (multi-agent ADE, public preview 2026-03). Harness proprietary (JetBrains EULA; GitHub repos are distribution/issues only) while Mellum2 model weights are open. REWRITES the stale scout-only §24; architecture + community/economics detail agents re-verified headline facts against primary sources (jetbrains.com help 2026.2 line, blog.jetbrains.com Mar–Sep 2026, junie.jetbrains.com docs, support-forum full thread). Community-agent research date 2026-09-12.
@@ -3662,4 +3671,87 @@ Structural controls derived from this evidence: two-tier call governors (soft bu
 - **Secondary/corroboration:** Stencil "The Harness Problem" (apply_patch 50.7% off-family failure; hashline 6.7→68.3); Signal/Youpan (RL schema-prior leakage on Opus 4.8/Sonnet 5); Geometrica AST-edits (model-dependent edit formats); Cursor engineering summaries + Model-Harness-Fit + Copilot SDK changelog (per-family tool routing, OOD takeover, per-model onboarding).
 - **UNVERIFIED/flagged:** Claude-Code per-model system-prompt counterweights (lean_prompt/MODEL-LAUNCH — 0 grep hits in system_prompts_leaks; adopt the pattern gated on our evals only); Opus 4.6 "subagent predilection" exact wording (adjacent evidence only); text.verbosity 560/849/1288 numbers (GPT-5-era cookbook); Gemini thought-signature exact 400 wording (requirement confirmed); Scaffold Effect Zenodo DOI (cite arXiv/OpenReview).
 - **Confidence:** HIGH on the control matrix (all four families' primary docs read this session) and the joint-evaluation numbers (exact-verified against full texts); MEDIUM on production per-model variant practice (consistent secondary reports, no primary from Cursor); LOW on nothing load-bearing — every unverified item carried as a caveat, never a claim.
+
+## 34. Iteration 24 findings — OpenCode 2.0: the daemon-by-default convergence, the plugin-break receipt, and the LSP removal (librarian report + ecosystem sweep; verified 2026-10-20)
+
+OpenCode entered this study as the TS/Bun harness of §1/§2/§3 (doom_loop guard, share links, SQLite sessions). This section is the 2.0 delta, researched 2026-10-20 (OpenCode V2 report: tool-output/tool_158a2e56e001t2dc0NWd3dGsU1; ecosystem sweep: tool-output/tool_158a2e576001N7DLPJHyUvzgZG). Archive coincidence recorded: `@opencode/cli` 2.0.0 hit npm 2026-09-11T23:44Z — the same day this study's snapshot was taken. V1 was captured hours into V2's existence.
+
+### 34.1 What "V2" is (naming, timeline, org)
+- A real 2.x semver line, not a marketing label. `@opencode/cli` created 2026-09-02; **2.0.0 published 2026-09-11T23:44Z** (npm registry, read 2026-10-20); public beta ~July 2026 (The New Stack 2026-10-12 — single secondary source; early-Sept preview binaries directly evidenced in OmO #7847, 2026-09-06); announcement post "OpenCode 2.0" Monday **2026-10-12** (anoma.ly/notes/opencode-2-0/; The New Stack 2026-10-12, "a blog post published on Monday"; main HN submission 2026-10-14); **v2.1.0 shipped 2026-10-20**.
+- Dual-track releases: 1.x ships in parallel (v1.19.3, 2026-10-16); since v1.19.0 (2026-10-11) 1.x installs are never offered 2.x — upgrade is explicit `opencode upgrade --major` (changelog; the 1.x installer refuses 2.x per v1.19.2).
+- Org/company: repo now `anomalyco/opencode` (sst/opencode API-redirects there, verified 2026-10-20); company Anomaly (anoma.ly); the sst→anomalyco move is dated January 2026 by tokenstead (single source, carried as such). ~212k stars (2026-10-11, pinggy). The lineage trap stands: the archived `opencode-ai` repo became Charm's Crush — unrelated.
+- Runtime unchanged in kind: still TypeScript on Bun; the rewrite sits atop the Effect library ("Effect and Promise plugin APIs", `@opencode/sdk/effect`). Third-party "complete TypeScript and Effect rewrite" framings overstate the language delta — V1 was already TS/Bun.
+
+### 34.2 The Service — daemon-by-default (the convergence receipt for our architecture)
+- V1's client/server split was opt-in; **V2 runs a single background daemon by default**, and the TUI, web, desktop, and scripts all attach to the same service (`@opencode/client` autodiscovery, `opencode pair`; announcement 2026-10-12). The daemon rolled out silently before the announcement: r/opencode "Goodbye Opencode" (97↑/160 comments, reddit.com/r/opencode/comments/1w5j4vf) traced "supervisor + silent load" commits to July 2026 and observed "TUI is just like a proxy."
+- **This is our architecture, validated externally.** The same six weeks landed the same shape across the ecosystem: Codex `/daemon` managed background server (rust-v0.163.0, 2026-10-15), Amp's shared runners + Mac-app-as-runner (ampcode.com/news, 2026-09-17→24), Warp's Oz runners/Factories, Cursor's agent-host harness distribution (2026-10-01). The §3 "daemon multi-attach (crush)" ADOPT now has industry-scale corroboration. Consequence for us: no architecture change — only the C1-C3 wiring (plan Waves F/R).
+- The pivot's cost, honestly recorded: Reddit split ("server starts in below a second" praise vs the silent-daemon criticism above); HN main thread 887 points, mixed-positive, including RAM complaints ("takes just as much ram if not more than 1.0" — news.ycombinator.com/item?id=50094994, 2026-10-14). Daemon-by-default is not free trust-wise; our loopback-only + printed-token posture is the counter-discipline.
+
+### 34.3 The plugin-API break and the OmO Native pivot (the cautionary receipt)
+- **Every V1 plugin broke.** V1's `{id, server}` module contract is rejected by the V2 loader, which requires a default export `{id, setup(ctx)}` (or Effect `effect`), with subpath exports `@opencode-ai/plugin/v2/{effect,promise}` (plugin migration guide, opencode.ai/v2/docs/build/plugins/migrate-v1/; loader error shapes in OmO #7847/#9241). Dark Factory (2026-10-14): "turns MCP servers into scripts by default and breaks every V1 plugin."
+- **OmO is the canonical casualty** (full treatment §35): preview break 2026-09-06 (#7847), stable-2.x break confirmed 2026-10-03 (#9241), community full port #9389 (137 API mappings, 17 documented gaps), maintainer paused the dual-host port 2026-10-16, scoped OpenCode 2 support to load-only #10439 (merged 2026-10-18, commit 25478d9a; shipped in 5.1.38 on 2026-10-19), and moved the full experience to standalone "OmO Native" (`omo-ai@beta`, Node >= 24).
+- **The receipt:** a ~20.4k-weekly-download plugin with a fast-moving maintainer could not keep pace with one host's plugin-API major break inside six weeks — the ecosystem's answer was to stop being a plugin (standalone binary on the Pi substrate). Plugin-API dependence is unversioned debt; anything load-bearing must own its distribution. This is why the plan records marketplace/distribution as WATCH-not-build (§35.6) and why our extension surface stays content-addressed, quarantined skills (§27) rather than a foreign plugin API.
+- Corollary breakage: the V1 server API is gone entirely (`--port` removed; the VS Code extension was broken until 2.0.28); and the 2.x line itself keeps breaking — v2.1.0 (2026-10-20) unified providerState→native and removed the `session.compacted` event five weeks after GA. Old stored sessions remain readable via compatibility decoders ("no database migration is required").
+
+### 34.4 LSP removed + the removals ledger
+- **LSP: V2 accepts `lsp` config but runs no language servers, exposes no LSP tools, and produces no diagnostics** — the migration guide is explicit: "Replace workflows that depend on those capabilities with the project's lint, typecheck, or compiler commands" (opencode.ai/v2/docs/migrate-v1/, verified 2026-10-20; Dark Factory 2026-10-14 corroborates). Recorded as a WATCH divergence, **not a trend**: Zed (§23.2 LSP-backed agent tools), Grok Build, and JetBrains (§24 IDE-as-toolbox) all still ship LSP-backed tooling. Decision recorded 2026-10-20 (wave synthesis): our harness-lsp + lsp_query day-one contract stands — the receipt is that a TS/Bun runtime's LSP maintenance cost pushed the largest CLI harness to drop it, a runtime-cost trade we do not share.
+- Other removals (migration guide + changelog, 2026-10-20): the `CLAUDE.md` fallback is gone (AGENTS.md only — our AGENTS.md-only discovery posture now has a peer receipt); session sharing discontinued (v1.19.1 2026-10-15; backend removed in 2.0.30); `todowrite` and session archiving were removed early in 2.x then **restored behind flags in 2.1.0** — a within-line reversal pair; permission action renames bash→shell, task→subagent, write/patch→edit; `external_directory` now allowed-by-default (V1 asked — a loosening counter-signal to our gate posture).
+- **Config-precedence regression (the security receipt):** V2 initially loaded system configuration at LOWEST precedence (V1: highest) — project config could override admin policy. Reported on HN 2026-10-13 ("Major security regression merged into OpenCode V2", item 50075319); fixed across 2.0.28 (#54921, 2026-10-13) and 2.0.29 (#55267, centrally-managed precedence restored). Receipt: layered-config precedence needs a test the day the layering exists — inherited by our policies-key work.
+- **Code Mode:** `@opencode/codemode`, a minimal native JS interpreter wrapping MCP servers and OpenAPI endpoints as script functions, **on by default for all MCP servers**; the vendor claim "add a thousand [servers] with minimal context bloat" ships with no measurements (Dark Factory 2026-10-14 flagged exactly this); SaaSCity's "69% context bloat reduction" appears in no primary source — carried as unverified, marketing-derived; no official benchmarks published (aicoder 2026-10-12). WATCH entry §35.6.
+
+### 34.5 ADOPT / AVOID / WATCH deltas (wave additions)
+- **ADOPT (receipts, not code):** daemon-by-default + thin multi-client attach as the externally-validated shape (the §34.2 cohort) — validates the existing architecture, no change beyond C1-C3 wiring; explicit-major upgrade discipline (1.x never silently auto-joins 2.x — the no-silent-substitution posture extended to self-upgrades); config-precedence regression → layered-config precedence tests from day one.
+- **AVOID:** building on an unstable host plugin API (the §34.3 receipt — V1 contract dead, 2.x itself breaking at 2.1.0); unversioned daemon rollouts (the silent July supervisor rollout spent trust before launch day).
+- **WATCH:** Code Mode MCP-scripting perf claims (unmeasured; §35.6); continued 2.x protocol churn (SDK Effect API "still in development", vendor); native mobile apps "in the works" (vendor roadmap, not shipped).
+
+## 35. Iteration 25 findings — OmO (oh-my-openagent): categories, curated agents, chains — what this plan adopts and refuses (mapping investigation + wave; verified 2026-10-20)
+
+OmO previously appeared in this study only as a passing line inside §14 (Pi/Claw: "coordinates architect/executor disagreements", line 2210) — a recorded gap, since our routing layer (harness-intel) is its direct counterpart. Closed 2026-10-20 from the mapping investigation (session ses_ea774e945ffe45I9Wp629UGOW1, docs/roadmap fetches 2026-10-20), the OpenCode V2 report (tool-output/tool_158a2e56e001t2dc0NWd3dGsU1), and the ecosystem sweep (tool-output/tool_158a2e576001N7DLPJHyUvzgZG).
+
+### 35.1 Identity + the Native pivot
+- oh-my-openagent (`code-yeongyu/oh-my-openagent`; npm `oh-my-openagent`; SUL-1.0; ~20.4k weekly downloads; 70.2k stars, 2026-10-20). **v5.0.0 "OmO Native" (2026-09-26)** is a replatform off OpenCode entirely: a standalone `omo` binary on a pi-based senpi engine, replacing the OpenCode-v1-plugin distribution (release notes open "PLEASE REMOVE OPENCODE V1 FOR OMO… IMMEDIATELY"); v5.1.0 2026-09-28 → v5.1.38 2026-10-19 (~38 releases in 3 weeks). The OpenCode-2 break then forced the load-only shim (#10439, merged 2026-10-18, shipped 5.1.38 on 2026-10-19) with the full experience in Native only — §34.3's cautionary receipt seen from the plugin's side.
+- Substrate note: OmO Native chose Pi (earendil-works/pi) as its engine — itself a traction signal for the Pi WATCH (§35.6).
+
+### 35.2 The agent-model matching scheme (omo.dev/docs#agent-model-matching, fetched 2026-10-20)
+- OmO routes by **task category → model + reasoning effort**, with **fallback chains** and **intent profiles** for the main model; when a model is unavailable or a category is better served elsewhere, the chain resolves **silently** (chain-walking).
+- Counterpart audit (mapping investigation 2026-10-20): our RoutingTable (14 roles, light/medium/heavy tiers, fail-closed validation) and the EffortValue ladder + per-model 400-trap grid (§33) are ahead of the category layer; Failover/FallbackChainSpec with an ask-first hop is a deliberate inversion of chain-walking; Stickiness/PinnedProfile per-task pinning already exists. The measured gaps were: no model-invocable `task` tool, no chains on curated roles, and no intent-based main-model presets — exactly what the plan's Wave D now grafts.
+
+### 35.3 What this plan adopts (todos 13-14, Wave D)
+- **Task categories as the delegation vocabulary** (plan todo 13: `task(category)` grafted onto RouteRequest): adopted with OmO's category mapping as prior art, alongside Claude Code fork-subagents default-on (2.1.30x window; changelog aggregators releasebot/gradually, 2026-10), Cursor Projects (2026-09-10), Qwen managed-agent lead-mailbox (v0.25.x, 2026-10-09→19), and Amp Pucks (ampcode.com/news, 2026-10-06).
+- **Curated cheap-pool read-only agents** (plan todo 14: explore/librarian RoleDefs): the cheap_pool + utility-roles-must-be-cheap validation already exists in our routing table; OmO's curated-agent-with-chain shape is the adopted pattern minus the silent walk.
+
+### 35.4 What this plan refuses
+- **Silent chain-walk.** OmO's chains substitute models without asking; our README contract is ask-never-substitute (research §2 silent-substitution lessons; the fallback hop asks every time). The plan's category chains resolve with notice + confirmation (draft Decisions, 2026-10-20) — the divergence recorded when the mapping was first made.
+- **Plugin-host dependence.** §34.3's receipt; OmO's own pivot is the proof. Our extension surface stays content-addressed skills (§27), never a foreign plugin API.
+
+### 35.5 ADOPT / AVOID / WATCH deltas
+- **ADOPT:** category-keyed delegation routing + curated cheap-pool read-only agents (todos 13-14; receipts §35.2-35.3, plan r5-approved 2026-10-20); intent-style main-model profiles resolved with printed notice + confirmation (plan C2/C4; §35.4).
+- **AVOID:** silent chain-walking — model identity is a contract (research §2; §35.4); shipping OmO-class experiences as a plugin of another harness (§34.3).
+- **WATCH:** OmO Native's standalone trajectory on the Pi substrate — a routing-comparable 70k-star harness, now standalone; earns its own full iteration if it stabilizes (sweep 2026-10-20; §35.1, §35.6-Pi).
+
+### 35.6 WATCH ledger — the plan's deferred list (13 entries, all decided 2026-10-20; enumeration exhaustive per plan todo 29)
+1. **goose → AAIF governance** — canonical repo now `aaif-goose/goose` under the Linux Foundation AAIF org (all in-window release PR links point there; gh API redirect verified 2026-10-20; 55.5k stars). Watch what foundation governance does to cadence and trademark; §3 goose ADOPTs unaffected (sweep 2026-10-20).
+2. **Pi pending study** — earendil-works/pi, 116,573 stars (2026-10-20); v1.0.0 2026-10-01 → v1.3.0 2026-10-15; Mario Zechner + Armin Ronacher; sub-1,000-token system prompt via "lazy skills"; OmO Native's chosen substrate. Deserves a proper iteration study before any receipt is load-bearing (sweep 2026-10-20).
+3. **BYO-subscription auth wave** — Amp accepts Claude Pro/Max plans (2026-10-10), Warp Sign in with ChatGPT (2026-09-23), Zed SuperGrok sign-in (2026-09-23), goose Z.AI Coding Plan (v1.52.0, 2026-09-23), Cursor xAI account linking (2026-10-01): harnesses courting rivals' subscriptions. A provider-auth breadth question for harness-providers; deferred (sweep 2026-10-20).
+4. **Devin memory standard** — agent-memory standard open-sourced with Memory & Dreaming (devin.ai/blog/memory-and-dreaming, 2026-10-05); our memory.rs//recall//dream track the spec for interop, adopt nothing yet (wave synthesis 2026-10-20).
+5. **Plugin marketplace — AVOID pending stabilization** — the wave is real (Antigravity /plugin marketplace v1.3.2, 2026-10-08; Claude Code plugins-official 2.1.302, 2026-10-16), but the §34.3 break receipt is why we stay out until a host demonstrates a stable plugin contract (draft deferral, 2026-10-20).
+6. **Background-UX** — OpenCode background subagents/shell + Ctrl+B foreground→background demotion (announcement 2026-10-12; ~1 week old at planning) plus the silent-daemon trust cost (r/opencode 1w5j4vf). Watch where the UX settles before building (draft deferral, 2026-10-20).
+7. **Git-history-context** — Zed "Code History as Context" in progress on the roadmap (fetched 2026-10-20; echoes the §23.8 Delta/DeltaDB watch); no shipped peer receipt yet (draft deferral, 2026-10-20).
+8. **OSC 7501 standardization** — the emerging terminal-status standard; receipts recorded: Warp issue, OpenCode #55172, Antigravity (external UI/UX pattern catalog, draft C9, 2026-10-20). Daemon emission is scoped to plan todo 24 with sanitize + injection tests (red-team S9).
+9. **Voice** — goose live voice conversations (v1.52.0, 2026-09-23); OpenCode experimental voice API `client.voice.session` (2.0.32→2.1.0, 2026-10). Deferred under the selection filter (draft, 2026-10-20).
+10. **Notebooks** — deferred under the selection filter; no tested-proven peer receipt recorded at planning time (draft, 2026-10-20). Revisit when a peer ships one.
+11. **Web-IDE** — the peer surface exists (OpenCode V2 ships web + desktop clients against the daemon, announcement 2026-10-12); our four-frontends scope stands, deferred (draft, 2026-10-20).
+12. **Code-Mode MCP-scripting** — OpenCode `@opencode/codemode` default-on for all MCP servers; perf claims unmeasured (Dark Factory 2026-10-14; SaaSCity's 69% figure unverified). Watch for measurements; build nothing (draft deferral, 2026-10-20).
+13. **/highlights-style in-product release-notes pattern** — OpenCode V2's TUI ships `/highlights` (OpenCode V2 report, 2026-10-20). Cataloged, deliberately NOT adopted: our release surface is docs/release (leaderboard + eval tables) and the onboarding "What's new / first-run" section lands in getting-started instead (plan todo 31). Recorded here so the non-adoption is grep-findable (red-team P6).
+
+### 35.7 Death-verdict confirmations (sweep, 2026-10-20)
+- **Continue — frozen verdict stands** (§28): no releases since v2.1.0-vscode (2026-06-19); repo shows light pushes (2026-10-20) consistent with maintenance, not harness development.
+- **Plandex — dead verdict stands** (§13): last push 2025-10-03, last release July 2025, no revival signals; 15.8k stars at recheck.
+
+### 35.8 Sources + confidence
+- **Primary/VERIFIED (2026-10-20):** npm registry timestamps (`@opencode/cli` 2.0.0 2026-09-11T23:44Z; `oh-my-openagent` 5.1.38 2026-10-19); GitHub API/releases (anomalyco/opencode tags; code-yeongyu/oh-my-openagent issues #7847/#9241/#9389/#9530/#6169 + PR #10439 + commit 25478d9a; aaif-goose/goose; earendil-works/pi; zed-industries/zed v1.24.3); anoma.ly/notes/opencode-2-0/; opencode.ai/v2/docs/migrate-v1/ + /build/plugins/migrate-v1/; opencode.ai/changelog; zed.dev/releases/stable/1.21.0 + /1.22.0; zed.dev/roadmap; omo.dev/docs#agent-model-matching; HN items 50094994 + 50075319 (Algolia API); ampcode.com/news; reddit.com/r/opencode/comments/1w5j4vf.
+- **Secondary/corroborating:** The New Stack (2026-10-12); Dark Factory (2026-10-14); aicoder (2026-10-12); alternativeto (2026-10-16); pinggy; SaaSCity (its 69% figure carried as unverified); tokenstead (sst→anomalyco January 2026 — single source); releasebot/gradually changelog aggregators (fork-subagents default-on).
+- **In-repo:** .omo/plans/ecosystem-alignment.md (todos 13-14, 24, 29, 31; r5 dual-approved 2026-10-20, sha 941deeff...f082c); .omo/drafts/ecosystem-alignment.md (C2-C9, Decisions, deferral list); tool-output/tool_158a2e56e001t2dc0NWd3dGsU1 (OpenCode V2 report); tool-output/tool_158a2e576001N7DLPJHyUvzgZG (ecosystem sweep); session ses_ea774e945ffe45I9Wp629UGOW1 (mapping investigation + wave synthesis, 2026-10-20).
+- **UNVERIFIED/flagged:** SaaSCity 69% context-bloat figure (absent from all primary sources); sst→anomalyco move date (single source); OpenCode "millions of daily users" (vendor); Zed 1.22.0 item wording via releases.fru.dev summary (official URL cited alongside); Claude Code fork-subagents default-on (aggregators, not the release-note body).
+- **Confidence:** HIGH on version/date facts (registry + GitHub API + official release pages, read 2026-10-20) and the OmO break/pivot timeline (issue → PR → commit → npm chain). MEDIUM on reception characterizations (thread sampling) and aggregator-logged Claude Code items. LOW on nothing load-bearing — every flagged number is carried as a caveat, never a claim.
 

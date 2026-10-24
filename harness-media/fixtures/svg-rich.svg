@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" id="root" class="chart dark">
+  <title>Quarterly chart</title>
+  <desc>Bars per quarter</desc>
+  <rect id="frame" class="frame" x="0" y="0" width="100" height="50" fill="none" stroke="black"/>
+  <g id="bars" class="data">
+    <rect id="q1" x="10" y="20" width="10" height="30" fill="steelblue">
+      <animate attributeName="height" from="0" to="30" dur="1s"/>
+    </rect>
+    <rect id="q2" x="30" y="10" width="10" height="40" fill="steelblue">
+      <set attributeName="opacity" to="0.5"/>
+    </rect>
+    <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="4s"/>
+  </g>
+  <circle id="dot" cx="80" cy="25" r="5" class="marker"/>
+  <text id="label" x="5" y="8" class="caption">Quarter &amp; year</text>
+  <image x="60" y="30" width="16" height="8" href="data:image/png;base64,iVBORw0KGgo="/>
+  <image x="0" y="40" width="4" height="4" xlink:href="tiny-logo.png"/>
+</svg>

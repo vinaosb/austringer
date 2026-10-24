@@ -22,6 +22,7 @@ pub mod compat;
 pub mod google;
 pub mod openai;
 pub mod responses;
+pub mod wire_media;
 pub mod xai;
 
 pub use anthropic::AnthropicAdapter;

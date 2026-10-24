@@ -1,7 +1,9 @@
 //! The model catalog: per-model capability/legality records carrying the
 //! EXPLICIT protocol dialect, the per-model effort grid, and the 400-trap
-//! feature-detection table (research SS33.1). Legality is feature-detected
-//! per MODEL, never per provider — effort-support grids are fragmented
+//! feature-detection table (research SS33.1). The per-model media input
+//! capabilities (plan M7) live in [`super::capabilities`] and are
+//! re-exported below. Legality is feature-detected per MODEL,
+//! never per provider — effort-support grids are fragmented
 //! model-by-model inside a single family, and every family has a trap
 //! list.
 //!
@@ -15,6 +17,12 @@ use serde::{Deserialize, Serialize};
 
 use super::dialect::ProtocolDialect;
 use super::seed;
+
+// The M7 media-capability surface (Capabilities, CapabilityRaiseRefused,
+// OverrideError + the lookup/override methods) lives in
+// `super::capabilities`; these re-exports keep the public path
+// `harness_intel::catalog::...` stable for tests and consumers.
+pub use super::capabilities::{Capabilities, CapabilityRaiseRefused, OverrideError};
 
 /// Provider family (drives SET semantics in the elicitation layer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,12 +207,19 @@ pub struct CatalogEntry {
     pub per_message_effort_beta: bool,
     /// Features this model rejects (the 400-trap table).
     pub traps: Vec<Feature>,
+    /// Media input capabilities — per-model, source-cited, fail-closed
+    /// (a field absent from serialized data deserializes all-false).
+    #[serde(default)]
+    pub capabilities: Capabilities,
 }
 
 /// The catalog: model id -> entry, seeded from research SS33.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Catalog {
-    entries: BTreeMap<String, CatalogEntry>,
+    // pub(crate): the sibling `capabilities` module impls the M7
+    // restriction-only override directly on this map (crate-internal
+    // visibility only; the external API is the methods below).
+    pub(crate) entries: BTreeMap<String, CatalogEntry>,
 }
 
 impl Catalog {

@@ -1,4 +1,5 @@
-# CI — lint gates, nextest archive matrix, coverage, perf-gate stub.
+# CI — lint gates, nextest archive matrix, wasm-plugin tests, coverage,
+# frontends (VS Code tests + web e2e), doctests, perf gate.
 #
 # Design notes:
 #  * Toolchain pinned to the workspace MSRV (Cargo.toml rust-version = 1.98)
@@ -9,10 +10,26 @@
 #    failure can be replayed locally with `cargo nextest run --archive-file`.
 #  * Coverage via cargo-llvm-cov's nextest backend; LCOV report uploaded as
 #    a workflow artifact (no third-party uploader — no token exists yet).
-#  * Live-model evals jobs DO NOT belong here: when todo 44 (evals +
-#    conformance) lands, its jobs go in a SEPARATE SCHEDULED-only workflow
-#    (goose policy — live-model sweeps never gate PRs). Do not add them to
-#    this file's PR path.
+#  * harness-wasm's wasmtime runtime is default-off (wasm-plugins feature,
+#    plan todo 45): the workspace archive compiles its `#![cfg(feature)]`
+#    suites away, so the test job runs them feature-on in a separate step
+#    (clippy gate rides in the lint job next to the harness-bench matrix).
+#  * Doctests are invisible to nextest (longstanding upstream limitation):
+#    a plain `cargo test --doc` step covers them (ubuntu only — the doctest
+#    corpus is platform-independent; the Windows gate runs locally).
+#  * frontends job (todo 25): VS Code `npm ci && npm test` plus the web
+#    e2e Playwright run, windows-latest (repo is Windows-first).
+#    playwright-core resolves exactly as on dev (global npm tree via
+#    NODE_PATH) and the browser is the runner's Chrome stable through the
+#    run-e2e.mjs PLAYWRIGHT_CHROMIUM override.
+#  * --locked on every cargo invocation that resolves dependencies: CI
+#    fails on a stale Cargo.lock instead of silently rewriting it.
+#    cargo fmt needs no lockfile; `nextest run --archive-file` executes
+#    prebuilt binaries from the archive, not the manifest.
+#  * Live-model evals jobs DO NOT belong here: the landed evals crate
+#    (todo 44) gets its jobs in a SEPARATE SCHEDULED-only workflow
+#    (todo 26; goose policy — live-model sweeps never gate PRs). Do not
+#    add them to this file's PR path.
 #
 # PROCESS NOTE — vendored-upstream duplication gate (Kilo kilocode_change
 # discipline, research §11): this repo currently vendors NO upstream code.
@@ -24,7 +41,9 @@
 #
 # Action versions (majors; exact list verified against upstream tags
 # 2026-09-12): actions/checkout@v6, actions/upload-artifact@v7,
-# Swatinem/rust-cache@v2, taiki-e/install-action@v2.
+# Swatinem/rust-cache@v2, taiki-e/install-action@v2. Todo 25 adds
+# actions/setup-node@v7 (latest major verified against upstream
+# releases 2026-10-22).
 # Tool pins: cargo-nextest@0.9.144, cargo-deny@0.20.2, cargo-llvm-cov@0.9.1
 # (cargo-deny and nextest versions match the local dev environment).
 
@@ -68,13 +87,17 @@ jobs:
       - name: rustfmt
         run: cargo fmt --all -- --check
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: "clippy (harness-bench feature matrix: dhat, mimalloc)"
         # Feature-gated gate code (global allocators) must stay lint-clean
         # too; the two features are mutually exclusive by compile_error!.
         run: |
-          cargo clippy -p harness-bench --all-targets --features dhat -- -D warnings
-          cargo clippy -p harness-bench --all-targets --features mimalloc -- -D warnings
+          cargo clippy --locked -p harness-bench --all-targets --features dhat -- -D warnings
+          cargo clippy --locked -p harness-bench --all-targets --features mimalloc -- -D warnings
+      - name: "clippy (harness-wasm feature: wasm-plugins)"
+        # Same discipline for the default-off wasmtime runtime (todo 25):
+        # without this the entire plugin engine has 0% lint coverage.
+        run: cargo clippy --locked -p harness-wasm --all-targets --features wasm-plugins -- -D warnings
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
@@ -107,9 +130,32 @@ jobs:
         with:
           tool: cargo-nextest@0.9.144
       - name: Build test archive
-        run: cargo nextest archive --workspace --archive-file nextest-archive.tar.zst
+        run: cargo nextest archive --workspace --locked --archive-file nextest-archive.tar.zst
       - name: Run tests from archive
         run: cargo nextest run --archive-file nextest-archive.tar.zst
+      - name: Run wasm-plugin tests (feature-gated out of the archive)
+        # harness-wasm's wasmtime suites are `#![cfg(feature)]` inner-gated
+        # and wasm-plugins is default-off, so the workspace archive above
+        # compiles them away — run them with the feature on (todo 25). The
+        # run-count assertion guards against the suites silently shrinking
+        # to zero tests again.
+        shell: bash
+        run: |
+          set -o pipefail
+          NO_COLOR=1 cargo nextest run --locked -p harness-wasm --features wasm-plugins 2>&1 | tee wasm-nextest.log
+          runs=$(sed $'s/\x1b\[[0-9;]*m//g' wasm-nextest.log | grep -Eo '[0-9]+ tests? run' | tail -n1 | grep -Eo '^[0-9]+')
+          if [ -z "$runs" ] || [ "$runs" -eq 0 ]; then
+            echo "::error::harness-wasm --features wasm-plugins ran ${runs:-0} tests (expected >0)"
+            exit 1
+          fi
+          echo "harness-wasm feature-gated tests executed: $runs"
+      - name: Doc tests (ubuntu only)
+        # nextest cannot execute doctests (upstream limitation); plain
+        # cargo test covers them. Ubuntu-only: the doctest corpus is
+        # platform-independent and the Windows gate runs as todo 25's
+        # local acceptance.
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --doc --workspace --locked
       - name: Upload test archive
         # Replayable artifact: `cargo nextest run --archive-file ...` locally.
         # 1-day retention: each archive is ~400 MB and three of them per run
@@ -121,6 +167,48 @@ jobs:
           name: nextest-archive-${{ matrix.os }}
           path: nextest-archive.tar.zst
           retention-days: 1
+
+  frontends:
+    # Todo 25: VS Code extension suites (`npm ci && npm test`; node's
+    # built-in runner — host-free plain TS) plus the web e2e Playwright
+    # run. windows-latest: the repo is Windows-first and run-e2e.mjs's
+    # fixture exe is a Windows build.
+    name: frontends (vscode tests + web e2e)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          # Matches the dev environment the suites are written against
+          # (node:test running .ts needs >=23.6 type stripping).
+          node-version: 25
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Build web e2e fixture daemon
+        run: cargo build --locked -p harness-web --example e2e_daemon
+      - name: VS Code extension tests
+        working-directory: harness-vscode
+        run: |
+          npm ci
+          npm test
+      - name: Install playwright-core (global, dev-version-pinned)
+        # run-e2e.mjs resolves playwright-core from the global npm tree
+        # via NODE_PATH — same resolution as the dev machine. Pinned to
+        # the dev-verified 1.63.0.
+        shell: bash
+        run: |
+          npm install -g playwright-core@1.63.0
+          echo "NODE_PATH=$(npm root -g)" >> "$GITHUB_ENV"
+      - name: Web e2e (runner Chrome via PLAYWRIGHT_CHROMIUM)
+        # No ms-playwright browser cache on runners: point the existing
+        # override at the runner's Chrome stable.
+        env:
+          HARNESS_E2E_EXE: ${{ github.workspace }}\target\debug\examples\e2e_daemon.exe
+          PLAYWRIGHT_CHROMIUM: C:\Program Files\Google\Chrome\Application\chrome.exe
+        run: node harness-web/e2e/run-e2e.mjs
 
   coverage:
     name: cargo-llvm-cov
@@ -142,7 +230,7 @@ jobs:
           # llvm-cov's nextest backend invokes cargo-nextest as the runner.
           tool: cargo-nextest@0.9.144,cargo-llvm-cov@0.9.1
       - name: Generate LCOV report (nextest backend)
-        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --workspace --locked --lcov --output-path lcov.info
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -169,10 +257,10 @@ jobs:
         run: rustup update 1.98 --no-self-update && rustup default 1.98
       - uses: Swatinem/rust-cache@v2
       - name: Build release binaries (harness, harness-daemon, gate)
-        run: cargo build --release -p harness-cli -p harness-daemon -p harness-bench
+        run: cargo build --release --locked -p harness-cli -p harness-daemon -p harness-bench
       - name: Perf gate (budgets + regression vs committed baseline)
         run: >-
-          cargo run --release -q -p harness-bench --bin perf-gate --
+          cargo run --release --locked -q -p harness-bench --bin perf-gate --
           --budgets harness-bench/budgets.json
           --baseline harness-bench/baselines/gate_baseline.json
           --cli-bin target/release/harness.exe
@@ -182,7 +270,7 @@ jobs:
           --report perf-report.json
       - name: Heap-profile allocation regression gate (dhat)
         run: >-
-          cargo run --release -q -p harness-bench --bin heap-profile --features dhat --
+          cargo run --release --locked -q -p harness-bench --bin heap-profile --features dhat --
           --check harness-bench/baselines/heap_profile.json
           --report heap-profile-report.json
       - name: Upload perf reports

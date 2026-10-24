@@ -33,6 +33,9 @@ const APP_JS: &str = include_str!("../assets/app.js");
 /// Protocol codec + transports (WS primary, SSE fallback).
 const PROTO_JS: &str = include_str!("../assets/proto.js");
 
+/// Shared command grammar (todo 23; pinned to the daemon table).
+const GRAMMAR_JS: &str = include_str!("../assets/grammar.js");
+
 /// State store: total, non-throwing reducer over server messages.
 const STORE_JS: &str = include_str!("../assets/store.js");
 
@@ -50,6 +53,7 @@ const FAVICON_SVG: &str = include_str!("../assets/favicon.svg");
 /// relative imports, which content-addressed routes would break.
 const JS_MODULES: &[(&str, &str)] = &[
     ("spa/proto", PROTO_JS),
+    ("spa/grammar", GRAMMAR_JS),
     ("spa/store", STORE_JS),
     ("spa/share", SHARE_JS),
     ("spa/ui", UI_JS),
@@ -153,7 +157,9 @@ mod tests {
         // The entry document embeds CSS and JS verbatim; a literal
         // </style> or </script> inside a source would break out of the
         // inline context.
-        for source in [APP_CSS, APP_JS, PROTO_JS, STORE_JS, SHARE_JS, UI_JS] {
+        for source in [
+            APP_CSS, APP_JS, PROTO_JS, GRAMMAR_JS, STORE_JS, SHARE_JS, UI_JS,
+        ] {
             assert!(!source.contains("</style>"));
             assert!(!source.contains("</script>"));
         }

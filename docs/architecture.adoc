@@ -51,7 +51,7 @@ shared permission queue, research §1).
 [[crate-map]]
 == The workspace map
 
-Twenty-four Cargo crates plus the TypeScript VS Code project. Grouped by
+Twenty-five Cargo crates plus the TypeScript VS Code project. Grouped by
 layer:
 
 [cols="1,3,2"]
@@ -63,6 +63,13 @@ layer:
 invariant tool set with deferred schema hydration, the tool inspector
 chain, autonomy modes, tiered eviction, doctrine-compliant compaction,
 budget ceilings, lifecycle hooks.
+|engine
+
+|harness-tools
+|The bounded file-tool implementations behind `view_window` and
+`edit_lines`: windowed reads, anchored line edits, hashline anchors,
+AST-validated application, semantic hunk staging — no whole-file
+rewrites, no full-file echo.
 |engine
 
 |harness-providers
@@ -129,6 +136,13 @@ fuel metering, declared capabilities. Off by default.
 |SQLite source-of-truth with XChaCha20-Poly1305 encryption at rest, lazy
 turn paging, fork/resume, cross-session memory.
 |persistence
+
+|harness-media
+|The 34-format media adapter slate: typed format/capability vocabulary,
+probe registry, structural diff + round-trip verification, tiered
+executor dispatch — served by the daemon's media surface (upload/fetch
+with delivery-cap projection).
+|surfaces
 
 |harness-mcp
 |MCP client and server modes over rmcp: per-server timeouts, transport

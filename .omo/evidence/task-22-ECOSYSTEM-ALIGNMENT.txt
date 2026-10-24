@@ -1,0 +1,152 @@
+Task 22 — CLI: sessions verbs, condensation render, NDJSON completeness (ecosystem alignment)
+====================================================================================================
+Date: 2026-10-21
+Worker: Sisyphus-junior (checkbox 22, .omo/plans/ecosystem-alignment.md)
+
+WHAT LANDED
+-----------
+All in harness-cli only (daemon route shapes consumed read-only, no daemon source touched):
+1. cli.rs: SessionsCommand gains `List` (unit variant) and `History(SessionsHistoryArgs)`
+   (positional session id); doc/help strings follow the t11 per-variant convention (route +
+   --url requirement). Sessions enum doc updated to "todo 11 search; todo 22 list/history".
+2. src/sessions.rs (the t11 module, extended): shared `http_surface(spec)` (base + bearer
+   token, missing --url => the SAME typed transport hint, now worded "sessions commands")
+   and `send_typed(request)` (200 => body, 401/403 => Auth, other => Protocol with the
+   daemon's typed error body). The three verbs:
+   - `harness sessions list`  -> GET /sessions ({"sessions":[...]}) => one line per live id
+     ("no live sessions" + exit 0 when empty).
+   - `harness sessions history <sid>` -> GET /s/{sid}/history (bare RunRecord array) =>
+     one line per row `[n] automation=<id> fired@<minute>m outcome=<outcome>` with
+     ` verdict=<v>` appended on completion rows ("no runs recorded ..." + exit 0 when the
+     session is live but unrun). The sid is percent-encoded as a path segment (reuses
+     client.rs's encoder, now pub(crate)) — session ids are graphic-ASCII and may contain '/'.
+   - search refactored onto the same helpers; behavior byte-identical (typed 400 path
+     unchanged).
+3. render.rs (flagged over-ceiling file, additions kept surgical):
+   - Event::Condensation now renders: "~ condensed through seq <n> — <first summary line>"
+     (was `None` — the INVISIBLE bug this task names). Event::Snapshot stays None (the task
+     names only Condensation).
+   - New `ndjson_line(msg)`: event frames take the envelope shape, EVERY other ServerMsg
+     passes through verbatim — the single place expressing "NDJSON passes ALL v2 frames,
+     never a filtered subset". run.rs print_msg's json branch now calls it (net smaller).
+4. client.rs: SessionTransport enum -> struct { carrier: Carrier, negotiated_version }.
+   next_msg() records the daemon-acked wire version from HelloAck; new
+   `negotiated_version()` accessor. The CLI already PROPOSES PROTOCOL_VERSION (2) on both
+   carriers (client.rs Hello construction; nothing anywhere proposes 1 — grep verified —
+   so the plan's "flip it to 2 if it proposes 1" clause found nothing to flip); the
+   negotiated value is now OBSERVABLE and asserted = 2 by test against the real router.
+5. Display-only ask contract verified as shipped: run.rs wait_turn answers only
+   PermissionAsk from stdin; FallbackAsk/PlanAsk render and pass through unanswered
+   (fallback timeout => task 9's same-model retry on the daemon side; plan approval needs
+   an attached interactive frontend — tasks 19/20/21). Human lines for fallback asks and
+   plan approval states were already present (task 1 sibling arms); this task pins them
+   with tests (fixture-built FallbackAskPayload via serde, PlanAsk/PlanResolved direct).
+
+NEW TESTS (15)
+--------------
+harness-cli/src/render.rs (4 unit):
+  - condensation_renders_a_condensed_line ("~ condensed", "seq 4", summary visible)
+  - human_render_shows_fallback_and_plan_approval_states (current/proposed/reason line,
+    "awaiting approval", PlanResolved approved line)
+  - ndjson_lines_pass_all_v2_frames_through (usage deserialized from a JSON fixture with
+    model identity + token counts; fallback_ask contains "fallback_ask"; verdict
+    "confirmed" with evidence; team_budget inside an event envelope)
+  - (existing 6 render tests unchanged and still green)
+harness-cli/src/sessions.rs (3 unit): list render one-line-per-session; list render
+  rejects a body without the sessions array (typed Protocol error); history render rows
+  with verdicts.
+harness-cli/tests/sessions_verbs_cli.rs (6 integration; real harness.exe via assert_cmd
+  against the real axum router, t11 inproc pattern):
+  - sessions_list_prints_live_sessions
+  - sessions_history_prints_run_rows_with_verdicts (runs.jsonl seeded through RunHistory)
+  - sessions_history_unknown_session_is_a_typed_failure (daemon 404 => stderr "unknown
+    session", exit 1)
+  - sessions_search_regression_guard_preserves_t11_behavior (ranked hits, s2 before s1,
+    PLUS FTS syntax error => exit != 0, stderr "bad query")
+  - attach_connection_negotiates_protocol_version_2 (SessionTransport against the WS
+    attach route; negotiated_version() == Some(2) once HelloAck lands)
+  - run_output_json_contains_the_usage_frame (identity-bearing ComposedInference factory —
+    identity built from a JSON fixture so the CLI crate never names the providers type —
+    whose scripted provider reports TurnUsage; real `run --output-json` stdout contains a
+    "type":"usage" line with input 10 / output 20 / model mock-1 and the ok turn_result)
+
+RED (captured before implementation; both stages)
+------------------------------------------------
+Stage 1 — lib unit tests naming not-yet-existing API (nextest -p harness-cli):
+  6 compile errors E0422/E0425/E0433: `PlanAskPayload` not found, `ndjson_line` not found
+  (x4 call sites), `VerdictKind` not found — render.rs:381/416/434/438/440/448.
+Stage 2 — after render/client landed (lib green 31/31), the verbs still unwired
+  (nextest --test sessions_verbs_cli): 3 FAILED, exit code 2 each:
+  - sessions_list_prints_live_sessions: stderr "error: unrecognized subcommand 'list'"
+  - sessions_history_prints_run_rows_with_verdicts: "unrecognized subcommand 'history'"
+  - sessions_history_unknown_session_is_a_typed_failure: same, exit 2
+  (negotiation / usage-NDJSON / search-guard already PASSed at this stage — the
+  negotiated-version capture and the daemon's v2 pass-through were the landed parts.)
+
+GREEN GATES (exact invocations + results; all via
+cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo ...")
+----------------------------------------------------------------------------------------------------
+1. cargo nextest run -p harness-cli -p harness-daemon --no-fail-fast
+   => 419 tests run: 419 passed, 1 skipped (pre-existing skip). Includes the 15 NEW above.
+2. cargo clippy --workspace --all-targets -- -D warnings  => green (no warnings).
+NOTE (concurrency, not a repo defect at handoff): an earlier mid-run window saw
+   harness-daemon transiently broken/failing (osc.rs:109 E0308 + 4 osc_status_tests
+   failures) from the todo-24 worker's in-flight edits to THEIR files (osc.rs/notify.rs/
+   tests/osc_status_tests.rs — untracked/dirty in git status, not touched by this task).
+   By the final full run that worker had landed their fix: all osc_status_tests PASS in
+   the 419/419 result above.
+
+HAPPY PATH (hands-on, real binaries; transcript from
+cargo nextest run -p harness-cli --test sessions_verbs_cli --nocapture)
+----------------------------------------------------------------------------------------------------
+--- sessions list ---
+[1] beta
+[2] alpha
+
+--- sessions history alpha ---
+[1] automation=nightly fired@1000m outcome=started
+[2] automation=nightly fired@1000m outcome=task_completed verdict=confirmed
+
+  => both verbs drive the real harness.exe against the real daemon router; history rows
+     carry the gate verdict on completion rows. (List order is daemon HashMap order;
+     no sort is promised or tested.)
+
+FAILURE PATH (hands-on, real binaries; same --nocapture run)
+----------------------------------------------------------------------------------------------------
+--- FTS syntax error (exit 1) ---
+harness: protocol error: status 400: bad query: unterminated string
+
+  => t11 behavior preserved through the new dispatch: typed 400 surfaces as exit 1 with
+     the spaced daemon code, never a 500 or a panic. Unknown history sid: exit 1, stderr
+     "unknown session" (daemon's typed 404). Missing --url on any sessions verb: the
+     typed transport hint (t11 wording, now verb-family wide).
+
+NEGOTIATION NOTE
+----------------
+  - Both carriers send Hello.version = PROTOCOL_VERSION (2) — grep of harness-cli found
+    no code path proposing 1, so the in-scope "flip 1 -> 2" had nothing to flip.
+  - The daemon echoes the negotiated version in HelloAck; SessionTransport now records it
+    and the test pins Some(2). A v2 negotiation is what guarantees usage/fallback/
+    verdict/team frames are NOT withheld (compat downgrades only fire for v1 peers).
+
+SIZE DISCIPLINE
+---------------
+  - render.rs: pre-existing over-ceiling (312 pure LOC at baseline by the repo's counting;
+    the plan cites 253 from an earlier count) — additions surgical: 1 match arm, 1 fn
+    (ndjson_line), mandated tests. run.rs shrank by the print_msg consolidation.
+  - client.rs: 246 -> 253 pure LOC (+7). The struct+carrier split is the minimal shape
+    that owns the negotiated-version state once (per-carrier fields or a shared trait
+    cost more lines/abstraction). Flagged here for the orchestrator like render.rs was.
+  - sessions.rs 105 -> 192 (under ceiling); cli.rs 77; new test file is test-fixture code
+    in the repo's established integration-suite idiom.
+
+NOTES / DEVIATIONS
+------------------
+- The plan's QA prose ("verbs work against fixture daemon") is satisfied by the inproc
+  real-router + real-binary pattern (assert_cmd drives C:\ct\debug\harness.exe); no
+  separate daemon process is needed for a fixture whose provider is scripted.
+- `sessions list` shows LIVE sessions (the daemon route returns session_ids() = live
+  hosts); store-resident-but-never-started sessions are the search route's domain. This
+  matches the route's semantics from task 2; no daemon change made or needed.
+- No .omo/plans edits; no commit; no new dependencies (harness-providers types reached
+  only through serde type inference, never named).

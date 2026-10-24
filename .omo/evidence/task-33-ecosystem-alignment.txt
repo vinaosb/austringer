@@ -1,0 +1,147 @@
+Task 33 — Session cost governance: wire the money ledger
+Plan: .omo/plans/ecosystem-alignment.md todo 33 (Wave D)
+Date: 2026-10-21 | Machine: all cargo via `cmd /c %TEMP%\opencode\cargo-env.cmd`, CARGO_BUILD_JOBS=3 (LNK1102 avoidance, todo-1 learning)
+
+==========================================================================
+WHAT LANDED (surface: harness-daemon only; harness-core + harness-orchestration UNTOUCHED — every needed seam already existed)
+==========================================================================
+NEW  harness-daemon/src/cost_ledger.rs   SessionLedger (core SpendLedger over a Session-period money cap),
+                                        CostSnapshot (HUD badge state, todos 19/20 consume),
+                                        CostLedgerInference (engine-loop decorator: preflight gate + priced booking + typed events),
+                                        DEFAULT_SESSION_COST_CAP_MICROS = 20_000_000 ($20/session)
+NEW  harness-daemon/tests/cost_ledger_tests.rs  8 acceptance tests (filter `cost_ledger`)
+M    events.rs     SessionEvent::CostWarning / CostStop (consumed_micros, cap_micros)
+M    compat.rs     v1 downgrade arms -> Notification kinds cost_warning / cost_stop (frame id preserved) + unit test
+M    attach.rs     cost_ledger OnceLock + SessionHost::cost_ledger() accessor + CommandRejected::CostCapReached(StopReason)
+                  + refuse_at_cost_cap intake gate on Submit/SubmitMedia/SubmitBlocks (Steer/Cancel stay open)
+M    config.rs     DaemonConfig.session_cost_cap_micros (u128, default above) + parse_session_cost_cap_usd (integer-only decimal dollars)
+M    server.rs     session_with_config binds the ledger BEFORE engine spawn and wraps identity-bearing stacks:
+                  CostLedgerInference( UsageInference( factory stack ) ) — scheduled sessions get the identical wiring
+M    launch/*      SessionChildExecutor carries the parent host; child stacks wrap UsageInference + CostLedgerInference
+                  against the PARENT ledger -> child spend aggregates into the parent; badge events on the PARENT stream
+M    usage.rs      builtin_prices() -> pub(crate) (one table, one money figure per turn; shared with the ledger)
+M    bin           HARNESS_SESSION_COST_CAP_USD user-global override (decimal dollars -> integer micros; typed rejection)
+
+Zero harness-core changes: MicroUsd/Spend/SpendLedger/preflight/80-100 thresholds consumed as-is.
+ABSOLUTE_MAX_TOKENS (harness-orchestration/src/budget.rs:12) semantics untouched — token caps remain per-launch;
+this ledger is the session COST contract.
+
+==========================================================================
+RED FIRST (captured before implementation)
+==========================================================================
+Command: cmd /c "%TEMP%\opencode\cargo-env.cmd" cargo nextest run -p harness-daemon cost_ledger
+Result: compile failure — every target API missing (the honest RED for a new surface):
+
+  error[E0432]: unresolved import `harness_daemon::config::parse_session_cost_cap_usd`
+  error[E0432]: unresolved import `harness_daemon::cost_ledger`
+  error[E0560]: struct `DaemonConfig` has no field named `session_cost_cap_micros`
+  error[E0599]: no variant named `CostWarning` found for enum `SessionEvent`
+  error[E0599]: no variant named `CostStop` found for enum `SessionEvent`
+  error[E0599]: no variant named `CostCapReached` found for enum `CommandRejected`
+  error[E0599]: no method named `cost_ledger` found for struct `Arc<SessionHost>`
+  error: could not compile `harness-daemon` (test "cost_ledger_tests") due to 15 previous errors
+
+(First run also hit the machine's parallel-job memory failure — os error 1455 paging file —
+the documented reason every subsequent invocation pins CARGO_BUILD_JOBS=3.)
+
+Intermediate RED (implementation present, fixture bugs — captured then fixed):
+  - `turn two must succeed: failed::Terminal { status: Success }` — task_completed tool calls make the
+    session terminal; multi-turn fixtures switched to plain turns (TurnComplete keeps the session live).
+  - `parse_session_cost_cap_usd("5")` rejected — empty fractional part parsed as Err; fixed.
+  - child-id prefix: children are `{launch_stem}-child-{task}` (launch stem "cost-spec"), not "l-...".
+
+==========================================================================
+GREEN (every invocation, verbatim summaries)
+==========================================================================
+1) cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon cost_ledger"
+   Summary [   0.150s] 8 tests run: 8 passed, 237 skipped
+
+2) ACCEPTANCE COMMAND — cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-core -p harness-daemon"
+   Summary [  21.922s] 656 tests run: 656 passed, 6 skipped
+   (includes the untouched v1 byte-replay corpus, team events, protocol frames, scheduler e2e — no regressions)
+
+3) cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy -p harness-daemon --all-targets -- -D warnings"
+   Finished `dev` profile ... in 11.54s  (clean)
+
+Plan-QA filter also satisfied literally: `cost_ledger_warning_stop_at_cap_halts_turns_typed` contains the
+substring `cost_ledger_warning_stop` (nextest positional filter).
+
+==========================================================================
+THE FOUR REQUIRED BEHAVIORS + FAILURE SCENARIO (test-proven)
+==========================================================================
+(1) 80% crossing -> cost_ledger_warning_at_80_pct_emits_typed_event_and_badge_state
+    cap 1_000_000 µUSD; turns 500k + 350k (haiku $1/M input: input_tokens == µUSD exactly).
+    Exactly ONE CostWarning {850_000, 1_000_000}; no CostStop; badge snapshot
+    {consumed 850_000, warned, !stopped} via SessionHost::cost_ledger().snapshot() — the HUD seam.
+
+(2) 100% crossing -> cost_ledger_warning_stop_at_cap_halts_turns_typed
+    turns 500k + 600k = 1.1M (overshoot recorded exactly: CostStop {1_100_000, 1_000_000}).
+    Next Submit -> Err(CommandRejected::CostCapReached(StopReason)) whose Display names consumed AND cap
+    ("money budget exhausted for session period: consumed 1100000 of 1000000 micro-USD").
+    A queued submit (kicker path, bypasses intake) makes ZERO further provider calls (counter == 2) and
+    produces NO assistant turn — the ledger preflight refuses inside the inference seam before the provider.
+
+(3) Child aggregation -> cost_ledger_child_spend_aggregates_into_parent_ledger
+    2-child disjoint launch via the REAL /launch path (handle_command -> start_launch -> run_launch ->
+    SessionChildExecutor). Each child's single turn books 1.2M; parent ledger snapshot consumed == 2_400_000,
+    warned + stopped; CostWarning and CostStop fire on the PARENT session stream; both ChildStarted/ChildFinished.
+
+(4) Automation session owns its cap -> cost_ledger_automation_session_respects_own_cap
+    state.session_scheduled("auto-costcap-1", Some(5)) — the DaemonKicker construction path. Three fires:
+    exactly two provider calls (the third is refused at the preflight seam — kicker submits bypass intake,
+    so the provider seam IS the automation cap), warn+stop events, stopped badge.
+
+(5) FAILURE scenario -> cost_ledger_pending_fallback_ask_resolves_before_stop_no_substitution
+    Session crosses its cap in the SAME inference call that carries a mediated fallback ask: the scripted
+    stack mediates first (deny-side answer: chosen == current), returns the spend that crosses 100%.
+    Asserted ORDER on the session stream: the fallback-resolved Notification precedes the CostStop frame;
+    the resolution targets claude-haiku-4-5 (SAME model — deny-side retry); the next submit is refused typed.
+    No model ever switched. The ask-first contract resolves strictly before the halt can refuse the next call.
+    (mediation.rs untouched, read-only as required.)
+
+(6) Unpriced honesty -> cost_ledger_unpriced_turns_do_not_trip_the_cap
+    fake identity, 900M input tokens x2 turns: consumed stays 0, no warning/stop ever, submits never refused.
+    cost_usd_micros == None turns book Cost::Unpriced -> zero money advance: a cap cannot trip on unknowns.
+
+(7) Config -> default $20/session asserted; HARNESS_SESSION_COST_CAP_USD parses "5"/"12.50"/"0.000001"
+    integer-only; rejects "", "-1", "1.2345678", "abc", "1.2.3" typed.
+
+==========================================================================
+DESIGN DECISIONS (recorded per task instructions)
+==========================================================================
+- DEFAULT cap = $20/session (20_000_000 µUSD): Opus-class heavy turns (~$3-4 each) hit the 80% warning
+  within ~5 turns; mid-tier sessions run dozens of turns untouched; same order of magnitude the 20M-token
+  per-launch guard implies at list prices. Override is USER-GLOBAL ONLY: DaemonConfig field +
+  HARNESS_SESSION_COST_CAP_USD env (binary). No repo-local surface, no new config format (extends the
+  existing env seam exactly like HARNESS_PROVIDER_TIMEOUT_SECS).
+- Unpriced turns: Cost::Unpriced books zero money (spend.money() == 0), token counts still carried in the
+  Spend but the token dimension is uncapped in this ledger — token ceilings remain ABSOLUTE_MAX_TOKENS's
+  per-launch contract. None can never trip a cap; submits are never refused on unknowns.
+- Per-session halts: each SessionHost owns its ledger; other sessions keep running (structurally true —
+  no shared registry; DaemonState.hosts is the registry).
+- Stop semantics: CostStop is a typed terminal event; intake refusals carry the core StopReason verbatim.
+  NEVER a silent drop, NEVER a model switch. Children of a stopped parent refuse at their own preflight
+  (the parent ledger is their gate) — launches from a stopped session cannot spend.
+- Overflow: SpendLedger record-refusals (u128 overflow) book nothing and signal nothing — core contract
+  preserved; unreachable at realistic magnitudes.
+- Event vocabulary on the wire: v2 clients get typed CostWarning/CostStop frames; v1 clients get
+  Notification kinds cost_warning/cost_stop with the frame id preserved (t8 structural gate classified;
+  compat unit test + full v1 byte-replay corpus prove no v1 breakage).
+
+==========================================================================
+FINDING (pre-existing, out of scope, logged to issues.md)
+==========================================================================
+harness-core loop quirk: Operation::ALL runs Retry -> StopHook -> ExitOnError, and StopHook's consult
+guard does not check last_error. On a multi-turn session (turn_ended stale-true from the previous clean
+turn), a FIRST-inference failure is swallowed: StopHook returns TurnComplete and ExitOnError never runs,
+so the run reports turn_complete with no failure surface. Affects ANY inference error on turns >= 2,
+not only cost refusals (single-turn sessions fail typed correctly — ExitOnError's tests pass because
+turn_ended starts false). Cost todo dodged it deliberately: the halt contract is proven at the provider
+seam (zero calls, no assistant turns) + typed intake refusal + typed Stop event. Fix belongs in core
+(guard StopHook's consult on last_error.is_none()) — flagged for the orchestrator, NOT changed here.
+
+==========================================================================
+NOT DONE (owned by other todos, per plan)
+- HUD/TUI rendering of the badge (todos 19/20 consume SessionHost::cost_ledger().snapshot() and the
+  typed frames).
+- No commit (per task instructions).

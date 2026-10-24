@@ -4,49 +4,41 @@
 
 use serde::{Deserialize, Serialize};
 
+use harness_core::event::MediaRef;
+use harness_providers::identity::ModelIdentity;
+
+pub use crate::ask::{
+    Answer, AskPayload, FallbackAskPayload, PlanAskPayload, PlanDecision, PlanOutcome, Resolution,
+};
+pub use crate::errors::{ErrorCode, ProtocolError};
+
 /// Wire protocol version. Bump on breaking change; servers refuse
 /// mismatched [`ClientMsg::Hello`] versions with
-/// [`ErrorCode::ProtocolVersion`].
-pub const PROTOCOL_VERSION: u32 = 1;
+/// [`ErrorCode::ProtocolVersion`]. Version 2 adds the media surface
+/// (upload route, `submit_media`, `media_result`); v1 clients are
+/// served through the wire downgrade in [`crate::compat`].
+pub const PROTOCOL_VERSION: u32 = 2;
+
+/// Lowest protocol version this daemon still serves (v1 frontends are
+/// never refused; they receive downgraded frames instead).
+pub const MIN_PROTOCOL_VERSION: u32 = 1;
 
 /// Hard cap on any single decoded frame (1 MiB). Oversized input is
-/// rejected before parsing.
+/// rejected before parsing. Media bytes NEVER ride frames — they move
+/// through the size-capped HTTP upload route.
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 /// Cap on any free-text field carried inside a frame.
 pub const MAX_TEXT_FIELD_BYTES: usize = 64 * 1024;
+
+/// Cap on the number of media references one submit may carry.
+pub const MAX_MEDIA_PER_SUBMIT: usize = 16;
 
 /// Cap on client ids and session ids (short identifiers, not prose).
 pub const MAX_ID_BYTES: usize = 128;
 
 /// Cap on the number of frames a resync snapshot may carry.
 pub const MAX_SNAPSHOT_FRAMES: usize = 4096;
-
-/// Decode/protocol failures. All variants are transport-agnostic.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ProtocolError {
-    /// Frame exceeded [`MAX_FRAME_BYTES`].
-    #[error("frame exceeds {MAX_FRAME_BYTES} bytes")]
-    Oversized,
-    /// Frame did not decode into a known message.
-    #[error("malformed frame: {0}")]
-    Malformed(String),
-    /// Frame decoded but a field violated its bound.
-    #[error("field out of bounds: {0}")]
-    OutOfBounds(&'static str),
-}
-
-/// A client's answer to a permission ask.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Answer {
-    /// Approve this one call.
-    AllowOnce,
-    /// Approve and remember for the session.
-    AllowSession,
-    /// Refuse.
-    Deny,
-}
 
 /// Commands a client may send into a session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +53,14 @@ pub enum SessionCommand {
     Steer {
         /// User text.
         text: String,
+    },
+    /// Queue a new user turn carrying previously uploaded media
+    /// (protocol v2; refs resolve against the session media store).
+    SubmitMedia {
+        /// User text (may be empty when the turn is media-only).
+        text: String,
+        /// Stored media references (each from the upload route).
+        media: Vec<MediaRef>,
     },
     /// Request cancellation of the running turn.
     Cancel,
@@ -99,135 +99,51 @@ pub enum ClientMsg {
         /// Ask being cancelled.
         ask_id: u64,
     },
+    /// Answer a broadcast model-fallback ask. The answering identity is
+    /// the SERVER-ASSIGNED per-connection id at the transport pump —
+    /// never the client-asserted Hello id (Designated/LocalOnly
+    /// mediation keys on it). `chosen` must equal the ask's `proposed`
+    /// to hop; any other identity keeps the current model.
+    FallbackAnswer {
+        /// Ask being answered.
+        ask: u64,
+        /// The identity the answering client chooses.
+        chosen: ModelIdentity,
+    },
+    /// Rewind the session to the snapshot `steps` restore points back
+    /// (1 = the latest snapshot): restores workspace files through the
+    /// harness-snapshots transaction, truncates the persisted session
+    /// log to the restore head, and broadcasts a System "restored to
+    /// <label>" event. Explicit-only — nothing ever rewinds without
+    /// this message.
+    Rewind {
+        /// Restore points to walk back (1 = latest snapshot).
+        steps: u64,
+    },
+    /// Enter or exit interactive plan mode (todo 16). Plan mode is OFF
+    /// by default; entering it gates every write tool behind the
+    /// pending plan's approval until [`ClientMsg::PlanAnswer`]
+    /// resolves it (or this message exits the mode).
+    PlanMode {
+        /// `true` = enter plan mode, `false` = exit.
+        on: bool,
+    },
+    /// Answer a broadcast plan-approval ask. The answering identity is
+    /// the SERVER-ASSIGNED per-connection id at the transport pump
+    /// (the mediation-policy contract; the HTTP command route refuses
+    /// this message typed). Approval NEVER happens without an explicit
+    /// answer here — timeout and skip-surfaces resolve deny-side.
+    PlanAnswer {
+        /// Ask being answered.
+        ask: u64,
+        /// The decision.
+        decision: PlanDecision,
+    },
     /// Liveness ping.
     Ping,
 }
 
-/// How one ask resolved. Exactly one variant is ever produced per ask
-/// (the N1 invariant enforced by [`crate::mediation`]).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Resolution {
-    /// An answering client allowed it.
-    Allowed {
-        /// Which client answered.
-        by: String,
-    },
-    /// An answering client refused it.
-    Denied {
-        /// Which client answered.
-        by: String,
-    },
-    /// A client cancelled it.
-    Cancelled {
-        /// Which client cancelled.
-        by: String,
-    },
-    /// The synchronous deadline fired with no valid answer.
-    Timeout,
-}
-
-/// A broadcast permission ask.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AskPayload {
-    /// Ask correlation id.
-    pub ask_id: u64,
-    /// Tool requesting approval.
-    pub tool: String,
-    /// Unredacted target for the approving human (never model-visible).
-    pub target: Option<String>,
-    /// Redacted, model-safe reason.
-    pub reason: String,
-    /// Synchronous deadline in milliseconds after ask start.
-    pub deadline_ms: u64,
-}
-
-/// Daemon-emitted session events on the typed event stream. `recorded`
-/// wraps the engine's own durable event; the rest are daemon-level.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum SessionEvent {
-    /// An engine event, sequence-stamped.
-    Recorded {
-        /// Engine sequence number (1-based).
-        seq: u64,
-        /// The durable event.
-        event: harness_core::event::Event,
-    },
-    /// A turn workflow started.
-    TurnStarted {
-        /// Turn number.
-        turn: u64,
-    },
-    /// A turn workflow finished.
-    TurnFinished {
-        /// Turn number.
-        turn: u64,
-        /// Run outcome summary.
-        outcome: String,
-    },
-    /// A semantic diff surfaced for review UIs.
-    Diff {
-        /// Changed path (relative, forward slashes).
-        path: String,
-        /// blake3 of the before content (hex, empty for adds).
-        before_hash: String,
-        /// blake3 of the after content (hex, empty for deletes).
-        after_hash: String,
-        /// Rendered hunks.
-        hunks: Vec<String>,
-    },
-    /// A notification crossed the daemon bus.
-    Notification {
-        /// Notification kind (typed vocabulary).
-        kind: String,
-        /// Human-facing message.
-        message: String,
-    },
-    /// A worker claimed this session from a named queue.
-    WorkerClaimed {
-        /// Queue name.
-        queue: String,
-        /// Worker id.
-        worker: String,
-    },
-    /// The claiming worker vanished; session self-healed.
-    WorkerHealed {
-        /// Queue the session returned to.
-        queue: String,
-    },
-}
-
-/// One numbered frame on the monotonic per-session event stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Frame {
-    /// Monotonic, gap-free, 1-based event id.
-    pub id: u64,
-    /// The event.
-    pub event: SessionEvent,
-}
-
-/// Typed error codes on the protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ErrorCode {
-    /// Hello version mismatch.
-    ProtocolVersion,
-    /// Missing/invalid token.
-    Auth,
-    /// Frame over [`MAX_FRAME_BYTES`].
-    OversizedFrame,
-    /// Undecodable frame.
-    MalformedFrame,
-    /// Unknown session id.
-    UnknownSession,
-    /// Session attach cap reached.
-    TooManyClients,
-    /// Idle read timeout fired.
-    IdleTimeout,
-    /// Unexpected internal failure (detail scrubbed).
-    Internal,
-}
+pub use crate::events::{Frame, SessionEvent};
 
 /// Daemon-to-client messages.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -275,6 +191,90 @@ pub enum ServerMsg {
         /// Bounded human text.
         message: String,
     },
+    /// Media receipt for v2 connections (protocol v2 only; withheld
+    /// from v1 wires by the [`crate::compat`] downgrade).
+    MediaResult {
+        /// Producer disclosure: which subsystem processed the artifact.
+        producer: String,
+        /// The stored artifact reference.
+        artifact: MediaRef,
+        /// Human-readable summary of the resulting change.
+        diff_summary: String,
+    },
+    /// Per-assistant-turn token/cost accounting (protocol v2 only;
+    /// withheld from v1 wires by the [`crate::compat`] downgrade).
+    /// Rides the session event stream as a transient broadcast.
+    Usage {
+        /// Turn number the accounting belongs to.
+        turn: u64,
+        /// The identity that served the turn (identity contract).
+        model: ModelIdentity,
+        /// Reasoning-effort name in force (routing vocabulary), when
+        /// known.
+        effort: Option<String>,
+        /// Prompt-side tokens.
+        input_tokens: u64,
+        /// Completion-side tokens.
+        output_tokens: u64,
+        /// Prompt tokens served from the provider read cache.
+        cache_read: u64,
+        /// Prompt tokens written into the provider cache this request.
+        cache_write: u64,
+        /// Integer cost in micro-USD (the money path never floats);
+        /// `None` = model unpriced (tokens-only).
+        cost_usd_micros: Option<u64>,
+    },
+    /// A model-fallback ask broadcast to all attached clients (protocol
+    /// v2 only; withheld from v1 wires, which receive a
+    /// v1-decodable `Notification` instead). Resolved through the
+    /// permission mediator under the session's mediation policy.
+    FallbackAsk {
+        /// The ask.
+        ask: FallbackAskPayload,
+    },
+    /// Exactly-one resolution of a fallback ask (protocol v2 only;
+    /// withheld from v1 wires). `chosen` is the identity the NEXT
+    /// request targets: the proposed hop when acknowledged, the
+    /// current model otherwise (deny/cancel/timeout all retry the
+    /// SAME model — never a silent substitution).
+    FallbackResolved {
+        /// Ask correlation id.
+        ask_id: u64,
+        /// The identity the next request targets.
+        chosen: ModelIdentity,
+    },
+    /// Completion-gate verdict for a scheduled (unattended) run
+    /// (protocol v2 only; withheld from v1 wires). `evidence` cites
+    /// the session event ids the verdict rests on.
+    Verdict {
+        /// Turn number the verdict gates.
+        turn: u64,
+        /// Review verdict.
+        verdict: VerdictKind,
+        /// Session event ids backing the verdict.
+        evidence: Vec<u64>,
+    },
+    /// A plan-approval ask broadcast to all attached clients (protocol
+    /// v2 only; withheld from v1 wires, which receive the v1-decodable
+    /// `plan_blocked`/`plan_*` notification downgrades instead — a v1
+    /// client can observe a pending plan but never answer one).
+    /// Resolved through the permission mediator under the session's
+    /// mediation policy exactly like permission and fallback asks.
+    PlanAsk {
+        /// The ask.
+        ask: PlanAskPayload,
+    },
+    /// Exactly-one resolution of a plan ask (protocol v2 only;
+    /// withheld from v1 wires). `Timeout` keeps the plan pending and
+    /// writes gated — nothing ever auto-approves a plan.
+    PlanResolved {
+        /// Ask correlation id.
+        ask_id: u64,
+        /// The plan the ask belonged to.
+        plan_id: u64,
+        /// The resolution.
+        outcome: PlanOutcome,
+    },
     /// Response to [`ClientMsg::Ping`].
     Pong,
     /// Transport is closing (drain, reload, or fatal).
@@ -282,6 +282,31 @@ pub enum ServerMsg {
         /// Why.
         reason: String,
     },
+}
+
+/// Completion-gate verdict vocabulary (gate.rs `GateVerdict` on the
+/// wire; Droid /verify, research §16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerdictKind {
+    /// Evidence bundle accepted: the run may end.
+    Confirmed,
+    /// Evidence contradicts the goal: the run is rejected.
+    Refuted,
+    /// Evidence insufficient: neither accepted nor rejected.
+    Inconclusive,
+}
+
+impl VerdictKind {
+    /// Stable wire name (matches `crate::gate::GateVerdict::as_str`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmed => "confirmed",
+            Self::Refuted => "refuted",
+            Self::Inconclusive => "inconclusive",
+        }
+    }
 }
 
 /// Decode one client message from raw bytes with bounds enforced first.
@@ -352,17 +377,40 @@ pub fn validate_client(msg: &ClientMsg) -> Result<(), ProtocolError> {
             command: SessionCommand::Submit { text } | SessionCommand::Steer { text },
         } => bounded_text(text, "text"),
         ClientMsg::Command {
+            command: SessionCommand::SubmitMedia { text, media },
+        } => {
+            bounded_text(text, "text")?;
+            if media.len() > MAX_MEDIA_PER_SUBMIT {
+                return Err(ProtocolError::OutOfBounds("media"));
+            }
+            Ok(())
+        }
+        ClientMsg::Command {
             command: SessionCommand::Cancel,
         } => Ok(()),
         ClientMsg::PermissionAnswer { .. } | ClientMsg::PermissionCancel { .. } => Ok(()),
+        // `chosen` needs no free-text bound: the mediator accepts it
+        // only on exact match against the ask's server-proposed
+        // identity, so garbage resolves deny-side (same-model retry).
+        ClientMsg::FallbackAnswer { .. } => Ok(()),
+        // `steps` is a count, not free text; an oversized count simply
+        // exceeds the available snapshots and rewinds typed-refuses.
+        ClientMsg::Rewind { .. } => Ok(()),
+        ClientMsg::PlanMode { .. } => Ok(()),
+        ClientMsg::PlanAnswer { decision, .. } => match decision {
+            PlanDecision::Edit { artifact } => bounded_text(artifact, "artifact"),
+            PlanDecision::Approve | PlanDecision::Reject => Ok(()),
+        },
         ClientMsg::Ping => Ok(()),
     }
 }
 
-/// True when a Hello version can be served by this build.
+/// True when a Hello version can be served by this build. v1 stays
+/// served forever through the wire downgrade (v1 frontends are never
+/// refused); only versions this build never spoke are rejected.
 #[must_use]
 pub fn version_compatible(client_version: u32) -> bool {
-    client_version == PROTOCOL_VERSION
+    (MIN_PROTOCOL_VERSION..=PROTOCOL_VERSION).contains(&client_version)
 }
 
 #[cfg(test)]
@@ -439,8 +487,47 @@ mod tests {
     }
 
     #[test]
-    fn version_gate_is_exact() {
+    fn cost_event_frames_decode_through_internally_tagged_content() {
+        // Given: cost_warning/cost_stop frames exactly as the daemon
+        // encodes them. These variants once carried u128 wire fields,
+        // which serde's internally-tagged Content buffering cannot
+        // deserialize — every client's decode_server rejected the
+        // frames (Err(Malformed("u128 is not supported"))) and the
+        // cost badge never surfaced (F3 TUI defect).
+        for (json, expected) in [
+            (
+                r#"{"type":"event","frame":{"id":9,"event":{"type":"cost_warning",
+                    "consumed_micros":850000,"cap_micros":1000000}}}"#,
+                SessionEvent::CostWarning {
+                    consumed_micros: 850_000,
+                    cap_micros: 1_000_000,
+                },
+            ),
+            (
+                r#"{"type":"event","frame":{"id":10,"event":{"type":"cost_stop",
+                    "consumed_micros":1100000,"cap_micros":1000000}}}"#,
+                SessionEvent::CostStop {
+                    consumed_micros: 1_100_000,
+                    cap_micros: 1_000_000,
+                },
+            ),
+        ] {
+            // When: the client's decode path runs.
+            let msg = decode_server(json.as_bytes())
+                .unwrap_or_else(|e| panic!("cost frame must decode, got {e:?}"));
+            // Then: the frame arrives intact.
+            let ServerMsg::Event { frame } = msg else {
+                panic!("shape");
+            };
+            assert_eq!(frame.event, expected);
+        }
+    }
+
+    #[test]
+    fn version_gate_serves_v1_and_v2_only() {
+        assert!(version_compatible(1), "v1 Hello must never be refused");
         assert!(version_compatible(PROTOCOL_VERSION));
+        assert!(!version_compatible(0));
         assert!(!version_compatible(PROTOCOL_VERSION + 1));
     }
 

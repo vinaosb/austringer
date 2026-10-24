@@ -1,0 +1,269 @@
+TASK M9 - protocol v2 media surface (additive; v1 clients unaffected)
+=====================================================================
+Date: 2026-09-22  Runner: Sisyphus-junior (task M9, .omo/plans/media-formats-wave.md lines 151-157)
+Shell note: cargo runs through C:\Users\vsbb1\AppData\Local\Temp\opencode\msvc-cargo.cmd
+(BuildTools vcvars64; same recipe as M32 evidence).
+
+Dependencies confirmed landed before start:
+  M3 MediaBlock      27286e4 feat(core): generalized media content blocks
+  M4 store_media     152f93a feat(core): generalized media store + derived projections
+  M2 probe           e816161 feat(media): magic-sniffing probe registry for 34 formats
+  M32 provider wiring 437a71c feat(daemon): config-driven provider wiring
+  (git log verified; M32's provider/ module integrates unchanged)
+
+================================================================
+PHASE 0 - STEP 0: v1 REPLAY CORPUS (captured BEFORE any protocol change)
+================================================================
+Capture tool: harness-daemon/tests/v1_corpus_capture.rs (#[ignore]d by
+design - it records the v1 era; re-running after the protocol bump
+would falsify history. Doc comment carries the same warning.)
+
+Capture command (run against the UNCHANGED v1 daemon, green):
+  cargo nextest run -p harness-daemon -E "binary(v1_corpus_capture)" --run-ignored only
+  -> PASS harness-daemon::v1_corpus_capture capture_v1_ws_and_ipc_corpus (0.359s)
+
+Fixtures written (committed pristine):
+  harness-daemon/tests/fixtures/v1/ws-session.jsonl  (16 records)
+  harness-daemon/tests/fixtures/v1/ipc-session.jsonl (13 records)
+
+Transcript format: JSONL; {"dir":"c2s","await":<marker>,"raw":<exact
+bytes>} client frames (barrier = server frame containing marker must be
+observed first), {"dir":"s2c","raw":<exact wire bytes>} server frames,
+{"dir":"srv","action":"publish_image_event"} server-side scripted
+actions the replay harness re-performs. raw strings are the literal wire
+bytes - never round-tripped through serde_json::Value (whose BTreeMap
+would scramble struct field order; verified during capture: encode_client
+emits struct order, json!() emits sorted order - they differ).
+
+Coverage (plan M9 "all three handshake sites"):
+  - ws.rs initial Hello (version 1) + resync/snapshot + hello_ack
+  - ipc.rs initial Hello (version 1, session-bound)
+  - transport.rs mid-session in-stream re-Hello (v1, silently accepted)
+  - command submit -> full turn frames (turn_started, recorded user
+    text, assistant, tool_call task_completed, tool_result, turn_finished)
+  - RECORDED IMAGE-BLOCK EVENT on the wire (id 7, seq 900, blake3:bd73...)
+    published through SessionHost::publish - the same path the engine
+    driver uses for recorded events; the v1 protocol has no client-side
+    image submit, so this is how such frames enter the v1 wire.
+  - ping/pong
+
+Determinism: fixed token, fixed client/session ids, CompleteOnlyInference
+(task_completed is loop-reserved - no worker needed), fixed image payload
+b"harness-v1-corpus-image-payload" -> fixed hash. Byte-stability of every
+frame through decode/encode round-trip asserted INSIDE the capture tool
+before writing (v1 codec oracle property).
+
+FANOUT AUDIT (plan M9: "no fanout path may cache encoded frames shared
+across connection versions"): audited EventHub.publish (events.rs) and
+the control bus (mediation.rs control_bus) - both broadcast TYPED
+ServerMsg values; encoding happens per-connection at each carrier's
+writer (ws.rs writer task encode_server, ipc.rs write_line, handlers.rs
+sse unfold). NO cached/shared encoded frames exist. The downgrade
+therefore lands per-connection at the pump funnel (transport.rs) where
+every carrier's outbound passes with the negotiated version in hand.
+No fix needed; noted per plan.
+
+================================================================
+PHASE 1 - RED (failing-first, new behavior)
+================================================================
+Tests added (production code untouched):
+  harness-daemon/tests/media_v2_tests.rs (11 tests)
+  harness-daemon/tests/v1_replay_tests.rs (3 tests - the replay
+    oracle; written NOW and verified GREEN against the still-v1 daemon
+    first: v1_ws_corpus_replays_byte_identically_against_current_daemon,
+    v1_ipc_corpus_replays_byte_identically_against_current_daemon both
+    PASS pre-change; they must stay green post-change)
+
+Command: cargo nextest run -p harness-daemon -E "binary(media_v2_tests)"
+Output (right-reason RED - exactly the missing v2 surface):
+  error[E0432]: unresolved import `harness_daemon::protocol::downgrade_for_v1`
+  error[E0425]: cannot find value `MAX_MEDIA_PER_SUBMIT` in module `harness_daemon::protocol`
+  error[E0599]: no variant named `SubmitMedia` found for enum `SessionCommand` (x3)
+  error[E0599]: no variant named `MediaResult` found for enum `ServerMsg`
+  error[E0560]: struct `DaemonConfig` has no field named `media_upload_cap_bytes` (x2)
+
+================================================================
+RECOVERY NOTE (recovered_from_partial)
+================================================================
+The prior executor session died at ~2026-09-22T05:47Z AFTER writing
+PHASE 1 above (RED captured) and while mid-implementation. Recovery
+survey (git status --porcelain + full read of every dirty/untracked
+file) found the implementation essentially complete but UNCOMMITTED
+and UNVERIFIED; nothing was discarded. This run verified the corpus
+pristine, completed the remaining hygiene (trailing-whitespace in two
+test files), re-ran the full verification ladder, and landed the
+single commit. M6 (792f445), M8 (2196a24), M10 (5cd6bf4), M32
+(437a71c) landed in between; the dirty tree already compiled against
+all of them (M10's compose.rs tests ride the same working tree).
+
+Recovered predecessor work (verified sound, kept verbatim except
+noted): protocol.rs v2 surface + ask/errors/events extraction,
+compat.rs downgrade, media.rs routes, attach.rs intake + resolve,
+engine.rs TurnKickoff/SubmitBlocks driver, transport.rs PumpParams +
+per-connection forward(), ws/ipc/handlers handshake + SSE version
+opt-in, config cap, core submit_blocks plumbing, cli/tui exhaustive
+ServerMsg matches, both v2/replay test files, both v1 fixtures.
+Newly built this run: whitespace hygiene only (engine_tests.rs
+trailing blank, media_v2_tests.rs double trailing blank) + this
+evidence completion.
+
+================================================================
+PHASE 2 - GREEN (implementation, recovered + verified)
+================================================================
+Deliverables vs plan line 152 (authority), one by one:
+  STEP 0 corpus            tests/fixtures/v1/{ws,ipc}-session.jsonl
+                           (16/13 records; pristine: only "media"
+                           bytes are the v0.1-legal MediaRef FIELD on
+                           image blocks - no variant tag, no
+                           media_result; grep-verified this run)
+  PROTOCOL_VERSION=2       protocol.rs; MIN_PROTOCOL_VERSION=1;
+                           Hello {1,2} accepted at ws.rs (initial),
+                           ipc.rs (initial), transport.rs (in-stream
+                           re-Hello) - all three via
+                           version_compatible(); old exact-match
+                           assertion flipped (test renamed
+                           version_gate_serves_v1_and_v2_only)
+  POST /s/{sid}/media      media.rs upload_media: axum, behind the
+                           shared auth_mw layer (token, like sibling
+                           /s/{sid} routes), streamed body -> temp
+                           file inside the session media dir ->
+                           mid-stream cap check (default 512 MiB,
+                           DaemonConfig.media_upload_cap_bytes) ->
+                           typed 413 {error:{code:media_too_large,
+                           limit}} -> read-back blake3 ->
+                           MediaStore.store_media (content-addressed
+                           dedup) -> response {media, probe, dedup}
+  MAX_FRAME_BYTES          unchanged 1 MiB (media never rides frames)
+  SubmitMedia command      protocol.rs SessionCommand::SubmitMedia
+                           {text, media: Vec<MediaRef>} (+
+                           MAX_MEDIA_PER_SUBMIT=16 bound, typed
+                           OutOfBounds); reachable over WS Command and
+                           POST /s/{sid}/cmd (handlers.rs)
+  engine appends Event::User attach.rs resolve_media_blocks: refs
+                           must LOAD from the session MediaStore
+                           (forged hash -> typed CommandRejected::
+                           UnknownMedia to the submitting connection,
+                           no turn starts), probed mime+format meta,
+                           ContentBlock::Media blocks; engine path
+                           SubmitBlocks -> AgentLoop.submit_blocks ->
+                           Event::User{blocks} (core plumbing:
+                           pipeline/stages/dispatch block_queue)
+  MediaResult v2-only      ServerMsg::MediaResult{producer,artifact,
+                           diff_summary}; EventHub.broadcast() sends
+                           the transient receipt; the per-connection
+                           pump forward() withholds it from v1 wires
+  V1 DOWNGRADE             compat.rs downgrade_for_v1: per-connection
+                           at the pump funnel (transport.rs forward) -
+                           the single outbound path every carrier's
+                           encode site (ws writer / ipc line / sse
+                           unfold) sits downstream of; Media->Text
+                           {text_marker()} inside Recorded frames AND
+                           snapshot frames; v2-only variants withheld;
+                           exhaustive match with a "new variants MUST
+                           list here" guard. Durable log keeps the
+                           typed form. Fanout audit (PHASE 0) already
+                           proved no cached shared encodes exist
+  GET /s/{sid}/media/{hash} media.rs get_media: token auth (shared
+                           layer), ContentHash::parse typed 400,
+                           load 404 unknown_media, cap re-check 413,
+                           Content-Type from probed mime
+
+File sizes (pure LOC, ceiling 250): protocol 220, attach 227,
+events 218, media 207, engine 196, ws 195, transport 194, server 208,
+compat 150, handlers 149, ipc 181, ask 25, errors 16. No
+unwrap/expect/panic in any production path (cfg(test) modules only,
+repo precedent).
+
+================================================================
+VERIFICATION (this run, MSVC recipe unchanged)
+================================================================
+  cargo check -p harness-daemon --all-targets        : GREEN 12.65s
+  cargo nextest run -p harness-daemon                : 190 run,
+      190 passed, 1 skipped (the skipped one IS the #[ignore]d
+      STEP-0 capture tool - by design)
+  cargo clippy -p harness-daemon --all-targets
+      -- -D warnings                                  : clean
+  cargo clippy -p harness-core -p harness-cli
+      -p harness-tui --all-targets -- -D warnings    : clean
+  cargo nextest run -p harness-core -p harness-cli
+      -p harness-tui                                 : 522 run,
+      522 passed, 5 skipped (pre-existing skips)
+  Hermetic: zero network, zero API keys (CompleteOnlyInference +
+      cassettes; uploads are in-process bytes).
+
+================================================================
+ACCEPTANCE CROSS-CHECK (plan line 155, verbatim criteria)
+================================================================
+  "recorded v1-client fixtures replay against the new daemon
+   receive only v1-decodable frames"
+    -> v1_replay_tests::v1_ws_corpus_replays_byte_identically_
+       against_current_daemon (7.1s; byte-for-byte + v1 vocabulary
+       walk: server tags + content-block tags confined to v1 sets)
+    -> v1_replay_tests::v1_ipc_corpus_replays_byte_identically_
+       against_current_daemon
+    -> v1_replay_tests::v1_corpus_image_frame_round_trips_byte_
+       stably
+  "v2 client SubmitMedia round-trips blocks into the log +
+   MediaResult observed"
+    -> media_v2_tests::v2_submit_media_round_trips_blocks_log_and_
+       media_result (hello_ack echoes version 2; media_result on the
+       wire; TYPED "type":"media" in recorded frames AND in the
+       durable events.jsonl)
+  "upload auth + size cap enforced"
+    -> upload_requires_token (401)
+    -> upload_over_cap_is_typed_413 (413 + code media_too_large +
+       limit field; temp cleaned)
+    -> upload_abort_mid_stream_cleans_temp_and_daemon_survives
+       (client dies mid-stream: no temp residue, daemon keeps
+       serving - adversarial)
+  "duplicate upload dedups by hash"
+    -> upload_stores_dedups_and_probes (second upload: dedup=true,
+       media dir holds exactly 1 file)
+  "v1-encoded frames byte-audited (no media variant tag)"
+    -> media_v2_tests::v1_connection_receives_no_media_variant_byte_
+       audit (v1 client watches a full v2-driven media turn: no
+       "type":"media", no media_result, marker text present)
+    -> media_v2_tests::ipc_v1_connection_byte_audit (same over the
+       IPC carrier)
+  "GET route serves stored bytes with auth + cap"
+    -> get_media_serves_bytes_with_probed_content_type (200 +
+       image/png Content-Type + byte-identical body; 401 no token;
+       400 bad_hash typed; 404 unknown_media typed; in-store cap
+       re-check enforced - unreachable while cap >= upload cap by
+       construction, present as reload defense)
+  forged ref (adversarial): forged_media_ref_is_typed_refused_no_
+    turn (typed "unknown media" to submitter, no turn_started,
+    daemon alive)
+
+MUST-NOT audit (plan line 152): v1 Hello never refused
+  (version_compatible(1)==true, corpus replay proves it on the
+  wire); v2-only variants never reach v1 wires (withheld at the
+  funnel, byte-audited twice); frame bounds not weakened
+  (MAX_FRAME_BYTES untouched; SubmitMedia adds its OWN bound).
+
+================================================================
+SCOPE BOUNDARY NOTED FOR THE ORCHESTRATOR
+================================================================
+M10's evidence (task-M10-media-formats.txt "KNOWN-GOOD HANDOFF FOR
+THE M9 MERGE") asks the M9-adjacent merge to wire the projection
+submit-hook (ProjectionResolver on SubmitMedia intake + Event::System
+notices + T42 utility route + harness-intel dependency). That is
+M10's OWN plan scope (lines 159-165; its checkbox is still open),
+not M9's (lines 151-157 say nothing of projections). This commit
+lands M9 only and leaves that wiring to M10's lane; the seam it
+needs (attach.rs resolve_media_blocks + engine SubmitBlocks) is now
+committed and stable for it.
+
+================================================================
+COMMIT
+================================================================
+One commit: feat(daemon): protocol v2 media upload + media-result
+events. Files: all recovered + verified harness-daemon files (incl.
+new ask/compat/errors/media src, three new test files, fixtures/v1),
+harness-core agent_loop block plumbing + MimeType::default,
+harness-cli render + harness-tui app/client_ws exhaustive matches,
+harness-daemon/Cargo.toml (harness-media dep) + Cargo.lock (also
+completes M10's omitted lock regen), this evidence file.
+NOT included (left to their owners): .omo/plans checkbox backfills
+(M6/M8 - orchestrator's), .omo/run-continuation + start-work runtime
+state.

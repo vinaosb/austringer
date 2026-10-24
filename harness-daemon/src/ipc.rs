@@ -16,9 +16,10 @@ use tokio::sync::mpsc;
 
 use crate::protocol::{
     ClientMsg, ErrorCode, PROTOCOL_VERSION, ServerMsg, decode_client, encode_server,
+    version_compatible,
 };
 use crate::server::DaemonState;
-use crate::transport::pump_client;
+use crate::transport::{PumpParams, pump_client};
 
 /// Bind and serve the IPC listener until the process ends.
 ///
@@ -112,7 +113,7 @@ async fn handle_ipc_conn(
         .await;
         return;
     };
-    if version != PROTOCOL_VERSION {
+    if !version_compatible(version) {
         let _ = write_line(
             &mut writer,
             &ServerMsg::Error {
@@ -188,9 +189,12 @@ async fn handle_ipc_conn(
     let _ = pump_client(
         &host,
         &client_id,
-        None,
-        true,
-        idle_timeout,
+        PumpParams {
+            peer_version: version,
+            after: None,
+            enforce_idle: true,
+            idle_timeout,
+        },
         inbound_rx,
         outbound_tx,
     )

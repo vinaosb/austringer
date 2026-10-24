@@ -1,6 +1,6 @@
 ---
 source: harness-tui/tests/screens.rs
-assertion_line: 116
+assertion_line: 118
 expression: rendered
 ---
 permission: bash
@@ -10,8 +10,8 @@ answered: allow-once — waiting for resolution
 
 > transcript (2)
 > tools (0)
-> team (1)
-
+> diffs (0)
+> agents (1)
 
 
 

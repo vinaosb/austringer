@@ -1,14 +1,16 @@
 //! The headless UI state machine: one input event in, state transition
 //! plus outgoing actions out. This is the entire interface logic, and
-//! it is fully testable without a terminal — the binary only wires a
+//! it is fully testable without a terminal â€” the binary only wires a
 //! crossterm reader and the daemon client to [`App::step`].
 //!
 //! Event-driven by construction: `step` never blocks, never sleeps,
 //! and marks the app dirty only when observable state changed. The UI
-//! loop renders iff [`App::should_redraw`] — there is no timer, no
+//! loop renders iff [`App::should_redraw`] â€” there is no timer, no
 //! poll, and therefore 0% idle CPU (pinned by test).
 
-use harness_daemon::protocol::{Answer, AskPayload, ClientMsg, Resolution, ServerMsg};
+use harness_daemon::protocol::{
+    Answer, AskPayload, ClientMsg, FallbackAskPayload, PlanAskPayload, ServerMsg,
+};
 
 use crate::hud;
 use crate::keys::{Key, Keybinds};
@@ -68,6 +70,8 @@ pub struct Panels {
     pub tools: bool,
     /// Team-grid accordion.
     pub team: bool,
+    /// Hunk-review accordion.
+    pub diffs: bool,
 }
 
 impl Panels {
@@ -78,6 +82,7 @@ impl Panels {
             transcript: false,
             tools: false,
             team: false,
+            diffs: false,
         }
     }
 }
@@ -100,7 +105,7 @@ impl From<crate::client::ClientEvent> for UiEvent {
 
 /// The whole interface state.
 pub struct App {
-    /// Reduced session view (entries, tools, turns, diffs, workers).
+    /// Reduced session view (entries, tools, turns, diffs, children).
     pub view: transcript::SessionView,
     /// HUD aggregates (context gauge, cache, per-model cost).
     pub hud: hud::Hud,
@@ -110,8 +115,17 @@ pub struct App {
     pub(crate) bar_focused: bool,
     /// Collapsed accordions.
     pub panels: Panels,
+    /// Body scroll offset in lines from the tail (0 = auto-follow).
+    pub(crate) scroll_offset: usize,
     pub(crate) gate: Option<AskPayload>,
     pub(crate) pending: Option<Answer>,
+    pub(crate) fallback_gate: Option<FallbackAskPayload>,
+    pub(crate) fallback_pending: Option<&'static str>,
+    pub(crate) plan_gate: Option<PlanAskPayload>,
+    pub(crate) plan_pending: Option<&'static str>,
+    /// Wire version the daemon acked (HelloAck echoes the client's
+    /// proposal); `None` before the first attach.
+    pub(crate) negotiated_version: Option<u32>,
     pub(crate) completions: Box<dyn CompletionSource>,
     /// Connection state for the status area.
     pub conn: Conn,
@@ -133,8 +147,14 @@ impl App {
             binds: Keybinds::defaults(),
             bar_focused: false,
             panels: Panels::collapsed(),
+            scroll_offset: 0,
             gate: None,
             pending: None,
+            fallback_gate: None,
+            fallback_pending: None,
+            plan_gate: None,
+            plan_pending: None,
+            negotiated_version: None,
             completions: Box::new(NoCompletions),
             conn: Conn::Disconnected,
             show_hud: true,
@@ -179,6 +199,43 @@ impl App {
     #[must_use]
     pub fn gate(&self) -> Option<&AskPayload> {
         self.gate.as_ref()
+    }
+
+    /// The active model-fallback ask, if its modal is open.
+    #[must_use]
+    pub fn fallback_gate(&self) -> Option<&FallbackAskPayload> {
+        self.fallback_gate.as_ref()
+    }
+
+    /// What this client answered the open fallback ask, if it did.
+    #[must_use]
+    pub fn fallback_pending_label(&self) -> Option<&'static str> {
+        self.fallback_pending
+    }
+
+    /// The active plan-approval ask, if its modal is open.
+    #[must_use]
+    pub fn plan_gate(&self) -> Option<&PlanAskPayload> {
+        self.plan_gate.as_ref()
+    }
+
+    /// What this client answered the open plan ask, if it did.
+    #[must_use]
+    pub fn plan_pending_label(&self) -> Option<&'static str> {
+        self.plan_pending
+    }
+
+    /// The wire version negotiated at attach (the daemon echoes the
+    /// client's Hello proposal); `None` before the first attach.
+    #[must_use]
+    pub const fn negotiated_version(&self) -> Option<u32> {
+        self.negotiated_version
+    }
+
+    /// Body scroll offset in lines from the tail (0 = auto-follow).
+    #[must_use]
+    pub const fn scroll_offset(&self) -> usize {
+        self.scroll_offset
     }
 
     /// Completion candidates for the omnibar's active token.
@@ -234,61 +291,6 @@ impl App {
             UiEvent::Server(msg) => self.server(msg),
         }
     }
-
-    fn server(&mut self, msg: ServerMsg) -> Vec<UiAction> {
-        match msg {
-            ServerMsg::HelloAck { .. } => {
-                if self.conn != Conn::Attached {
-                    self.conn = Conn::Attached;
-                    self.dirty = true;
-                }
-            }
-            ServerMsg::Event { frame } => {
-                self.view.apply_frame(&frame);
-                self.hud.estimate_context(self.view.context_chars());
-                self.dirty = true;
-            }
-            ServerMsg::PermissionAsk { ask } => {
-                self.gate = Some(ask);
-                self.pending = None;
-                self.dirty = true;
-            }
-            ServerMsg::PermissionResolved { ask_id, resolution } => {
-                if self.gate.as_ref().is_some_and(|ask| ask.ask_id == ask_id) {
-                    self.gate = None;
-                    self.pending = None;
-                }
-                self.view.note(&resolution_note(ask_id, &resolution));
-                self.dirty = true;
-            }
-            ServerMsg::StateResyncRequired { .. } | ServerMsg::Snapshot { .. } => {
-                self.view.apply_server_msg(&msg);
-                self.hud.estimate_context(self.view.context_chars());
-                self.dirty = true;
-            }
-            ServerMsg::Error { code, message } => {
-                self.view
-                    .note(&format!("daemon error ({code:?}): {message}"));
-                self.dirty = true;
-            }
-            ServerMsg::Bye { reason } => {
-                self.view.note(&format!("daemon closed: {reason}"));
-                self.dirty = true;
-            }
-            ServerMsg::Pong => {}
-        }
-        Vec::new()
-    }
-}
-
-fn resolution_note(ask_id: u64, resolution: &Resolution) -> String {
-    let describe = |verb: &str, by: &str| format!("ask {ask_id} {verb} by {by}");
-    match resolution {
-        Resolution::Allowed { by } => describe("allowed", by),
-        Resolution::Denied { by } => describe("denied", by),
-        Resolution::Cancelled { by } => describe("cancelled", by),
-        Resolution::Timeout => format!("ask {ask_id} timed out"),
-    }
 }
 
 #[cfg(test)]
@@ -297,7 +299,7 @@ mod tests {
     use crate::keys::Action;
     use crate::omnibar::{self, Parsed};
     use harness_core::event::{ContentBlock, Event};
-    use harness_daemon::protocol::{Frame, SessionCommand, SessionEvent};
+    use harness_daemon::protocol::{Frame, Resolution, SessionCommand, SessionEvent};
 
     struct NoSrc;
     impl CompletionSource for NoSrc {
@@ -411,6 +413,66 @@ mod tests {
     }
 
     #[test]
+    fn rewind_command_sends_client_rewind_message() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/rewind 2");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Rewind { steps: 2 })]
+        );
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/rewind");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Rewind { steps: 1 })],
+            "bare /rewind rewinds one step"
+        );
+    }
+
+    #[test]
+    fn skill_command_sends_submit_text_verbatim() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/skill audit run twice");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Submit {
+                    text: "/skill audit run twice".into()
+                }
+            })],
+            "the daemon-side trust gate parses /skill off the submit lane"
+        );
+    }
+
+    #[test]
+    fn skill_command_never_steers_mid_turn() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Server(ServerMsg::Event {
+            frame: Frame {
+                id: 1,
+                event: SessionEvent::TurnStarted { turn: 1 },
+            },
+        }));
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/skill audit now");
+        let actions = app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert_eq!(
+            actions,
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Submit {
+                    text: "/skill audit now".into()
+                }
+            })],
+            "steering would bypass the daemon-side gates; /skill always submits"
+        );
+    }
+
+    #[test]
     fn gate_is_modal_and_yan_answers() {
         let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
         app.step(UiEvent::Key(char_key('i')));
@@ -449,6 +511,21 @@ mod tests {
     }
 
     #[test]
+    fn todo_23_modal_renders_the_canonical_allow_scope_labels() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Server(ask(12)));
+        let body = crate::panels::compose_body(&app)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            body.contains("y (once)  a (session)  n (deny)  c (vote-cancel)"),
+            "modal key hints: {body}"
+        );
+    }
+
+    #[test]
     fn slash_commands_parse_locally_and_note_honestly() {
         let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
         app.step(UiEvent::Key(char_key('i')));
@@ -464,6 +541,138 @@ mod tests {
                 .notes()
                 .iter()
                 .any(|n| n.contains("unknown command"))
+        );
+    }
+
+    #[test]
+    fn mode_command_wires_daemon_plan_mode() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/mode plan");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::PlanMode { on: true })]
+        );
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/mode off");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::PlanMode { on: false })]
+        );
+    }
+
+    #[test]
+    fn todo_23_explicit_steer_always_steers_and_cancel_cancels() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/steer hurry up");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Steer {
+                    text: "hurry up".into()
+                }
+            })],
+            "explicit /steer steers even with no turn running"
+        );
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/cancel");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::Command {
+                command: SessionCommand::Cancel
+            })]
+        );
+    }
+
+    #[test]
+    fn todo_23_vote_cancel_targets_the_open_ask_or_notes() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/vote-cancel");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert!(
+            app.view
+                .notes()
+                .iter()
+                .any(|n| n == "no open ask to cancel")
+        );
+        // While a gate is open the modal owns the keys ('c' cancels —
+        // pinned by gate_deny_and_cancel_are_bound); the omnibar path
+        // below is reachable with the modal closed (e.g. another
+        // client's ask), so the explicit id is the general form.
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/vote-cancel 42");
+        assert_eq!(
+            app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter))),
+            vec![UiAction::Send(ClientMsg::PermissionCancel { ask_id: 42 })]
+        );
+    }
+
+    #[test]
+    fn todo_23_help_notes_the_shared_cheat_sheet() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/help");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        let notes: Vec<&String> = app.view.notes().iter().collect();
+        assert_eq!(notes.len(), 9, "one note per grammar command");
+        assert_eq!(notes[0], "/help — show this command list");
+        assert_eq!(
+            notes[notes.len() - 1],
+            "/image <path> — attach an image to the next submit (cli only)"
+        );
+    }
+
+    #[test]
+    fn todo_23_unknown_commands_note_the_shared_help_string() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/model sonnet");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert!(
+            app.view
+                .notes()
+                .iter()
+                .any(|n| n == "unknown command /model — /help lists commands")
+        );
+    }
+
+    #[test]
+    fn todo_23_cli_local_commands_note_cli_only() {
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Key(char_key('i')));
+        app.bar.set_text("/exit");
+        app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
+        assert!(app.view.notes().iter().any(|n| n == "/exit is cli-only"));
+        assert!(!app.quit(), "/exit must not quit the TUI");
+    }
+
+    #[test]
+    fn plan_ask_opens_the_modal_and_resolution_notes() {
+        use harness_daemon::protocol::{PlanAskPayload, PlanOutcome};
+        let mut app = App::new(DEFAULT_CONTEXT_WINDOW);
+        app.step(UiEvent::Server(ServerMsg::PlanAsk {
+            ask: PlanAskPayload {
+                ask_id: 4,
+                plan_id: 1,
+                revision: 1,
+                artifact: "# Plan".into(),
+                deadline_ms: 30_000,
+            },
+        }));
+        assert_eq!(app.plan_gate().map(|ask| ask.plan_id), Some(1));
+        app.step(UiEvent::Server(ServerMsg::PlanResolved {
+            ask_id: 4,
+            plan_id: 1,
+            outcome: PlanOutcome::Approved { by: "tui".into() },
+        }));
+        assert!(app.plan_gate().is_none());
+        assert!(
+            app.view
+                .notes()
+                .iter()
+                .any(|n| n.contains("approved") && n.contains("tui"))
         );
     }
 

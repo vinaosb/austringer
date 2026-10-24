@@ -123,6 +123,16 @@ pub enum SessionError {
         /// The source's last sequence.
         last: u64,
     },
+    /// The requested truncation head is past the end of the log.
+    #[error("truncate head {at} is beyond the log length {last} for session {id}")]
+    TruncateBeyondLog {
+        /// The affected session.
+        id: String,
+        /// The requested head sequence.
+        at: u64,
+        /// The log's actual last sequence.
+        last: u64,
+    },
     /// An append or resume targeted an archived session.
     #[error("session {id} is archived; restore it before writing")]
     Archived {

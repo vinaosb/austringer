@@ -21,6 +21,7 @@
 
 pub mod ab;
 pub mod axes;
+pub mod capabilities;
 pub mod catalog;
 pub mod dial;
 pub mod dialect;

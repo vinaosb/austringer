@@ -82,6 +82,27 @@ button:hover { border-color: var(--accent); }
 .entry-assistant .entry-role { color: var(--ok); }
 .entry-tool_call .entry-role, .entry-tool_result .entry-role { color: var(--warn); }
 .entry-text { margin: 0; white-space: pre-wrap; word-break: break-word; flex: 1; }
+.entry-collapsed .entry-text {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.entry-open { flex-wrap: wrap; }
+.entry-full {
+  flex-basis: 100%; margin: 4px 0 0 0; padding: 8px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+  overflow-x: auto; white-space: pre-wrap; font-size: 12px;
+}
+.focus-toggle { font-size: 11px; padding: 1px 8px; color: var(--dim); }
+.entry-open .focus-toggle { color: var(--accent); }
+
+.verdict-confirmed { color: var(--ok); border-color: var(--ok); }
+.verdict-refuted { color: var(--err); border-color: var(--err); }
+.verdict-inconclusive { color: var(--warn); border-color: var(--warn); }
+.evidence-link { font-size: 11px; padding: 1px 8px; }
+.gate-ask.fallback, .gate-ask.plan { border-color: var(--accent); }
+.gate-ask .plan-artifact { margin: 6px 0; max-height: 200px; }
+.trend-cost { margin: 8px 0 0 0; }
+.timeline-turn code { color: var(--fg); }
+[data-testid=history] h3 { font-size: 13px; margin: 12px 0 0 0; }
 
 .composer textarea { width: 100%; min-height: 64px; resize: vertical; }
 .composer-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }

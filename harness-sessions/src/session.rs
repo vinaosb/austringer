@@ -102,7 +102,7 @@ impl<'a> SessionHandle<'a> {
         Sequence(self.meta.last_seq)
     }
 
-    fn assert_writable(&self) -> Result<(), SessionError> {
+    pub(crate) fn assert_writable(&self) -> Result<(), SessionError> {
         match &self.lease_owner {
             None => Err(SessionError::NotWritable {
                 id: self.meta.id.clone(),

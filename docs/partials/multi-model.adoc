@@ -9,10 +9,11 @@ Google, xAI, and the OpenAI-compatible family (Ollama, vLLM, OpenRouter,
 Groq). Streaming is resilient: mid-stream disconnects resume preserving
 turn state with idle timeouts and exactly-once tool side effects — chaos
 tests drop the stream at arbitrary bytes. Subscription OAuth device-flow
-login lands where providers offer it, with refresh tokens in the OS
-keyring, and the cost HUD distinguishes subscription from API billing.
-Models outside the cost table report tokens only and an explicit unpriced
-state — costs are never invented.
+login (RFC 8628 + PKCE, refresh tokens in the OS keyring) is implemented
+and cassette-tested in the providers crate — it is not yet composed into
+the daemon's environment-based selection (the library-tested column of
+the README status table). Models outside the cost table report tokens
+only and an explicit unpriced state — costs are never invented.
 
 [[mm-profiles]]
 == Model profiles and dialects
@@ -42,15 +43,67 @@ substitutes a model silently: an outage asks (our guard against the silent
 failovers recorded in research §16 and §2). Model switches execute only at
 compaction boundaries, where the cache miss happens anyway.
 
+[[mm-routing-json]]
+=== routing.json
+
+Routing is configured by a single JSON document at
+`{data_dir}/routing.json` (default `.harness-daemon/routing.json`) —
+read at daemon startup by the turn dispatcher. An absent document is
+silence (the un-routed session model keeps serving); a present but
+unusable one is loud and never fatal to inference. Every collection is a
+list of keyed entries, so duplicate keys fail closed as typed build
+errors instead of silently overwriting:
+
+```json
+{
+  "provider": "anthropic",
+  "cheap_pool": ["claude-haiku-5-5"],
+  "roles": [
+    { "role": "summarizer", "model": "claude-haiku-5-5", "effort": "low" }
+  ],
+  "tiers": [
+    { "tier": "light", "model": "claude-haiku-5-5", "effort": "low", "score_floor": 0.0 }
+  ],
+  "categories": [
+    { "category": "quick", "model": "claude-haiku-5-5", "effort": "low", "score_floor": 0.0 }
+  ],
+  "fallbacks": [
+    { "model": "claude-opus-5-5", "chain": ["gpt-6-1-sol", "gemini-4-argon"] }
+  ],
+  "rate_limit_wait_out_secs": 45,
+  "retry_attempts": 2,
+  "benchmarks": [
+    { "model": "claude-opus-5-5", "score": 91.0, "price_per_mtok": 15.0 }
+  ],
+  "sidekick": { "lead": "claude-opus-5-5", "sidekick": "claude-haiku-5-5" }
+}
+```
+
+The policy keys: `fallbacks[]` lists rank-verbatim hop chains — the
+order is explicit, never provider round-robin; `rate_limit_wait_out_secs`
+caps rate-limit wait-out windows at 75; `retry_attempts` is the per
+failure-mode retry count before an acknowledged fallback is *asked*.
+Utility roles and the sidekick are validated against `cheap_pool` (a
+utility role routed outside the cheap pool is a typed config error).
+Fallback asks are mediated answers, not commands: a `FallbackAsk` rides
+the protocol to the attached clients under the session's mediation
+policy (first-responder by default, with a deadline), the timeout arm
+retries the SAME model, and no client-asserted id can authorize an
+answer. The `categories[]` entries define the `task(category)`
+delegation vocabulary (see the delegation section below).
+
 [[mm-subagents]]
 == Subagents and the spec launcher
 
 The spec launcher decomposes a written specification into objectives and a
 task graph, launches heterogeneous models in parallel, and synthesizes with
 a cross-consistency check — bounded by effort-scaling rules and hard budget
-guards (no fifty-subagent spawns; burst quotas pace child spawns).
-Best-of-N runs the same prompt on up to four models; plan-branch compares
-the same spec across models on snapshot branches. Children are ephemeral,
+guards (no fifty-subagent spawns; burst quotas pace child spawns). The
+launch path and fork-join children are wired into the daemon (child
+sessions, write-set collision alerts, team events); best-of-N (the same
+prompt on up to four models) and plan-branch comparison (the same spec
+across models on snapshot branches) are library-tested and not yet wired
+into the daemon loop. Children are ephemeral,
 hidden from the main session list, and return capped summaries; they are
 resumable by task id, and permissions bubble through the parent. A clean-
 context reviewer reasons backward from the diff alone at milestones — zero

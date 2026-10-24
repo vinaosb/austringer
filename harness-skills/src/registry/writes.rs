@@ -43,7 +43,8 @@ impl WriteSet {
             self.files.insert(format!("rules/{rule}"), content.clone());
         }
         for (server, value) in &pack.mcp_servers {
-            self.mcp.insert(format!("mcp/{server}"), value.clone());
+            self.mcp
+                .insert(format!("mcp/{server}"), disabled_declaration(value));
         }
         Ok(())
     }
@@ -72,6 +73,20 @@ fn write_file(path: &Path, content: &str) -> Result<(), RegistryError> {
         std::fs::create_dir_all(parent).map_err(|e| RegistryError::io("create install dir", &e))?;
     }
     std::fs::write(path, content).map_err(|e| RegistryError::io("write installed file", &e))
+}
+
+/// Copies one pack MCP entry into its DISABLED declaration form:
+/// `trusted_autostart` is forced `false` whatever the pack claims (a
+/// pack may never self-enable an executable-manifest entry — the only
+/// enable path is a separate explicit consent step outside the install
+/// pipeline). Non-object values pass through untouched for the
+/// scanner's per-entry diagnostics to reject.
+fn disabled_declaration(value: &Value) -> Value {
+    let mut declared = value.clone();
+    if let Some(fields) = declared.as_object_mut() {
+        fields.insert("trusted_autostart".to_owned(), Value::Bool(false));
+    }
+    declared
 }
 
 /// Merges server entries into `<root>/.harness/mcp.json` (the cross-tool

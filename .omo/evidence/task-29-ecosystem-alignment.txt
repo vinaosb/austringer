@@ -1,0 +1,94 @@
+TASK 29 EVIDENCE — Research ledger: new sections + WATCH entries (Wave L)
+Plan: .omo/plans/ecosystem-alignment.md todo 29 (lines 343-349)
+Executor session: opencode:ses_ea774e945ffe45I9Wp629UGOW1 (worker ses_ea4388fd7ffet5r7h7vg9V41gu)
+Date: 2026-10-20 (local 2026-10-21T00:xxZ). NO commit/stage performed (orchestrator owns commits).
+
+FILE MODIFIED
+- .omo/research/harness-research.md ONLY (plus this evidence file + learnings.md; nothing else touched)
+  - line 3055: new "### 23.10 Addendum — the 1.20→1.24 wave" inserted at the end of §23 (before "## 24.")
+  - line 3675: new "## 34. Iteration 24 findings — OpenCode 2.0 ..." appended (subsections 34.1-34.5)
+  - line 3707: new "## 35. Iteration 25 findings — OmO ..." appended (subsections 35.1-35.8, incl.
+    35.6 WATCH ledger with 13 entries and 35.7 death-verdict confirmations)
+  - File grew 3665 -> 3757 lines. Append-only honored: no existing section renumbered/reordered;
+    pre-existing duplicate headers §6 x2 / §10-§13 x2 left untouched (todo 30 owns them).
+
+[1] HEADER-UNIQUENESS CHECK (Select-String '^## (\d+)\.')
+Command: Select-String -Path .omo\research\harness-research.md -Pattern '^## (\d+)\.' | parse numbers
+Result:
+  total ## N. headers: 40; unique: 35
+  duplicates: 6 x2, 10 x2, 11 x2, 12 x2, 13 x2   <- ALL pre-existing (todo 30 scope), none added
+  34 count = 1   <- new, unique
+  35 count = 1   <- new, unique
+  ### 23.10 subsection count = 1
+New headers landed:
+  3055: ### 23.10 Addendum - the 1.201.24 wave (release-feed verified 2026-10-20; 23 body remains at v1.19.2 / 2026-09-11)
+  3675: ## 34. Iteration 24 findings - OpenCode 2.0: the daemon-by-default convergence, the plugin-break receipt, and the LSP removal (librarian report + ecosystem sweep; verified 2026-10-20)
+  3707: ## 35. Iteration 25 findings - OmO (oh-my-openagent): categories, curated agents, chains - what this plan adopts and refuses (mapping investigation + wave; verified 2026-10-20)
+(Console shows ASCII-folded dashes; file itself is proper UTF-8 em-dashes — verified via read tool.)
+
+[2] THE 13 WATCH ENTRIES (§35.6, plan todo 29 enumeration, exact order, count checked = 13)
+ 1. goose -> AAIF governance                      (research line 3733)
+ 2. Pi pending study (116,573 stars, 2026-10-20)  (3734)
+ 3. BYO-subscription auth wave                    (3735)
+ 4. Devin memory standard (memory.rs interop)     (3736)
+ 5. Plugin marketplace — AVOID pending stabilization (3737)
+ 6. Background-UX                                 (3738)
+ 7. Git-history-context (Zed in-progress)         (3739)
+ 8. OSC 7501 standardization                      (3740)
+ 9. Voice                                         (3741)
+10. Notebooks                                     (3742)
+11. Web-IDE                                       (3743)
+12. Code-Mode MCP-scripting                       (3744)
+13. /highlights-style in-product release-notes pattern (cataloged, deliberately not adopted; fixes red-team P6 "non-adoption recorded NOWHERE") (3745)
+Count command result: count = 13 (expect 13) — matches the todo's enumeration exactly.
+
+[3] CITATION SELF-REVIEW (QA failure mode: a claim/row without citation; no bare "proven by" without §/URL/date)
+Scope: only NEW content (### 23.10 block + ## 34./## 35. blocks; 92 lines captured by range scan).
+Method: every line matching a decision-row shape (^- **ADOPT/AVOID/WATCH, ^N. **, death-verdict rows,
+§23.10 release bullets) tested for a citation marker (§N | http | 2025/2026- date | tool-output | npm |
+github | HN | anoma.ly | opencode.ai | zed.dev | omo.dev | devin.ai | ampcode | reddit | draft | plan |
+sweep | report 2026 | session ses_).
+Result: new decision rows with citation: 24; missing: 0.
+Bare "proven by"/"proves" without receipt in new content: 0.
+Fix during review: three §35.5 rows initially lacked in-row citations (relied on surrounding prose);
+amended in-place to cite §35.2-35.4 receipts, research §2, §34.3, plan r5 approval date, sweep date.
+Fact discipline: every date/version/star count traces to the recorded investigation — draft
+.omo/drafts/ecosystem-alignment.md (C2-C9, Decisions, deferral list) + its two cited librarian outputs
+(tool-output/tool_158a2e56e001t2dc0NWd3dGsU1 OpenCode V2 report; tool-output/tool_158a2e576001N7DLPJHyUvzgZG
+ecosystem sweep, both dated 2026-10-20) + session ses_ea774e945ffe45I9Wp629UGOW1 mapping/wave syntheses
+(2026-10-20). No dates, versions, or star counts invented; unverified figures (SaaSCity 69%) carried as
+flagged-unverified in §34.4/§35.8.
+
+[4] DEATH-VERDICT CONFIRMATIONS (§35.7, dated)
+- Continue — frozen verdict stands (§28): no releases since v2.1.0-vscode 2026-06-19; light repo pushes
+  2026-10-20 = maintenance only. (sweep 2026-10-20)
+- Plandex — dead verdict stands (§13): last push 2025-10-03, last release July 2025, no revival signals.
+  (sweep 2026-10-20)
+NOTE ON WORDING: plan todo 29 / task text says "Continue/Clang death-verdict confirmations". No "Clang"
+exists anywhere in the research file (grep: 0 hits) or the ecosystem sweep. The factual source
+(draft C8, .omo/drafts/ecosystem-alignment.md line 22) says "Continue/Plandex death confirmations", and
+the sweep validated exactly those two. "Clang" was executed as Plandex. Flagged for the orchestrator in
+case a different subject was intended.
+
+[5] LINKCHECK (.github/scripts/linkcheck.ps1)
+Command: powershell -NoProfile -ExecutionPolicy Bypass -File .github\scripts\linkcheck.ps1
+Output: "linkcheck: OK (4 Markdown + 13 AsciiDoc files, zero broken relative links / includes / xrefs)"
+Exit code: 0. (Gate covers repo-root *.md + docs/; .omo/research is outside its scope, but the run
+proves the community surface is still green at this tree state, per the todo's happy-path QA scenario.)
+
+[6] CONTENT-SCOPE NOTES
+- §34 records: daemon-by-default convergence as the receipt for our architecture (34.2, with the
+  Codex /daemon + Amp runners + Warp Oz + Cursor agent-host cohort); the plugin-API break + OmO Native
+  pivot as the plugin-dependency cautionary receipt (34.3); the LSP-removed decision recorded as
+  WATCH-not-trend with our keep-LSP decision and its rationale (34.4).
+- §35 records: OmO categories/curated-agents/chains scheme; what plan todos 13-14 adopt (task(category)
+  delegation tool, curated explore/librarian cheap-pool agents); what it refuses (silent chain-walk,
+  ask-first preserved; plugin-host dependence).
+- §23.10 records Zed 1.20-1.24: ACP async-task wakeup (1.21.0, 2026-09-23), subagent model selection +
+  automatic subagent compaction + dynamically-fetched OpenCode models (1.22.0, 2026-09-30), plus
+  roadmap movement (Plan Mode incoming; Code History as Context in progress) cross-referenced to the
+  WATCH ledger.
+- README receipt rows citing §34/§35 are todo 31's scope (blocked by todo 30) — intentionally not done here.
+
+STOPPING CONDITION MET: §34 + §35 headers present and unique; §23 addendum in; 13 WATCH entries with
+citations; death-verdict confirmations dated; evidence file complete; no commit made.

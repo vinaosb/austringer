@@ -49,11 +49,16 @@ pub struct Connect {
     pub client_id: String,
 }
 
-/// One bound session over one carrier.
-pub enum SessionTransport {
-    /// WebSocket duplex.
+/// One bound session over one carrier, carrying the wire version the
+/// daemon acked (observed in `HelloAck`; the eval-driver contract
+/// needs protocol 2 for the full v2 frame set).
+pub struct SessionTransport {
+    carrier: Carrier,
+    negotiated_version: Option<u32>,
+}
+
+enum Carrier {
     Http(HttpSession),
-    /// Local-socket duplex.
     Ipc(IpcSession),
 }
 
@@ -61,17 +66,18 @@ impl SessionTransport {
     /// Bind per the [`Connect`] inputs. Both carriers complete the
     /// Hello handshake here; replayed frames flow into the caller's
     /// read loop ahead of HelloAck (the resume contract).
+    ///
+    /// # Errors
+    /// typed transport failures (unreachable/auth/protocol).
     pub async fn connect(connect: &Connect) -> Result<Self, CliError> {
-        match &connect.url {
-            Some(base) => {
-                let http = HttpSession::open(base, connect).await?;
-                Ok(Self::Http(http))
-            }
-            None => {
-                let ipc = IpcSession::open(connect).await?;
-                Ok(Self::Ipc(ipc))
-            }
-        }
+        let carrier = match &connect.url {
+            Some(base) => Carrier::Http(HttpSession::open(base, connect).await?),
+            None => Carrier::Ipc(IpcSession::open(connect).await?),
+        };
+        Ok(Self {
+            carrier,
+            negotiated_version: None,
+        })
     }
 
     /// Submit a user turn.
@@ -84,6 +90,40 @@ impl SessionTransport {
             },
         })
         .await
+    }
+
+    /// Steer the running turn.
+    /// # Errors
+    /// typed transport failures.
+    pub async fn steer(&mut self, text: &str) -> Result<(), CliError> {
+        self.send(&ClientMsg::Command {
+            command: SessionCommand::Steer {
+                text: text.to_owned(),
+            },
+        })
+        .await
+    }
+
+    /// Withdraw a broadcast permission ask (todo 23 `/vote-cancel`).
+    /// # Errors
+    /// typed transport failures.
+    pub async fn permission_cancel(&mut self, ask_id: u64) -> Result<(), CliError> {
+        self.send(&ClientMsg::PermissionCancel { ask_id }).await
+    }
+
+    /// Enter or exit daemon plan mode (todo 23 `/mode`).
+    /// # Errors
+    /// typed transport failures.
+    pub async fn plan_mode(&mut self, on: bool) -> Result<(), CliError> {
+        self.send(&ClientMsg::PlanMode { on }).await
+    }
+
+    /// Rewind to the snapshot `steps` restore points back (todo 23
+    /// `/rewind`).
+    /// # Errors
+    /// typed transport failures.
+    pub async fn rewind(&mut self, steps: u64) -> Result<(), CliError> {
+        self.send(&ClientMsg::Rewind { steps }).await
     }
 
     /// Answer a broadcast permission ask.
@@ -105,20 +145,31 @@ impl SessionTransport {
     }
 
     async fn send(&mut self, msg: &ClientMsg) -> Result<(), CliError> {
-        match self {
-            Self::Http(http) => http.send(msg).await,
-            Self::Ipc(ipc) => ipc.send(msg).await,
+        match &mut self.carrier {
+            Carrier::Http(http) => http.send(msg).await,
+            Carrier::Ipc(ipc) => ipc.send(msg).await,
         }
     }
 
-    /// Next server message (`None` = stream ended).
+    /// Next server message (`None` = stream ended). Records the wire
+    /// version when the daemon's `HelloAck` lands.
     /// # Errors
     /// typed transport failures.
     pub async fn next_msg(&mut self) -> Result<Option<ServerMsg>, CliError> {
-        match self {
-            Self::Http(http) => http.next_msg().await,
-            Self::Ipc(ipc) => ipc.next_msg().await,
+        let msg = match &mut self.carrier {
+            Carrier::Http(http) => http.next_msg().await,
+            Carrier::Ipc(ipc) => ipc.next_msg().await,
+        }?;
+        if let Some(ServerMsg::HelloAck { version, .. }) = &msg {
+            self.negotiated_version = Some(*version);
         }
+        Ok(msg)
+    }
+
+    /// The daemon-acked wire version (`None` until the `HelloAck`).
+    #[must_use]
+    pub fn negotiated_version(&self) -> Option<u32> {
+        self.negotiated_version
     }
 }
 
@@ -233,7 +284,7 @@ fn map_ws_error(error: tokio_tungstenite::tungstenite::Error) -> CliError {
 
 /// Percent-encode for the query string: unreserved characters pass,
 /// everything else becomes `%XX`.
-fn percent_encode(value: &str) -> String {
+pub(crate) fn percent_encode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {

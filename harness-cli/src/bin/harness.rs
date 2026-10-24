@@ -7,13 +7,15 @@ use std::time::Duration;
 
 use clap::Parser as _;
 use harness_cli::attach;
-use harness_cli::cli::{Cli, Command};
+use harness_cli::cli::{Cli, Command, SessionsArgs, SessionsCommand};
 use harness_cli::client::{Connect, LIVE_ONLY, SessionTransport};
 use harness_cli::doctor::{DoctorOptions, doctor};
 use harness_cli::error::CliError;
 use harness_cli::image;
+use harness_cli::mcp;
 use harness_cli::repl;
 use harness_cli::run::{self, RunOptions};
+use harness_cli::sessions;
 use harness_cli::target::{Target, TargetSpec, default_session};
 
 fn main() -> ExitCode {
@@ -38,12 +40,29 @@ fn main() -> ExitCode {
 }
 
 async fn dispatch(cli: Cli) -> Result<i32, CliError> {
+    // `mcp` commands are daemon-less (scan/serve/call never contact
+    // the daemon), so they run before transport resolution — no token
+    // file is required to inspect configs or serve stdio.
+    if let Command::Mcp(args) = &cli.command {
+        return mcp::run(&args.command).await;
+    }
     let spec = TargetSpec {
         url: cli.url.clone(),
         token: cli.token.clone(),
         data_dir: cli.data_dir.clone(),
         ipc_name: cli.ipc_name.clone(),
     };
+    // The `sessions` verb family rides the HTTP route surface only
+    // (the IPC carrier has no HTTP base), so it checks its transport
+    // BEFORE resolve — a missing --url is the typed hint, not a
+    // token-file failure.
+    if let Command::Sessions(SessionsArgs { command }) = &cli.command {
+        return match command {
+            SessionsCommand::Search(args) => sessions::search(&spec, args).await,
+            SessionsCommand::List => sessions::list(&spec).await,
+            SessionsCommand::History(args) => sessions::history(&spec, &args.session).await,
+        };
+    }
     let target = Target::resolve(&spec)?;
     let images = image::attachments(&cli.images, false)?;
     match cli.command {
@@ -103,6 +122,8 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
             )
             .await
         }
+        Command::Mcp(_) => unreachable!("mcp dispatched before transport resolution"),
+        Command::Sessions(_) => unreachable!("sessions dispatched before transport resolution"),
     }
 }
 

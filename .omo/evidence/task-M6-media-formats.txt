@@ -1,0 +1,261 @@
+TASK M6 - tiered executor dispatch + producer disclosure + WASM ladder seam (media-formats-wave)
+===============================================================================================
+
+Worker: M6 implementation worker (Sisyphus-junior). Date: 2026-09-22.
+Base: HEAD 2196a24 on main (feat(providers): capability-aware media delivery planner = M8).
+Deps landed: M1 a61d372, M2 e816161, M4 152f93a (per task brief), M5 cf1bbac. harness-core
+STABLE. Plan authority: .omo/plans/media-formats-wave.md todo 6 (M6), lines 127-133.
+Pre-existing dirty state: the PARALLEL M9 daemon lane (harness-daemon/*, harness-core agent_loop
++ event tests, harness-cli/render.rs, harness-tui/*, Cargo.lock, .omo/run-continuation) -
+neither read nor modified by this todo; this commit stages ONLY harness-media/, harness-wasm/,
+and this evidence file (verified via git diff --cached before commit).
+
+ENVIRONMENT (disclosed, per task-13/M1/M5 precedent)
+-------------------------------------------------------------------------------
+Main target/ did not exist (cold). All cargo commands ran with the shell-scoped INCLUDE
+workaround for the machine-wide VS servicing damage (gutted stdarg.h):
+  INCLUDE = C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include;
+            + WinSDK 10.0.26100.0 ucrt/um/shared/winrt/cppwinrt appended
+  Env:CC removed. Nothing repo-side changed.
+The M6 daemon size-canary build ran in a SEPARATE CARGO_TARGET_DIR
+(C:\Users\vsbb1\AppData\Local\Temp\opencode\m6-size-target) so it never contended the dev-loop
+target lock; the canary test itself respects CARGO_TARGET_DIR and defaults to <workspace>/target.
+
+TDD RED (true red, tests written FIRST against the intended API)
+-------------------------------------------------------------------------------
+Test files written before any implementation existed: harness-media/tests/executor_dispatch.rs
+(7 tests), harness-media/tests/executor_registry.rs (6 tests), harness-wasm/tests/manifest.rs
+(+1 test), harness-wasm/tests/plugin_load.rs (too-new expectations bumped to declared:3/max:2,
++3 ladder/media-adapter tests), harness-wasm/src/abi.rs in-module tests re-pinned to V2, fixture
+new_iface.wat -> interface 3, new fixture media_adapter.wat (interface 2 + media-adapter).
+Command: cargo nextest run -p harness-media -p harness-wasm
+
+  error[E0432]: unresolved import `harness_media::executor`        (executor_dispatch, executor_registry)
+  error[E0433]: cannot find `executor` in `harness_media`          (x N across both files)
+  error[E0599]: no variant ... `V2` ... for enum `abi::Interface`  (harness-wasm lib test, x2)
+  error[E0599]: no variant ... `MediaAdapter` ... for enum `Capability` (manifest test, x3)
+  error[E0614]: type `FormatId`/`Confidence` cannot be dereferenced (x2 - CASCADE artifacts of
+                the unresolved OpOutput path: with the module absent the sub-pattern binds by
+                value; both compile once inner() -> &OpOutput exists)
+  error: could not compile `harness-media` (test "executor_dispatch") / (test "executor_registry")
+  error: could not compile `harness-wasm` (lib test) / (test "manifest")
+  exit code 101
+
+Right-reason check: one wrong-reason wart was found in the first RED run (`.ok().expect()` on an
+Option in executor_registry.rs) and fixed BEFORE recording RED; after the fix every remaining
+failure names the missing implementation (module / enum variants) or is a direct cascade of it.
+
+DELIVERABLE (all <=250 pure LOC/file; zero unwrap/expect/panic in src - scanned)
+-------------------------------------------------------------------------------
+harness-media/src/executor/ (new module, 5 files):
+  mod.rs      (11)   module doctrine: tiered dispatch as THE single dispatch authority (M31
+                      registers engine tools as thin wrappers - never a parallel vocabulary);
+                      dispatch contract (Produced inseparable from ProducerInfo; refusals typed:
+                      UnsupportedFormat / UnsupportedOperation w/ verbatim reason /
+                      ToolUnavailable pre-M15); day-one posture; WASM seam note.
+  types.rs    (76)   AdapterTier {Pure|Subprocess|Wasm} (serde snake_case); ProducerInfo {tier,
+                      engine, version, command: Option<String>} (Serialize - M9 MediaResult +
+                      M31 tool results carry it); Produced {inner, producer} - PRIVATE FIELDS +
+                      single constructor new() + accessors: produced-without-producer
+                      UNREPRESENTABLE outside the module, with an EXECUTED compile-level proof
+                      (```compile_fail doctest: struct-literal construction fails E0451
+                      private field; cargo test --doc green = the construction is rejected);
+                      OpOutput {Probe|Extract|Generate|Verify}; OpRequest (borrowed, typed per
+                      op; Extract carries ExtractBudgets - the budget is part of the dispatch
+                      contract from day one) + operation().
+  binding.rs  (61)   per-op handler fn types (ProbeHandler = the M2 probe signature; Extract
+                      takes budgets; Generate takes GenerationSpec; Verify takes independent
+                      expected tree + produced bytes); OpBinding<H> {Pure{engine, handler} |
+                      Subprocess{tool, install_hint} | Unsupported{reason}} + refusal() (typed:
+                      Subprocess -> ToolUnavailable{tool, install_hint}, Unsupported ->
+                      UnsupportedOperation{format, op, reason}); AdapterOps (STRUCT not map: all
+                      four ops present by construction, each field carrying exactly its handler
+                      type - request-kind/binding-kind mismatch unrepresentable; "registered
+                      without probe + (extract | typed-unsupported)" unrepresentable at type
+                      level); AdapterEntry {descriptor (the M2 table - attaches to it, never
+                      replaces it), tier, ops}.
+  registry.rs (145)  ExecutorRegistryBuilder: register() enforces the wiring rules TYPED
+                      (DuplicateAdapter; ProbeNotBound = the plan MUST-NOT; and the two
+                      descriptor/binding sync directions: SupportedWithoutDispatch -
+                      README-ahead-of-code; HandlerWithoutClaim - code-ahead-of-README;
+                      Subprocess pairs with either claim = decided support, tool wiring
+                      pending) then build() FREEZES; ExecutorRegistry has NO mutation methods
+                      (immutable-after-build, type-enforced - stale-state adversarial);
+                      lookup (typed UnsupportedFormat), formats() (completeness enumeration),
+                      dispatch(format, OpRequest) -> Result<Produced, MediaError>: Pure arm
+                      executes handler and wraps Produced::new(output, ProducerInfo{tier:
+                      Pure, engine, version: CARGO_PKG_VERSION, command: None}); other arms
+                      refusal() typed. ExecutorWiringError: thiserror, actionable Display,
+                      names the fix in every arm.
+  wiring.rs  (138)   DAY-ONE TABLE: all 34 FormatIds, probe Pure-bound to the M2 sniffing
+                      engine "harness-media::probe" everywhere; extract/generate/verify honest
+                      typed placeholders citing their lane (M11 svg, M12 gltf, M13 pdf, M14
+                      audio, M18 office read, M20 step extract, M21 geotiff read, M22
+                      columnar, M28 image family, M29 geovector+sqlite, M30 text); PERMANENT
+                      honesty rows wired as first-class refusals (gif = probe + native vision
+                      delivery only; jxl = extract-only, generation gated on the digest
+                      adoption trigger; hdf5 = deferred by digest section 6 w/ interface-2
+                      WASM as the sanctioned future path; sqlite = no generation lane; mp3/ogg
+                      encode-redirect to the ffmpeg lane); DECIDED subprocess lanes bound as
+                      Subprocess{tool, install_hint} (blend->blender, pptx generate->pandoc,
+                      step generate->freecadcmd, geotiff generate->gdal, opus/webm/mkv->
+                      ffmpeg) - dispatch = typed ToolUnavailable until M15; tier rule recorded
+                      in module docs (generation lane decides; redirect formats take their
+                      extract adapter's tier). Built FROM the M2 descriptor table via the new
+                      FormatRegistry::iter() - executor attaches to the same table.
+harness-media/src/descriptor.rs (+12) FormatRegistry::iter() - canonical-order iteration so
+                      the wiring walks the registered set (no lookup-skip dead code); docs
+                      note the M6 + M27 consumers.
+harness-media/src/lib.rs      pub mod executor + re-exports; crate doc's "NOT here yet"
+                              section updated (M6 no longer pending).
+harness-media/tests/executor_dispatch.rs (165) 7 tests: probe dispatch -> Produced with FULL
+                              disclosure (tier Pure, engine, version, command None, png
+                              Certain); dispatch repeatable (no stale state, identical
+                              disclosures); svg generate -> UnsupportedOperation citing M11;
+                              mp3 generate -> encode-redirect reason names ffmpeg; jxl verify
+                              on extract-only format -> UnsupportedOperation naming
+                              extract-only; subprocess dispatch pre-M15 -> ToolUnavailable
+                              {pandoc, hint non-empty} + {blender}; disclosure fields
+                              populated across binary-magic/document-magic/text-heuristic
+                              probe lanes.
+harness-media/tests/executor_registry.rs (189) 6 tests: DAY-ONE COMPLETENESS over all 34
+                              FormatIds (probe bound Pure, no blank Unsupported reasons,
+                              descriptor carried, count 34 == formats()); descriptor/binding
+                              sync for all 34 x 4 ops (Pure iff Supported claim;
+                              Supported-without-dispatch and handler-without-claim both
+                              panic-fail - drift unrepresentable); builder rejects probe-less
+                              entry (ProbeNotBound); builder rejects duplicate + drifted
+                              entry (DuplicateAdapter / SupportedWithoutDispatch); unknown-
+                              format dispatch on a partial registry -> typed
+                              UnsupportedFormat; gif + hdf5 placeholders honest day one (gif
+                              reason names the vision-only lane; hdf5 reason cites deferred +
+                              digest).
+harness-media/tests/size_canary.rs (66)  STANDING BINARY-SIZE CANARY, #[ignore] by design
+                              (real release build; never in CI): builds the daemon release,
+                              measures, emits the machine-parseable record line, fails on
+                              >40 MiB budget (budget const mirrors budgets.json binary_mb)
+                              and on >10% regression vs BASELINE_MIB (workspace
+                              regression_tolerance_pct); BASELINE_MIB = 5.967 carries its
+                              provenance in the doc comment (see CANARY below). Run at each
+                              heavy-dep todo (M12/M13/M14/M22/M28 minimum) + M27.
+harness-wasm/src/manifest.rs (+23) Capability::MediaAdapter ("media-adapter") - interface-2
+                              declaration; parse arm + UnknownCapability Display lists all
+                              four known capabilities. Declaring without grant still fails the
+                              load through the EXISTING loader check (test-pinned).
+harness-wasm/src/abi.rs       INTERFACE_MAX 1 -> 2; Interface::V2 arm (+version() 2);
+                              negotiate routes the ladder (1->V1, 2->V2, catch-all re-checks
+                              the ceiling TooNew so a future MAX bump can never silently
+                              misroute); INTERFACE-2 SPEC SECTION in the module docs (the
+                              mandated read_media/write_media host-fn table: signatures,
+                              negative-code conventions, hash-not-found; shapes reserved and
+                              adjustable pre-impl) + the documented v0.2 boundary: NO host-fn
+                              impls - a plugin importing them fails instantiation typed.
+                              This also FIXES a pre-existing broken rustdoc link: HEAD's abi
+                              docs referenced [`Interface::V2`] aspirationally (unresolved
+                              at HEAD - verified via a detached HEAD worktree cargo doc run).
+harness-wasm/tests/fixtures/wasm-plugin/new_iface.wat  interface 2 -> 3 (keeps the too-new
+                              fixture meaningful above the raised ceiling).
+harness-wasm/tests/fixtures/wasm-plugin/media_adapter.wat (new) interface 2 + capability
+                              media-adapter + one tool; imports nothing beyond the
+                              interface-1 ABI table (the documented v0.2 boundary).
+harness-wasm/tests/manifest.rs +1 test: media-adapter parses + as_str/Display round-trip.
+harness-wasm/tests/plugin_load.rs 3 new tests + 1 updated: interface1 fixture loads
+                              UNCHANGED on the interface-2 host (ladder test, Zed
+                              10-WIT-versions lesson); media_adapter interface-2 plugin LOADS
+                              when granted (manifest validation seam end-to-end: negotiate
+                              V2 + capability round-trip); ungranted -> typed
+                              CapabilityNotGranted{media-adapter}; too-new guidance now
+                              declared:3/max:2.
+wasm-plugins feature: DEFAULT-OFF unchanged (Cargo.toml untouched; default test run excludes
+the loader; the feature run is evidence-only).
+harness-core: NOT touched. harness-daemon: not read, not modified (M9 lane in flight); the
+daemon was only BUILT (release, read-only) for the size canary.
+
+VERIFICATION (all commands with the shell-scoped INCLUDE workaround)
+-------------------------------------------------------------------------------
+1. cargo nextest run -p harness-media -p harness-wasm
+     Summary [  1.331s] 86 tests run: 86 passed, 1 skipped
+   (the 1 skipped = the #[ignore]d size canary - by design)
+2. cargo nextest run -p harness-wasm --features wasm-plugins
+     Summary [  0.789s] 52 tests run: 52 passed, 0 skipped
+   (loader + ladder + media-adapter seam + all pre-existing plugin suites)
+3. cargo test -p harness-media --doc
+     test result: ok. 1 passed; 0 failed  (the compile_fail proof: Produced-without-producer
+   construction is REJECTED by the compiler - E0451 private field)
+4. cargo clippy -p harness-media -p harness-wasm --all-targets -- -D warnings
+   cargo clippy -p harness-media -p harness-wasm --all-targets --features harness-wasm/wasm-plugins -- -D warnings
+     both: Finished, zero warnings (two test-side ok().expect()/err().expect() style hits were
+   fixed to expect/expect_err during the loop - clippy::ok_expect is style-group, denied)
+5. cargo nextest run -p harness-media --run-ignored only --test size_canary
+     PASS (see CANARY record below)
+6. Pure LOC audit (non-blank, non-comment): executor mod 11 / types 76 / binding 61 / registry
+   145 / wiring 138; descriptor 66; lib 22; tests 165/189/66; wasm manifest 188 / abi 103 -
+   ALL <= 250 (largest src file 188; executor max 145).
+7. Zero unwrap/expect/expect_err/panic!/unreachable!/todo! in all touched src (Select-String
+   scan; tests exempt per house pattern).
+8. cargo doc -p harness-media -p harness-wasm --no-deps: 5 unresolved-link errors remain -
+   ALL PRE-EXISTING at HEAD 2196a24 (verified by running cargo doc in a detached HEAD
+   worktree: wasmtime::ResourceLimiter, plugin::PluginHandle, plugin::ReloadEvent::Failed -
+   feature-gated docs; `7`/`8` + `probe` both-function-and-module in harness-media M1/M2
+   docs). My change NET-FIXES one of the six HEAD failures (Interface::V2 now exists).
+   Pre-existing five left for their owning todos (out of M6 seam scope).
+9. cargo deny check: not run - ZERO dependency changes (no manifest edits beyond none; the
+   dependency graph is byte-identical to HEAD).
+
+BINARY-SIZE CANARY (standing, wired at M6 per plan - the M27 <40MB gate is never the first
+measurement; record format established herewith)
+-------------------------------------------------------------------------------
+Baseline build: cargo build --release -p harness-daemon, dev machine, 2026-09-22, dirty
+worktree with the parallel M9 lane in flight (M6 executor changes compiled in - the daemon
+depends on harness-media via the M9 wiring, so the rebuild after M6 shifted 6_269_440 ->
+6_261_248 bytes). Media features on the daemon arrive with M9/M32; until then this records
+the PRE-MEDIA daemon - the baseline every heavy-dep adapter todo deltas against.
+
+  FINAL RECORD (canary output, verbatim):
+  SIZE_CANARY daemon=5.97 baseline=5.97 delta=+0.00MiB(+0.1%) budget=40.00 verdict=OK
+
+  SIZE_BYTES=6_261_248 (5.967 MiB)  |  BASELINE_MIB constant = 5.967  |  budget 40 MiB
+  Record format (stable field order, one line, machine-parseable):
+    SIZE_CANARY daemon=<MB> baseline=<MB> delta=<+/-MB(+/-pct)> budget=<MB> verdict=OK|OVER-BUDGET|REGRESSION
+  Duty: each heavy-dep adapter todo (M12/M13/M14/M22/M28 minimum) re-runs the canary, copies
+  the record line here, and updates BASELINE_MIB only together with that evidence line.
+
+ADVERSARIAL CLASSES (probe + record)
+-------------------------------------------------------------------------------
+- malformed-input: PROBED and pinned. Unknown/unregistered format dispatch -> typed
+  MediaError::UnsupportedFormat (partial-registry test); no panic path exists (no unwrap/
+  expect/panic in src - scanned); the M1 garbage-bytes and M2 adversarial corpora remain green.
+- misleading-success-output: PROBED and COMPILE-PROVEN. A Produced-without-producer value is
+  UNREPRESENTABLE: private fields + no Default + single constructor taking the disclosure;
+  executed proof = the compile_fail doctest (green only because the construction is REJECTED,
+  E0451). Every dispatch success carries non-empty engine + version (test across probe lanes);
+  Unsupported dispatches carry the verbatim reason; Subprocess dispatches carry tool +
+  install hint. The pre-M15 subprocess tier cannot fake success - it can only refuse typed.
+- stale-state: PROBED, type-enforced. ExecutorRegistry has NO mutation methods after
+  build() (immutable-after-build); dispatch is repeatable with identical disclosures
+  (test-pinned); descriptor claims cannot drift from bindings in either direction
+  (builder-enforced + day-one sync test over all 34 x 4).
+- dirty-worktree: respected - only harness-media/ + harness-wasm/ + this evidence file staged;
+  the parallel M9 lane's files (harness-daemon, harness-core, harness-cli, harness-tui,
+  Cargo.lock) untouched and uncommitted here.
+- flaky-tests: N/A - all 86+52 tests deterministic hermetic in-memory (no clock, no fs, no
+  network); the only slow test is the #[ignore]d canary (real build, by design).
+- hung-commands: N/A - no subprocess spawning in library code; the canary's release build is
+  bounded by cargo itself.
+- scope-creep: harness-daemon NOT read/modified (built release for the canary only, as the
+  plan sanctions); harness-core NOT touched (executor lives in harness-media per decision 1);
+  wasm-plugins default-off untouched; no host-fn impls shipped.
+
+HOUSE-RULE COMPLIANCE
+-------------------------------------------------------------------------------
+No new dependencies (harness-media and harness-wasm manifests untouched); edition-2024
+workspace lints (warnings=deny, clippy all=deny) pass incl. --all-targets and the wasm-plugins
+feature; <=250 pure LOC/file; zero unwrap/expect/panic in src; serde sorted-key stability
+(BTreeMap registry internals; preserve_order never enabled); ProducerInfo serializes
+snake_case-stable for M9/M31 consumers; probe op wired to M2's registry (the executor attaches
+to the same table - FormatRegistry::iter() added for that walk); registry-completeness test
+enumerates ALL 34 FormatIds on day one with typed-Unsupported placeholders (gif extract, jxl
+generate, mp3 encode-redirect, hdf5 ops, sqlite generation) so coverage gaps surface now;
+one conventional commit; evidence under .omo/evidence/; plan checkboxes untouched.
+
+Commit: feat(media): tiered executor dispatch + producer disclosure

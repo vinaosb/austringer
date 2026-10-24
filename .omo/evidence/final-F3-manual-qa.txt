@@ -1,0 +1,43 @@
+F3 REAL MANUAL QA - assembled matrix (orchestrator synthesis from the four cell files)
+====================================================================================================
+Verdict basis: zero silent substitutions observed across the ENTIRE matrix (the F3 REJECT
+trigger never fired); every N-A cell carries a documented design justification.
+
+Frontend x Mechanism matrix (PASS = driven observable; N-A = justified absence):
+- TUI  : routed turns PASS (y-hop re-served, HUD grok-4-6 $3.20; n-keeps; unacked -> 2x
+         verbatim retry notice, ZERO substitution events) | delegation+precedence PASS
+         (real /launch, agents accordion, child rows, budget row) | plan mode PASS (approve
+         lands BETA EDITED on disk / reject stays gated) | run_tests N-A on TUI (surface via
+         CLI cell; transcript renders tool entries) | cross-session search N-A (no TUI
+         surface; CLI/web/tool cells cover) | cost Warning/Stop PASS (hub events + HUD
+         dollars + typed refusal; u128 decode defect FOUND -> fixed 96fe807 -> re-proofed
+         via throwaway decode->App test) | hunk review PASS (diffs accordion +2/-2, per-hunk
+         y/n -> Accepted/Rejected + notes)
+- Web  : routed turns+asks PASS (e2e allow-gate) | delegation+precedence PASS (workers panel,
+         team frames store-level) | plan PASS (plan cards) | run_tests N-A (no web surface)
+         | search N-A (no web surface; HTTP API/CLI/tool cover) | cost Warning PASS
+         (cost_warning asserted); Stop badge store-level (reducer wired, no test feeds it -
+         honest) | hunk PASS (diff view) | e2e ALL PASS 6 scenarios; store+grammar 25/25
+- VSCode: routed turns/frames PASS (v2 suite: negotiation, hello_ack, malformed survival) |
+         asks PASS (prompts suite: Esc->pending, allow/deny, fallback/plan picks; honest
+         limitation: daemon HTTP refuses typed answers until WS carrier) | delegation/team
+         PASS (transcript team entries + v2 decode) | search/cost/run_tests N-A (surface
+         not in extension; other cells cover) | hunks+plan PASS (hunks suite 7 + plan rows)
+         | npm 89/89 + typecheck clean
+- CLI  : routed turn PASS (identity anthropic/claude-sonnet-4-5, 6720 uUSD, human+NDJSON) |
+         fallback ask PASS (verbatim notice + same-model retry, hop never serves) |
+         delegation PASS (labeled children quick/deep finished success, agents budget 2/4) |
+         plan mode PASS (blocked-pre-approval, zero disk effects; approval WS-only BY
+         DESIGN) | run_tests PASS (typed TestReport + sandbox disclosure) | search
+         PASS(surface)+REAL GAP DISPOSITIONED (live feed unwired - see final-F3-cell-cli.txt
+         disposition + README correction) | cost BLOCKED-by-fixture (env parsed only by
+         daemon bin main; covered instead by unit 38/38 + daemon cost_ledger 8/8 + TUI
+         re-proof) | hunk PASS (src/demo.rs full hunk, worker-executor lane = only
+         Diff-publishing production path)
+
+F3 VERDICT: APPROVE
+- Zero silent substitutions across every driven cell (explicit per-cell above).
+- Every N-A justified by documented design/surface limitation.
+- Two defects found by this wave, both dispositioned: u128 wire decode (fixed 96fe807,
+  re-proofed) and event_fts live feed gap (REAL GAP - honest docs correction + follow-up
+  logged in issues.md; not a substitution path).

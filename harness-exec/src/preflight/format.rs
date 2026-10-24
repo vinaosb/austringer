@@ -59,6 +59,7 @@ fn spec(
         args: args.to_vec(),
         cwd: Some(root.to_path_buf()),
         env: BTreeMap::new(),
+        env_scrub: None,
         timeout,
         size,
         run_in: crate::spec::RunIn::Native,

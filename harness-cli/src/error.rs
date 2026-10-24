@@ -48,6 +48,13 @@ pub enum CliError {
         /// The daemon's typed outcome summary (e.g. `failed::…`).
         outcome: String,
     },
+    /// An `mcp` subcommand failed (scan, serve, or call).
+    #[error("mcp error: {detail}")]
+    Mcp {
+        /// Bounded detail (config path + offending key, or the typed
+        /// transport failure).
+        detail: String,
+    },
 }
 
 impl CliError {
@@ -86,6 +93,13 @@ mod tests {
             .to_string()
             .contains("image")
         );
+        assert!(
+            CliError::Mcp {
+                detail: "scan failed".into()
+            }
+            .to_string()
+            .contains("mcp error")
+        );
     }
 
     #[test]
@@ -109,6 +123,9 @@ mod tests {
             CliError::Timeout { secs: 1 },
             CliError::TurnFailed {
                 outcome: String::new(),
+            },
+            CliError::Mcp {
+                detail: String::new(),
             },
         ];
         for sample in samples {

@@ -205,6 +205,7 @@ impl Inference for HungInference {
         Ok(AssistantTurn {
             blocks: Vec::new(),
             tool_calls: Vec::new(),
+            usage: None,
         })
     }
 }

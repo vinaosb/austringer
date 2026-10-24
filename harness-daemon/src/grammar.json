@@ -1,0 +1,70 @@
+{
+  "commands": [
+    {
+      "word": "help",
+      "usage": "/help",
+      "help": "show this command list",
+      "local": false
+    },
+    {
+      "word": "steer",
+      "usage": "/steer <text>",
+      "help": "steer the running turn with more instructions",
+      "local": false
+    },
+    {
+      "word": "cancel",
+      "usage": "/cancel",
+      "help": "cancel the running turn",
+      "local": false
+    },
+    {
+      "word": "vote-cancel",
+      "usage": "/vote-cancel [ask-id]",
+      "help": "withdraw an open permission ask (no id = the single open ask)",
+      "local": false
+    },
+    {
+      "word": "mode",
+      "usage": "/mode plan|off",
+      "help": "enter or exit plan mode",
+      "local": false
+    },
+    {
+      "word": "rewind",
+      "usage": "/rewind [steps]",
+      "help": "rewind to a previous restore point (default 1)",
+      "local": false
+    },
+    {
+      "word": "skill",
+      "usage": "/skill <name> [args]",
+      "help": "run a trusted skill through the submit lane",
+      "local": false
+    },
+    {
+      "word": "exit",
+      "usage": "/exit",
+      "help": "quit this repl",
+      "local": true
+    },
+    {
+      "word": "image",
+      "usage": "/image <path>",
+      "help": "attach an image to the next submit",
+      "local": true
+    }
+  ],
+  "allow_scopes": [
+    "y (once)",
+    "a (session)",
+    "n (deny)",
+    "c (vote-cancel)"
+  ],
+  "vocabulary": {
+    "agents": "agents",
+    "rewind_point": "rewind point",
+    "share_link": "redacted share link",
+    "state_replayed": "state replayed"
+  }
+}

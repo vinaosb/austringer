@@ -199,7 +199,7 @@ impl ToolExecutor for HookedExecutor {
                     .iter()
                     .filter_map(|block| match block {
                         ContentBlock::Text { text } => Some(text.as_str()),
-                        ContentBlock::Image(_) => None,
+                        ContentBlock::Image(_) | ContentBlock::Media(_) => None,
                     })
                     .collect::<Vec<_>>()
                     .join("\n");

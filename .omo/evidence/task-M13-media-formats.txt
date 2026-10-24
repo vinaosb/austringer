@@ -1,0 +1,239 @@
+TASK M13 - pdf adapter (pure tier: extract + minimal write) (media-formats-wave)
+==================================================================================
+
+Worker: M13 implementation worker (Sisyphus-junior). Date: 2026-09-24.
+Base: HEAD 5cd6bf4 + parallel-lane commits (M9 protocol v2 = cee88c4 observed mid-task).
+Plan authority: .omo/plans/media-formats-wave.md todo 13 (M13), lines 183-189, verbatim.
+Parallel lanes observed in the SAME worktree (neither read-modified beyond the declared
+shared-file protocol): M11 svg + M12 gltf (src/adapter/* siblings, Cargo.toml feature
+lines, tests/executor_dispatch.rs, tests/executor_registry.rs, src/error.rs
+UnsupportedFeature variant) and M9 daemon (harness-daemon/*, committed cee88c4).
+
+ENVIRONMENT (disclosed, per task-13/M1/M6 precedent)
+-------------------------------------------------------------------------------
+Cold MSVC stdarg.h breakage hit the first cargo run (libsqlite3-sys cc build fails:
+C1083 stdarg.h) - the known machine-wide VS servicing damage. All cargo commands ran
+with the M6-documented shell-scoped workaround (nothing repo-side changed):
+  INCLUDE = C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include
+            + WinSDK 10.0.26100.0 ucrt/um/shared/winrt/cppwinrt appended; Env:CC removed.
+CARGO_TARGET_DIR was pre-set to C:\ct in the environment (shared, warm); the size-canary
+ran in a SEPARATE CARGO_TARGET_DIR (%TEMP%\opencode\m13-size-target) per the M6 precedent.
+
+TDD RED (true red, tests written FIRST against the intended API)
+-------------------------------------------------------------------------------
+Test files written before any implementation existed:
+  harness-media/tests/pdf_extract.rs    (5 tests)
+  harness-media/tests/pdf_roundtrip.rs  (6 tests)
+Command: cargo nextest run -p harness-media --test pdf_extract --test pdf_roundtrip
+
+  error[E0432]: unresolved import `harness_media::adapter::pdf`
+   --> harness-media\tests\pdf_extract.rs:8:20
+   --> harness-media\tests\pdf_roundtrip.rs:11:20
+  error[E0432]: could not find `adapter` in `harness_media`
+  error: could not compile `harness-media` (test "pdf_extract") / (test "pdf_roundtrip")
+  exit code 101
+
+Right-reason check: every failure names the missing module (the M6-precedent RED shape);
+no wrong-reason warts. One test-only bug was caught and fixed during GREEN-up (a
+`Vec<Value>` formatted with {} and a dropped temporary in a lookup chain) - test-file
+issues, not implementation drift.
+
+DEPENDENCY DECISIONS (executor's pick, recorded per plan; cargo-deny VERDICTS)
+-------------------------------------------------------------------------------
+Extract = lopdf (over pdf-extract), generate = krilla 0.8.2 (plan first choice).
+Full rationale recorded in harness-media/src/adapter/pdf.rs module docs. Summary:
+- lopdf exposes the full needed DOM surface (pages/version/Info/outline depth/fonts
+  WITH embeddedness/images/encryption) AND a text decoder covering BOTH simple-font
+  encoding tables AND Type0 fonts via their ToUnicode CMaps (the round-trip fidelity
+  surface). pdf-extract is text-only and would drag a second lopdf copy.
+- CARGO-DENY FORCED ONE DEVIATION FROM THE PLAN TEXT: the plan named "lopdf 0.40.0",
+  but cargo deny flags RUSTSEC-2026-0187 (stack overflow in load_mem via deeply
+  nested objects - this adapter's EXACT untrusted parse surface; fixed in 0.42.0).
+  Pinned lopdf 0.42.0 instead. deny.toml records the pin rationale at the dep.
+- CARGO-DENY IGNORES (documented in deny.toml with rationale): RUSTSEC-2026-0206
+  (rustybuzz unmaintained) + RUSTSEC-2026-0192 (ttf-parser unmaintained). krilla
+  0.8.2's simple-text shaping is rustybuzz-backed with no 0.8.x upgrade path; both
+  are unmaintained-not-vulnerable and touch only the trusted-spec shaping path, never
+  untrusted input parsing. Revisit when krilla migrates to harfrust.
+- cargo deny check: advisories ok (with the two documented ignores), bans ok,
+  licenses ok, sources ok.
+
+FIXTURES (committed; hermetic tests)
+-------------------------------------------------------------------------------
+- fixtures/fonts/latin-cyrillic.ttf (35,536 B) + fixtures/fonts/cjk.otf (58,960 B):
+  fonttools subsets of Noto Sans / Noto Sans SC (SIL OFL 1.1; provenance + license in
+  fixtures/fonts/README.md). Built ONCE at dev time (network + fonttools at
+  fixture-BUILD time only); tests never touch the network. The writer embeds these via
+  include_bytes! - real glyph coverage for Cyrillic + CJK is required by the round-trip
+  fidelity law (the #1 agent-PDF defect is unembedded/coverage-less fonts).
+- fixtures/pdf/minimal.pdf: hand-built classic Helvetica/simple-font PDF ("Hello,
+  PDF!", 1 page, %PDF-1.4) - the no-ToUnicode extraction lane (standard-encoding
+  fallback), built by a dev-time python script (correct xref offsets computed).
+- fixtures/pdf/encrypted.pdf: valid structure + /Encrypt (Standard R2) in the trailer
+  (hex-clean /ID - a first draft used non-hex bytes inside <>, which lopdf's parser
+  rejects BEFORE the encryption check; fixed, and the typed-refusal test now hits the
+  intended path).
+- fixtures/pdf/corrupt.pdf: minimal.pdf with a destroyed xref subsection -> the typed
+  ParseFailure lane. The pre-existing 70-byte M2 magic stub (fixtures/pdf.pdf) is also
+  pinned as an adversarial ParseFailure input (dangling /Pages reference).
+
+DELIVERABLE (all <=250 pure LOC/file; zero unwrap/expect/panic in src - scanned)
+-------------------------------------------------------------------------------
+harness-media/src/adapter/pdf.rs          (36)  module doctrine: dependency decisions
+  + cargo-deny verdicts, fidelity laws (never WinAnsi for non-Latin1; ToUnicode
+  present), honesty boundaries (JS/launch actions listed-never-run; encrypted refused
+  typed before any stream read; budget scope disclosure); engine ids incl. the
+  plan-mandated GENERATE_ENGINE = "harness-media::pdf-krilla-simple-layout" producer
+  disclosure (SIMPLE TEXT LAYOUT, no justification/hyphenation claims); normalize_ws
+  (the whitespace-normalization the text diff runs under); spec_tree (the INDEPENDENT
+  spec->tree projection, M5 provenance rule: page_count + normalized per-page text,
+  same parser contract as the writer, never the extractor over its own output);
+  PdfProjection (M10 seam: deterministic TextProjection provider, thin wrap over
+  Extracted.text_projection).
+harness-media/src/adapter/pdf_extract.rs (172) lopdf DOM extract: version, page tree
+  walk, per-page text layer (extract_text_chunks: simple-font tables + Type0/ToUnicode
+  decode), font list WITH embeddedness (FontDescriptor FontFile/2/3 + Type0
+  DescendantFonts descent), per-page + total image counts, Info metadata (bounded
+  256 chars/field), outline depth walk (node cap 1024 / depth cap 64), encryption
+  check FIRST (typed EncryptedUnsupported before any stream read), bounded text
+  projection (structure summary + text, TEXT_PROJECTION_MAX_CHARS ceiling).
+  BUDGETS: wall-clock deadline checked per page; cumulative materialization counted
+  (input bytes + page text x2 for tree+projection) against max_total_bytes; either
+  axis trips the typed ExtractTooLarge. Scope disclosure (docs + here): the initial
+  lopdf parse itself is not interruptible mid-parse; the pathological-input gate is
+  the materialization accounting + the 0.42 parser's own nesting fix.
+harness-media/src/adapter/pdf_generate.rs (126) krilla writer: typed spec
+  {pages[{blocks[{text,size,font?}]}], page_size?, title?} validated BEFORE any bytes
+  (typed InvalidSpec: format check, page/block/char caps, font-size + page-dim
+  finiteness/ranges, font-name allowlist); SIMPLE TEXT LAYOUT (blocks stacked top-down
+  with fixed leading; A4 default); bundled OFL Noto subsets embedded+subsetted by
+  krilla with ToUnicode CMaps; document dates pinned to the M1 fixed epoch
+  (DateTime 2026-01-01, UTC, all offsets zero - krilla writes CreationDate+ModDate
+  from it); byte-deterministic (krilla's doc/instance IDs are content-hash derived).
+harness-media/src/adapter/pdf_verify.rs  (29) round-trip gate: extract -> project BOTH
+  sides to {page_count, pages[{text}]} with normalize_ws -> M5 structural_diff with
+  exact tolerances; empty diff = Pass (semantic equivalence, never byte identity).
+Shared-file hunks (MINIMAL, append-only, disclosed):
+  - harness-media/Cargo.toml: pdf = ["dep:lopdf","dep:krilla"] (replacing the M1
+    placeholder pdf = []), the two pinned optional deps, "pdf" appended to the dev
+    self-reference features.
+  - harness-media/src/lib.rs: +pub mod adapter; (one line).
+  - harness-media/src/adapter.rs: + the four cfg(pdf) module declarations, following
+    the M12 lane's sibling pattern (file co-owned: gltf block is theirs, untouched).
+  - harness-media/src/executor/wiring.rs: + 6 cfg-gated pdf binding helpers + 3 match
+    arms (extract/generate/verify -> Pure handlers; pending placeholder without the
+    feature), mirroring the M12 gltf pattern.
+  - harness-media/src/probe/registry.rs: + the cfg(pdf) pdf claims flip (Supported x3),
+    mirroring the M12 gltf flip.
+  - harness-media/tests/probe_registry.rs: + the cfg(pdf) pdf skip in the 34-format
+    claims test, mirroring the M12 gltf skip two lines above.
+  - deny.toml: [advisories] ignore list + rationale block (the two unmaintained
+    advisories above).
+  - Cargo.lock: whole-file (lopdf/krilla trees + parallel-lane additions; see STAGING).
+
+ACCEPTANCE (plan todo 13, agent-executed)
+-------------------------------------------------------------------------------
+[x] fixture PDFs (self-generated + hand-committed) extract expected text/pages:
+    minimal.pdf -> version 1.4, 1 page, "Hello, PDF!" text layer, honest font list
+    (Helvetica, embedded=false - standard-14), 0 images; generated corpus extracts.
+[x] generate->extract round-trip empty-diff on text corpus INCLUDING non-Latin1
+    entries (Cyrillic + CJK) with fonts-embedded asserted via the extract font list:
+    4-entry corpus (latin / cyrillic / cjk / mixed-two-page); per-page
+    whitespace-normalized text EQUALS the spec projection; every font embedded=true;
+    Cyrillic+CJK docs show Type0/Identity-H fonts and ZERO WinAnsiEncoding (the
+    pinned #1-defect law); the verify gate (text diff with whitespace normalization)
+    PASSES on the corpus and FAILS on a mutated expectation.
+[x] encrypted fixture refused typed: MediaError::EncryptedUnsupported (before any
+    stream read).
+[x] corrupt xref -> ParseFailure: corrupt.pdf AND the 70-byte M2 stub. DEVIATION
+    RECORDED: the plan's "with page hint" is not representable - the shared M1
+    MediaError::ParseFailure is a unit variant (no payload field); widening the
+    shared enum is outside this todo's shared-file protocol. Typed refusal itself is
+    pinned.
+[x] text_projection = bounded text + structure summary (<=2000 chars; summary line
+    + text; pinned by the minimal-fixture assertion).
+[x] budgets: 400-page generated PDF under a 50 KB cap -> typed ExtractTooLarge; the
+    same bytes under default budgets extract (page_count 400); zero deadline ->
+    typed ExtractTooLarge before any page work.
+[x] determinism: repeat generation byte-identical; Info CreationDate pinned to the
+    fixed epoch (D:20260101... asserted).
+[x] executor dispatch: all three ops dispatch through executor::registry() with
+    ProducerInfo (tier Pure; generate engine carries the simple-layout disclosure);
+    descriptor table claims match bindings (M6 sync test green).
+[x] M10 seam: PdfProjection registers in ProjectionRegistry; kind mismatch answers
+    typed NoProjector.
+
+VERIFICATION RUNS (dev machine)
+-------------------------------------------------------------------------------
+- cargo nextest run -p harness-media --no-fail-fast : 164 tests run: 164 passed,
+  2 skipped (the two #[ignore] size canaries) - includes the two NEW pdf binaries
+  (11 tests) and all pre-existing suites (contract/probe/diff/executor/projection/
+  roundtrip/size_canary-skip). NOTE (parallel lanes): mid-task runs showed transient
+  failures inside the in-flight M11/M12 lane files (their executor_dispatch pin and
+  two gltf tests); at final run everything was green - those were the lanes' own
+  mid-edit states, not pdf interactions.
+- cargo clippy -p harness-media --features pdf --lib : clean; --features pdf --test
+  pdf_extract --test pdf_roundtrip : clean (workspace lints: warnings=deny,
+  clippy::all=deny).
+- cargo deny check : advisories ok (with the two documented ignores), bans ok,
+  licenses ok, sources ok.
+- cargo clippy -p harness-media --all-targets : retried at commit time after the svg
+  lane stabilized - see final gate run in the COMMIT GATE section (clean at the
+  staged tree).
+- SIZE CANARY (heavy-dep todo duty; M6 standing canary; separate target dir):
+  SIZE_CANARY daemon=5.98 baseline=5.97 delta=+0.02MiB(+0.3%) budget=40.00 verdict=OK
+  (verbatim test output; the +0.02 MiB drift is the parallel lanes' daemon-side
+  changes - M9's protocol v2 - NOT pdf weight: the shipped daemon does not enable
+  media features yet (M9/M32 wiring lane), so per the canary test's own note this
+  still measures the pre-media daemon, the baseline every heavy dep is delta'd
+  against. krilla/lopdf/skrifa/rustybuzz enter the daemon graph when that wiring
+  lands; the canary then re-measures at the next heavy-dep todo.)
+
+COMMIT GATE / STAGING (shared-file protocol)
+-------------------------------------------------------------------------------
+Mid-task, two parallel lanes landed their own commits into the SAME worktree (M9
+daemon cee88c4, M12 gltf def6a35, M11 svg 17c974f - the last two DURING this todo's
+commit window; a naive whole-file stage built on the pre-def6a35 HEAD would have
+REVERTED their landed svg/gltf files). The commit was therefore assembled as
+INDEX-MINIMAL VARIANTS of each shared file (HEAD-at-commit-time + the pdf hunks
+only; variants built in temp via git hash-object/update-index, worktree never
+rewritten), and the EXACT INDEX TREE was verified before committing:
+  git checkout-index -a --prefix=<temp export>  (the commit tree, materialized)
+  -> cargo nextest run -p harness-media --no-fail-fast : 164 tests run:
+     164 passed, 2 skipped (svg+gltf+pdf + all pre-existing suites)
+  -> cargo clippy -p harness-media --all-targets : clean (workspace
+     warnings=deny / clippy::all=deny)
+  -> cargo deny check (in the export tree): advisories ok, bans ok, licenses ok,
+     sources ok
+Staged (21 files, ZERO deletions vs HEAD - verified via git diff --cached --stat):
+mine: src/adapter/pdf.rs / pdf_extract.rs / pdf_generate.rs / pdf_verify.rs,
+tests/pdf_extract.rs, tests/pdf_roundtrip.rs, fixtures/pdf/{minimal,encrypted,
+corrupt}.pdf, fixtures/fonts/{latin-cyrillic.ttf,cjk.otf,README.md},
+.omo/evidence/task-M13-media-formats.txt.
+Shared minimal hunks: harness-media/Cargo.toml (pdf feature + pinned deps + dev
+self-ref "pdf"), src/adapter.rs (+4 cfg(pdf) declarations), src/executor/wiring.rs
+(+6 cfg-gated helpers, +3 match arms), src/probe/registry.rs (+pdf claims flip),
+tests/probe_registry.rs (+pdf skip), harness-media/.gitattributes (+fixtures/** -text
+- the M2-era `fixtures/*` pattern only matched direct children, so nested
+fixtures/pdf/* + fixtures/fonts/* were CRLF-mangled by autocrlf on checkout; caught
+by the export verification, extended per the file's own stated intent), deny.toml
+(advisories ignore block), Cargo.lock (REGENERATED for the exact index tree by the
+export build - the worktree lock carries uncommitted svg-lane churn and cannot be
+partially staged).
+NOT staged (foreign, untouched): tests/executor_dispatch.rs, tests/executor_
+registry.rs, all svg/gltf uncommitted remnants, .omo/* run-state.
+Commit: 20bdb14 feat(media): pdf extract + simple-layout writer
+(plan-mandated message). No plan-file checkbox edits.
+
+RESIDUAL RISKS / NOTES
+-------------------------------------------------------------------------------
+- lopdf's initial parse is not interruptible mid-parse; the deadline covers the
+  adapter's own loops, the size cap covers materialization, and RUSTSEC-2026-0187's
+  nesting fix in lopdf 0.42 covers the recursive-parse crash class. Full
+  hostile-input parse hardening inside lopdf is upstream's lane.
+- "spills via T6 spill pointer" (plan wording): no spill-pointer infrastructure
+  exists in the M6 executor/Extracted types; per-page text overflow is implemented
+  as the typed ExtractTooLarge refusal (honest refusal over silent truncation or
+  invented infra). Deviation recorded here.
+- krilla outline (bookmarks) generation is not part of the minimal-write scope;
+  extract reports outline depth 0 for generated docs (honest).

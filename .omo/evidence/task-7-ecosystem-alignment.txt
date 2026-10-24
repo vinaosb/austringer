@@ -1,0 +1,118 @@
+# Task 7 — MCP CLI surface (`harness mcp list|scan|serve|call`)
+
+Plan: .omo/plans/ecosystem-alignment.md todo 7 (Wave F)
+Worker: Sisyphus-jior (session opencode:ses_ea774e945ffe45I9Wp629UGOW1)
+Machine quirk honored: all cargo via `cmd /c %TEMP%\opencode\cargo-env.cmd ...` with `CARGO_BUILD_JOBS=3` for test runs (LNK1102 guard).
+
+## Scope
+
+- `harness mcp list` / `scan` — render `harness_mcp::manager::scan_directories` (parse-only, zero connections)
+- `harness mcp serve` — `harness_mcp::server::HarnessMcpServer` over stdio, standalone typed-refusal seams
+- `harness mcp call <server>` — smoke: scan by name -> `McpClient::connect` -> list tools (or one `--tool --args` call)
+- Must NOT auto-enable any MCP server: every spawn is an explicit user command; list/scan never connect.
+
+## Design decisions (recorded for reviewer)
+
+1. `scan` is a clap VISIBLE ALIAS of `list` (plan wording "list|scan" = one operation; todo 23 wants plain verbs).
+2. Entry state renders the MANAGER's own policy surface (`ScanReport::autostart_for` -> `start:on-first-use` | `start:autostart`). `ServerEntry` carries NO enabled/disabled field — none is invented (todo 6's disabled declarations will render honestly once the manager's config shape carries the field).
+3. `serve` runs BEFORE daemon transport resolution: mcp commands are daemon-less (no token file needed). Implemented as an early `if let Command::Mcp` borrow-check in `dispatch`.
+4. Standalone seams: `harness_ask`/`session_*` tools answer typed `SurfaceError::Engine` refusals naming what is missing (no daemon operator / session surface). No scripted fake data.
+5. Typed failure: new `CliError::Mcp { detail }` (`"mcp error: ..."`), pinned by tests at unit + binary level.
+6. Manifest change (the ONE allowed): `async-trait` moved dev-dep -> dep in harness-cli/Cargo.toml (impl of harness-mcp's `#[async_trait]` seams AskSeam/SessionControl; crate already in workspace + already compiled for this crate's tests). harness-mcp was ALREADY a dependency of harness-cli (doctor) — no dep addition needed.
+
+## RED (failing-first)
+
+Command: `cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-cli --test mcp_cli --test cli_args"`
+
+New test file harness-cli/tests/mcp_cli.rs (6 tests) + one line added to cli_args.rs::help_lists_the_full_surface.
+All 7 fail for the RIGHT reason — the surface does not exist:
+
+- mcp_scan_alias_renders_the_same_surface ... FAILED  code=2  stderr: error: unrecognized subcommand 'mcp'
+- mcp_serve_answers_initialize_over_stdio_then_exits ... FAILED  "mcp serve never answered initialize" (clap exit before any server)
+- mcp_list_renders_fixture_directory_scan ... FAILED  code=2  unrecognized subcommand 'mcp'
+- malformed_server_config_is_a_typed_error_naming_file_and_key ... FAILED  code=2 (clap usage, not the typed code-1 path)
+- help_lists_the_full_surface ... FAILED  stdout lacks "mcp" (full --help dump recorded: run/capture/repl/attach/doctor only)
+- mcp_call_smoke_round_trips_through_serve ... FAILED  code=2  unrecognized subcommand 'mcp'
+- mcp_call_unknown_server_is_a_typed_error ... FAILED  code=2
+
+Summary line: `20 tests run: 13 passed, 7 failed` (nextest run ID 366f0f77-325c-4dc7-9626-8faef18f92e5).
+
+## Files changed
+
+- harness-cli/tests/mcp_cli.rs  (NEW, 6 tests)
+- harness-cli/tests/cli_args.rs (help surface + "mcp")
+- harness-cli/src/error.rs      (CliError::Mcp variant + keyword/exit-code pins)
+- harness-cli/src/cli.rs        (Command::Mcp + McpCommand List[alias scan]/Serve/Call)
+- harness-cli/src/mcp.rs        (NEW: list/serve/call + standalone seams)
+- harness-cli/src/lib.rs        (pub mod mcp)
+- harness-cli/src/bin/harness.rs (daemon-less dispatch for Command::Mcp)
+- harness-cli/Cargo.toml        (async-trait dev->dep; harness-mcp comment update)
+
+## GREEN
+
+Test run (post-implementation): `cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-cli"`
+
+    Summary [   3.444s] 55 tests run: 55 passed, 0 skipped
+    (nextest run ID eaee3149-4c6a-4ce1-8d49-15798831c62c; includes all 6 new mcp_cli tests + extended help test + all 47 pre-existing harness-cli tests)
+
+`cargo clippy -p harness-cli --all-targets` (workspace lints are -D warnings): Finished, zero warnings.
+
+Direct binary invocations (debug build C:\ct\debug\harness.exe) — every QA scenario:
+
+[1] harness mcp list --dir <fixture>                         exit=0
+
+    demo-auto            harness     start:autostart  stdio:demo-server
+    demo-http            harness     start:on-first-use  http:https://example.invalid/mcp
+    demo-stdio           harness     start:on-first-use  stdio:demo-server --flag
+
+[2] harness mcp scan --dir <fixture> (visible alias)         exit=0  (same rendering)
+
+[3] FAILURE malformed config                                  exit=1
+
+    harness: mcp error: C:\...\t7bad\.harness\mcp.json: server "broken-entry": entry needs either a stdio `command` or an http `url`
+
+    -> TYPED error naming the FILE and the KEY; no panic, no dump.
+
+[4] harness mcp call self-serve --dir <fixture whose command IS harness mcp serve>   exit=0
+
+    harness_ask: Ask the harness operator a question; returns the answer text
+    harness_status: One-line harness status
+    session_create: Create a harness session; returns its summary
+    session_events: Read bounded session event chunks strictly after an ordinal
+    session_gather: GATHER fan-in: await N session completions within a bounded timeout
+    session_interact: Send one prompt to a session under an optional hard cost limit (micro-USD)
+    session_search: Search harness sessions by text
+
+    Full client -> spawn -> initialize -> list-tools round trip, hermetic (child is this binary).
+
+[5] FAILURE unknown server                                    exit=1
+
+    harness: mcp error: server "nosuch" not found in scanned configs (known: self-serve)
+
+[6] serve + initialize roundtrip (piped stdio fixture, EOF terminates):
+
+    $ echo '<initialize request json>' | harness mcp serve
+    harness mcp: serving on stdio (standalone; no daemon attached)      [stderr]
+    {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"harness","version":"0.1.0"}}}
+    exit=0
+
+[7] harness mcp --help                                        exit=0
+
+    Commands:
+      list   List MCP server entries found in config files (parse-only) [alias: scan]
+      serve  Serve the harness MCP server over stdio until disconnect
+      call   Smoke-test one configured server: connect, then list tools (or call one with `--tool`/`--args`)
+
+## No-auto-enable statement
+
+list/scan are parse-only (manager::scan_directories reads files; zero connections, zero spawns).
+serve serves THIS process over stdio; it reads no config and spawns nothing.
+call spawns exactly the one server the user named, after an explicit scan hit.
+No MCP server is enabled, trusted, or started by any other path in this change.
+
+## Stopping condition
+
+Acceptance criteria green (55/55 incl. 6 new tests), evidence complete, no commit made
+(orchestrator commits after verification). harness-mcp/src/acp/ untouched; harness-daemon
+untouched by this worker (concurrent todo-2 edits observed in the worktree, left alone).
+

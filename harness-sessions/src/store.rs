@@ -9,7 +9,9 @@ use rusqlite::{Connection, OptionalExtension};
 use crate::error::SessionError;
 use crate::layout::Layout;
 use crate::lease::{LeaseOwner, SharedProbe, SysinfoLeaseProbe};
-use crate::meta::{EventSearchHit, SessionMeta, load_meta_conn, search_events_conn};
+use crate::meta::{
+    EventSearchHit, SessionMeta, load_meta_conn, search_events_conn, search_events_in_conn,
+};
 use crate::retrieval::RecallConfig;
 use crate::session::OpenMode;
 use crate::vector::VectorIndex;
@@ -223,6 +225,39 @@ impl SessionStore {
     ) -> Result<Vec<EventSearchHit>, SessionError> {
         let conn = self.lock_conn()?;
         search_events_conn(&conn, query, limit)
+    }
+
+    /// Session-scoped BM25 search: only the listed session ids are
+    /// searched, over the same event_fts index and ranking idiom as
+    /// [`Self::search_events`]. An empty `session_ids` scope matches
+    /// nothing (fail-closed).
+    ///
+    /// # Errors
+    /// Typed [`SessionError::BadQuery`] for unparseable FTS5 syntax.
+    pub fn search_events_in_sessions(
+        &self,
+        query: &str,
+        session_ids: &[&str],
+        limit: u32,
+    ) -> Result<Vec<EventSearchHit>, SessionError> {
+        let conn = self.lock_conn()?;
+        search_events_in_conn(&conn, query, session_ids, limit)
+    }
+
+    /// The last event sequence of `turn` (`None` when the session has
+    /// no such turn) — the rewind head when no checkpoint recorded one.
+    ///
+    /// # Errors
+    /// Typed storage failure.
+    pub fn turn_end_seq(&self, id: &str, turn: u32) -> Result<Option<u64>, SessionError> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT end_seq FROM turn_index WHERE session_id = ?1 AND turn = ?2",
+            rusqlite::params![id, turn],
+            |row| Ok(u64::try_from(row.get::<_, i64>(0)?).unwrap_or(u64::MAX)),
+        )
+        .optional()
+        .map_err(SessionError::sqlite)
     }
 
     /// Sets or clears the pinned exemption.

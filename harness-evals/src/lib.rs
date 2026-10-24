@@ -27,11 +27,15 @@
 //! - [`mining`] — commit-to-request eval mining.
 //! - [`skill_ab`] — skill A/B mini-benchmarks (todo 34's consumer).
 //! - [`adapter`] — the CLI `run --output-json` argv contract.
+//! - [`scenarios`] — the committed hermetic scenario pack (todo 26):
+//!   mechanism receipts loaded from `harness-evals/scenarios/`.
+//! - [`driver`] — the run_sweep conformance-sweep assembly (todo 26).
 
 pub mod adapter;
 pub mod benchmark;
 pub mod conformance;
 pub mod dataset;
+pub mod driver;
 pub mod grader;
 pub mod guard;
 pub mod metrics;
@@ -40,6 +44,7 @@ pub mod pinning;
 pub mod report;
 pub mod retrace;
 pub mod runner;
+pub mod scenarios;
 pub mod skill_ab;
 pub mod sweep;
 pub mod wire;

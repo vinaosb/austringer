@@ -39,7 +39,7 @@ impl WireCodec for ChatCompletionsCodec {
             "model": request.identity.model,
             "stream": true,
             "stream_options": { "include_usage": true },
-            "messages": [{ "role": "user", "content": request.prompt }],
+            "messages": [{ "role": "user", "content": super::wire_media::chat_content(request) }],
         });
         json_request(
             &self.url,

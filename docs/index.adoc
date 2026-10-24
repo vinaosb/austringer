@@ -39,7 +39,7 @@ directly when browsing source.
 * xref:manual.adoc[Manual] — getting started, context and sessions, safety
   and trust, skills and packs, multi-model operation, performance, evals.
 * xref:architecture.adoc[Architecture] — the one-daemon design, the
-  24-crate workspace map, the protocol, and the data flow of a turn.
+  25-crate workspace map, the protocol, and the data flow of a turn.
 * xref:research-companion.adoc[Research companion] — index of the
   post-mortem research file and what this project adopted or avoided from
   each section.

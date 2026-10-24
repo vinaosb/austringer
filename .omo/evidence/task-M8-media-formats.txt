@@ -1,0 +1,304 @@
+TASK M8 - Delivery planner + per-family native media wire encoding (media-formats-wave plan todo 8)
+===================================================================================================
+
+Worker: Sisyphus-junior (GLM 5.2). Date: 2026-09-22. Base: HEAD e816161 on main
+(M3 27286e4, M7 6725f5d + a8342cd, M4 152f93a all landed as required; M2/M5
+also present).
+
+Commit: feat(providers): capability-aware media delivery planner (single
+commit, this file included).
+
+SCOPE (held): new harness-core module `media_delivery` + harness-providers
+adapter wiring (the block_text image-drop replacement) + per-family codec
+rendering. Plan checkboxes NOT touched (orchestrator-owned). Daemon compose
+NOT touched (M32 owns daemon wiring; default construction stays fail-closed
+text-only). Nothing else.
+
+ENVIRONMENT (task-13/34 recipe, disclosed)
+-------------------------------------------------------------------------------
+Windows 11 / PowerShell 5.1; Rust 1.98.0. INCLUDE prepended with
+  C:\Program Files\Microsoft Visual Studio\18\Insiders\SDK\ScopeCppSDK\vc15\VC\include
+first (harness-core builds libsqlite3-sys via rusqlite; cl.exe needs the CRT
+headers from the ScopeCppSDK include dir). CC unset.
+
+TDD - RED (failing first)
+-------------------------------------------------------------------------------
+harness-core first:
+  tests/media_delivery_plan.rs + tests/media_delivery_metric.rs written
+  BEFORE any implementation. `cargo nextest run -p harness-core --test
+  media_delivery_plan --test media_delivery_metric` failed compile with
+  exactly the right reasons:
+    E0432 unresolved import `harness_core::media_delivery` (x2)
+  (full text in session tool log).
+Then harness-providers (after core went green):
+  tests/media_delivery_cassettes.rs + tests/media_prefix_identity.rs +
+  common/mediakit.rs written BEFORE the providers implementation.
+  `cargo nextest run -p harness-providers --test media_delivery_cassettes
+  --test media_prefix_identity` failed compile:
+    E0432 unresolved import `harness_providers::media` (x2)
+    E0599 no method named `with_capabilities` on InferenceAdapter (x5)
+    E0599 no method named `with_media_delivery` on InferenceAdapter (x4)
+Two test-expectation fixes during GREEN (never impl walks-around):
+  - metric unit: "shrink" expectation corrected to 0.75 (3-of-4 shared bytes
+    is the definition's correct output; test was wrong, code was right).
+  - xai marker: capable-planned audio dropped by the family gate renders the
+    NATIVE-form marker "[audio: audio/wav <hash>]" (deterministic, hash-
+    keyed), not the incapable-form "[media: ...]".
+
+DESIGN (what landed)
+-------------------------------------------------------------------------------
+harness-core/src/media_delivery.rs (147 pure LOC, new):
+  - DeliveryCapabilities {vision, audio_input} - Copy, Default ALL-FALSE
+    (fail-closed). Core cannot depend on harness-intel (intel -> providers ->
+    core), so the planner takes the capability slice as data; callers map
+    from Catalog::capabilities at compose time.
+  - WireBlock {Text | NativeImage{mime,media} | NativeAudio{mime,media} |
+    Marker(String)}; WireBlock::text() = deterministic rendering (native
+    blocks render "[image:|audio: <mime> <short-hash>]" - never bytes).
+  - DeliveryPlan {wire, needed_projections: Vec<(MediaRef, ProjectionKind)>};
+    queue stays populated even when a cached copy was inlined (queue = durable
+    work list for the M10 pipeline, cache = optimization).
+  - trait ProjectionCache {cached_projection(source, kind) -> Option<String>}
+    + EmptyCache. Pure planner => map-backed in tests, DerivedStore-backed in
+    production; planning is deterministic given (blocks, caps, cache).
+  - plan() rules EXACTLY per plan line 144: image+vision -> NativeImage;
+    image w/o vision -> Marker + needed SceneDescription (cached projection
+    inlined as Text right after the marker when present); audio+audio_input ->
+    NativeAudio else Marker + needed Transcript; ALL other media (incl.
+    video/*, model/*, application/*) -> Marker + needed TextProjection (no
+    provider ingests gltf/blend natively - honest). Queue deduped per
+    (MediaRef, kind), first-seen order.
+  - prefix_identity(prev, cur) = common byte prefix / prev len (empty prev =
+    1.0); window_prefix_identity(prompts) = mean over consecutive pairs.
+    THE metric definition the plan requires, test-pinned.
+
+harness-providers/src/media.rs (97 pure LOC, new):
+  - MediaDelivery::open(session_dir) - MediaStore + DerivedStore handles.
+    load_bytes(hash) = request-build-time byte fetch.
+    impl ProjectionCache: canonical producer const
+    DELIVERY_PROJECTION_PRODUCER = "delivery"; DerivedCorrupt degrades to a
+    miss with tracing::warn (marker renders + projection stays queued for
+    repair - never a silent pass-through of corrupt data).
+  - NativeMedia {kind: NativeKind, mime, hash, #[serde(skip)] bytes} - bytes
+    NEVER serialize (snapshots keep refs only) and Debug prints
+    "NB (redacted)" (in-crate test pins no byte ever prints).
+  - native_mimes(family) DATA table: anthropic images only (Messages image
+    source types; no audio input in M7-cited docs); openai images + wav/mp3
+    (image_url + input_audio); google images + flac/mpeg/ogg/wav
+    (inline_data; PDF-via-inline_data = NAMED FOLLOW-UP, NOT v0.2);
+    xai images only (image_url); compat/unknown -> empty (fail-closed).
+    Extendable per model without planner changes - the planner plans
+    capabilities, the table gates dialects.
+
+harness-providers/src/adapters/wire_media.rs (125 pure LOC, new):
+  - anthropic_content / chat_content / google_parts / responses_input:
+    text-only turns keep the EXACT pre-M8 plain-string forms (byte-compat -
+    the existing cassette_conversation replay test still passes untouched);
+    media turns become block arrays: Anthropic image source {type:base64,
+    media_type, data}; chat image_url data: URL + input_audio {data,
+    format: wav|mp3}; Google inline_data {mime_type, data}; Responses
+    input_image/input_audio data-URL parts. Base64 exists ONLY in these
+    rendered values. Family-kind combinations that cannot exist through the
+    adapter boundary (serde-deserialized edge) warn + skip, never fabricate.
+
+harness-providers/src/identity.rs (+~15 lines):
+  - CompletionRequest.media: Vec<NativeMedia> with #[serde(default)] +
+    with_native_media builder. TurnId UNCHANGED: it derives from the prompt,
+    which already embeds every planned block's hash-keyed marker (same media
+    => same id with or without payloads).
+
+harness-providers/src/adapter.rs (202 pure LOC, rewritten rendering):
+  - InferenceAdapter::new() keeps its signature (daemon + tests unchanged);
+    new builders with_capabilities / with_media_delivery.
+  - FAIL-CLOSED COUPLING: without a MediaDelivery the adapter plans
+    text-only even with caps set (it cannot fetch bytes, so it does not
+    promise them). The shipped daemon (which attaches neither until M32)
+    therefore stays marker-only - honest.
+  - render_blocks replaces the M3-era `ContentBlock::Image(_) | Media(_) =>
+    None` drop: plan(blocks, caps, cache) -> deterministic text parts joined
+    " " (prompt shape for text-only sessions BYTE-IDENTICAL to before) +
+    native blocks resolved via DeliveryContext.attach_native: family
+    allowlist gate (marker already in the text), then MediaStore byte fetch;
+    MISSING bytes = typed InferenceError naming the hash ("refusing to fake
+    or silently drop"), nothing sent. needed_projections counted in a
+    tracing::debug (M10 consumes the queue).
+
+Codec render_request changes (anthropic.rs / chat.rs / google.rs /
+responses.rs, ~1 line each): content/parts/input now route through
+wire_media::*.
+
+TESTS (30 new, hermetic, zero network/keys/tools)
+-------------------------------------------------------------------------------
+harness-core (18):
+  tests/media_delivery_plan.rs (4): EXHAUSTIVE capability x block-kind table
+    - 15 rows over caps {text-only, vision, audio, vision+audio} x blocks
+    {Text, Image, Media(image/*), Media(audio/*), Media(model/gltf+json),
+    Media(application/pdf), Media(video/webm)}; expectations derived from
+    fixture INPUTS (M3 marker formats recomputed independently), never from
+    planner output. Plus dedup-identical-media, mixed-order, empty-list.
+  tests/media_delivery_cache.rs (7): cached SceneDescription/Transcript
+    inline as Text after the marker; wrong-kind cache NOT inlined; native
+    paths never inline or queue; unknown MIME kind (chemical/x-mdl-molfile)
+    -> Marker + TextProjection; empty-meta marker determinism; hash-keyed
+    WireBlock::text() rendering.
+  tests/media_delivery_metric.rs (6): extend=1.0; empty-prev=1.0; divergence
+    ratio; shrink math; window mean; degenerate windows.
+harness-providers (10 + 2 in-crate):
+  tests/media_delivery_cassettes.rs (4): per-family cassettes over a
+    request-RECORDING transport serving scripted SSE - anthropic native
+    image source (base64 == fixture-derived encoding); openai image_url +
+    input_audio{format:"wav"}; google inline_data image+audio; xai image_url
+    with audio NEVER on the wire (no b64(audio), no input_audio key).
+  tests/media_delivery_guards.rs (5): THE INCAPABLE PIN - text-only caps +
+    store attached: content stays a plain STRING and the raw request bytes
+    contain NO base64 of the fixtures, NO raw fixture bytes, NO "base64"
+    substring at all (misleading-success guard: absence asserted on BYTES,
+    not on "no error"); unknown/compat family fails closed; native-MIME
+    data-table surface pins; missing bytes -> typed failure mentioning
+    "media blake3:" + transport.bodies() empty (nothing sent);
+    stale-state: cached projection inlines ("scene: a red square") and
+    updates deterministically when the derived content changes (blue circle
+    replaces red square, old text absent).
+  tests/media_prefix_identity.rs (1): the 20-turn window (below).
+  adapters/wire_media.rs in-crate (2): text-only forms stay plain strings
+    (byte-compat); Debug never prints bytes.
+Fixtures: tests/fixtures/media/redacted-image.bin + redacted-audio.bin -
+committed 37-byte SYNTHETIC placeholders (redacted; no real media content
+anywhere in the tree; no base64 in any committed file).
+
+MANUAL-QA (required printed report, real numbers)
+-------------------------------------------------------------------------------
+cargo nextest run -p harness-providers --test media_prefix_identity -- --nocapture
+  === M8 20-turn prefix-identity report (text-only session) ===
+  pair 01->02: 1.000000 (prev 170 B)      pair 11->12: 1.000000 (prev 1286 B)
+  pair 02->03: 1.000000 (prev 276 B)      pair 12->13: 0.753405 (prev 1395 B)
+  pair 03->04: 1.000000 (prev 382 B)      pair 13->14: 1.000000 (prev 1544 B)
+  pair 04->05: 1.000000 (prev 488 B)      pair 14->15: 1.000000 (prev 1653 B)
+  pair 05->06: 1.000000 (prev 594 B)      pair 15->16: 1.000000 (prev 1762 B)
+  pair 06->07: 1.000000 (prev 700 B)      pair 16->17: 1.000000 (prev 1871 B)
+  pair 07->08: 1.000000 (prev 806 B)      pair 17->18: 1.000000 (prev 1980 B)
+  pair 08->09: 1.000000 (prev 912 B)      pair 18->19: 1.000000 (prev 2089 B)
+  pair 09->10: 1.000000 (prev 1068 B)     pair 19->20: 1.000000 (prev 2198 B)
+  pair 10->11: 1.000000 (prev 1177 B)
+  pre-media pairs (1..8) mean: 1.000000 [required 1.0]
+  full 20-turn window mean:     0.987021 [required >= 0.9]
+  divergent pairs: 1 [required 1: the projection arrival]
+Scenario: image submitted at turn 9 (marker-only render); its SceneDescription
+lands in the derived cache AFTER turn 12's request was built -> the single
+sanctioned divergence is pair 12->13 (0.753405: the projection text inserts
+at the image marker's position mid-history). Same events + same cache state
+re-render BYTE-IDENTICALLY (pinned in-test against the captured turn-13
+prompt).
+
+VERIFICATION (exact commands, ScopeCppSDK INCLUDE recipe active)
+-------------------------------------------------------------------------------
+  cargo nextest run -p harness-core -p harness-providers
+                                    ..... 523 passed, 0 failed, 5 skipped
+                                          (pre-existing #[ignore]s), run 3x
+                                          after the final tree - identical
+                                          every time (flaky x3 channel)
+  cargo clippy -p harness-core -p harness-providers --all-targets -- -D warnings
+                                    ..... exit 0, clean (one interim
+                                          clippy::cloned_ref_to_slice_refs
+                                          in a test fixed by from_ref)
+  cargo fmt -p harness-core -p harness-providers -- --check
+                                    ..... clean (after apply)
+  lsp_diagnostics media_delivery.rs / adapter.rs / media.rs /
+    wire_media.rs / identity.rs ..... none
+  pure-LOC (canonical method, attributes counted): media_delivery.rs 147,
+    providers media.rs 97, wire_media.rs 125, identity.rs 106, adapter.rs
+    202 (src all <= 250); test files split to honor the ceiling:
+    media_delivery_plan.rs 223, media_delivery_cache.rs 159,
+    media_delivery_metric.rs 36, deliverykit.rs 92, mediakit.rs 206,
+    media_delivery_cassettes.rs 146, media_delivery_guards.rs 153,
+    media_prefix_identity.rs 132 (the original plan+cache file measured 428
+    and cassettes 333 - both split by responsibility, M7 precedent)
+  grep unwrap/expect/panic/unreachable across changed src ..... no matches
+  byte-compat: the pre-existing cassette_conversation.rs strict-replay test
+    passes UNCHANGED (text-only prompts byte-identical through the new path)
+
+QA CHANNELS
+-------------------------------------------------------------------------------
+happy    vision model receives a native image block (per-family cassettes);
+         openai receives image+audio; google receives both via inline_data;
+         text-only session renders every block deterministically.
+failure  image to text-only model -> marker + queued projection, NEVER
+         base64 on the wire (pinned on raw request BYTES); missing store
+         bytes -> typed error naming the hash, nothing sent; xai audio ->
+         never on the wire (family table has no audio mimes).
+adversarial
+  malformed_input: unknown mime kinds (chemical/x-mdl-molfile, video/*) ->
+    Marker + TextProjection, zero panics; empty block list -> empty plan.
+  stale_state: cached-projection inlining is content-hash keyed - the
+    guards test re-stores different derived bytes under the same key and
+    pins the prompt updating (new text in, old text out); the 20-turn test
+    pins re-render byte-identity for identical (events, cache) state.
+  misleading_success: the incapable-model test asserts ABSENCE of the
+    base64 encoding of the fixture bytes AND of the raw fixture bytes AND
+    of the literal "base64" token in the wire request - not merely "no
+    error"; the xai test asserts absence of the audio encoding; Debug of
+    NativeMedia pinned to never print bytes.
+  concurrency: N/A - planning is pure over borrowed data; stores are
+    filesystem content-addressed (M4 discipline).
+  resource_exhaustion: N/A - no unbounded allocation (join of bounded
+    parts); byte fetches are content-addressed single reads.
+  privilege/egress: N/A - no new network surface (cassettes in-memory;
+    fixtures committed).
+  dirty_worktree: shared tree carries sibling M9 lane's in-flight edits
+    (harness-core event/agent_loop, harness-daemon protocol surface) - NOT
+    staged below; their harness-core deltas were verified additive/cosmetic
+    against this task's dependencies (a Default for MimeType; a rustfmt
+    reflow in derived.rs). See also the harness-snapshots incident in
+    RISKS.
+
+COMMIT DISCIPLINE
+-------------------------------------------------------------------------------
+Staged surgically, ONLY task-M8 content:
+  harness-core/src/media_delivery.rs            (new)
+  harness-core/src/lib.rs                       (+1 module line)
+  harness-core/tests/common/mod.rs              (+1 module line)
+  harness-core/tests/common/deliverykit.rs      (new)
+  harness-core/tests/media_delivery_plan.rs     (new)
+  harness-core/tests/media_delivery_cache.rs    (new)
+  harness-core/tests/media_delivery_metric.rs   (new)
+  harness-providers/src/media.rs                (new)
+  harness-providers/src/adapters/wire_media.rs  (new)
+  harness-providers/src/adapters/mod.rs         (+1 module line)
+  harness-providers/src/adapters/anthropic.rs   (render routes wire_media)
+  harness-providers/src/adapters/chat.rs        (render routes wire_media)
+  harness-providers/src/adapters/google.rs      (render routes wire_media)
+  harness-providers/src/adapters/responses.rs   (render routes wire_media)
+  harness-providers/src/identity.rs             (media field + builder)
+  harness-providers/src/adapter.rs              (plan-driven rendering)
+  harness-providers/src/lib.rs                  (+1 module line)
+  harness-providers/tests/common/mod.rs         (+1 module line)
+  harness-providers/tests/common/mediakit.rs    (new)
+  harness-providers/tests/media_delivery_cassettes.rs (new)
+  harness-providers/tests/media_delivery_guards.rs     (new)
+  harness-providers/tests/media_prefix_identity.rs    (new)
+  harness-providers/tests/fixtures/media/redacted-image.bin  (new, redacted)
+  harness-providers/tests/fixtures/media/redacted-audio.bin  (new, redacted)
+  .omo/evidence/task-M8-media-formats.txt      (this file)
+No other file touched; sibling M9's edits, .omo state, and junk left
+uncommitted. Plan checkboxes NOT touched.
+
+RISKS / NOTES
+-------------------------------------------------------------------------------
+- Daemon wiring of caps/store is deliberately M32's (the plan assigns
+  config-driven provider wiring there); at HEAD the shipped daemon composes
+  text-only - fail-closed, no behavior change for existing sessions.
+- needed_projections is produced (planner + adapter debug counter) but its
+  resolution pipeline is M10; the queue contract (stays populated past
+  cache hits) is test-pinned for that consumer.
+- native_mimes rows are 2026-09 doc snapshots per family; Google-PDF via
+  inline_data is the named follow-up (NOT v0.2); extending a model's
+  surface = table edit, no planner change.
+- harness-snapshots incident (disclosed): mid-task a sibling lane left the
+  committed workspace member `harness-snapshots` DELETED (unstaged working-
+  tree deletion, directory empty), which broke every cargo command
+  workspace-wide for a window (cargo check -p harness-daemon failed with
+  "failed to read harness-snapshots\Cargo.toml"). Restored via `git checkout
+  -- harness-snapshots` (pure committed-state restoration; the directory was
+  empty, so no sibling work existed in it to lose). After restore: all runs
+  green. The daemon check could then proceed; daemon's only use of the
+  changed surface is InferenceAdapter::new (signature unchanged).

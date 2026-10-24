@@ -15,7 +15,8 @@
 //! 4. **denial escalation** — a tool+target the user already refused
 //!    three times is denied with repetition feedback;
 //! 5. **stored grant** — an `a` answer in the permission store is an
-//!    authoritative allow;
+//!    authoritative allow (session-scoped grants suspend while plan
+//!    mode is active);
 //! 6. **capability toggle** — an on-toggle is an authoritative allow
 //!    (the safe-tool allowlist layer of the Auto classifier);
 //! 7. **mode fallback** — Chat/Approve ask; Auto/SmartApprove consult
@@ -191,8 +192,14 @@ impl CallInspector for AutonomyGate {
                 ),
             });
         }
-        // 5. Stored grants are authoritative allows.
-        if self.store.lookup(&call.tool, denial_key).is_some() {
+        // 5. Stored grants are authoritative allows — except
+        // session-scoped grants while plan mode is active: they
+        // suspend at entry and return only with the mode flip (the
+        // approval), so a stale pre-plan grant can never re-arm writes
+        // (todo 16).
+        if let Some(scope) = self.store.lookup(&call.tool, denial_key)
+            && self.matrix.read(|matrix| matrix.honors_grant(scope))
+        {
             return Ok(Verdict::Allow {
                 authoritative: true,
             });

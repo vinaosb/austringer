@@ -29,4 +29,5 @@ pub mod eviction;
 pub mod hooks;
 pub mod inspectors;
 pub mod log;
+pub mod media_delivery;
 pub mod tools;

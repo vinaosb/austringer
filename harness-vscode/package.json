@@ -29,6 +29,10 @@
         "title": "Harness: Open Omnibar"
       },
       {
+        "command": "harness.showTranscript",
+        "title": "Harness: Show Transcript"
+      },
+      {
         "command": "harness.reconnect",
         "title": "Harness: Reconnect to Daemon"
       },

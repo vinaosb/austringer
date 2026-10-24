@@ -1,0 +1,182 @@
+Task 28 — Repomap failure paths, tokio-tungstenite unification, baseline acceptance
+(plan checkbox 28, .omo/plans/ecosystem-alignment.md)
+Date: 2026-10-22
+HEAD at task start: a8ce27f-line (branch ecosystem-alignment)
+
+========================================================================
+SUB-CHECK (a) harness-repomap/tests/malformed_inputs.rs — NEW failure cases
+========================================================================
+File: harness-repomap/tests/malformed_inputs.rs (NEW, 4 tests — task asks >=3)
+
+Cases (all facade-level repo_map: graph -> PageRank -> render, typed degraded
+output, zero panics/unwraps in the paths under test):
+  1. empty_graph_with_focus_degrades_to_typed_empty_map
+     (beyond repomap.rs empty-repo test: carries a FOCUS set through the
+      empty-graph join — focus_matched==0 typed, all GraphStats counters zero,
+      ranking trivially converged, density 0 / empty text)
+  2. self_loop_only_repo_drops_intra_file_refs_and_ranks_uniformly
+     (self-refs + ghost refs only -> 0 edges, names not kept in refs_by_name,
+      bit-uniform 0.5/0.5 ranks, deterministic path-order render)
+  3. self_loops_coexist_with_cross_edges_without_false_adjacency
+     (hub self-refs + real consumer: edge_weight(hub,hub)==None,
+      edge_weight(hub,user)==Some(3.0) — full ref count as weight, finite
+      converged ranking)
+  4. symbol_less_source_renders_bare_header_and_stays_focusable
+     (no-defs/no-refs TagTable: node kept, bare `path:` header, focusable
+      (focus_matched==1), siblings render normally)
+
+RED-first record (coverage gap before the file existed):
+  $ cargo nextest run -p harness-repomap malformed
+  ------------
+   Nextest run ID 6f7fcf21-6535-41bd-b276-eae24601f73e with nextest profile: default
+      Starting 1 test across 5 binaries (34 tests skipped)
+          PASS [   0.024s] (1/1) harness-repomap::repomap malformed_tables_flow_through_the_facade_bounded
+  ------------
+       Summary [   0.024s] 1 test run: 1 passed, 34 skipped
+  => the ONLY failure-path-shaped test in the crate was the malformed-tables
+     case (repomap.rs:197); no empty-graph/self-loop/no-symbols coverage
+     through the facade existed. The new file's 4 tests then compiled and
+     passed against the EXISTING typed paths (no src changes needed —
+     Csr::from_undirected skips u==v, solve() handles n==0,
+     render_ordered handles definition-less files, uniform_on handles
+     empty/out-of-range focus) per the task's "prefer existing typed paths".
+
+GREEN (acceptance gate, full crate):
+  $ cargo nextest run -p harness-repomap
+  ------------
+   Starting 38 tests across 6 binaries (1 test skipped)
+       PASS harness-repomap::malformed_inputs empty_graph_with_focus_degrades_to_typed_empty_map
+       PASS harness-repomap::malformed_inputs self_loop_only_repo_drops_intra_file_refs_and_ranks_uniformly
+       PASS harness-repomap::malformed_inputs self_loops_coexist_with_cross_edges_without_false_adjacency
+       PASS harness-repomap::malformed_inputs symbol_less_source_renders_bare_header_and_stays_focusable
+       ... (34 pre-existing tests all PASS, incl. ten_k_file_map_fits_thousand_tokens_and_focus_ranks_top)
+       Summary [   2.273s] 38 tests run: 38 passed, 1 skipped
+  => 35 existing + 4 new = 39 total; 38 run green, 1 skipped = the explicitly
+     #[ignore]d 50k-node stress test (run-on-demand by design).
+
+========================================================================
+SUB-CHECK (b) tokio-tungstenite unification — BOTH 0.28 pins -> workspace = true
+========================================================================
+Edits:
+  harness-cli/Cargo.toml   : `tokio-tungstenite = "0.28"`  -> `tokio-tungstenite.workspace = true`
+  harness-daemon/Cargo.toml: dev-dep `tokio-tungstenite = "0.28"` -> `tokio-tungstenite.workspace = true`
+  (root workspace pin stays tokio-tungstenite = "0.29"; harness-tui already rode it)
+
+BEFORE (dual majors — root Cargo.toml:225-230 single-version claim violated):
+  $ cargo tree -i tokio-tungstenite
+  error: specification `tokio-tungstenite` is ambiguous
+  help: re-run this command with one of the following specifications
+    tokio-tungstenite@0.28.0
+    tokio-tungstenite@0.29.0
+
+  $ cargo tree -i tokio-tungstenite@0.28.0
+  tokio-tungstenite v0.28.0
+  └── harness-cli v0.1.0 [prod dep: WS attach carrier, src/client.rs]
+      [dev-dependencies]
+      └── harness-daemon v0.1.0 (dev-dep: ws_e2e suite + 7 sibling test files)
+
+  $ cargo tree -i tokio-tungstenite@0.29.0
+  tokio-tungstenite v0.29.0
+  ├── axum v0.8.9 (ws feature, daemon HTTP surface)
+  └── harness-tui v0.1.0 (workspace pin)
+
+AFTER (single major):
+  $ cargo tree -i tokio-tungstenite
+  tokio-tungstenite v0.29.0
+  ├── axum v0.8.9 -> harness-daemon ...
+  ├── harness-cli v0.1.0
+  └── harness-tui v0.1.0
+  [dev-dependencies]
+  └── harness-daemon v0.1.0
+  (no ambiguity error; one version)
+
+  Cargo.lock grep: exactly ONE `name = "tokio-tungstenite"` block (v0.29.0,
+  line 7511) and — bonus — the underlying `tungstenite` crate also collapsed
+  to a single 0.29.0 block (the 0.28.0 tokio-tungstenite + tungstenite
+  packages were removed: git diff Cargo.lock = 5 insertions, 40 deletions).
+
+  API compatibility evidence: the CLI's production usage (connect_async,
+  Message::Text(x.into()), Message::Binary/Close, tungstenite::Error::Http)
+  is the identical surface harness-tui/src/client.rs already compiles against
+  0.29 on — zero source changes required.
+
+[TO BE APPENDED: cli+daemon nextest spot-check, perf-gate, clippy]
+
+========================================================================
+SUB-CHECK (b) continued � spot-check suite (cli + daemon) after unification
+========================================================================
+First full run (cold fixture builds under 429-test parallel load):
+  $ cargo nextest run -p harness-cli -p harness-daemon
+     Summary [  497.877s] 429 tests run: 428 passed (1 slow), 1 failed, 2 skipped
+        FAIL harness-daemon::run_tests_tool_tests run_tests_e2e_structured_report_flows_through_registry
+     (panic: "turn never finished: Elapsed(())" at run_tests_tool_tests.rs:178 after 493s;
+      its sibling with the identical fixture-crate build PASSED at 493.1s)
+
+Isolation re-run of the single failure:
+  $ cargo nextest run -p harness-daemon run_tests_e2e_structured_report_flows_through_registry
+     Summary [   3.569s] 1 test run: 1 passed, 352 skipped      => exit 0
+
+  => classified as parallel-load starvation, NOT a regression: nextest ran all
+     429 tests concurrently; the nested fixture-cargo build inside the
+     run_tests tool starved until the test's internal turn deadline elapsed.
+     The WS-stack surfaces (ws_e2e, media_v2, v1_replay, provider suites)
+     all passed in the same run that flaked � the 0.28->0.29 move changed
+     no observable WS behavior.
+
+Clean full-suite re-run (warm):
+  $ cargo nextest run -p harness-cli -p harness-daemon
+     Summary [   13.184s] 429 tests run: 429 passed, 2 skipped     => exit 0
+  (2 skipped = the by-design #[ignore]d pty/deep-qa tests)
+
+========================================================================
+SUB-CHECK (c) perf-gate acceptance at HEAD
+========================================================================
+Task-literal invocation (no process binaries given):
+  $ cargo run --release -p harness-bench --bin perf-gate -- --budgets harness-bench/budgets.json --baseline harness-bench/baselines/gate_baseline.json
+  perf-gate: 10 scenarios, 0 breaches, 3 skipped, verdict PASS
+  (exit 3: gate.rs:95 reserves exit 3 for skipped-scenario-not-allowed; the 3
+   skips are the process scenarios � cold start / daemon RSS / binary size �
+   which need --cli-bin/--daemon-bin/--binary. Zero breaches, verdict PASS.)
+
+Canonical CI invocation (ci.yml:263-269 shape), binaries REBUILT at HEAD first
+so harness.exe links the unified single-version tree:
+  $ cargo build --release --locked -p harness-cli -p harness-daemon
+    Finished elease profile [optimized] target(s) in 5m 33s   => exit 0
+  $ cargo run --release --locked -q -p harness-bench --bin perf-gate --
+      --budgets harness-bench/budgets.json
+      --baseline harness-bench/baselines/gate_baseline.json
+      --cli-bin C:\ct\release\harness.exe
+      --daemon-bin C:\ct\release\harness-daemon.exe
+      --binary harness=C:\ct\release\harness.exe
+      --binary harness-daemon=C:\ct\release\harness-daemon.exe
+  perf-gate: 10 scenarios, 0 breaches, 0 skipped, verdict PASS    => exit 0
+
+  => GATE GREEN at HEAD (2026-10-22, unified dep tree). Per the task's rule,
+     the committed baselines (gate_baseline.json @ c8926a4 2026-09-14) are
+     de-facto current � R8 closes. NO re-record performed; baselines NOT
+     modified.
+
+========================================================================
+Workspace gates
+========================================================================
+$ cargo clippy --workspace --all-targets -- -D warnings
+   Finished dev profile [unoptimized + debuginfo] target(s) in 46.40s  => exit 0
+   (all 25 crates, incl. harness-repomap with the new test binary and the
+    concurrently-edited harness-evals run_sweep)
+
+Final-state re-verification (after concurrent task-26 worker's files landed):
+$ cargo nextest run -p harness-repomap
+   Summary [   2.164s] 38 tests run: 38 passed, 1 skipped            => exit 0
+$ cargo tree -i tokio-tungstenite
+   tokio-tungstenite v0.29.0  (single version, no ambiguity)         => exit 0
+
+========================================================================
+Files changed (no commit � orchestrator commits)
+========================================================================
+NEW   harness-repomap/tests/malformed_inputs.rs   (4 failure-path tests)
+EDIT  harness-cli/Cargo.toml                      (pin -> workspace = true)
+EDIT  harness-daemon/Cargo.toml                   (dev pin -> workspace = true)
+EDIT  Cargo.lock                                  (0.28.0 tokio-tungstenite + tungstenite removed; 5+/40-)
+NOT MODIFIED: harness-bench/baselines/* (gate green � no re-record)
+Concurrent-worker files present in the worktree (NOT touched by this task):
+harness-evals/*, .github/workflows/evals-scheduled.yml, .omo drafts/notepads.

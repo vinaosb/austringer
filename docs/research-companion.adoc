@@ -123,10 +123,11 @@ detection; edit-format routing per model family; joint model-by-profile
 evaluation.
 |===
 
-Sections not listed (§4-§5, §7-§8, §12, §14, §28-§30) are the study's
-process records — iteration queues, source records, straggler sweeps, and
-the Terminal-Bench/Harbor measurement-harness survey — retained in the file
-for provenance.
+Sections not listed (§4-§5, §7-§8, §12, §14, §28-§30, §36-§40) are the
+study's process records — iteration queues, source records, straggler
+sweeps, the Terminal-Bench/Harbor measurement-harness survey, and the
+earlier-synthesis and full-record alternates renumbered to §36-§40 —
+retained in the file for provenance.
 
 [[companion-rule]]
 == The rule, restated

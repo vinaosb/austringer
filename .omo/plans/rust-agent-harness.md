@@ -426,9 +426,9 @@ The 15 Scope-OUT guardrails in the draft (no vector DB for code; no whole-file r
 ## Final verification wave
 > Runs in parallel after ALL todos. ALL must APPROVE. Surface results and wait for the user's explicit okay before declaring complete.
 - [x] F1. Plan compliance audit
-- [ ] F2. Code quality review
-- [ ] F3. Real manual QA
-- [ ] F4. Scope fidelity
+- [x] F2. Code quality review
+- [x] F3. Real manual QA
+- [x] F4. Scope fidelity
 
 ## Commit strategy
 Conventional Commits, one commit per todo (messages specified per-todo above); squash-merge waves; tags per wave (`v0.wave-N`); cargo-dist produces release artifacts on main tags; CHANGELOG generated from conventional commits.

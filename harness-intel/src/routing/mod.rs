@@ -66,6 +66,14 @@ pub enum Role {
     Summary,
     /// Zed utility: compaction condensation on cheap models.
     Compaction,
+    /// Utility: curated read-only codebase-search agent (todo 14).
+    /// Cheap pool only — the table's utility validation enforces it
+    /// fail-closed at build.
+    Explore,
+    /// Utility: curated read-only docs/OSS-search agent (todo 14).
+    /// Cheap pool only — the table's utility validation enforces it
+    /// fail-closed at build.
+    Librarian,
 }
 
 impl Role {
@@ -87,6 +95,8 @@ impl Role {
             "dedup-folding" => Self::DedupFolding,
             "summary" => Self::Summary,
             "compaction" => Self::Compaction,
+            "explore" => Self::Explore,
+            "librarian" => Self::Librarian,
             _ => return None,
         })
     }
@@ -109,6 +119,8 @@ impl Role {
             Self::DedupFolding => "dedup-folding",
             Self::Summary => "summary",
             Self::Compaction => "compaction",
+            Self::Explore => "explore",
+            Self::Librarian => "librarian",
         }
     }
 
@@ -124,7 +136,9 @@ impl Role {
             | Self::AutoContinue
             | Self::DedupFolding
             | Self::Summary
-            | Self::Compaction => RoleClass::Utility,
+            | Self::Compaction
+            | Self::Explore
+            | Self::Librarian => RoleClass::Utility,
             _ => RoleClass::Lead,
         }
     }
@@ -176,8 +190,8 @@ impl Tier {
 
 /// What the caller asks the router for. `Tier`/`Benchmarked` requests are
 /// AUTO-ROUTED (router's choice — priced with the routing discount);
-/// `Role` requests follow the user's own config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `Role`/`Category` requests follow the user's own config.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RouteRequest {
     /// Resolve one role's configured route.
     Role(Role),
@@ -186,12 +200,17 @@ pub enum RouteRequest {
     /// Benchmark-driven live routing: the cheapest benchmark-proven
     /// model meeting the tier's score floor, at the tier's effort.
     Benchmarked(Tier),
+    /// Resolve a delegation category's configured route (todo 13): the
+    /// model-facing `task(category)` tool dispatches child sessions
+    /// under this request. Category keys are user-authored config, so
+    /// the variant carries the key.
+    Category(String),
 }
 
 impl RouteRequest {
     /// True when the router (not the user's config) picked the model.
     #[must_use]
-    pub fn auto_routed(self) -> bool {
+    pub fn auto_routed(&self) -> bool {
         matches!(self, Self::Tier(_) | Self::Benchmarked(_))
     }
 }

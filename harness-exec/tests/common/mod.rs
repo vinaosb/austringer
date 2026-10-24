@@ -18,6 +18,7 @@ pub fn spec(program: &str, args: &[&str]) -> ExecSpec {
         args: args.iter().map(|a| a.to_string()).collect(),
         cwd: None,
         env: Default::default(),
+        env_scrub: None,
         timeout: Duration::from_secs(30),
         size: ScreenSize::default(),
         run_in: RunIn::Native,

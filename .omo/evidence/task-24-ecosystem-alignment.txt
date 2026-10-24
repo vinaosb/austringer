@@ -1,0 +1,153 @@
+TASK 24 EVIDENCE - Program-status emission (OSC 777 now, 7501 tracked) + attention states (Wave U)
+Plan: .omo/plans/ecosystem-alignment.md todo 24 (lines 299-305)
+Date: 2026-10-22. NO commit/stage performed (orchestrator owns commits).
+
+FILES MODIFIED
+- harness-daemon/src/notify.rs
+    + ProgramStatus enum (Working / Blocked / Done / Error) with warp_event()
+      (Warp cli-agent lifecycle names: prompt_submit / permission_request / stop /
+      stop_failure) and osc7501_state() (working / blocked / done / error)
+    + NotificationKind::program_status() -> Option<ProgramStatus>: the todo-24
+      kind->status mapping (ScheduledFired->Working, ApprovalNeeded->Blocked,
+      TurnComplete->Done, WorkerLost->Error). Exhaustive match: a future kind
+      without a status MUST pick Some or None at compile time; None emits nothing.
+    + unit tests: mapping totality + wire-token stability
+- harness-daemon/src/osc.rs
+    + OscSink::status_frames(): for every status-mapped notification the sink now
+      appends TWO sequences beside the existing 777-notify + OSC 9 frames:
+        1. structured OSC 777 lifecycle frame:
+           ESC ] 777 ; notify ; warp://cli-agent ; {"v":1,"agent":"harness",
+           "event":"<prompt_submit|permission_request|stop|stop_failure>",
+           "session_id":"<sanitized>"} BEL
+           (Warp's structured cli-agent format: title sentinel warp://cli-agent,
+           compact JSON body - the exact shape Warp's listener at
+           app/src/terminal/cli_agent_sessions/event/v1.rs parses; framing per
+           the claude-code-warp plugin: printf '\033]777;notify;%s;%s\007')
+        2. OSC 7501 Program Status Protocol report:
+           ESC ] 7501 ; state=<state>[:kind=permission]:app=harness:msg=<base64> ESC \
+           (spec: https://www.superlogical.com/rex/docs/build/program-status -
+           pair grammar, kind only on blocked, msg = standard base64 of UTF-8,
+           ST terminator, values inside [A-Za-z0-9_.,+/=-])
+    + Sanitize inheritance: session_id passes sanitize_osc_text before the JSON
+      embed; msg passes sanitize_osc_text BEFORE base64 (the spec's decoded-msg
+      control-character ban holds by construction; sanitize covers C0+C1 today
+      and the 7501 path inherits it unchanged).
+    + unmapped kind (None) emits NOTHING on the status lanes (fail silent)
+    + unit tests: None-path emits zero bytes; 7501 value-charset conformance;
+      updated the injection-count pin (one mapped deliver = 5 framing ESC /
+      3 framing BEL: notify-777 + OSC 9 + structured-777 + 7501's ESC-start and
+      ST; previously 2 ESC / 2 BEL pre-task-24)
+- harness-daemon/tests/osc_status_tests.rs (NEW)
+    + session_lifecycle_emits_777_and_7501_sequences (byte-exact per transition)
+    + osc_7501_reports_follow_the_spec_grammar (pair grammar + 4096 limit)
+    + permission_ask_flips_status_to_blocked_within_one_event_loop_turn
+      (live mediator ask -> bridge watcher -> sink bytes while the ask is STILL
+      PENDING, then answered for cleanup)
+    + esc_payload_produces_exactly_the_framing_esc_bytes (session label with
+      ESC/BEL/C1: exactly the framing bytes; decoded 7501 msg control-free)
+    + real_binary_pty_session_emits_program_status  #[ignore] QA test (~40-90s):
+      the SHIPPED binary on a REAL ConPTY through a full scheduled session,
+      raw bytes read from the PTY master. Includes a reactive DSR/DA1 responder
+      (the todo-20 ConPTY pathology: conhost's unanswered \x1b[6n stalls the
+      pipe; this test IS the terminal and answers in ms).
+- harness-daemon/Cargo.toml
+    + [dependencies] base64ct.workspace = true (7501 msg encoding; already in
+      the tree via harness-web/harness-safety - zero new crates in the lockfile)
+    + [dev-dependencies] portable-pty.workspace = true (PTY QA capture; already
+      in the tree via harness-exec)
+- bin wiring: UNCHANGED - the stdout_sink registered at bin/harness-daemon.rs
+  (notifier.add(Arc::new(harness_daemon::osc::stdout_sink("harness")))) now
+  emits both status lanes through the same OscSink; no bin edit was needed.
+
+RECEIPTS (external, dated)
+- OpenCode #55172 (merged 2026-10-13): "feat(tui): report pending session status
+  to the terminal" - OSC 7501 via OpenTUI setProgramStatus: idle at startup,
+  working while busy, blocked/permission when a prompt is pending, clear+idle on
+  finish. https://github.com/anomalyco/opencode/pull/55172
+- Warp OSC-777 lifecycle: structured JSON events on OSC 777 with title
+  warp://cli-agent; listener parses session_start / prompt_submit / tool_complete
+  / stop / stop_failure / permission_request / question_asked / idle_prompt.
+  warpdotdev/warp app/src/terminal/cli_agent_sessions/{listener/mod.rs,event/v1.rs}
+  @ 4143c09; plugin framing per warpdotdev/claude-code-warp (printf
+  '\033]777;notify;%s;%s\007' warp://cli-agent '<json>').
+- Warp issue #16407 (OSC 7501 Program Status Protocol; Crush emits, cmux
+  receives - emerging standard): we EMIT BOTH 777+7501, RECEIVE NEITHER.
+  Spec: mitchellh.com/writing/program-status-osc7501 (2026-10-06) +
+  superlogical.com/rex/docs/build/program-status (rev 0.4, 2026-10-10).
+- Antigravity v1.4.0: needs-attention icon on conversations whose subagent waits
+  for approval instead of a spinner (the attention-state vocabulary this maps to
+  Blocked). https://antigravity.google/docs/changelog/
+
+[1] RED RUN (tests written BEFORE production changes)
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test osc_status_tests"
+Result: 4 FAILED for the right reasons -
+  session_lifecycle_emits_777_and_7501_sequences:
+    "no structured 777 lifecycle frame: \"\u{1b}]777;notify;harness;run kicked off\u{7}\u{1b}]9;run kicked off\u{7}\n\""
+    (the pre-task-24 baseline: notify-777 + OSC 9 only)
+  permission_ask_flips_status_to_blocked_within_one_event_loop_turn:
+    "status never flipped to blocked"
+  osc_7501_reports_follow_the_spec_grammar: no 7501 report found
+  esc_payload_produces_exactly_the_framing_esc_bytes: ESC count 2 != 5
+
+[2] GREEN RUN (acceptance filter)
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test osc_status_tests"
+Result: 4 tests run: 4 PASSED
+  PASS session_lifecycle_emits_777_and_7501_sequences
+  PASS esc_payload_produces_exactly_the_framing_esc_bytes
+  PASS osc_7501_reports_follow_the_spec_grammar
+  PASS permission_ask_flips_status_to_blocked_within_one_event_loop_turn
+
+[3] FULL DAEMON SUITE
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --no-fail-fast"
+Result: 345 tests run: 345 PASSED, 2 skipped
+  (skips: the #[ignore]d PTY QA test + 1 pre-existing skip; includes the new
+  in-module unit tests: notify::kind_to_status_mapping_covers_every_kind,
+  notify::program_status_wire_tokens_are_stable,
+  osc::status_frames_for_unmapped_kind_emit_nothing,
+  osc::status_frames_pair_values_stay_in_the_7501_charset)
+Flake note: on one full-suite run under parallel load,
+dispatcher_live_acknowledged_hop_revalidates_effort_grid FAILED; re-run in
+isolation PASSED (4/4 dispatcher_live green). Pre-existing machine-local
+contention flake class (documented in task context), not touched by this todo.
+
+[4] QA HAPPY - real binary, real ConPTY, full session, RAW BYTES
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test osc_status_tests real_binary_pty --run-ignored only --no-capture"
+Result: PASS in 40.10s. Captured on the PTY master (ConPTY):
+  ESC]777;notify;warp://cli-agent;{"agent":"harness","event":"prompt_submit","session_id":"auto-osc-pty-0-29877336","v":1}
+  ESC]7501;state=working:app=harness:msg=YXV0b21hdGlvbiBvc2MtcHR5LTAgZmlyZWQ7IHJ1biBraWNrZWQgb2Zm
+  ESC]777;notify;warp://cli-agent;{"agent":"harness","event":"stop","session_id":"auto-osc-pty-0-29877336","v":1}
+  ESC]7501;state=done:app=harness:msg=cnVuIGF1dG8tb3NjLXB0eS0wLTI5ODc3MzM2IGZpbmlzaGVkOiB0YXNrX2NvbXBsZXRlZCAoZ2F0ZTogY29uZmlybWVkKQ==
+  msg payloads decode to:
+    working -> "automation osc-pty-0 fired; run kicked off"
+    done    -> "run auto-osc-pty-0-29877336 finished: task_completed (gate: confirmed)"
+  (scheduled automation fired -> session ran the compat fixture provider ->
+  task_completed -> gate CONFIRMED; both lanes visible as raw master-side bytes)
+  Earlier iteration of the same run (before the fixture base-url carried /v1)
+  exercised the provider-404 path and STILL emitted working->done cleanly -
+  lifecycle emission does not depend on the outcome text.
+
+[5] QA FAILURE - unknown kind silent
+Command: (unit lane) cargo nextest run -p harness-daemon osc::tests::status_frames_for_unmapped_kind_emit_nothing
+Result: PASS - status_frames(None, ...) returns ZERO bytes: a kind with no
+terminal status emits no sequence at all, never garbage. The exhaustive
+NotificationKind::program_status match (no wildcard) forces every future kind
+to declare Some(status) or None at compile time; None is fail-silent.
+Additionally osc_7501_reports_follow_the_spec_grammar pins that every emitted
+7501 value stays inside the spec charset (no malformed pair can leave the sink).
+
+[6] CLIPPY GATE
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+Result: Finished, exit 0 (only harness-daemon rechecked - rest of the workspace
+unchanged/cached; no warnings).
+
+CONTRACT NOTES
+- EMIT BOTH, RECEIVE NEITHER: no code parses incoming 777/7501 anywhere; the
+  daemon only writes. Frontend blocked-state surfacing rides tasks 19-21 v2
+  consumption (not this todo).
+- sanitize_osc_text runs on EVERY free-text field of BOTH lanes before framing
+  (session_id -> JSON, message -> base64); consts (state/kind/app/event names)
+  are fixed vocabularies.
+- Per mapped deliver the sink now writes 4 sequences + newline: 777-notify,
+  OSC 9, structured 777 lifecycle, 7501 report (ST-terminated). The existing
+  777-notify/OSC 9 behavior is byte-identical to pre-task-24 (the updated
+  injection-count unit test pins the new totals).

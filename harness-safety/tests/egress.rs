@@ -3,7 +3,9 @@
 
 #![cfg(test)]
 
-use harness_safety::egress::{DenyReason, EgressPolicy, EgressVerdict, HostPattern};
+use harness_safety::egress::{
+    CommandEgress, DenyReason, EgressPolicy, EgressVerdict, HostPattern, guard_command,
+};
 
 #[test]
 fn empty_allowlist_denies_every_host() {
@@ -130,4 +132,141 @@ fn parse_round_trips_exact_wildcard_and_port() {
         HostPattern::parse("a.com:8443"),
         Ok(HostPattern::WithPort(_, 8443))
     ));
+}
+
+#[test]
+fn guard_blocks_curl_under_empty_allowlist_naming_the_host() {
+    match guard_command(
+        "curl -s https://egress-blocked.invalid/lease",
+        &EgressPolicy::none(),
+    ) {
+        CommandEgress::Denied {
+            host: Some(host),
+            reason: DenyReason::NotInAllowlist,
+            ..
+        } => assert_eq!(host, "egress-blocked.invalid"),
+        other => panic!("expected NotInAllowlist denial naming the host, got {other:?}"),
+    }
+}
+
+#[test]
+fn guard_blocks_unqualified_and_path_qualified_egress_programs() {
+    let policy = EgressPolicy::none();
+    for command in [
+        "curl https://x.invalid/",
+        "curl.exe https://x.invalid/",
+        "C:\\Windows\\System32\\curl.exe -s https://x.invalid/",
+        "/usr/bin/curl https://x.invalid/",
+        "wget http://x.invalid/f",
+        "ping x.invalid",
+        "ssh git@x.invalid",
+        "nc x.invalid 443",
+    ] {
+        assert!(
+            matches!(
+                guard_command(command, &policy),
+                CommandEgress::Denied { .. }
+            ),
+            "{command} must be denied under the empty allowlist"
+        );
+    }
+}
+
+#[test]
+fn guard_blocks_egress_program_with_no_parsable_destination() {
+    // flags only: network intent, hidden destination — fail closed.
+    assert!(matches!(
+        guard_command("curl --version", &EgressPolicy::none()),
+        CommandEgress::Denied {
+            reason: DenyReason::MalformedHost,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn guard_blocks_unsegmentable_commands_fail_closed() {
+    // unbalanced quoting: the guard cannot judge what it cannot segment.
+    assert!(matches!(
+        guard_command(
+            "echo \"unclosed && curl https://x.invalid/",
+            &EgressPolicy::none()
+        ),
+        CommandEgress::Denied { .. }
+    ));
+}
+
+#[test]
+fn guard_judges_every_compound_segment_independently() {
+    // An allowed-looking prefix must never cover an appended egress
+    // attempt (the `npm i && curl evil` lesson).
+    let policy = EgressPolicy::none();
+    for command in [
+        "echo ok && curl -s https://x.invalid/",
+        "echo ok ; wget http://x.invalid/f",
+        "echo ok | curl https://x.invalid/",
+        "curl $(echo https://x.invalid/)",
+    ] {
+        assert!(
+            matches!(
+                guard_command(command, &policy),
+                CommandEgress::Denied { .. }
+            ),
+            "{command} must be denied: the egress segment stands alone"
+        );
+    }
+}
+
+#[test]
+fn guard_passes_non_egress_commands_without_verdicts() {
+    let policy = EgressPolicy::none();
+    for command in [
+        "echo hello",
+        "cargo nextest run -p harness-safety",
+        "git status --short",
+        "dir /b",
+    ] {
+        assert_eq!(
+            guard_command(command, &policy),
+            CommandEgress::NoEgress,
+            "{command} attempts no egress"
+        );
+    }
+}
+
+#[test]
+fn guard_allows_egress_to_explicitly_granted_hosts() {
+    let mut policy = EgressPolicy::none();
+    policy
+        .allow(HostPattern::Exact("deps.invalid".into()))
+        .expect("allow");
+    assert_eq!(
+        guard_command("curl -s https://deps.invalid/index", &policy),
+        CommandEgress::Allowed
+    );
+    assert!(
+        matches!(
+            guard_command("curl -s https://other.invalid/index", &policy),
+            CommandEgress::Denied { .. }
+        ),
+        "the grant is exact: a sibling host stays denied"
+    );
+}
+
+#[test]
+fn guard_strips_userinfo_scheme_and_port_to_reach_the_host() {
+    let mut policy = EgressPolicy::none();
+    policy
+        .allow(HostPattern::parse("mirror.invalid:8443").expect("parse"))
+        .expect("allow");
+    for command in [
+        "curl https://mirror.invalid:8443/pkg",
+        "wget ftp://user:pass@mirror.invalid:8443/pkg",
+    ] {
+        assert_eq!(
+            guard_command(command, &policy),
+            CommandEgress::Allowed,
+            "{command} must reduce to the granted host:port"
+        );
+    }
 }

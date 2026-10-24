@@ -121,3 +121,60 @@ pub enum ToolCallContent {
         new_text: String,
     },
 }
+
+/// Coarse permission-option kinds (the spec's closed vocabulary).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionOptionKind {
+    /// Approve this one call.
+    AllowOnce,
+    /// Approve and remember for the session.
+    AllowAlways,
+    /// Refuse this one call.
+    RejectOnce,
+}
+
+/// One option offered on a `session/request_permission` request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionOption {
+    /// Machine id (echoed back on selection).
+    #[serde(rename = "optionId")]
+    pub option_id: String,
+    /// Human label.
+    pub name: String,
+    /// Coarse kind.
+    pub kind: PermissionOptionKind,
+}
+
+impl PermissionOption {
+    /// Convenience constructor from a kind (id = kind name, name =
+    /// humanized label).
+    #[must_use]
+    pub fn from_kind(kind: PermissionOptionKind) -> Self {
+        let (option_id, name) = match kind {
+            PermissionOptionKind::AllowOnce => ("allow_once", "Allow Once"),
+            PermissionOptionKind::AllowAlways => ("allow_always", "Allow Always"),
+            PermissionOptionKind::RejectOnce => ("reject_once", "Reject Once"),
+        };
+        Self {
+            option_id: option_id.to_owned(),
+            name: name.to_owned(),
+            kind,
+        }
+    }
+}
+
+/// The IDE's answer to a `session/request_permission` request (the
+/// response's `outcome` union).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum PermissionOutcome {
+    /// The IDE picked an offered option.
+    Selected {
+        /// The chosen option's id.
+        #[serde(rename = "optionId")]
+        option_id: String,
+    },
+    /// The IDE dismissed the request without choosing.
+    Cancelled,
+}

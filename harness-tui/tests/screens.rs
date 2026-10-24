@@ -55,9 +55,11 @@ fn populated_app() -> App {
     app.step(UiEvent::Server(ServerMsg::Event {
         frame: Frame {
             id: 3,
-            event: SessionEvent::WorkerClaimed {
-                queue: "build".into(),
-                worker: "w1".into(),
+            event: SessionEvent::ChildStarted {
+                child: "l-child-build".into(),
+                task: "build".into(),
+                role: "worker".into(),
+                model: "gpt-5-5".into(),
             },
         },
     }));
@@ -65,7 +67,6 @@ fn populated_app() -> App {
         cache_hit_pct: Some(72.5),
         model: "frontier-x".into(),
         cost_delta: 0.42,
-        routing_savings: 0.09,
     });
     app
 }
@@ -90,6 +91,7 @@ fn expanded_transcript_tools_and_team_render() {
     assert!(rendered.contains("you: ship the fix"), "{rendered}");
     assert!(rendered.contains("Plan"), "{rendered}");
     assert!(rendered.contains("build"), "{rendered}");
+    assert!(rendered.contains("status: in_progress"), "{rendered}");
     assert!(rendered.contains("cache: 72.5%"), "{rendered}");
     insta::assert_snapshot!(rendered);
 }

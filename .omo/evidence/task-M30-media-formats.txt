@@ -1,0 +1,180 @@
+M30 - Text-substrate adapters (plan .omo/plans/media-formats-wave.md lines 319-325, verbatim authority)
+=====================================================================================
+Status: DONE (GREEN + full verification sweep in an isolated worktree at the exact
+commit content + committed)
+
+Dependencies confirmed landed before start (git log at task start):
+  M1 contract | M2 probe registry e816161 | M5 diff engine cf1bbac
+  M6 executor 792f445 (wiring.rs binding pattern mirrored) | M10 pipeline 5cd6bf4
+  HEAD at start: adc2c2e (M15 tool executor)
+
+PARALLEL-LANE SURVEY (git status + ledger at task start)
+-------------------------------------------------------------------------------------
+M10-reverify / M15-verify / M14 (audio) / M28 (image) dispatched in the same wave
+fan-out (ledger task-dispatched line). M14 and M28 were ACTIVE in this crate for the
+whole task: M14 committed nothing but edited Cargo.toml/adapter.rs/wiring.rs +
+audio*.rs mid-flight; M28 landed image/ + fixtures + tests mid-flight. Their
+in-flight state broke the shared working-tree build twice (declared-but-missing
+audio modules; later real compile errors in image/jpeg.rs + an unused import in
+audio_decode.rs) - none of it M30's code. Countermeasure (M11's precedent):
+  - all M30 GREEN verification ran in a THROWAWAY WORKTREE at HEAD + M30 hunks
+    only (the exact commit content), and
+  - the commit itself was assembled through a PRIVATE index (GIT_INDEX_FILE) as
+    HEAD + M30 hunks, verified, landed with compare-and-swap update-ref.
+
+NEW DEPS (plan-named candidates; cargo-deny green; feature-gated under M1's `text`)
+-------------------------------------------------------------------------------------
+  comrak 0.55.0 (BSD-2-Clause) - CommonMark 0.31.2 + GFM parse/render;
+    default-features = false (builder API only; no syntect/clap trees; the
+    render-only `tagfilter` extension is deprecated upstream and NOT enabled).
+  maud 0.27.0 (MIT OR Apache-2.0) - compile-time html templates for the
+    self-contained single-file html5 writer (escaping built into interpolation).
+  html5gum 0.8.4 (MIT OR Apache-2.0) - WHATWG-conforming html5 TOKENIZER for the
+    tag-census extract + reparse verify. Chosen over html5ever (the plan named
+    either): a census needs no DOM tree, and tokenizer-only is the bounded
+    untrusted-input posture (html5ever would add tendril/markup5ever trees for
+    structure the census does not use). default-features = false drops jetscii.
+  csv 1.4.0 (MIT OR Unlicense - the OR satisfies deny's allow-list via MIT) -
+    RFC 4180 read (flexible=false, has_headers=false) + CRLF writer.
+  toml 0.9.12 workspace-pinned (MIT OR Apache-2.0) - TOML 1.0 parse/display.
+  Lock additions (worktree, pruned to M30-only on top of HEAD): comrak, maud,
+    maud_macros, html5gum, csv, csv-core, toml + transitive (bon, typed-arena,
+    phf 0.11 second version etc.); lock diff = +160/-11 (the 11 removals are
+    lock-v4 name disambiguation, not downgrades). cargo deny: advisories/bans/
+    licenses/sources all ok.
+
+SCOPE DECISIONS (recorded)
+-------------------------------------------------------------------------------------
+- Files owned: src/adapter/text/{mod, json, csv, toml}.rs,
+  text/markdown/{mod,spec,tree,extract,generate,verify}.rs,
+  text/html/{mod,spec,tree,extract,generate,verify}.rs (16 files, all <= 143
+  pure LOC), tests/text_{markdown,html,json,csv,toml}.rs, fixtures
+  {markdown-doc.md, html-doc.html, jsonl-doc.jsonl, csv-bom.csv (real UTF-8
+  BOM bytes EF BB BF), toml-doc.toml}.
+- Shared files, minimal additive hunks (HEAD + mine only in the commit):
+  Cargo.toml (text feature + 5 deps + dev word "text"), adapter.rs (pub mod
+  text decl), probe/registry.rs (M30 claim flip for the 5 formats),
+  executor/wiring.rs (text_{extract,generate,verify}_binding fns + 3 match
+  arms, mirroring the sibling lanes' inline-cfg pattern), tests/probe_registry.rs
+  (M30 guard), Cargo.lock (pruned to M30 additions).
+- Canonical trees: markdown = {code_blocks, code_languages, headings[{level,
+  text}], lists, paragraphs, tables}; html = {census (start-tag counts,
+  lowercased), doctype, text (collapsed char data, 1200-bound, truncated
+  IDENTICALLY on the spec->tree side), title?}; json = the value itself, or the
+  tagged {"jsonl": true, "rows": [...]} lane; csv = {bom, field_count,
+  first_row|null, row_count}; toml = the JSON-normalized parse tree (datetimes
+  as TOML display strings; non-finite floats as null per the M5 pinned rule).
+- DIALECT CANONICALIZATION DISCOVERED (comrak): the canonical CommonMark
+  formatter renders a bare fence (empty info string) as an INDENTED code block.
+  The census therefore counts code BLOCKS (fenced or indented) with the
+  info-first-token language key - both spellings land identically, which IS the
+  dialect pinning the plan asked for (strict-CommonMark + GFM AST equivalence,
+  never byte comparison). Pinned by setext-vs-ATX census equality + the
+  code-fence corpus rows. Module docs disclose it.
+- Markdown census definition: paragraphs count ANYWHERE in the tree (a tight
+  list item's inner Paragraph included) because the spec->tree projection must
+  predict exactly the AST shape the canonical writer emits; lists/tables/code
+  blocks/headings counted at any depth.
+- HTML5: tokenizer census (no DOM); HTML5 error recovery means a doctype-less
+  fragment is a census fact, never a failure; text census joins collapsed
+  character-data pieces with single spaces, and collection stops past the
+  1200-char prefix (the truncation is round-trip-safe because the spec side
+  truncates identically - prefix property). UTF-8 only (charset sniffing out of
+  scope, disclosed). maud writer emits <!DOCTYPE html> + meta charset + lang,
+  NEVER src/href/link/script (test-pinned self-contained).
+- JSONL auto-detection mirrors M2's probe exactly: full single-value parse
+  first, line-parse second (blank lines skipped), both failing = typed
+  ParseFailure. Duplicate keys last-wins (serde_json; disclosed); canonical
+  write = sorted-key compact + trailing newline (byte-pinned test).
+- CSV: comma dialect only (semicolons parse as single-field rows honestly);
+  ragged rows ParseFailure (flexible=false - never padded/guessed); BOM
+  stripped on read + disclosed as "bom": true; writer CRLF-terminated,
+  RFC-quoted, never writes a BOM (disclosed); rows counted uniformly - the
+  header is a semantic convention, first_row is reported, never guessed.
+- TOML: generation accepts JSON-shaped tables and refuses typed InvalidSpec
+  for non-table roots, nulls anywhere, and heterogeneous arrays (recursive
+  pre-validation; the serializer's own refusals map to the same error).
+  Datetimes serialize as strings (JSON input cannot carry native datetimes) -
+  one-way normalization, disclosed.
+- Generation text contract (md/html): block text must be single-line
+  whitespace-collapsed canonical text - typed InvalidSpec otherwise, never a
+  silent rewrite. Code content is verbatim (multi-line ok; both census sides
+  collapse identically).
+- MediaError untouched (M1-frozen). QA's "invalid TOML -> ParseFailure with
+  line/col" lands as the typed ParseFailure (the M1 error shape carries no
+  payload - identical posture to M11's "line/col" and M13's "page hint"
+  predecessors; the underlying toml error HAS line/col, we surface the typed
+  refusal).
+- Budgets (M1): loop lanes (comrak walk, html5gum tokens, csv records, jsonl
+  lines) check deadline + cumulative-size cap EVERY iteration; one-shot parsers
+  (serde_json, toml, comrak parse) bounded by input-size pre-check + post
+  deadline check (disclosed per module). Structural caps: MAX_HEADINGS 4096,
+  MAX_TAGS 1024, MAX_BLOCKS 10_000 (md/html), MAX_ROWS 1M (csv). Zero-deadline
+  and tiny-cap tests pin both axes per lane.
+- Projectors (M10 seam): Markdown/Html/Json/Csv/TomlProjector - thin wraps over
+  extract().text_projection; kind mismatch = typed NoProjector; duplicate
+  registration refused (pinned).
+- Size canary: M30 is NOT in the M12/M13/M14/M22/M28 heavy-dep minimum set;
+  comrak+maud+html5gum+csv+toml are text-scale deps (no codec trees), so the
+  standing canary duty does not attach to this todo.
+
+TDD RED (captured before any implementation)
+-------------------------------------------------------------------------------------
+Isolated worktree at HEAD + the five test files + fixtures (the shared
+working-tree lib was broken by the audio lane's mid-flight state, so RED was
+captured where only M30 content could be the cause):
+  cargo nextest run -p harness-media --test text_{markdown,html,json,csv,toml}
+    error[E0433]: cannot find `text` in `adapter`   (x5 - one per suite)
+    => RED for the right reason: the module under test does not exist. No
+    assertion ran. Three test-internal bugs found during RED (a missing paren
+    in two corpus rows; an inverted expect_err; a missing trait import) were
+    fixed before the RED was accepted, per the M11 discipline.
+
+GREEN + VERIFICATION (final states, isolated worktree at the EXACT commit content)
+-------------------------------------------------------------------------------------
+Staged commit tree (HEAD adc2c2e + M30 hunks only; sibling lanes' audio/image
+files excluded by design - theirs to land):
+  cargo nextest run -p harness-media  : 244 run, 244 passed, 2 skipped
+    (2 skips = the pre-existing #[ignore] size-canary + real-tool suites;
+     244 includes the pre-M30 suites green under the M30 feature set)
+  cargo clippy -p harness-media --all-targets -- -D warnings : clean
+  cargo deny --log-level error check : advisories/bans/licenses/sources ok
+  cargo check -p harness-media (default, feature-empty)     : clean
+  cargo check -p harness-media --features text (main tree)  : clean
+  Pure LOC per new src file: csv 143, json 143, toml 129, md-extract 100,
+    md-generate 120, md-spec 93, md-tree 98, md-verify 19, md-mod 29,
+    html-extract 78, html-generate 60, html-spec 96, html-tree 78,
+    html-verify 19, html-mod 29, text-mod 27 - all <= 250.
+  unwrap/expect/panic/unreachable!/todo! in new src: ZERO (grep-pinned).
+  lsp_diagnostics over src/adapter/text (16 files): 0 errors.
+Main working tree note: full-tree nextest is not runnable at M30 time through
+no fault of this lane (image/jpeg.rs compile errors + audio_decode.rs unused
+import belong to the in-flight M28/M14 lanes); the lib + the five M30 suites
+were verified there to the extent the tree compiles, and fully verified in the
+isolated commit-content worktree above.
+
+ACCEPTANCE CRITERIA (plan line 323) - each pinned by a test
+-------------------------------------------------------------------------------------
+[x] per-format round-trip corpora green (md 13 rows, html 12, json 12 incl.
+    JSONL lane, csv 10 incl. quoting hazards, toml 11) - generate->verify
+    empty-diff with INDEPENDENT spec->tree expectations; executor-dispatch
+    path green on every lane (text_markdown/html/json/csv/toml.rs)
+[x] md->html projection deterministic (byte-stable repeat + GFM table render
+    pinned; comrak html formatter, same GFM option set as the census)
+[x] BOM'd CSV extracts with disclosed dialect (csv-bom.csv: bom=true, rows
+    parsed post-BOM; writer never emits BOM + CRLF pinned)
+[x] malformed input typed (json x5 shapes, toml x4 shapes, csv ragged,
+    md/html non-utf8, budget trips per lane; mutated-expectation pointers
+    /headings/0/level and /census/p pin the gates non-vacuous)
+[x] invalid TOML -> ParseFailure (typed; see SCOPE DECISIONS for the
+    line/col note)                    (text_toml.rs)
+[x] registration pattern: M2-table claim flip + cfg'd pure bindings + ENGINE
+    producer disclosure + deterministic projectors; descriptor/binding sync
+    held (probe_registry + executor_registry suites green with text on)
+
+COMMIT
+-------------------------------------------------------------------------------------
+feat(media): text-substrate adapters (md/html/json/csv/toml)
+Private index (GIT_INDEX_FILE) = HEAD adc2c2e + M30 hunks only; verified in
+the throwaway worktree; landed compare-and-swap. Working-tree hunks belonging
+to the audio/image lanes were left for their commits to supersede.

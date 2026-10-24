@@ -1,0 +1,181 @@
+TASK M2 - media-formats: probe registry + magic-sniffing table (34 formats)
+============================================================================
+Attempt dir discipline: same format as v0.1 task evidence. All commands run
+from the repo root on the dev machine (Windows, MSVC). Cold-build note: the
+rusqlite-bundled C build needs the documented INCLUDE prepend when the
+toolchain cache is cold:
+  $env:INCLUDE = 'C:\Program Files\Microsoft Visual Studio\18\Insiders\' +
+    'SDK\ScopeCppSDK\vc15\VC\include;' + $env:INCLUDE
+(it fired once this task; every subsequent build was warm without it).
+
+RECOVERY NOTE
+-------------
+This task is a RECOVERY dispatch: a previous executor died at 03:27Z after a
+complete design analysis, having written nothing (no files, no evidence, no
+commit). Its design transcript (tool_0c73f5546001nWUAytkZfeqFX9, session
+ses_f38daa211ffe3sZtThXuxMBqHE) was surveyed first and its resolved decisions
+adopted: the ProbeResult enum shape (Identified/LegacyOle2/Unknown, snake_case
+serde), the sniff order (binary magics -> XML root -> JSON -> text
+heuristics), the hint contract (selects among fired candidates, never adds
+one, never overrides bytes), the real 12-byte blend header layout, the Ogg
+OpusHead window search, the mp3 sync validity bits + UTF-16 BOM guard, the
+EBML doctype-earliest-match rule, zip-as-office-feature with a dev-dependency
+self-reference, and the module split under the 250-pure-LOC ceiling.
+recovered_from_partial: design-only recovery; zero code was inherited.
+
+TDD - RED EVIDENCE
+------------------
+RED 1 (compile red, correct reason - the module does not exist yet):
+  cargo nextest run -p harness-media
+  -> error[E0432]: unresolved import `harness_media::probe`
+     no `probe` in the root
+     (tests/probe_fixtures.rs, tests/probe_adversarial.rs, tests/probe_registry.rs)
+
+RED 2 (behavioral red against a compiling stub whose probe() always returns
+Unknown{note:"stub"} and whose registry() is empty - the stub was never
+committed; the full implementation replaced it in the working tree):
+  cargo nextest run -p harness-media
+  -> Summary: 62 tests run: 48 passed, 14 failed, 0 skipped
+  The 14 failures are exactly the probe behavior under test:
+  probe_fixtures: fixture_corpus_probes_expected_format_and_confidence,
+    fixtures_probe_identically_without_any_name_hint,
+    bigtiff_magic_probes_geotiff_certain_with_bigtiff_note,
+    jxl_container_magic_probes_jxl_certain,
+    legacy_ole2_signature_probes_typed_red_never_parsed,
+    jsonl_lines_probe_json_likely_with_jsonl_note, id3_tag_probes_mp3_certain
+  probe_adversarial: namespace_less_kml_root_needs_hint_to_identify,
+    ebml_without_doctype_needs_hint_to_disambiguate,
+    hint_selects_only_among_fired_candidates_never_adds_one, (+4 more)
+  probe_registry: all three registry tests
+  The 48 passes are the pre-existing M1/M5 suites plus adversarial cases for
+  which Unknown is already the correct answer under the stub.
+
+FIXTURE CORPUS (committed under harness-media/fixtures/, 36 files, all <=64KB;
+largest is docx.docx at 633 bytes)
+----------------------------------
+Binary fixtures generated once by a deterministic PowerShell script
+(gen-m2-fixtures.ps1, byte-literal arrays; OOXML zips via .NET
+System.IO.Compression.ZipFile with entry LastWriteTime pinned to
+2026-01-01T00:00:00Z; the script is documented here, not committed - the
+committed bytes are the artifacts under test). Text fixtures written by hand.
+  png.png jpeg.jpg gif.gif webp.webp avif.avif jxl.jxl glb.glb blend.blend
+  pdf.pdf wav.wav flac.flac opus.opus mp3.mp3 ogg.ogg webm.webm mkv.mkv
+  geotiff.tif sqlite.sqlite geopackage.gpkg hdf5.h5 parquet.parquet
+  arrow.arrow docx.docx xlsx.xlsx pptx.pptx zip-plain.zip (adversarial)
+  svg.svg gltf.gltf markdown.md html.html json.json csv.csv toml.toml
+  step.stp geojson.geojson kml.kml
+
+TDD - GREEN EVIDENCE
+--------------------
+Implementation: src/probe/{mod,binary,av,office,textlane,registry}.rs.
+  cargo nextest run -p harness-media
+  -> Summary: 62 tests run: 62 passed, 0 skipped
+  (14 new behavioral tests green; 48 pre-existing M1/M5 tests stay green)
+  Probe suites: probe_fixtures (7), probe_adversarial (10), probe_registry (3).
+
+  cargo build -p harness-media            -> Finished (default features: NO zip
+                                             in the graph - cargo tree confirms)
+  cargo clippy -p harness-media --all-targets        -> Finished (warnings=deny)
+  cargo clippy -p harness-media --no-default-features -> Finished (the
+    not(feature="office") stub branch typechecks; behaviorally covered by
+    construction: the branch only names the feature in an Unknown note)
+  cargo deny check                        -> advisories ok, bans ok, licenses
+                                             ok, sources ok (exit 0)
+  Pure-LOC audit (non-blank non-//, attributes included): probe/mod 70,
+  probe/binary 112, probe/av 78, probe/office 44, probe/textlane 185,
+  probe/registry 94, descriptor 63; tests: fixtures 241 (warning band -
+  pure corpus data table), adversarial 137, registry 47. All <= 250.
+  No unwrap/expect/panic/todo!/unimplemented! anywhere in harness-media/src.
+
+DESIGN DECISIONS (locked, from the recovered transcript + dispatch)
+-------------------------------------------------------------------
+- ProbeResult is a serde-tagged enum {identified{format, confidence, note},
+  legacy_ole2{note}, unknown{note}} (snake_case); LegacyOle2 is the typed
+  RED identification for D0 CF 11 E0 A1 B1 1A E1 - matched on the full
+  8-byte signature (the plan's 4 bytes are its abbreviation), never parsed.
+- Sniff order (fixed): binary magics -> av (flac/ogg-opus/RIFF-WAVE/
+  mp3/EBML) -> office zip -> XML root (svg/kml) -> JSON lane -> text
+  heuristics. Bytes always win over the name hint (adversarial-pinned).
+- svg: root localname svg (any prolog/BOM skipped, ns prefix tolerated)
+  OR svg namespace on the root open tag -> Certain. kml: root + 2.2
+  namespace -> Certain; ns-less kml root -> Likely ONLY via name-hint
+  tie-break, else typed Unknown with a kml-specific note. html is NEVER
+  Certain (heuristic lane by the acceptance contract; XHTML falls to the
+  html heuristic).
+- glTF: partial byte-scan for quoted "asset"+"version" keys + object start
+  in the leading 8 KiB window -> Certain (the plan's "partial-sniff"
+  wording honored literally, allocation-free). GLB: glTF magic + version 2.
+  geojson: full parse (<=512 KiB) with top-level type Feature/
+  FeatureCollection -> Likely. json: full parse -> Likely; JSONL: every
+  non-empty line parses -> Likely with a JSONL note. The hint map contains
+  NO geojson entry: geojson is content-defined, an extension can't create it.
+- Text heuristics fire on the leading 8 KiB window; priority when several
+  fire is html > toml > csv > markdown; the hint may only SELECT among
+  candidates that fired (markdown hinted .csv stays markdown - pinned).
+- Ogg: OggS + OpusHead found in the first 256 bytes -> opus; else ogg.
+- mp3: ID3 prefix OR guarded frame sync (0xFF + 0xEx mask + version/layer
+  validity + bitrate != 0/15 + samplerate != reserved). UTF-16 BOMs
+  (FF FE / FE FF) are explicitly excluded - they pass the raw sync mask.
+- EBML: earliest of "webm"/"matroska" in the first 256 bytes -> webm/mkv
+  Certain; neither -> hint tie-break at Likely, else typed Unknown.
+- geotiff = the tiff lane (II*/MM*, BigTIFF 0x2B noted); the note states
+  geokey verification is extract-lane business. geopackage = sqlite magic
+  + GPKG application_id at 68..72. parquet = PAR1 head AND foot (len>=8).
+- zip dep: zip 8.6.0, default-features = false, features = ["deflate"]
+  (pure-Rust deflate: flate2/zlib-rs/zopfli - no C, MSVC-clean), optional,
+  tied to the `office` feature; declared directly in harness-media/
+  Cargo.toml (precedent: the 48 tree-sitter grammar deps local to
+  harness-ast). Dev-dependency self-reference
+  `harness-media = { path = ".", features = ["office"] }` makes the bare
+  QA command cover the office lane via feature unification while the
+  library default stays feature-empty. cargo tree confirms zip is ABSENT
+  from the default-feature graph.
+- probe registry (the todo's title): probe::registry() registers all 34
+  descriptors (probe Supported; extract/generate/verify Unsupported with
+  honest reasons naming the adapter todos), per M1's descriptor.rs promise
+  "M2 registers probe support for the full slate".
+
+DEVIATIONS / NOTABLE FINDINGS
+-----------------------------
+1. blend header (recorded per dispatch instruction): the plan's field
+   order "2-char version + pointer-size + endianness + flags" is garbled;
+   implemented the REAL 12-byte layout: BLENDER(7) + ptr-size[7] in {_,-}
+   + endianness[8] in {v,V} + 3-char ASCII version[9..12]. The blend
+   module doc + this evidence record the deviation. There is no flags
+   byte in the real format.
+2. M1 BUG FOUND AND FIXED by this todo's TDD: FormatRegistry::register
+   documented "returns false (and keeps the existing entry)" but the
+   implementation used BTreeMap::insert, which REPLACES the entry while
+   returning the old one - the M1 test only asserted the bool, so the
+   doc/impl split shipped. probe_registry's duplicate-registration test
+   pinned the documented contract (red against the M1 impl), and
+   descriptor.rs now uses the entry API: Vacant inserts, Occupied keeps
+   the original and returns false. Root-cause fix, not a test weakening.
+3. Real-tool tier: N/A for M2 - the probe is pure byte inspection, no
+   external tools, nothing to run outside CI (standing constraint 5's
+   #[ignore] class has no member in this todo).
+4. Perf budgets (probe <=5 ms) are wired at M6/M25 per the plan's
+   performance-gate schedule, not M2 - no M2 acceptance line names them.
+
+ACCEPTANCE CRITERIA VERDICTS (plan lines 99-100)
+------------------------------------------------
+- fixture-header corpus, one tiny fixture per format, each <=64 KB:
+  PASS (36 committed files; largest 633 bytes).
+- magic-lane fixtures all probe Certain: PASS (corpus test, 29 Certain
+  rows incl. glb; svg/kml/gltf included per the adopted decisions).
+- heuristic-lane fixtures (markdown/html/csv/toml/json/geojson) probe
+  Likely with the CORRECT format: PASS (6 Likely rows, exact formats).
+- adversarial corpus (truncated magics, wrong extensions) typed-
+  identified-or-unknown, zero panics: PASS (truncation sweeps over 10
+  fixtures incl. legal downgrades gpkg->sqlite and opus->ogg; svg->.kml
+  still svg; empty/1-byte garbage unknown; 256 LCG garbage inputs typed).
+- QA happy `cargo nextest run -p harness-media` probe suite: PASS.
+- QA failure (renamed .svg->.kml sniffs svg; truncated header typed
+  unknown): PASS.
+- House: clippy -D warnings both feature configs, cargo deny, LOC ceiling,
+  no unwrap/expect/panic in src, MSVC-clean deps: PASS.
+
+COMMIT: feat(media): magic-sniffing probe registry for 34 formats
+(scope: harness-media/ + Cargo.lock + this evidence file; plan checkboxes
+untouched per dispatch discipline)
+

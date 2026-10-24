@@ -93,7 +93,7 @@ async fn user_prompt_submit_hook_augments_prompt_through_loop() {
         .filter_map(|r| match &r.event {
             Event::User { blocks } => blocks.first().and_then(|b| match b {
                 ContentBlock::Text { text } => Some(text.clone()),
-                ContentBlock::Image(_) => None,
+                ContentBlock::Image(_) | ContentBlock::Media(_) => None,
             }),
             _ => None,
         })
@@ -278,7 +278,7 @@ async fn post_tool_use_synthesizer_replaces_output_before_context() {
         .filter_map(|r| match &r.event {
             Event::ToolResult { blocks, .. } => blocks.first().and_then(|b| match b {
                 ContentBlock::Text { text } => Some(text.clone()),
-                ContentBlock::Image(_) => None,
+                ContentBlock::Image(_) | ContentBlock::Media(_) => None,
             }),
             _ => None,
         })

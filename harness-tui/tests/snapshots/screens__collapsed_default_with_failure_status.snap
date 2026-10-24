@@ -1,12 +1,12 @@
 ---
 source: harness-tui/tests/screens.rs
-assertion_line: 127
+assertion_line: 129
 expression: rendered
 ---
 > transcript (2)
 > tools (0)
-> team (1)
-
+> diffs (0)
+> agents (1)
 
 
 

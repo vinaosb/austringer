@@ -5,6 +5,8 @@
 // used by every binary.
 #![allow(dead_code)]
 
+pub mod cassette;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,6 +44,7 @@ impl Inference for ToolLoopInference {
                 tool: "echo".into(),
                 arguments: serde_json::json!({"q": 1}),
             }],
+            usage: None,
         })
     }
 }
@@ -65,6 +68,7 @@ impl Inference for CompleteOnlyInference {
                 tool: TASK_COMPLETED_TOOL.to_owned(),
                 arguments: serde_json::json!({}),
             }],
+            usage: None,
         })
     }
 }
@@ -108,6 +112,7 @@ impl Inference for TwoStepInference {
                     tool: TASK_COMPLETED_TOOL.to_owned(),
                     arguments: serde_json::json!({}),
                 }],
+                usage: None,
             })
         } else {
             Ok(AssistantTurn {
@@ -119,6 +124,7 @@ impl Inference for TwoStepInference {
                     tool: "echo".into(),
                     arguments: serde_json::json!({"q": 1}),
                 }],
+                usage: None,
             })
         }
     }
@@ -130,6 +136,21 @@ impl Inference for TwoStepInference {
 pub async fn spawn_daemon(
     tweak: impl FnOnce(DaemonConfig) -> DaemonConfig,
 ) -> Result<Spawned, String> {
+    spawn_daemon_with_factory(tweak, {
+        let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
+            Arc::new(|| Box::new(TwoStepInference::new()));
+        factory
+    })
+    .await
+}
+
+/// `spawn_daemon` with the session factory injected — the M32 provider
+/// wiring tests compose the production factory (identity-bearing) and
+/// plug it in here; scripted tests pass legacy factories.
+pub async fn spawn_daemon_with_factory(
+    tweak: impl FnOnce(DaemonConfig) -> DaemonConfig,
+    factory: impl harness_daemon::usage::IntoSessionFactory,
+) -> Result<Spawned, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
     let config = DaemonConfig {
         data_dir: dir.path().to_owned(),
@@ -138,8 +159,6 @@ pub async fn spawn_daemon(
         ..DaemonConfig::default()
     };
     let config = tweak(config);
-    let factory: Arc<dyn Fn() -> Box<dyn Inference> + Send + Sync> =
-        Arc::new(|| Box::new(TwoStepInference::new()));
     let state = Arc::new(DaemonState::new(config, factory).map_err(|e| format!("state: {e}"))?);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

@@ -1,6 +1,6 @@
 ---
 source: harness-tui/tests/screens.rs
-assertion_line: 94
+assertion_line: 96
 expression: rendered
 ---
 v transcript (2)
@@ -12,8 +12,10 @@ Plan
 fn x() {}
 ```
 v tools (0)
-v team (1)
-build        w1         alive
+> diffs (0)
+v agents (1)
+status: in_progress
+build            l-child-build running
 
 
 
@@ -21,7 +23,5 @@ build        w1         alive
 
 
 
-
-
-ctx: ≈17/10000 (0%) | cache: 72.5% | cost: frontier-x $0.42 | saved $0.09 routin
+ctx: ≈17/10000 (0%) | cache: 72.5% | cost: frontier-x $0.42
 harness (i to type, q quits)────────────────────────────────────────────────────

@@ -1,0 +1,127 @@
+# Task 14 — Curated cheap-pool read-only agents (explore, librarian)
+Plan: .omo/plans/ecosystem-alignment.md checkbox 14 (Wave D)
+Receipts: OmO explore/librarian on cheap-fast models; "utility-roles-must-be-cheap" — this
+repo's own validated rule (harness-intel/src/routing/table.rs build gate, task-42 evidence).
+
+## What shipped
+- harness-intel/src/routing/mod.rs: `Role::Explore` + `Role::Librarian` — keys "explore"/
+  "librarian", class RoleClass::Utility. NO table.rs change: the existing utility-role
+  cheap-pool validation (table.rs ~91-109, UtilityOffCheap) is thereby LIVE for both roles —
+  wired to the existing mechanism, not duplicated.
+- harness-orchestration/src/role.rs: `RoleDef::curated(name)` + `CURATED_AGENTS` + builtin()
+  registration. explore = [view_window, lsp_query, search_sessions, tool_search] (search tools
+  only); librarian = [view_window, search_sessions, tool_search] (docs/OSS research surface).
+  Both: Tier::Explorer, CommandExecutionPolicy::Off, 1024-byte summary budget, cheap default
+  bracket claude-haiku-5-5 (the routing table's cheap-pool validation owns the wire-side pin).
+  Read-only by construction: no edit_lines / write / edit / execute_command / task in any
+  curated allowlist (test-pinned).
+- harness-daemon/src/task/readonly.rs (NEW): ReadOnlyApproval — approval-stage narrowing that
+  DENIES out-of-allowlist calls BEFORE the mediated chain (structural: no permission ask, no
+  executor), logs a `readonly_refusal` Notification on the child stream, and lets the loop's
+  deny rendering carry the reason to the model. task_completed passes through (ReservedAware
+  Approval's own carve-out).
+- harness-daemon/src/engine.rs: SessionHost::readonly_stages (steer/execution identical to
+  standard_stages; approval wrapped).
+- harness-daemon/src/task/mod.rs: curated dispatch — `task(explore|librarian)` are RESERVED
+  category names that resolve RouteRequest::Role(Role::Explore|Librarian) (cheap-pool
+  validated at table build) instead of RouteRequest::Category; ChildStarted.role carries the
+  curated name; `summary_budget_for(category)` clamps curated results at the agent's own
+  1024-byte budget. Curated names take precedence over user categories of the same name (a
+  category must not smuggle the agent onto a frontier model).
+- harness-daemon/src/task/tool.rs: tool description documents the two curated agents.
+
+## RED (before production changes)
+1. harness-intel routing_curated (new test file) — compile-level RED, the missing taxonomy:
+   error[E0599]: no variant ... named `Explore` found for enum `harness_intel::routing::Role`
+   (x2), `Librarian` (x2) — "could not compile `harness-intel` (test "routing_curated")".
+   Semantic context: at HEAD, roles[{"role":"explore"}] rejects as UnknownRole (unknown_role_
+   and_unknown_model_are_typed, passing at HEAD) — i.e. the cheap-pool rejection for explore
+   did not exist; the new tests demand UtilityOffCheap specifically.
+2. harness-orchestration curated_roles_tests (new test file) — compile-level RED:
+   error[E0599]: no associated function or constant named `curated` found for struct
+   `RoleDef` (x4) — "could not compile `harness-orchestration`".
+3. harness-daemon curated_agents_tests (new test file) — blocked from compiling by a
+   CONCURRENT SIBLING's in-flight todo-15 edits (SessionEvent::TeamBudget variants without
+   compat.rs arms at first attempt, then E0658 in their new src/team.rs); the daemon RED for
+   this task's surface is the same shape as (1)/(2) (RoleDef::curated / Role::Explore do not
+   exist) and the assertions below are the RED contract: write-refusal (readonly_refusal
+   notification + refusal text + executor never fires), reserved-name precedence, typed
+   UnconfiguredRole refusal, 1024-byte curated clamp.
+
+## GREEN evidence (commands + summary)
+All cargo invocations: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo ..."
+(see MUST DO; CARGO_BUILD_JOBS=3 throughout).
+
+### Gate 1: cargo nextest run -p harness-orchestration -p harness-intel
+145 tests run: 145 passed, 0 skipped. New tests all PASS:
+- harness-intel::routing_curated curated_agent_keys_parse_as_utility_roles
+- harness-intel::routing_curated table_rejects_explore_pinned_off_the_cheap_pool
+- harness-intel::routing_curated table_rejects_librarian_pinned_off_the_cheap_pool
+- harness-intel::routing_curated curated_roles_resolve_on_the_cheap_pool
+- harness-orchestration::curated_roles_tests curated_agents_are_registered_with_read_only_allowlists
+- harness-orchestration::curated_roles_tests curated_names_are_reserved_against_spec_role_declarations
+- harness-orchestration::curated_roles_tests builtin_registry_lists_the_curated_pair_alongside_the_tiers
+No regressions (routing_table/routing_categories/routing_dispatch + orchestration suites green).
+
+### Gate 2: cargo nextest run -p harness-daemon
+Full crate: 291 tests run: 291 passed, 1 skipped (pre-existing platform skip). New suite all
+PASS (harness-daemon::curated_agents_tests, 6/6):
+- curated_explore_routes_via_cheap_pool_role_and_returns_grep_shaped_summary
+- curated_explore_write_tool_call_is_refused_and_logged
+- curated_names_are_reserved_over_user_categories
+- curated_agent_without_role_route_is_typed_refusal
+- curated_summary_clamps_at_the_curated_agent_budget
+- curated_librarian_routes_on_its_own_cheap_pool_role
+No regressions: task_delegation_tests (t13), team_events/team_surfacing (t8/t15 sibling),
+dispatcher_live (t9) all green. NOTE: one run under concurrent sibling build contention
+showed ipc_v1_connection_byte_audit FAIL at 18s; the full --no-fail-fast rerun (and the final
+combined gate below) passes it — resource-contention flake, not related to this task's
+surface (untouched media/ipc files).
+Combined final gate `cargo nextest run -p harness-orchestration -p harness-intel
+-p harness-daemon`: 436 tests run: 436 passed, 1 skipped (pre-existing).
+
+### Gate 3: cargo clippy --workspace --all-targets -- -D warnings
+Clean ("Finished" with zero diagnostics; full-workspace pass plus a forced re-check of
+harness-daemon after the final ChildSpawn fold).
+
+## QA scenarios (plan-mandated)
+- happy (explore returns grep-shaped findings summary):
+  curated_explore_routes_via_cheap_pool_role_and_returns_grep_shaped_summary — task(explore)
+  child dispatches under the ROLE route on the cheap-pool model (usage row
+  (anthropic, claude-sonnet-4-6, Some("low"))), ChildStarted role=explore, summary returned.
+- failure (write tool call inside explore refused + logged):
+  curated_explore_write_tool_call_is_refused_and_logged — edit_lines attempt inside explore:
+  executor NEVER fires (recording probe empty), tool result carries "read-only agent
+  `explore`" + "edit_lines", child stream carries Notification kind=readonly_refusal, turn
+  still completes.
+- extra contracts: reserved names over user categories (curated_names_are_reserved_over_user_
+  categories — a category "explore" pinned to opus is IGNORED; the cheap-pool role route
+  serves); typed refusal when the curated role has no route (curated_agent_without_role_
+  route_is_typed_refusal — UnconfiguredRole, nothing spawns); curated 1024-byte clamp
+  (curated_summary_clamps_at_the_curated_agent_budget); librarian rides the same path
+  (curated_librarian_routes_on_its_own_cheap_pool_role).
+
+## Notable implementation facts
+- table.rs untouched: RoleClass::Utility on the two new Role variants makes the EXISTING
+  UtilityOffCheap build gate live for them (wired, not duplicated) — the "registry rejects
+  an explore declaration pinned to a non-cheap model" acceptance is RoutingTable::build /
+  from_json rejecting roles[{"role":"explore","model":<frontier>}].
+- Enforcement point is the APPROVAL stage (ReadOnlyApproval wrapping ReservedAwareApproval
+  over the mediated chain), not the executor: a curated agent's write attempt is denied
+  structurally BEFORE any permission ask can fire — refusal reason rides the loop's
+  standard deny rendering to the model, and a kind=readonly_refusal Notification logs it on
+  the child stream. task_completed passes through (ReservedAwareApproval's carve-out is
+  preserved by delegation).
+- No new SessionEvent variants (the guard logs via the existing Notification kind
+  vocabulary) — the task instruction's "SessionEvent variants should NOT change here" held.
+- Curated names are RESERVED task-tool vocabulary: curated dispatch takes precedence over a
+  user category of the same name (test-pinned); an unrouted curated name refuses typed
+  (UnconfiguredRole) rather than falling through to the category table.
+- summary_budget_for(category): curated results clamp at the agent's own 1024-byte budget
+  (RoleDef.curated), user categories keep the worker 2048 default.
+- Sibling coordination: todo-15's edits to task/mod.rs (TeamBudget events, publish_budget,
+  await_child_turn signature) landed mid-task; this task's dispatch changes were rebased on
+  top of them; the curated dispatch rides inside ChildSpawn (spawn_and_run stays 3-param).
+- Over-ceiling files touched surgically (flagged since todo-9/13, orchestrator-level split):
+  harness-daemon/src/task/mod.rs 293 pure LOC (+~55), src/engine.rs 309 (+~26). New files
+  all under ceiling (readonly.rs 60).

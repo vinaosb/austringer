@@ -16,10 +16,57 @@ dist = true
 
 [dependencies]
 harness-core = { path = "../harness-core", version = "0.1.0" }
+# Todo 3 (ecosystem alignment): in-process CORE_TOOLS executors.
+# execute_command rides harness-exec's PTY pipeline (screen-delta model,
+# kill trees, bounded windowed output).
+harness-exec = { path = "../harness-exec", version = "0.1.0" }
+# Todo 4 (ecosystem alignment): the execute_command safety gate —
+# per-command sandbox policy vocabulary, the userland egress guard, and
+# the requested-vs-enforced isolation report that rides every result.
+harness-safety = { path = "../harness-safety", version = "0.1.0" }
+# T42 routing table + M7 capability catalog for the submit-time
+# projection mediation (plan M10: the configured capable utility role).
+harness-intel = { path = "../harness-intel", version = "0.1.0" }
+# lsp_query rides harness-lsp's multi-server router (lazy spawn per
+# language, bridge priority, RSS guard).
+harness-lsp = { path = "../harness-lsp", version = "0.1.0" }
+# M2 probe registry for the media routes (upload sniff + GET mime). The
+# daemon enables the committed media-core feature set (everything but
+# the non-default avif/geovector opt-ins; today only `office` pulls a
+# dependency - the pure-Rust zip crate).
+harness-media = { path = "../harness-media", version = "0.1.0", features = [
+    "image", "svg", "pdf", "audio", "office", "gltf", "georaster", "data", "text",
+] }
+harness-providers = { path = "../harness-providers", version = "0.1.0" }
+# Todo 8 (ecosystem alignment): the spec-driven launcher — fork-join
+# children as real child sessions, write-set collision alerts with
+# pre-launch quarantine, and the TeamEvent vocabulary mapped onto the
+# daemon's Child* session events.
+harness-orchestration = { path = "../harness-orchestration", version = "0.1.0" }
 harness-sessions = { path = "../harness-sessions", version = "0.1.0" }
+# Todo 6 (ecosystem alignment): skill packs load at startup through the
+# harness-skills SkillLoader; every activation path (explicit /skill and
+# trigger-driven routing) is governed by the pack-tier trust gate and the
+# consent gate. Pack MCP entries land as DISABLED declarations.
+harness-skills = { path = "../harness-skills", version = "0.1.0" }
+# Todo 5 (ecosystem alignment): /rewind restores workspace state through the
+# snapshot store (transactional file restore + turn restore points).
+harness-snapshots = { path = "../harness-snapshots", version = "0.1.0" }
+# Todo 12 (ecosystem alignment): the ACP stdio agent mode — AcpAgent,
+# AcpEngine, and the wire/channel surfaces the daemon bridges onto
+# daemon sessions (`harness-daemon --acp`).
+harness-mcp = { path = "../harness-mcp", version = "0.1.0" }
+# view_window/edit_lines ride harness-tools' bounded reader and anchored
+# edits (syntax gate, fringe-only results).
+harness-tools = { path = "../harness-tools", version = "0.1.0" }
 harness-web = { path = "../harness-web", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
+# Todo 24 (ecosystem alignment): OSC 7501 Program Status reports carry
+# their human-readable msg as standard base64 (spec: superlogical.com/
+# rex/docs/build/program-status). Already in the tree via harness-web;
+# zero new crates.
+base64ct.workspace = true
 thiserror.workspace = true
 blake3.workspace = true
 async-trait.workspace = true
@@ -30,9 +77,10 @@ getrandom.workspace = true
 axum.workspace = true
 interprocess.workspace = true
 # Daemon-added features over the workspace tokio baseline (sync/time/macros):
-# a multi-thread runtime, TCP listeners for the HTTP surface, and async
-# read/write halves for IPC line framing.
-tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util"] }
+# a multi-thread runtime, TCP listeners for the HTTP surface, async
+# read/write halves for IPC line framing, and stdin for the ACP agent
+# mode.
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util", "io-std"] }
 # OTel exporter transport (optional path; double-gated at runtime).
 reqwest.workspace = true
 
@@ -41,6 +89,9 @@ reqwest.workspace = true
 # inheritable before spawning the successor (workspace features already
 # cover Win32_Foundation).
 windows-sys.workspace = true
+# Todo 17 (run_tests): Job Object (KILL_ON_JOB_CLOSE) kill-tree domain
+# for the headless test-runner spawn lane (the media-lane thin copy).
+win32job.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 # Reload handoff: clearing CLOEXEC on the listener fd before exec(2).
@@ -48,7 +99,17 @@ libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Todo 24 QA: spawn the shipped daemon binary on a real PTY (ConPTY on
+# Windows) and capture the raw master-side OSC bytes. Already in the
+# tree via harness-exec; zero new crates.
+portable-pty.workspace = true
+# Todo 6: proving pack-installed MCP declarations parse as
+# DeferredOnFirstUse under the manager's autostart decision.
+harness-mcp = { path = "../harness-mcp", version = "0.1.0" }
+# M32: cassette SSE scripts + scripted in-memory provider transports.
+harness-test-support = { path = "../harness-test-support", version = "0.1.0" }
 # WS client for integration tests against the real axum WebSocket transport
-# (axum is server-side only). Pure Rust, dev-only.
-tokio-tungstenite = "0.28"
+# (axum is server-side only). Pure Rust, dev-only. Workspace-pinned (todo
+# 28): one major shared with axum's ws feature, the TUI, and the CLI.
+tokio-tungstenite.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util", "process"] }

@@ -1,0 +1,6 @@
+# Expected failures for the hermetic conformance scenario pack
+# (todo 26). The pack ships green: no known failures are pinned. A
+# case that regresses surfaces as an UNPINNED REGRESSION and fails
+# the sweep (exit 2); pin a failure here only with a reason.
+version: 1
+failures: []

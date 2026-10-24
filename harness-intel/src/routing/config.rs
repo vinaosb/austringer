@@ -34,6 +34,23 @@ pub struct TierRouteSpec {
     pub score_floor: f32,
 }
 
+/// One delegation-category route (todo 13): the `task(category)` tool
+/// dispatches child sessions on this shape — model + explicit effort
+/// plus the benchmark score floor, like tiers (the floor is reserved
+/// for category-level live routing).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CategoryRouteSpec {
+    /// Category key (`"quick"`, `"deep"`, ... — user-authored).
+    pub category: String,
+    /// The category's default model.
+    pub model: String,
+    /// Explicit effort; `None` = the model's catalog default.
+    pub effort: Option<EffortValue>,
+    /// Minimum benchmark score a model must prove for benchmark-driven
+    /// routing to select it for this category.
+    pub score_floor: f32,
+}
+
 /// One rank-verbatim failover chain (forge, research SS26): the fallback
 /// order is an explicit verbatim list, never provider round-robin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -87,6 +104,9 @@ pub struct RoutingSpec {
     /// Complexity-tier routes.
     #[serde(default)]
     pub tiers: Vec<TierRouteSpec>,
+    /// Delegation-category routes (the `task(category)` vocabulary).
+    #[serde(default)]
+    pub categories: Vec<CategoryRouteSpec>,
     /// Rank-verbatim fallback chains.
     #[serde(default)]
     pub fallbacks: Vec<FallbackChainSpec>,
@@ -140,6 +160,12 @@ pub enum RoutingConfigError {
     DuplicateTier {
         /// The duplicated key.
         tier: String,
+    },
+    /// The same category routed twice.
+    #[error("category {category:?} routed more than once — conflicting routes fail closed")]
+    DuplicateCategory {
+        /// The duplicated key.
+        category: String,
     },
     /// Two chains declared for one model.
     #[error("duplicate fallback chain for {model:?}")]

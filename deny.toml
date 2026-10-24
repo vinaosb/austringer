@@ -10,6 +10,25 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Deliberate, reviewed additions (todo M13, evidence task-M13-media-formats):
+# krilla 0.8.2's text shaping rides rustybuzz (and lopdf's font lane rides
+# ttf-parser); both crates are UNMAINTAINED-not-vulnerable (announced
+# upstream), ship in no untrusted-input parse lane (shaping runs only on
+# validated generation specs; lopdf's parser is the audit surface and its
+# RUSTSEC-2026-0187 stack-overflow vuln is FIXED by the 0.42 pin), and have
+# no in-tree upgrade path short of dropping the digest-verified writer.
+# Revisit when krilla migrates to harfrust.
+ignore = [
+    "RUSTSEC-2026-0206", # rustybuzz unmaintained
+    "RUSTSEC-2026-0192", # ttf-parser unmaintained
+    # Deliberate, reviewed addition (todo M28, evidence
+    # task-M28-media-formats): rav1e (the pure-Rust AV1 encoder behind
+    # the non-default `avif` feature) macro-generates its asm channel
+    # tables through `paste`, which is UNMAINTAINED-not-vulnerable
+    # (RUSTSEC-2024-0436); it is a build-time proc-macro with no runtime
+    # surface, and no upgrade path exists until rav1e migrates.
+    "RUSTSEC-2024-0436", # paste unmaintained (via rav1e, avif feature)
+]
 
 # Licenses: dual MIT OR Apache-2.0 project. The allow-list below covers the
 # permissive licenses commonly carried by Rust dev-dependencies; anything
@@ -31,10 +50,21 @@ allow = [
     "0BSD",
     "CC0-1.0",
     # Deliberate, reviewed addition (todo 43): dhat-rs (heap profiling for
-    # the perf gate) is MPL-2.0 — file-level copyleft, used as an OPTIONAL
+    # the perf gate) is MPL-2.0 �?" file-level copyleft, used as an OPTIONAL
     # dev/bin-only dependency of harness-bench behind its `dhat` feature;
     # no dhat code ships in any default build or distributed binary.
     "MPL-2.0",
+    # Deliberate, reviewed addition (todo M28, evidence
+    # task-M28-media-formats): jpeg-encoder (the plan-mandated pure-Rust
+    # JPEG writer) carries "(MIT OR Apache-2.0) AND IJG" - the
+    # Independent JPEG Group License is FSF Free/Libre and permissive
+    # (the JPEG family's digest-3.2 GREEN verdict predates it).
+    "IJG",
+    # Deliberate, reviewed addition (todo M28): rav1e (non-default `avif`
+    # feature) pulls libfuzzer-sys carrying "(MIT OR Apache-2.0) AND
+    # NCSA" - the NCSA/Illinois license is BSD-style permissive with an
+    # attribution clause; build-lane only via rav1e's cargo-fuzz tooling.
+    "NCSA",
 ]
 
 [bans]

@@ -1,0 +1,144 @@
+Task 31 evidence - README + docs honesty pass (production-wired vs library-tested)
+Date: 2026-10-22 | HEAD at recording: c836542 (current; the pin this task fixes TO)
+Executor: Sisyphus-junior (unspecified-high)
+
+========================================================================
+Wiring verification BEFORE asserting (grep the daemon/cli/tui, not the plan)
+========================================================================
+Method: every "production-wired" claim in the README status table was
+verified against committed source at HEAD c836542 before writing:
+
+$ Select-String -Path harness-daemon\src\*.rs,harness-daemon\src\bin\*.rs -Pattern 'HARNESS_[A-Z_]+'
+  -> HARNESS_PROVIDER, HARNESS_MODEL, HARNESS_PROVIDER_KEY_ENV,
+     HARNESS_PROVIDER_BASE_URL, HARNESS_PROVIDER_TIMEOUT_SECS (D10 - exists,
+     read in bin/harness-daemon.rs provider_from_env, "must be whole seconds"),
+     HARNESS_SESSION_COST_CAP_USD (bin:59-63), HARNESS_TEST_COMMAND (bin:68-71),
+     HARNESS_TELEMETRY (otel.rs:11, opt-in: config arm AND =1 AND endpoint),
+     HARNESS_TEST_HANDOFF_RAW (reload.rs test seam - deliberately NOT added to
+     the user-facing README env table)
+
+$ harness-daemon/Cargo.toml deps -> harness-media (features: image, svg, pdf,
+  audio, office, gltf, georaster, data, text - 9 families), harness-tools,
+  harness-exec, harness-safety, harness-lsp, harness-orchestration,
+  harness-skills, harness-snapshots, harness-mcp, harness-sessions,
+  harness-core, harness-intel, harness-providers, harness-web: all wired.
+  harness-wasm: ABSENT from daemon deps -> library-tested only.
+$ Recursive Cargo.toml dependents scan:
+  harness-repomap -> only harness-bench (baselines)      => library-tested
+  harness-search  -> zero dependents                      => library-tested
+  harness-wasm    -> zero dependents                      => library-tested
+  harness-ast     -> harness-exec, harness-repomap, harness-tools (wired
+                     transitively via tools' AST-validated edits)
+  harness-vfs     -> harness-exec (wired transitively)
+$ Select-String harness-daemon 'best_of|plan_branch|BestOf' -> 0 matches:
+  orchestration best-of-N / plan-branch = library-tested; the launch path +
+  fork-join children ARE wired (commit 6890f41).
+$ harness-providers/src/device_flow.rs exists (RFC 8628 + PKCE); daemon has
+  zero oauth/device references -> device-flow = library-tested, honestly
+  marked in docs/partials/multi-model.adoc (was ambiguous present-tense).
+$ bin/harness-daemon.rs routing_intake (159-197) + build_state (202-266):
+  routing.json read from {data_dir}/routing.json (line 220); FULL spec
+  consumed (roles, tiers, chains, benchmarks, cheap pool, wait-out,
+  retries, sidekick); absent = silence, unusable = loud non-fatal;
+  task(category) services bind when categories present (252-264).
+$ automations.rs: declarative defs persisted at automations.json under the
+  data dir (157,171); validated on registration + reload; pack-tier gated
+  fail-closed; NetworkPolicy offline-wins intersection.
+$ config.rs DaemonConfig: session_cost_cap_micros default
+  DEFAULT_SESSION_COST_CAP_MICROS = 20_000_000 ($20, cost_ledger.rs:54);
+  test_command user-global only.
+$ v0.1.0: annotated tag, tagged commit fcc7b7f, dated 2026-09-21,
+  subject "harness v0.1.0".
+
+========================================================================
+The distinction table (README Status, two columns)
+========================================================================
+Production-wired (verified above + tasks 1-28/33 commits in git log):
+  six CORE_TOOLS in-process (974d77a, 5f2ffef); provider composition from
+  env on reqwest transport; protocol v2 usage/fallback/verdict frames w/
+  mediated asks (be29c49); dispatcher live + ask-first + same-model retry
+  (d1e6970); 2026-10 catalog (4f0d047); event_fts search surface (3dac954);
+  ACP stdio (4b234a7); task(category) + curated explore/librarian + team
+  surfacing w/ Warp status precedence (c588434, ccbb1b1); plan mode +
+  run_tests (8d91e8b); gate evidence binding (7dec21a); snapshot rewind
+  (27fd901); skills runtime + /packs (806b592); cost ledger $20 cap
+  (2947ed4, 717df71); history/automations + SSE (219cb19); MCP CLI
+  (f8fcd53); unified grammar (e8dfb32); OSC 777+7501 (03f9665); CI wasm/
+  vscode/web-e2e/doctests/--locked (30d96e9); evals run_sweep + schedule
+  (aad39cb); deep-qa + bench-smoke schedules (ff9076d); QA fixes (de4841e);
+  media surface (9 adapter families); TUI hunk/HUD/scroll (1d85714); web
+  history/timeline/workers/focus (3341940); vscode transcript (c6156a3);
+  CLI sessions verbs + NDJSON completeness (1bebdaa).
+Library-tested (named explicitly, nothing claimed wired without grep):
+  harness-repomap (bench-only consumer); harness-search (zero dependents);
+  harness-wasm (feature-gated, off by default, zero dependents); OAuth
+  device-flow (crate-tested, not composed into env selection); best-of-N +
+  plan-branch (launch path IS wired); worker protocol (deliberate reserve).
+
+========================================================================
+Acceptance gates (commands + captured output)
+========================================================================
+$ git rev-parse --short HEAD
+  c836542
+$ Select-String README.md -Pattern 'HEAD `c836542`'
+  README.md:222  (Status intro)
+$ Select-String -Path README.md,CONTRIBUTING.md,SECURITY.md,
+  CODE_OF_CONDUCT.md,docs\*.adoc,docs\partials\*.adoc,docs\release\*.adoc
+  -Pattern '24-crate|Twenty-four'
+  0 matches
+$ Select-String README.md -Pattern 'harness-media|harness-tools'
+  README.md:132  (diagram engine column: "harness-tools")
+  README.md:138  (diagram bottom row: "media: harness-media (daemon-served)")
+  README.md:231  (Status library-tested column names both where relevant)
+$ workspace member count: 25 (Cargo.toml "harness-*" members)
+$ research section count: 40 unique '## N.' headers (README updated from
+  "33-section study" -> "40-section study"; §34-35 + renumber §36-40)
+$ git show HEAD:CODE_OF_CONDUCT.md | Select-String 'placeholder'
+  "**coc@example.com** (placeholder - replace with a monitored mailbox
+  before any public release; until then, contact the repository maintainers
+  directly via the private channel in SECURITY.md for anything urgent)"
+  -> D7 already satisfied at HEAD; verified, NOT edited (do-not-invent-email
+  rule honored; the mailbox stays an explicit placeholder exactly like
+  SECURITY.md:15).
+$ powershell -File .github\scripts\linkcheck.ps1
+  linkcheck: OK (4 Markdown + 13 AsciiDoc files, zero broken relative
+  links / includes / xrefs)
+
+========================================================================
+Files changed (no commit - orchestrator commits)
+========================================================================
+EDIT README.md            (v0.1.0 ack; env table; 25-crate + diagram +
+                          media/tools; 40-section; Status two-column
+                          distinction + HEAD c836542)
+EDIT docs/architecture.adoc   (Twenty-five + harness-tools/harness-media rows)
+EDIT docs/index.adoc      (25-crate)
+EDIT docs/release/leaderboard.adoc (baseline relabel: measured at c8926a4
+                          2026-09-14, gate re-validated green 2026-10-22
+                          task-28 - per task-28 evidence, NO re-record was
+                          performed, so the page keeps the c8926a4 numbers
+                          and no longer labels them "HEAD")
+EDIT CONTRIBUTING.md      (tag-naming: v0.wave-N -> semver v0.1.0 2026-09-21)
+EDIT docs/partials/multi-model.adoc  (routing.json schema example at
+                          [[mm-routing-json]] incl. categories/tiers/
+                          cheap_pool + fallback/mediation policy keys;
+                          device-flow honesty clause; best-of-N honesty
+                          clause)
+EDIT docs/partials/getting-started.adoc (HARNESS_TEST_COMMAND note;
+                          [[gs-automations]]; [[gs-whats-new]] first-run
+                          section covering categories/plan mode//rewind//
+                          skill/unified grammar/automations/cost caps +
+                          /highlights WATCH non-adoption note (research
+                          §35.6); [[gs-status]] rewritten - stale
+                          "no-provider stub / remaining wiring" confession
+                          replaced with the composed-from-env truth +
+                          library-only list)
+NOT MODIFIED: CODE_OF_CONDUCT.md (D7 verified already present at HEAD),
+  .omo/plans/*, Cargo.toml (count fix is docs-side; workspace was already
+  25 members).
+
+QA happy: fresh-clone reader can tell wired vs library-only from the README
+  status table alone (two columns, each library-only row names its crate and
+  what IS/NIS wired).
+QA failure-mode check performed: grep for any "works at HEAD" claim matching
+  a library-only feature -> none (repomap/search/wasm/device-flow/best-of-N
+  appear ONLY in the library-tested column and in partials honesty clauses).

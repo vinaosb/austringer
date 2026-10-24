@@ -1,20 +1,30 @@
 /**
  * The extension's daemon client: one SSE event stream plus stateless
- * command POSTs over the daemon protocol v1, with cursor-exact resume,
+ * command POSTs over the daemon protocol v2, with cursor-exact resume,
  * capped exponential backoff, snapshot resync acceptance, and typed
  * failures for every unhealthy path (daemon absent, auth refused,
  * malformed frames, unknown asks).
+ *
+ * allow: SIZE_OK — 248 pure LOC pre-todo-21; the +31 is the v2
+ * protocol surface itself (four event emissions, four answer/command
+ * methods) inseparable from the transport class.
  */
 
 import { decodeServerMessage, encodeClient } from "./codec.ts";
 import type { HttpIo, PostOutcome, SseOpen, SseStream } from "./http.ts";
 import { createSseParser } from "./sse.ts";
+import { PROTOCOL_VERSION } from "./protocol.ts";
 import type {
     Answer,
     AskPayload,
     ClientMsg,
     ErrorCode,
+    FallbackAskPayload,
     Frame,
+    ModelIdentity,
+    PlanAskPayload,
+    PlanDecision,
+    PlanOutcome,
     Resolution,
 } from "./protocol.ts";
 
@@ -27,6 +37,10 @@ export type ClientEvent =
     | { kind: "snapshot"; frames: Frame[] }
     | { kind: "ask"; ask: AskPayload }
     | { kind: "resolved"; askId: number; resolution: Resolution }
+    | { kind: "fallback-ask"; ask: FallbackAskPayload }
+    | { kind: "fallback-resolved"; askId: number; chosen: ModelIdentity }
+    | { kind: "plan-ask"; ask: PlanAskPayload }
+    | { kind: "plan-resolved"; askId: number; planId: number; outcome: PlanOutcome }
     | { kind: "malformed"; detail: string }
     | { kind: "protocol-error"; code: ErrorCode; message: string }
     | { kind: "bye"; reason: string };
@@ -108,6 +122,22 @@ export class HarnessClient {
         return this.postCommand({ type: "permission_cancel", ask_id: askId });
     }
 
+    answerFallback(ask: number, chosen: ModelIdentity): Promise<CommandResult> {
+        return this.postCommand({ type: "fallback_answer", ask, chosen });
+    }
+
+    planMode(on: boolean): Promise<CommandResult> {
+        return this.postCommand({ type: "plan_mode", on });
+    }
+
+    rewind(steps: number): Promise<CommandResult> {
+        return this.postCommand({ type: "rewind", steps });
+    }
+
+    answerPlan(ask: number, decision: PlanDecision): Promise<CommandResult> {
+        return this.postCommand({ type: "plan_answer", ask, decision });
+    }
+
     private emit(event: ClientEvent): void {
         this.options.onEvent(event);
     }
@@ -119,7 +149,7 @@ export class HarnessClient {
             this.setStatus("connecting");
             const token = encodeURIComponent(this.options.token);
             const after = this.cursor > 0 ? `after=${this.cursor}&` : "";
-            const url = `${this.options.baseUrl}/s/${this.options.sessionId}/events?${after}token=${token}`;
+            const url = `${this.options.baseUrl}/s/${this.options.sessionId}/events?${after}version=${PROTOCOL_VERSION}&token=${token}`;
             const ended = new Promise<void>((resolve) => {
                 this.resolveEnd = resolve;
             });
@@ -207,6 +237,18 @@ export class HarnessClient {
                 return;
             case "permission_resolved":
                 this.emit({ kind: "resolved", askId: msg.ask_id, resolution: msg.resolution });
+                return;
+            case "fallback_ask":
+                this.emit({ kind: "fallback-ask", ask: msg.ask });
+                return;
+            case "fallback_resolved":
+                this.emit({ kind: "fallback-resolved", askId: msg.ask_id, chosen: msg.chosen });
+                return;
+            case "plan_ask":
+                this.emit({ kind: "plan-ask", ask: msg.ask });
+                return;
+            case "plan_resolved":
+                this.emit({ kind: "plan-resolved", askId: msg.ask_id, planId: msg.plan_id, outcome: msg.outcome });
                 return;
             case "state_resync_required":
                 this.emit({ kind: "resync", lastEventId: msg.last_event_id });

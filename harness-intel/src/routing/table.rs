@@ -39,6 +39,17 @@ pub(crate) struct TierRoute {
     pub(crate) score_floor: f32,
 }
 
+/// A resolved delegation-category route.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CategoryRoute {
+    /// The category's model id.
+    pub(crate) model: String,
+    /// The category's explicit effort rung.
+    pub(crate) effort: EffortValue,
+    /// Benchmark floor (reserved for category-level live routing).
+    pub(crate) score_floor: f32,
+}
+
 /// The validated routing table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoutingTable {
@@ -48,6 +59,8 @@ pub struct RoutingTable {
     pub(crate) roles: BTreeMap<Role, RoleRoute>,
     /// Tier -> resolved route.
     pub(crate) tiers: BTreeMap<Tier, TierRoute>,
+    /// Category -> resolved route.
+    pub(crate) categories: BTreeMap<String, CategoryRoute>,
     /// Model -> verbatim chain.
     pub(crate) chains: BTreeMap<String, Vec<String>>,
     /// The benchmark table (verbatim order kept; selection is
@@ -128,6 +141,25 @@ impl RoutingTable {
                 },
             );
         }
+        let mut categories = BTreeMap::new();
+        for route in &spec.categories {
+            if categories.contains_key(&route.category) {
+                return Err(RoutingConfigError::DuplicateCategory {
+                    category: route.category.clone(),
+                });
+            }
+            let entry = catalog.entry(&route.model)?;
+            let effort = route.effort.unwrap_or(entry.default_effort);
+            catalog.validate(&route.model, &knobs_for(effort))?;
+            categories.insert(
+                route.category.clone(),
+                CategoryRoute {
+                    model: route.model.clone(),
+                    effort,
+                    score_floor: route.score_floor,
+                },
+            );
+        }
         let mut chains = BTreeMap::new();
         for chain in &spec.fallbacks {
             catalog.entry(&chain.model)?;
@@ -181,6 +213,7 @@ impl RoutingTable {
             provider: spec.provider.clone(),
             roles,
             tiers,
+            categories,
             chains,
             benchmarks: spec.benchmarks.clone(),
             wait_out: Duration::from_secs(spec.rate_limit_wait_out_secs),

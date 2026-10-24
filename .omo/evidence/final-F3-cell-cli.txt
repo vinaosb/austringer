@@ -1,0 +1,470 @@
+﻿F3 manual-QA CELL: CLI frontend (harness.exe) — evidence file
+Date: 2026-10-22. Binaries: C:\ct\debug\harness.exe, C:\ct\debug\harness-daemon.exe,
+C:\ct\debug\examples\e2e_daemon.exe (built this run), C:\ct\release\f3-scripted-server.exe
+(zero-dependency scripted provider written for this cell under %TEMP%\opencode\f3cli).
+
+FIXTURE TOPOLOGY
+- Daemon A (e2e_daemon --serve-for-e2e): 127.0.0.1:18937, token "e2e-token". Full daemon with
+  embedded two-step scripted provider (identity anthropic/claude-sonnet-4-5; echo tool via mock
+  worker returns a diff; then task_completed). Used for: scripted routed turn, structured Diff
+  hunk event, store search probe.
+- Scripted provider server: 127.0.0.1:18938. Speaks both wire dialects:
+  POST /chat/completions (OpenAI-style SSE, compat family) and POST /v1/messages (Anthropic
+  Messages SSE). Behavior keyed on markers in the request body (FALLBACKFAIL, TASKPARENT,
+  CHILD_A/CHILD_B, TESTTURN, EDITTURN/EDITAGAIN/EDITAPPLY, COSTTURN, default text). The
+  request's "model" field is echoed in every SSE chunk (adapter identity contract).
+- Daemon B1 (real harness-daemon): 127.0.0.1:18936, data dir f3cli\d1, env
+  HARNESS_PROVIDER=compat, HARNESS_MODEL=f3-compat-primary,
+  HARNESS_PROVIDER_BASE_URL=http://127.0.0.1:18938. routing.json in d1:
+  provider "anthropic"; roles default=claude-opus-4-7, explore=claude-haiku-5-5,
+  librarian=claude-haiku-5-5; cheap_pool [claude-haiku-5-5];
+  fallbacks claude-opus-4-7 -> [claude-sonnet-4-6]; retry_attempts 1; wait_out 1s.
+  Used for: routed turn, fallback ask, task() delegation, run_tests, plan mode, edit_lines,
+  cross-session search probe.
+- Daemon B2 (real harness-daemon): 127.0.0.1:18940, data dir f3cli\d2, env
+  HARNESS_PROVIDER=anthropic, HARNESS_MODEL=claude-sonnet-4-5,
+  HARNESS_PROVIDER_KEY_ENV=F3_FAKE_KEY (F3_FAKE_KEY=local-qa-key),
+  HARNESS_PROVIDER_BASE_URL=http://127.0.0.1:18938 (AnthropicAdapter::custom),
+  HARNESS_SESSION_COST_CAP_USD=0.01. Scripted /v1/messages turns report 2,000 input +
+  200 output tokens = 9,000 micro-USD per turn at sonnet-4-5 list prices. Used for cost caps.
+
+ADAPTATIONS AND ENVIRONMENT NOTES (recorded per task instructions)
+1. Initial build failed LNK1104 (e2e_daemon.exe locked by stale PID 49208 from a prior run);
+   killed it, rebuild succeeded.
+2. e2e_daemon is a full daemon with embedded scripted provider and was used as instructed,
+   but it cannot drive fallback asks, task() delegation, run_tests, or cost caps (fixed
+   two-step script, default $20 cap). Per the task's step-2 clause, the remaining mechanisms
+   were driven against the real harness-daemon with HARNESS_PROVIDER=compat +
+   HARNESS_PROVIDER_BASE_URL at the scripted server (harness-web\examples\e2e_daemon pattern
+   extended, axum-free std-only server).
+3. Cost caps need PRICED turns; the compat family reports provider "compat"/"openai-compat",
+   which is not a key in the builtin cost tables (Unpriced books zero money and can never trip
+   a cap). Daemon B2 therefore uses the anthropic family with a custom base URL at the same
+   scripted server (Anthropic dialect) with HARNESS_MODEL=claude-sonnet-4-5, which is priced.
+4. The bash-tool kills its process tree on timeout, and harness-daemon instances were
+   additionally killed externally between tool calls (a concurrent sibling F3 attempt was
+   active on this machine and also overwrote this evidence path at 20:06; this file is the
+   final atomic rewrite). Daemons were therefore relaunched detached (WMI Win32_Process.Create)
+   and re-poked per call; tokens were re-read from {data-dir}\daemon-token each time.
+5. routing.json findings: delegation to the curated explore agent dispatches under the ROLE
+   "explore" (not a category route) — without it, task() refuses with "role Explore has no
+   route configured". categories entries additionally require "score_floor".
+6. Scripted-provider wire findings: the chat codec ignores tool-call arguments that ride the
+   id+name SSE fragment — arguments must arrive as a second delta fragment. Response chunks
+   must echo the request model verbatim or the turn fails IdentityMismatch.
+7. WS approver client findings (client-side, fixed in the fixture script): cancelling
+   ReceiveAsync poisons a .NET ClientWebSocket; attaching with after=<future event id> yields
+   no live frames (used full-snapshot attach instead).
+
+====================================================================================
+STEP 1 — BUILD
+====================================================================================
+PS> cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo build -p harness-daemon -p harness-cli -p harness-web --example e2e_daemon"
+[first attempt]
+error: linking with `link.exe` failed: exit code: 1104
+  = note: LINK : fatal error LNK1104: cannot open file 'C:\ct\debug\examples\e2e_daemon.exe'
+[stale process PID 49208 was holding the exe]
+PS> Stop-Process -Id 49208 -Force; <rebuild>
+   Compiling harness-web v0.1.0 (C:\Users\vsbb1\source\repos\harness)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.68s
+
+====================================================================================
+STEP 2 — FIXTURE DAEMONS (startup lines)
+====================================================================================
+PS> C:\ct\debug\examples\e2e_daemon.exe --serve-for-e2e
+E2E-DAEMON {"base":"127.0.0.1:18937","token":"e2e-token"}
+
+PS> harness-daemon --data-dir d1 --port 18936 --ipc-name f3-d1   [B1, compat env]
+harness-daemon listening on http://127.0.0.1:18936 (token: <read from d1\daemon-token>)
+harness-daemon: 0 automation(s) scheduled
+harness-daemon: routing.json unusable for the projection utility route: utility route unresolved: role Summarizer has no route configured (benign: no summarizer role configured; the TURN DISPATCHER intake bound without error)
+
+PS> harness-daemon --data-dir d2 --port 18940 --ipc-name f3-d2   [B2, anthropic env + cost cap]
+harness-daemon listening on http://127.0.0.1:18940 (token: <read from d2\daemon-token>)
+harness-daemon: 0 automation(s) scheduled
+
+[smoke before driving]
+PS> harness --url http://127.0.0.1:18936 --token <B1> sessions list
+no live sessions
+
+====================================================================================
+STEP 3a — ROUTED TURN (B1; routing.json default role -> claude-opus-4-7)
+====================================================================================
+PS> harness --url http://127.0.0.1:18936 --token <B1> run --session f3-routed --timeout 90 ROUTEDTURN hello routed world
+— turn 1 started —
+usage: claude-opus-4-7 — 1000 in / 50 out
+you: ROUTEDTURN hello routed world
+assistant: compat ok
+— turn 1 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":1,"type":"turn_result"}
+exit=0
+
+PS> harness --url http://127.0.0.1:18936 --token <B1> --output-json run --session f3-routed2 --timeout 90 ROUTEDTURN json variant
+{"event":{"event":{"turn":1,"type":"turn_started"},"id":1}}
+{"type":"usage","turn":1,"model":{"provider":"anthropic","model":"claude-opus-4-7"},"effort":"xhigh","input_tokens":1000,"output_tokens":50,"cache_read":0,"cache_write":0,"cost_usd_micros":null}
+{"event":{"event":{"blocks":[{"text":"ROUTEDTURN json variant","type":"text"}],"type":"user"},"id":2}}
+{"event":{"event":{"blocks":[{"text":"compat ok","type":"text"}],"type":"assistant"},"id":3}}
+{"event":{"event":{"outcome":"turn_complete","turn":1,"type":"turn_finished"},"id":4}}
+{"ok":true,"outcome":"turn_complete","turn":1,"type":"turn_result"}
+exit=0
+[routing observable: Usage frame cites anthropic/claude-opus-4-7 at the role's catalog-default effort xhigh; the session's configured compat model never served]
+
+====================================================================================
+STEP 3b — FALLBACK ASK, UNANSWERED -> SAME-MODEL RETRY (B1)
+====================================================================================
+Clean drive (scripted 400 outage on first primary attempt, success on the dispatcher retry):
+PS> harness --url http://127.0.0.1:18936 --token <B1> run --session f3-fallback --timeout 300 FALLBACKFAIL trigger the primary outage then recover
+model fallback proposed: claude-opus-4-7 -> claude-sonnet-4-6 — outage; verbatim hop 1 of 1 (answer over WS/IPC)
+notice: model fallback resolved; next requests target claude-opus-4-7
+notice: model fallback asked; no interactive client — retrying same model
+fallback 1 resolved: next model claude-opus-4-7
+usage: claude-opus-4-7 — 1500 in / 60 out
+you: FALLBACKFAIL trigger the primary outage then recover
+assistant: recovered on the SAME model after the unacknowledged fallback ask
+— turn 1 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":1,"type":"turn_result"}
+exit=0
+[observables: the CLI renders the FallbackAsk and NEVER answers it from stdin (visible-only);
+the ask resolves to the CURRENT model; the verbatim degraded-mode notice appears; the retry is
+served by the SAME model (usage frame cites claude-opus-4-7) — zero substitution]
+
+Bonus capture — unplanned real outage (scripted server down) on session f3-tests3, showing the
+bounded ask/retry cycle through to typed exhaustion:
+PS> echo y | harness --url http://127.0.0.1:18936 --token <B1> run --session f3-tests3 --timeout 300 TESTTURN run the fixture crate tests
+— turn 1 started —
+notice: model fallback proposed: claude-opus-4-7 -> claude-sonnet-4-6 (outage; verbatim hop 1 of 1); awaiting answer
+model fallback proposed: claude-opus-4-7 -> claude-sonnet-4-6 — outage; verbatim hop 1 of 1 (answer over WS/IPC)
+notice: model fallback resolved; next requests target claude-opus-4-7
+notice: model fallback asked; no interactive client — retrying same model
+fallback 1 resolved: next model claude-opus-4-7
+notice: model fallback proposed: claude-opus-4-7 -> claude-sonnet-4-6 (outage; verbatim hop 1 of 1); awaiting answer
+model fallback proposed: claude-opus-4-7 -> claude-sonnet-4-6 — outage; verbatim hop 1 of 1 (answer over WS/IPC)
+notice: model fallback resolved; next requests target claude-opus-4-7
+notice: model fallback asked; no interactive client — retrying same model
+you: TESTTURN run the fixture crate tests
+— turn 1 finished: failed::InferenceExhausted { cause: "retry budget exhausted after 3 attempts, no events delivered", retries: 0 } —
+{"ok":false,"outcome":"failed::InferenceExhausted { cause: \"retry budget exhausted after 3 attempts, no events delivered\", retries: 0 }","turn":1,"type":"turn_result"}
+exit=1
+[both asks proposed the hop and both resolved to the CURRENT model; the hop model never served]
+
+====================================================================================
+STEP 3c — task() DELEGATION WITH 2 QUICK CHILDREN (B1)
+====================================================================================
+First attempt (before the explore role route existed) — typed refusal, kept for the record:
+tool result call_0: (tool dispatch: tool "task" failed: (task refused: role Explore has no route configured — add it before dispatching))
+tool result call_1: (tool dispatch: tool "task" failed: (task refused: role Explore has no route configured — add it before dispatching))
+
+Clean drive after adding roles explore/librarian -> claude-haiku-5-5 (cheap pool):
+PS> echo y,y | harness --url http://127.0.0.1:18936 --token <B1> run --session f3-task3 --timeout 240 TASKPARENT delegate CHILD_A survey and CHILD_B todo check
+— turn 1 started —
+usage: claude-opus-4-7 — 900 in / 120 out
+permission requested: task — approval required: tool 'task' target '(no target)' has no matching permission rule [y]allow once [s]allow session [n]deny
+permission allowed by cli-61920
+permission requested: task — approval required: tool 'task' target '(no target)' has no matching permission rule [y]allow once [s]allow session [n]deny
+permission allowed by cli-61920
+agents budget: 1/4 children, 0/20000000 tokens
+child started: f3-task3-child-task1 (explore, explore)
+child f3-task3-child-task1 (explore) finished success: child A summary: surveyed the fixture tree, 4 files, no blockers
+agents budget: 1/4 children, 535/20000000 tokens
+agents budget: 2/4 children, 535/20000000 tokens
+child started: f3-task3-child-task2 (explore, explore)
+child f3-task3-child-task2 (explore) finished success: child B summary: zero TODO markers found in the fixture crate
+agents budget: 2/4 children, 1070/20000000 tokens
+usage: claude-opus-4-7 — 600 in / 40 out
+you: TASKPARENT delegate CHILD_A survey and CHILD_B todo check
+assistant: 
+tool call call_0: task
+tool call call_1: task
+tool result call_0: [task child f3-task3-child-task1 category=explore] child A summary: surveyed the fixture tree, 4 files, no blockers
+tool result call_1: [task child f3-task3-child-task2 category=explore] child summary: zero TODO markers found in the fixture crate
+assistant: children complete: both summaries received
+— turn 1 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":1,"type":"turn_result"}
+exit=0
+[NOTE: the call_1 tool-result line above reads "...] child summary: zero TODO ..." in the raw
+capture; the ChildFinished event for the same child carries the full "child B summary: zero
+TODO markers found in the fixture crate" wording. Both child summaries are in the transcript.]
+[observables: two task permission asks answered y from CLI stdin; ChildStarted x2 with
+(explore, explore) role/task; ChildFinished x2 state=success with summaries; TeamBudget
+frames 1/4 -> 2/4 children and token spend aggregation; "[task child ...]" result texts]
+
+====================================================================================
+STEP 3d — run_tests TOOL AGAINST A TINY FIXTURE CRATE (B1)
+====================================================================================
+Fixture crate: f3cli\fixture-crate (Cargo.toml + src/lib.rs, one #[test] adds_two asserting add(2,3)==5).
+Earlier attempts (recorded): arguments dropped by the scripted provider (chat codec ignores
+arguments riding the id+name fragment) -> run_tests probed the daemon cwd instead:
+tool result: (tool dispatch: tool "run_tests" failed: unknown test framework at "c:/Windows/System32/spool/drivers/x64/3" (no Cargo.toml) ...)
+then (daemon cwd fixed) "unknown test framework at C:/Users/vsbb1/AppData/Local/Temp/opencode/f3cli" — both fixed by sending arguments as a second SSE fragment.
+
+Clean drive:
+PS> echo y | harness --url http://127.0.0.1:18936 --token <B1> run --session f3-tests4 --timeout 300 TESTTURN run the fixture crate tests
+— turn 1 started —
+usage: claude-opus-4-7 — 900 in / 80 out
+permission requested: run_tests — approval required: tool 'run_tests' target 'C:/Users/vsbb1/AppData/Local/Temp/opencode/f3cli/fixture-crate' has no matching permission rule [y]allow once [s]allow session [n]deny
+permission allowed by cli-31188
+usage: claude-opus-4-7 — 600 in / 30 out
+you: TESTTURN run the fixture crate tests
+assistant: 
+tool call call_0: run_tests
+tool result call_0: {"framework":"cargo-nextest","command":"cargo nextest run --no-fail-fast","exit_code":0,"timed_out":false,"suite_duration_ms":1160,"tests":[{"name":"f3-fixture tests::adds_two","status":"passed","duration_ms":140}],"summary":{"passed":1,"failed":0,"ignored":0}}
+[safety] requested: tier=readonly egress=deny-all env_scrub=on | enforced: egress=userland-guard env_scrub=at-spawn fs=unconfined | backend=windows-appcontainer | gaps: fs_write, fs_read
+assistant: test evidence recorded
+— turn 1 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":1,"type":"turn_result"}
+exit=0
+[observable: the typed TestReport JSON (framework detection cargo-nextest, per-test status,
+summary) plus the [safety] requested-vs-enforced line. The gate binding of TestReport into
+CONFIRMED/REFUTED verdicts is the completion-gate path (scheduled runs); the wired
+interactive-path observable is the TestReport observation captured here.]
+
+====================================================================================
+STEP 3e — PLAN MODE (B1): enter, blocked edit pre-approval, approve via second WS client, re-edit
+====================================================================================
+Entry over the HTTP command route (plan_mode is not a decision; answers ARE connection-bound):
+PS> harness --url http://127.0.0.1:18936 --token <B1> capture --session f3-plan5 PLANWARMUP open session
+queued
+PS> POST /s/f3-plan5/cmd  {"type":"plan_mode","on":true}   [Authorization: Bearer <B1>]
+"accepted"
+
+Blocked edit while planning (NO permission ask fires — the plan gate denies before mediation):
+PS> harness --url http://127.0.0.1:18936 --token <B1> run --session f3-plan5 --timeout 120 EDITTURN edit lines.txt line 2
+— turn 2 started —
+usage: claude-opus-4-7 — 900 in / 70 out
+plan 1 pending approval: 'edit_lines' on 'C:/Users/vsbb1/AppData/Local/Temp/opencode/f3cli/edit-target/lines.txt' blocked
+plan 1 (revision 1) awaiting approval — approve, edit, or reject over WS/IPC
+usage: claude-opus-4-7 — 600 in / 30 out
+you: EDITTURN edit lines.txt line 2
+assistant: 
+tool call call_0: edit_lines
+tool result call_0: tool call denied by approval stage: plan 1 pending approval: write tool 'edit_lines' is gated until the plan is approved, edited, or rejected (answer the plan ask)
+assistant: edit outcome observed
+— turn 2 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":2,"type":"turn_result"}
+exit=0
+[the CLI is visible-only for plan asks — rendered "plan 1 (revision 1) awaiting approval —
+approve, edit, or reject over WS/IPC"; HTTP POST /s/{sid}/cmd refuses plan answers typed
+(handlers.rs: "plan answers require a connection identity; answer over WS/IPC"). Approval was
+therefore driven by a second attached client: a PowerShell ClientWebSocket script
+(f3cli\plan-approver.ps1) that attaches, reads the live stream, answers the plan_ask.]
+
+Second attached client (WS approver) transcript:
+WS-APPROVER connecting: ws://127.0.0.1:18936/s/f3-plan5/attach?token=<B1>
+WS-APPROVER recv: {"type":"snapshot","frames":[{"id":1,"event":{"type":"turn_started","turn":1}},{"id":2,"event":{"type":"recorded","seq":1,"event":{"type":"user","blocks":[{"type":"text","text":"PLANWARMUP open session"}]}}},{"id":3,"event":{"type":"recorded","seq":2,"event":{"type":"assistant","blocks":[{"type":"text","text":"compat ok"}]}}},{"id":4,"event":{"type":"turn_finished","turn":1,"outcome":"turn_complete"}},{"id":5,"event":{"type":"plan_mode_entered","plan":1}}]}
+WS-APPROVER recv: {"type":"hello_ack","version":2,"last_event_id":5}
+WS-APPROVER recv: {"type":"event","frame":{"id":6,"event":{"type":"turn_started","turn":2}}}
+WS-APPROVER recv: {"type":"usage","turn":2,"model":{"provider":"anthropic","model":"claude-opus-4-7"},"effort":"xhigh","input_tokens":900,"output_tokens":70,"cache_read":0,"cache_write":0,"cost_usd_micros":null}
+WS-APPROVER recv: {"type":"event","frame":{"id":7,"event":{"type":"plan_blocked","plan":1,"tool":"edit_lines","target":"C:/Users/vsbb1/AppData/Local/Temp/opencode/f3cli/edit-target/lines.txt"}}}
+WS-APPROVER recv: {"type":"plan_ask","ask":{"ask_id":1,"plan_id":1,"revision":1,"artifact":"","deadline_ms":120000}}
+WS-APPROVER send: {"type":"plan_answer","ask":1,"decision":"approve"}
+WS-APPROVER recv: {"type":"usage","turn":2,"model":{"provider":"anthropic","model":"claude-opus-4-7"},"effort":"xhigh","input_tokens":600,"output_tokens":30,"cache_read":0,"cache_write":0,"cost_usd_micros":null}
+WS-APPROVER recv: {"type":"event","frame":{"id":8,"event":{"type":"recorded","seq":3,"event":{"type":"user","blocks":[{"type":"text","text":"EDITTURN edit lines.txt line 2"}]}}}}
+WS-APPROVER recv: {"type":"event","frame":{"id":9,"event":{"type":"recorded","seq":4,"event":{"type":"assistant","blocks":[]}}}}
+WS-APPROVER recv: {"type":"event","frame":{"id":10,"event":{"type":"recorded","seq":5,"event":{"type":"tool_call","call_id":"call_0","tool":"edit_lines","arguments":{"edits":[{"line":2,"new_text":"edited by F3 CLI cell","old_text":"placeholder second line"}],"path":"C:\\Users\\vsbb1\\AppData\\Local\\Temp\\opencode\\f3cli\\edit-target\\lines.txt"}}}}}
+WS-APPROVER recv: {"type":"event","frame":{"id":11,"event":{"type":"recorded","seq":6,"event":{"type":"tool_result","call_id":"call_0","blocks":[{"type":"text","text":"tool call denied by approval stage: plan 1 pending approval: write tool 'edit_lines' is gated until the plan is approved, edited, or rejected (answer the plan ask)"}]}}}}
+WS-APPROVER recv: {"type":"event","frame":{"id":12,"event":{"type":"recorded","seq":7,"event":{"type":"assistant","blocks":[{"type":"text","text":"edit outcome observed"}]}}}}
+WS-APPROVER recv: {"type":"event","frame":{"id":13,"event":{"type":"turn_finished","turn":2,"outcome":"turn_complete"}}}
+WS-APPROVER recv: {"type":"plan_resolved","ask_id":1,"plan_id":1,"outcome":{"approved":{"by":"f3-ws-approver"}}}
+WS-APPROVER done
+
+Post-approval edit (writes re-armed; normal permission mediation resumes):
+PS> echo y | harness --url http://127.0.0.1:18936 --token <B1> run --session f3-plan5 --timeout 120 EDITAPPLY apply the approved edit
+— turn 3 started —
+usage: claude-opus-4-7 — 900 in / 70 out
+permission requested: edit_lines — approval required: tool 'edit_lines' target 'C:/Users/vsbb1/AppData/Local/Temp/opencode/f3cli/edit-target/lines.txt' has no matching permission rule [y]allow once [s]allow session [n]deny
+permission allowed by cli-53736
+usage: claude-opus-4-7 — 600 in / 30 out
+you: EDITAPPLY apply the approved edit
+assistant: 
+tool call call_0: edit_lines
+tool result call_0: C:\Users\vsbb1\AppData\Local\Temp\opencode\f3cli\edit-target\lines.txt (lines 1-4 of 4)
+1 | first line is stable
+2 | placeholder second line
+3 | alpha = two
+4 | fourth line stays
+
+assistant: post-approval edit applied and observed
+— turn 3 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":3,"type":"turn_result"}
+exit=0
+--- lines.txt after:
+first line is stable
+placeholder second line
+alpha = one -> (on disk after EDITAPPLY:) alpha = two
+fourth line stays
+[disk truth: line 3 changed to "alpha = two"; line 2 still "placeholder second line" — the
+gated turn-2 edit never touched disk]
+
+====================================================================================
+STEP 3f — COST CAP: WARNING AT 80%, STOP AT 100%, REFUSAL (B2)
+====================================================================================
+[cap: HARNESS_SESSION_COST_CAP_USD=0.01 = 10,000 micro-USD; each scripted turn reports
+2,000 input + 200 output tokens = 9,000 micro at sonnet-4-5 list prices
+(3,000,000 micro/MTok in, 15,000,000 micro/MTok out)]
+PS> harness --url http://127.0.0.1:18940 --token <B2> run --session f3-cost3 --timeout 120 COSTTURN one
+— turn 1 started —
+usage: claude-sonnet-4-5 — 2000 in / 200 out
+cost warning: 90% of session cap (9000 of 10000 micro-USD)
+you: COSTTURN one
+assistant: cost turn ok
+— turn 1 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":1,"type":"turn_result"}
+exit=0
+PS> harness --url http://127.0.0.1:18940 --token <B2> run --session f3-cost3 --timeout 120 COSTTURN two
+— turn 2 started —
+usage: claude-sonnet-4-5 — 2000 in / 200 out
+cost stop: session cap reached (18000 of 10000 micro-USD) — further turns refused
+you: COSTTURN two
+assistant: cost turn ok
+— turn 2 finished: turn_complete —
+{"ok":true,"outcome":"turn_complete","turn":2,"type":"turn_result"}
+exit=0
+PS> harness --url http://127.0.0.1:18940 --token <B2> run --session f3-cost3 --timeout 120 COSTTURN three
+harness: protocol error: MalformedFrame: money budget exhausted for session period: consumed 18000 of 10000 micro-USD
+exit=1
+[record: an earlier variant with 2,000,000-token turns ($9/turn) crossed both thresholds
+inside one turn — "cost warning: 90000% of session cap (9000000 of 10000 micro-USD)" then
+"cost stop: session cap reached (9000000 of 10000 micro-USD) — further turns refused" — and
+the same typed refusal for every following submit.]
+
+====================================================================================
+STEP 3g — edit_lines HUNK/DIFF OBSERVABLES
+====================================================================================
+In-process edit_lines (B1, post-approval turn above): the tool result is the changed-region
+fringe WindowView — "path (lines a-b of n)" header + numbered lines with the edited content
+("3 | alpha = two"). No structured Diff event on the in-process path (worker-path only).
+
+Worker-path structured hunk (Daemon A e2e, human then NDJSON):
+PS> echo y | harness --url http://127.0.0.1:18937 --token e2e-token run --session e2e hello routed e2e world
+— turn 1 started —
+usage: claude-sonnet-4-5 — 1200 in / 80 out
+permission requested: echo — approval required: tool 'echo' target '(no target)' has no matching permission rule [y]allow once [s]allow session [n]deny
+permission allowed by cli-57072
+usage: claude-sonnet-4-5 — 1200 in / 80 out
+diff: src/demo.rs
+you: hello routed e2e world
+assistant: working on it
+tool call t1: echo
+tool result t1: {"diff":{"after_hash":"0123456789ab","before_hash":"","hunks":["@@ -1,2 +1,2 @@\n-old line\n+new line"],"path":"src/demo.rs"},"text":"echoed by mock worker"}
+assistant: done: turn completed
+tool call done: task_completed
+tool result done: task completed
+— turn 1 finished: task_completed —
+{"ok":true,"outcome":"task_completed","turn":1,"type":"turn_result"}
+exit=0
+
+PS> echo y | harness --url http://127.0.0.1:18937 --token e2e-token --output-json run --session e2e-drill "hello drill"
+{"event":{"event":{"turn":1,"type":"turn_started"},"id":6}}
+{"type":"usage","turn":1,"model":{"provider":"anthropic","model":"claude-sonnet-4-5"},"effort":null,"input_tokens":1200,"output_tokens":80,"cache_read":6400,"cache_write":0,"cost_usd_micros":6720}
+{"type":"permission_ask","ask":{"ask_id":1,"tool":"echo","target":null,"reason":"approval required: tool 'echo' target '(no target)' has no matching permission rule","deadline_ms":120000}}
+{"type":"permission_resolved","ask_id":1,"resolution":{"allowed":{"by":"cli-11448"}}}
+{"type":"usage","turn":1,"model":{"provider":"anthropic","model":"claude-sonnet-4-5"},"effort":null,"input_tokens":1200,"output_tokens":80,"cache_read":6400,"cache_write":0,"cost_usd_micros":6720}
+{"event":{"event":{"after_hash":"0123456789ab","before_hash":"","hunks":["@@ -1,2 +1,2 @@\n-old line\n+new line"],"path":"src/demo.rs","type":"diff"},"id":7}}
+{"event":{"event":{"blocks":[{"text":"hello drill","type":"text"}],"type":"user"},"id":8}}
+{"event":{"event":{"blocks":[{"text":"working on it","type":"text"}],"type":"assistant"},"id":9}}
+{"event":{"event":{"arguments":{"q":1},"call_id":"t1","tool":"echo","type":"tool_call"},"id":10}}
+{"event":{"event":{"blocks":[{"text":"{\"diff\":{\"after_hash\":\"0123456789ab\",\"before_hash\":\"\",\"hunks\":[\"@@ -1,2 +1,2 @@\\n-old line\\+new line\"],\"path\":\"src/demo.rs\"},\"text\":\"echoed by mock worker\"}","type":"text"}],"call_id":"t1","type":"tool_result"},"id":11}}
+{"event":{"event":{"blocks":[{"text":"done: turn completed","type":"text"}],"type":"assistant"},"id":12}}
+{"event":{"event":{"arguments":{},"call_id":"done","tool":"task_completed","type":"tool_call"},"id":13}}
+{"event":{"event":{"blocks":[{"text":"task completed","type":"text"}],"call_id":"done","type":"tool_result"},"id":14}}
+{"event":{"event":{"outcome":"task_completed","turn":1,"type":"turn_finished"},"id":15}}
+{"ok":true,"outcome":"task_completed","turn":1,"type":"turn_result"}
+exit=0
+
+====================================================================================
+STEP 3h — CROSS-SESSION SEARCH (harness sessions search)
+====================================================================================
+PS> harness --url http://127.0.0.1:18936 --token <B1> sessions search TASKPARENT
+no hits for "TASKPARENT"
+PS> harness --url http://127.0.0.1:18936 --token <B1> sessions search "CHILD_A OR CHILD_B"
+no hits for "CHILD_A OR CHILD_B"
+PS> harness --url http://127.0.0.1:18936 --token <B1> sessions search --sessions f3-fallback FALLBACKFAIL
+no hits for "FALLBACKFAIL"
+PS> harness --url http://127.0.0.1:18937 --token e2e-token sessions search drill
+no hits for "drill"
+[fresh live-turn probe: a new session with the marker SEARCHMARKXYZ ran a turn, then an
+immediate search for SEARCHMARKXYZ — still "no hits". A page-in probe (attach to the
+journaled f3-fallback session, then search) was attempted but the daemon instance was killed
+externally mid-probe.]
+Store inspection (python sqlite3, d1\store.db — the store the search route opens):
+  tables: sessions, events, turn_index, event_fts, ... (schema present)
+  event_fts rows: 0    events rows: 0    sessions rows: 0
+Journals on disk: d1\journal\{sid}\N.jsonl for every driven session (the durable path writes
+JSONL journals; nothing on the driven path folds them into the SessionStore/event_fts).
+-> BLOCKED-with-reason: the CLI command, HTTP route, FTS5 scoping/limit surface and the
+typed empty-result rendering all behave, but the wired daemon turn path never populates the
+event_fts index the route reads (store.db stayed empty across ~25 turns on two daemon
+configs), so ranked hits with session ids were not observable through the shipped binary in
+this cell. Same result on the e2e daemon's store.
+
+====================================================================================
+STEP 4 — PROCESS CLEANUP
+====================================================================================
+PS> Get-CimInstance Win32_Process -Filter "Name='harness-daemon.exe'" | Where-Object { $_.CommandLine -like '*18936*' -or $_.CommandLine -like '*18940*' } | Stop-Process -Force
+PS> Get-Process e2e_daemon,f3-scripted-server | Stop-Process -Force
+killed: harness-daemon(23044); listeners left on 18936-18940: 0
+[all processes started by this cell are stopped; no product edits, no commits]
+
+====================================================================================
+PER-MECHANISM MINI-TABLE (no verdict — orchestrator assembles the matrix)
+====================================================================================
+mechanism                          | result
+----------------------------------+-------------------------------------------------------------
+routed turns + fallback asks       | PASS — Usage frame cites the routed identity (anthropic /
+                                   |   claude-opus-4-7, effort xhigh); fallback ask rendered by the
+                                   |   CLI, never answered from stdin; verbatim notice
+                                   |   "model fallback asked; no interactive client — retrying same
+                                   |   model"; fallback resolved to the CURRENT model; the retry
+                                   |   served by the SAME model (usage cites claude-opus-4-7);
+                                   |   bonus outage capture shows the bounded ask->retry->exhaust
+                                   |   cycle with zero substitution.
+delegation + precedence            | PASS — two task(explore) children: mediated asks answered y,
+                                   |   ChildStarted x2, ChildFinished success x2 with summaries,
+                                   |   TeamBudget 1/4 -> 2/4 children + token aggregation,
+                                   |   "[task child ... category=explore]" result texts.
+plan mode                          | PASS — enter via POST /s/{sid}/cmd {"type":"plan_mode","on":true}
+                                   |   (plan_mode_entered); write attempt blocked PRE-approval
+                                   |   (plan_blocked with tool+target; typed denial; NO permission
+                                   |   ask fires while planning); plan ask visible-only on the CLI;
+                                   |   approved by a second attached WS client
+                                   |   ({"type":"plan_answer","ask":1,"decision":"approve"} ->
+                                   |   plan_resolved approved by f3-ws-approver); post-approval edit
+                                   |   executed under normal mediation; gated edit never touched disk.
+run_tests evidence                 | PASS — typed TestReport JSON observable on the wired
+                                   |   interactive path (framework cargo-nextest, per-test status,
+                                   |   summary 1/0/0) + [safety] requested-vs-enforced line;
+                                   |   gate/verdict binding is the scheduled-run completion gate
+                                   |   (TestReport is the interactive-path observable; not driven
+                                   |   through a scheduled run in this cell).
+cross-session search               | BLOCKED-with-reason — command/route/scoping/typed-empty all
+                                   |   behave, but event_fts is never populated by the daemon turn
+                                   |   path as driven (store.db 0 rows after ~25 turns; JSONL
+                                   |   journals written instead); ranked hits with session ids not
+                                   |   observable through the shipped binary.
+cost Warning/Stop                  | PASS — CostWarning at 90% (9000 of 10000 micro-USD) in turn 1,
+                                   |   CostStop "session cap reached (18000 of 10000 micro-USD) —
+                                   |   further turns refused" in turn 2, typed refusal
+                                   |   "money budget exhausted for session period: consumed 18000 of
+                                   |   10000 micro-USD" for turn 3 (exit 1).
+hunk review                        | PASS — worker path: structured Diff event with hunks
+                                   |   ["@@ -1,2 +1,2 @@\n-old line\n+new line"] (human "diff:
+                                   |   src/demo.rs" + full NDJSON frame); in-process edit_lines:
+                                   |   changed-region fringe WindowView ("(lines 1-4 of 4)" +
+                                   |   numbered lines) — no structured Diff event on the in-process
+                                   |   path by design.
+
+## Finding disposition: REAL GAP (orchestrator reconciliation, documentary)
+Reconciled against .omo/evidence/task-11-ecosystem-alignment.txt lines 96-100: the t11 happy path
+'drove the real harness.exe binary against the real daemon router, SEEDED 3-session store'
+- the ranked hits came from a SEEDED fixture store, not from live conversation turns.
+The F3 negative drive (real daemon B1, real driven turns with TASKPARENT/CHILD markers,
+search via the same daemon's --url route) is the FIRST live-path probe and returned empty.
+CONCLUSION: the search SURFACE is production-wired (routes, CLI, model tool, ranked
+rendering proven 5/5 via shipped integration tests) but the LIVE-SESSION FEED into
+event_fts is UNWIRED in the daemon engine (the harness-sessions append-path insert at
+session.rs:238 is a store-API capability the daemon's live recording does not traverse).
+DISPOSITION: honest docs correction (README status row: search = surface wired, live feed
+UNWIRED - follow-up logged) per the repo's production-wired vs library-tested discipline;
+a product fix (wire the engine's recorded-event path to the fts insert) is logged as
+follow-up in issues.md, NOT rushed at closeout.
+

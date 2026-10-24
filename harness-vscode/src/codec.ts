@@ -7,7 +7,7 @@
 
 import type { ClientMsg, ErrorCode, ProtocolError, Result, ServerMsg } from "./protocol.ts";
 import { PROTOCOL_VERSION, MAX_FRAME_BYTES, MAX_ID_BYTES, MAX_TEXT_FIELD_BYTES } from "./protocol.ts";
-import { asNumber, asObject, asArray, asString, decodeAsk, decodeFrame, decodeResolution } from "./decode.ts";
+import { asNumber, asObject, asArray, asString, decodeAsk, decodeFrame, decodeResolution, decodeFallbackAsk, decodePlanAsk, decodePlanOutcome, decodeModelIdentity } from "./decode.ts";
 
 const malformed = (detail: string): { ok: false; error: ProtocolError } => ({
     ok: false,
@@ -63,6 +63,29 @@ export function decodeServerMessage(raw: string): Result<ServerMsg> {
             return askId === null || resolution === null
                 ? malformed("permission_resolved fields")
                 : { ok: true, value: { type, ask_id: askId, resolution } };
+        }
+        case "fallback_ask": {
+            const ask = decodeFallbackAsk(obj["ask"]);
+            return ask === null ? malformed("fallback ask payload") : { ok: true, value: { type, ask } };
+        }
+        case "fallback_resolved": {
+            const askId = asNumber(obj["ask_id"]);
+            const chosen = decodeModelIdentity(obj["chosen"]);
+            return askId === null || chosen === null
+                ? malformed("fallback_resolved fields")
+                : { ok: true, value: { type, ask_id: askId, chosen } };
+        }
+        case "plan_ask": {
+            const ask = decodePlanAsk(obj["ask"]);
+            return ask === null ? malformed("plan ask payload") : { ok: true, value: { type, ask } };
+        }
+        case "plan_resolved": {
+            const askId = asNumber(obj["ask_id"]);
+            const planId = asNumber(obj["plan_id"]);
+            const outcome = decodePlanOutcome(obj["outcome"]);
+            return askId === null || planId === null || outcome === null
+                ? malformed("plan_resolved fields")
+                : { ok: true, value: { type, ask_id: askId, plan_id: planId, outcome } };
         }
         case "state_resync_required": {
             const lastId = asNumber(obj["last_event_id"]);
@@ -149,8 +172,17 @@ export function validateClient(msg: ClientMsg): ProtocolError | null {
         }
         case "permission_answer":
         case "permission_cancel":
+        case "fallback_answer":
+        case "plan_mode":
+        case "rewind":
         case "ping":
             return null;
+        case "plan_answer":
+            return typeof msg.decision === "string"
+                ? null
+                : msg.decision.edit.artifact.length > MAX_TEXT_FIELD_BYTES
+                    ? { kind: "out_of_bounds", field: "artifact" }
+                    : null;
     }
 }
 

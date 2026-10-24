@@ -1,0 +1,185 @@
+Task 12 — ACP stdio surface (`harness-daemon --acp`)     2026-10-21T16:19Z
+=====================================================================
+
+WHAT SHIPPED
+------------
+`harness-daemon --acp` speaks Agent Client Protocol v1 (NDJSON
+JSON-RPC 2.0) over stdin/stdout, bridging ACP sessions onto real
+daemon sessions in the same process. Functionality per plan:
+initialize, session/new, session/prompt, session/update (agent
+message chunks + diff-bearing tool_call), fs/read_text_file
+(@-mentions), session/request_permission (greenfield mapping),
+session/cancel.
+
+- harness-mcp/src/acp/{types,agent,channel}.rs — extended (bridge
+  needed the types): PermissionOption/PermissionOptionKind/
+  PermissionOutcome wire types; IdeChannel::session_id() +
+  request_permission(); AcpError::PermissionTimeout; agent-side
+  pending-permission response routing (result.outcome shape).
+- harness-daemon/src/acp.rs — NEW bridge: StdioWire (stdout NDJSON),
+  Bridge (AcpEngine: compose prompt with inlined @-mentions →
+  HostCommand::Submit → hub events → session/update mapping →
+  StopReason from TurnFinished), permission asks mapped to ACP
+  session/request_permission answered through PermissionMediator
+  under the server-assigned id "acp-stdio"; run_acp_stdio stdin loop.
+- harness-daemon/src/bin/harness-daemon.rs — `--acp` flag; state
+  assembly extracted to build_state() shared by both modes.
+- harness-daemon/src/lib.rs — `pub mod acp`.
+- harness-daemon/Cargo.toml — harness-mcp promoted dev-dep → real
+  dep (todo-7 learning: dev-deps do not leak into src/); tokio
+  gains "io-std" (stdin reader). No NEW external dependencies.
+- harness-mcp/tests/acp_agent.rs + harness-daemon/tests/
+  acp_stdio_tests.rs — tests (below).
+
+MODE DECISION (documented in acp.rs module docs): `--acp` is a
+stdio-ONLY process — no HTTP/WS/IPC listener, no scheduler/IPC; the
+process lives exactly as long as the IDE pipe. Sessions persist to
+the same store root ({data-dir}/sessions/{acp-session-id}).
+
+MEDIATION CONTRACT (the MUST NOT guardrails)
+--------------------------------------------
+- The bridge joins the session's permission queue under the
+  SERVER-ASSIGNED id ACP_CLIENT_ID = "acp-stdio" — never
+  client-assertable. mediator.answer()/cancel_vote() carry it, so
+  the session's MediationPolicy decides whether it counts exactly
+  as for a local client (FirstResponder: counts; Designated/
+  LocalOnly: recorded but ignored; deadline: Timeout → Refuse).
+- FallbackAsk and plan approval are NOT answerable over ACP v1:
+  the bridge observes control-bus FallbackAsk frames and never
+  answers; the mediation deadline (ask_timeout) resolves Timeout →
+  mediate_fallback returns the CURRENT model → same-model retry per
+  the task-9 dispatcher contract.
+- Deny-fails-closed preserved on every unanswered shape: ACP
+  option ids map allow_once→AllowOnce, allow_always→AllowSession,
+  everything else (incl. unknown ids)→Deny; Cancelled outcome →
+  cancel_vote → Resolution::Cancelled → Refuse; no IDE answer →
+  mediator deadline → Refuse.
+- session/cancel forwards into host.handle_command(Cancel) — the
+  SAME queue every wire client uses. Pre-existing daemon driver
+  semantics apply unchanged (deferred to the turn boundary; the
+  sticky token lands on the next run) — identical to WS/SSE/IPC
+  clients, never more capable.
+
+PRE-EXISTING BUG FOUND AND FIXED (RED-first dividend)
+-----------------------------------------------------
+harness-mcp/src/acp/types.rs ToolCallContent::Diff serialized
+`new_text` WITHOUT its spec rename — the wire carried
+"new_text" where ACP v1 specifies "newText" (the module doc
+promises "field names are EXACTLY the spec's camelCase"). The new
+e2e caught it on the first green run (oldText present, newText
+absent). Fix: added #[serde(rename = "newText")]. No prior test
+inspected the diff content fields, so the bug had shipped silently.
+
+RED-FIRST CAPTURE
+-----------------
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-daemon --test acp_stdio_tests"
+(implementation absent; binary ignored --acp and started HTTP mode)
+Result: 3 tests run: 0 passed, 3 failed — every test panicked at
+  non-JSON line "harness-daemon listening on http://127.0.0.1:56027
+  (token: ...)": expected value at line 1 column 1
+(The HTTP handshake line on stdout is exactly what ACP mode must
+never emit — stdout belongs to the protocol.)
+
+QA HAPPY — full ACP roundtrip against the fixture provider
+----------------------------------------------------------
+Command: cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-mcp -p harness-daemon"
+Test: harness-daemon::acp_stdio_tests acp_stdio_roundtrip_streams_updates_and_asks_permission
+Transcript (fixture compat provider at 127.0.0.1 ephemeral, scripted
+chat-completions SSE; child spawned with cwd = temp workspace):
+  IDE -> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,...}}
+  <-    {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,
+         "agentCapabilities":{...},"agentInfo":{"name":"harness",...}}}
+  IDE -> {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"."}}
+  <-    {"jsonrpc":"2.0","id":2,"result":{"sessionId":"acp-0",...}}
+  IDE -> session/prompt (text "please edit the fixture" + resource_link notes)
+  <-    fs/read_text_file request -> IDE answers "mention body"
+  <-    session/update agent_message_chunk {"text":"editing now"}
+  <-    session/request_permission {options:[allow_once,allow_always,reject_once]}
+  IDE -> result {"outcome":{"outcome":"selected","optionId":"allow_once"}}
+  <-    session/update tool_call {toolCallId:"call-1",kind:"edit",
+         content:[{"type":"diff","path":"fixture.md","oldText":"old line","newText":"new line"}]}
+  <-    session/update agent_message_chunk {"text":"edit applied"}
+  <-    {"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}
+Assertions: end_turn; agent chunk text streamed; diff tool_call with
+exact oldText/newText; fixture.md ON DISK now contains "new line"
+(the allow_once answer admitted the edit through the SAME mediation
+queue); captured provider request bodies contain "mention body"
+(the @-mention rode fs/read_text_file into model context).
+
+QA FAILURE — unauthorized tool denied through the same queue
+------------------------------------------------------------
+Test: harness-daemon::acp_stdio_tests acp_stdio_denied_permission_fails_closed
+Same spawn + scripted edit_lines proposal on protected.md; the IDE
+answers the permission request with optionId "reject_once".
+Observables: turn ends end_turn (split-brain preserve: the refusal
+is tool-result text, the session continues); the tool_call proposal
+DID stream to the IDE; protected.md ON DISK still reads exactly
+"old line\n" — the deny-fails-closed outcome: the denial flowed
+through mediator.answer(ask, "acp-stdio", Deny) and the executor
+never ran.
+
+QA CANCEL — session/cancel lands through the bridge
+---------------------------------------------------
+Test: harness-daemon::acp_stdio_tests acp_stdio_cancel_lands_through_the_bridge
+Fixture holds turn 1's provider response; IDE sends session/cancel
+mid-turn (+300ms); gate releases. Observables: turn 1 completes
+end_turn (the daemon driver defers a queued Cancel to the turn
+boundary — pre-existing wire-client semantics, identical for
+WS/SSE/IPC), then the NEXT session/prompt returns stopReason
+"cancelled" (the sticky token landed at run() entry). The bridge
+forwards cancel into the daemon Cancel path and maps the cancelled
+outcome onto the ACP stop reason.
+
+UNIT — permission channel at the mcp layer
+------------------------------------------
+Test: harness-mcp::acp_agent permission_request_round_trips_through_the_channel
+(engine asks; mock IDE answers reject_once; outcome reaches the
+engine; stopReason end_turn). Locks the new wire shape incl. the
+double-nested {"outcome":{"outcome":"selected","optionId":...}}
+response union.
+
+VERIFICATION GATES (all green)
+------------------------------
+1. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo nextest run -p harness-mcp -p harness-daemon"
+   Summary: 333 tests run: 333 passed, 1 skipped (pre-existing skip)
+2. cmd /c "set CARGO_BUILD_JOBS=3&& %TEMP%\opencode\cargo-env.cmd cargo clippy --workspace --all-targets -- -D warnings"
+   Finished `dev` profile in 40.58s — zero warnings (workspace-wide,
+   per the t33 notepad lesson).
+3. Stability: acp_stdio_tests run 4x consecutive green after one
+   early flake (see Residual Notes) — notify_waiters registration
+   race fixed with notify_one (stored permit).
+
+RECEIPTS (plan draft C3; research file)
+---------------------------------------
+- Zed 1.21.0 (2026-09-23): ACP async-task wakeup handling — external
+  agents' background tasks can wake the panel (research file Zed
+  section, v1.21.0 line; zed.dev/releases/stable/1.21.0).
+- Cursor CLI ACP child sessions (draft C3; the agent-as-child-
+  process over stdio JSON-RPC shape this mode implements — the same
+  shape Zed hosts use, research §23.2 ACP host: "external agents =
+  child processes over stdio JSON-RPC").
+- goose W3C trace ACP→MCP (draft C3; protocol-bridging precedent).
+- Gemini CLI ACP usage_update (draft C3; ACP mode shipped in Gemini
+  CLI — geminicli.com acp-mode docs, research §31).
+- Research §23.8 ADOPT (Zed detail-agent deltas): "Harness-as-ACP-
+  server" / "ACP as the LSP-of-agents" — adopted here as the stdio
+  agent surface with uniform mediation.
+
+RESIDUAL NOTES / RISKS
+----------------------
+- Budget: promoting harness-mcp (rmcp et al.) into the daemon's
+  real dependency graph grows the shipped binary; perf-gate was NOT
+  re-run in this task (release-build cost). Headroom is large
+  (daemon 11.03 MB vs 40 MB budget at todo-3 measurement); the wave
+  budget gate should re-measure.
+- --acp ignores session/new's cwd param (v1 surface): sessions root
+  at {data-dir}/sessions; relative tool paths resolve against the
+  daemon process cwd (the IDE host spawns the agent with its
+  workspace as cwd — the documented contract; a per-session cwd
+  would need an executor-factory widening, out of scope).
+- The engine→sessions-store SQLite writer remains a later-wave gap
+  (todo-11 learning): ACP sessions persist their engine event logs
+  (fsync-always JSONL) but not yet the searchable store rows.
+- Test flake fixed in-task: Notify::notify_waiters() wakes only
+  already-registered waiters; the fixture gate now uses notify_one()
+  (stored permit) — deterministic regardless of handler scheduling.
