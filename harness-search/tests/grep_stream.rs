@@ -22,6 +22,10 @@ fn grep_streams_ranked_windows_with_snippets() {
 
     let hits = default_hits(root, "NEEDLE_GAMMA");
     assert_eq!(hits.len(), 2, "one hit per file");
+    // Equal-score ties stream in readdir order, which differs across
+    // filesystems; sort so the asserted order is deterministic.
+    let mut hits = hits;
+    hits.sort_by(|a, b| (a.line_start, &a.path).cmp(&(b.line_start, &b.path)));
     assert_eq!(hits[0].path, "a.rs");
     assert_eq!(hits[0].line_start, 2);
     assert_eq!(hits[0].line_end, 2);
