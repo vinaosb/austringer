@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use harness_lsp::config::{Language, LspConfig, ServerCommand};
+use harness_lsp::error::LspError;
 use harness_lsp::provider::{Answer, DocumentPosition, Location, LspProvider};
 use harness_lsp::router::{LspRouter, RouterEvent};
 use tempfile::TempDir;
@@ -42,6 +43,29 @@ fn config(root: &TempDir) -> LspConfig {
     cfg
 }
 
+/// One goto request, retrying JSON-RPC -32801 `ContentModified` a
+/// bounded number of times. Per the LSP spec, -32801 means the server's
+/// state changed under the in-flight request (rust-analyzer applying a
+/// didChange or reloading its VFS) and the client SHOULD retry — a slow
+/// runner can race that window. On the final attempt the original error
+/// surfaces unchanged.
+async fn goto_retrying_content_modified(
+    router: &LspRouter,
+    position: DocumentPosition,
+) -> Result<Answer, LspError> {
+    const ATTEMPTS: u32 = 5;
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match router.goto_definition(position.clone()).await {
+            Err(LspError::RequestFailed { code: -32801, .. }) if attempt < ATTEMPTS => {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+            }
+            other => return other,
+        }
+    }
+}
+
 /// Polls a navigation until it resolves non-empty, or panics at the
 /// deadline. rust-analyzer legitimately answers empty results while a
 /// crate is still loading, so goldens wait for readiness rather than
@@ -49,8 +73,7 @@ fn config(root: &TempDir) -> LspConfig {
 async fn goto_until_ready(router: &LspRouter, position: DocumentPosition) -> Vec<Location> {
     let deadline = std::time::Instant::now() + Duration::from_secs(45);
     loop {
-        let Answer::Locations(locs) = router
-            .goto_definition(position.clone())
+        let Answer::Locations(locs) = goto_retrying_content_modified(router, position.clone())
             .await
             .expect("goto request itself succeeds")
         else {
@@ -191,14 +214,16 @@ async fn did_change_refreshes_positions_in_the_live_server() {
     // tolerates re-analysis time, never a stale line 1).
     let deadline = std::time::Instant::now() + Duration::from_secs(45);
     loop {
-        let Answer::Locations(after) = router
-            .goto_definition(DocumentPosition {
+        let Answer::Locations(after) = goto_retrying_content_modified(
+            &router,
+            DocumentPosition {
                 file: lib.clone(),
                 line: 9,
                 column: 5,
-            })
-            .await
-            .expect("goto after")
+            },
+        )
+        .await
+        .expect("goto after")
         else {
             panic!("expected locations")
         };

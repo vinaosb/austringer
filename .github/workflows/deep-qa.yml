@@ -240,7 +240,10 @@ jobs:
       - name: Bench smoke (all six criterion benches)
         # Existence/plumbing check only — see the header comment. Sample
         # counts at this size are noise; never re-record baselines from
-        # this job.
+        # this job. `--benches` matters: with only trailing args, cargo
+        # bench ALSO builds and runs the lib unittest bench binary, which
+        # panicked on the ubuntu runner (exit 101) and failed the job —
+        # the smoke targets exactly the six criterion bench targets.
         run: >-
-          cargo bench --locked -p harness-bench --
+          cargo bench --locked -p harness-bench --benches --
           --warm-up-time 1 --measurement-time 2 --sample-size 10
