@@ -1,0 +1,20 @@
+{
+  "required_status_checks": {
+    "strict": false,
+    "contexts": [
+      "fmt + clippy + deny",
+      "nextest archive (ubuntu-latest)",
+      "nextest archive (windows-latest)",
+      "nextest archive (macos-latest)",
+      "frontends (vscode tests + web e2e)",
+      "cargo-llvm-cov",
+      "perf-gate",
+      "link check (storefront + docs)",
+      "asciidoctor site build"
+    ]
+  },
+  "enforce_admins": true,
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}

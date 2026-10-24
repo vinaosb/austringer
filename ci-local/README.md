@@ -159,3 +159,18 @@ line of defense; this script is the last.
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/merge-gate.ps1 3   # must print PASS...
 gh pr merge 3 --merge                                                          # ...before this runs
 ```
+
+### Server-side blockers (dormant)
+
+The server-side half of that contract ships dormant and ready:
+`ci-local/branch-protection.json` is the exact
+`PUT /repos/vinaosb/harness/branches/main/protection` payload (the nine
+required check names, verified against real check runs), and
+`scripts/enable-branch-protection.ps1` applies it. The repo owner chose to
+keep protection **off** until the repository goes public ("until then let's
+leave it commented or off"); when that happens, run
+`powershell scripts/enable-branch-protection.ps1` — it prints ACTIVE with a
+verification summary, or the 403 receipt and exits 1 while the repo is
+still private. Until then `scripts/merge-gate.ps1` remains the whole
+contract. (Going public also restores free Actions minutes on standard
+runners, so the required checks can actually run.)
