@@ -9,14 +9,17 @@ lands with the rename merge; until it appears on the GitHub Releases page,
 build from source below):
 
 ```sh
-# macOS / Linux
+# macOS / Linux — CLI (austringer) and daemon (austringer-daemon) install separately
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.sh | sh
+  https://github.com/vinaosb/austringer/releases/latest/download/austringer-cli-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/vinaosb/austringer/releases/latest/download/austringer-daemon-installer.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell)
-iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.ps1 | iex
+iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-cli-installer.ps1 | iex
+iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-daemon-installer.ps1 | iex
 ```
 
 The release archives are `cargo binstall`-compatible, and a daemon+CLI
