@@ -446,8 +446,7 @@ async fn acp_stdio_cancel_lands_through_the_bridge() {
     .await;
     tokio::time::timeout(Duration::from_secs(10), held.notified())
         .await
-        .expect("fixture must reach the held turn")
-        .expect("held notify not closed");
+        .expect("fixture must reach the held turn");
     acp.notify("session/cancel", json!({"sessionId": session}))
         .await;
     // notify_one (not notify_waiters): a stored permit also releases a
