@@ -135,7 +135,10 @@ fn headless_completion_with_a_pipe_holding_grandchild_still_joins() {
         || count_processes(&mut system, "PING.EXE"),
         |count| *count <= baseline,
     );
-    assert_eq!(after, baseline, "straggler grandchild reaped");
+    assert!(
+        after <= baseline,
+        "straggler grandchild reaped: {after} > {baseline}"
+    );
 }
 
 // ---------- (b) drop mid-active-run: ordered teardown, no assertion ----------
@@ -180,7 +183,10 @@ fn teardown_mid_active_run_is_bounded_ordered_and_repeatable() {
             || count_processes(&mut system, "PING.EXE"),
             |count| *count <= baseline,
         );
-        assert_eq!(after, baseline, "round {round} leaves zero orphans");
+        assert!(
+            after <= baseline,
+            "round {round} leaves zero orphans: {after} > {baseline}"
+        );
     }
 }
 

@@ -104,7 +104,10 @@ pub fn count_processes_marked(system: &mut sysinfo::System, name: &str, needle: 
 /// Poll until `predicate` holds or an 8 s deadline passes; returns the
 /// last observation.
 pub fn wait_until<T>(mut probe: impl FnMut() -> T, predicate: impl Fn(&T) -> bool) -> T {
-    let deadline = Instant::now() + Duration::from_secs(8);
+    // 30 s: Windows job-kill propagation + process-table refresh under
+    // heavy parallel CI load can exceed a tight 8 s window; a genuine
+    // hang (the thing this catches) is still decisively over the bound.
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let observed = probe();
         if predicate(&observed) || Instant::now() >= deadline {

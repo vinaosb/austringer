@@ -9,6 +9,14 @@ task-N evidence lives in `.omo/evidence/`, internal).
 
 ## [Unreleased]
 
+(none yet)
+
+## [0.1.1] - 2026-10-25
+
+The first austringer-named release: everything below previously sat under
+Unreleased. Installers and the container image attach to this tag via the
+Release workflow (cargo-dist).
+
 ### Changed — project identity
 
 - **Renamed `harness` → `austringer` everywhere the project is named**
