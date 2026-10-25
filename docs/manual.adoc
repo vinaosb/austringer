@@ -1,4 +1,4 @@
-= The harness manual
+= The austringer manual
 :toc: left
 :doctype: article
 :idprefix:
@@ -18,10 +18,11 @@ xref:index.adoc[the documentation index]). Read it start to finish, or jump:
 * <<multi-model,Multi-model operation>>
 * <<performance,Performance>>
 * <<evals,Evals>>
+* <<migrating,Migration>>
 
 The manual describes behavior as shipped at the current commit; where a
-capability is still pending (notably live provider wiring in the daemon
-session factory), it says so.
+capability is still pending (notably the live-session search feed and
+orchestration best-of-N wiring), it says so.
 
 include::partials/getting-started.adoc[leveloffset=+1]
 
@@ -36,3 +37,5 @@ include::partials/multi-model.adoc[leveloffset=+1]
 include::partials/performance.adoc[leveloffset=+1]
 
 include::partials/evals.adoc[leveloffset=+1]
+
+include::partials/migrating.adoc[leveloffset=+1]

@@ -1,0 +1,39 @@
+[package]
+name = "austringer-snapshots"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Typed error surface (no stringly failures, no panics).
+thiserror.workspace = true
+# Restore-set comparison + no-git content addressing + mock signatures
+# (keyed mode). The workspace's content hash.
+blake3.workspace = true
+# In-memory tree/commit object writing, namespace refs, commit-graph
+# walks. Same minimal feature set as T21: only `sha1` (gix-hash refuses to
+# build without a digest kind). Object writing (write_blob/write_object),
+# refs, and first-parent walks are all non-optional gix surface — no
+# additional gix features are enabled for todo 23.
+gix.workspace = true
+# Hygiene walk: .gitignore/.ignore/.git/info/exclude (READ-ONLY) with
+# austringer built-in excludes layered in memory (overrides) — the user's
+# .gitignore and .git are never written. Already a workspace dep (T17).
+ignore.workspace = true
+# No-git fallback content-addressed snapshots (CoW where the FS allows).
+reflink-copy.workspace = true
+# Checkpoint manifests + snapshot sidecars (sorted-key JSON).
+serde.workspace = true
+serde_json.workspace = true
+# Standard facade only (best-effort GC/sweep skips are warned, never fatal).
+tracing.workspace = true
+# Restore-transaction ids (<uuid>) and mock-signature nonce material.
+getrandom.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

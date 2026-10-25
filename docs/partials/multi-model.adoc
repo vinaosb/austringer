@@ -47,7 +47,7 @@ compaction boundaries, where the cache miss happens anyway.
 === routing.json
 
 Routing is configured by a single JSON document at
-`{data_dir}/routing.json` (default `.harness-daemon/routing.json`) —
+`{data_dir}/routing.json` (default `.austringer-daemon/routing.json`) —
 read at daemon startup by the turn dispatcher. An absent document is
 silence (the un-routed session model keeps serving); a present but
 unusable one is loud and never fatal to inference. Every collection is a

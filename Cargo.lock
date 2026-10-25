@@ -493,6 +493,514 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "austringer-ast"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-c",
+ "tree-sitter-c-sharp",
+ "tree-sitter-cmake",
+ "tree-sitter-commonlisp",
+ "tree-sitter-cpp",
+ "tree-sitter-css",
+ "tree-sitter-dart",
+ "tree-sitter-elisp",
+ "tree-sitter-elixir",
+ "tree-sitter-elm",
+ "tree-sitter-erlang",
+ "tree-sitter-fortran",
+ "tree-sitter-fsharp",
+ "tree-sitter-go",
+ "tree-sitter-graphql",
+ "tree-sitter-groovy",
+ "tree-sitter-haskell",
+ "tree-sitter-hcl",
+ "tree-sitter-html",
+ "tree-sitter-java",
+ "tree-sitter-javascript",
+ "tree-sitter-json",
+ "tree-sitter-julia",
+ "tree-sitter-lua",
+ "tree-sitter-make",
+ "tree-sitter-matlab",
+ "tree-sitter-nim",
+ "tree-sitter-nix",
+ "tree-sitter-objc",
+ "tree-sitter-ocaml",
+ "tree-sitter-php",
+ "tree-sitter-powershell",
+ "tree-sitter-python",
+ "tree-sitter-r",
+ "tree-sitter-regex",
+ "tree-sitter-rst",
+ "tree-sitter-ruby",
+ "tree-sitter-rust",
+ "tree-sitter-scala",
+ "tree-sitter-scheme",
+ "tree-sitter-solidity",
+ "tree-sitter-swift",
+ "tree-sitter-toml-ng",
+ "tree-sitter-typescript",
+ "tree-sitter-verilog",
+ "tree-sitter-yaml",
+ "tree-sitter-zig",
+]
+
+[[package]]
+name = "austringer-bench"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "async-trait",
+ "austringer-core",
+ "austringer-daemon",
+ "austringer-exec",
+ "austringer-repomap",
+ "austringer-sessions",
+ "austringer-tui",
+ "clap",
+ "criterion",
+ "crossterm",
+ "dhat",
+ "mimalloc",
+ "predicates",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "austringer-cli"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "async-trait",
+ "austringer-core",
+ "austringer-daemon",
+ "austringer-mcp",
+ "austringer-safety",
+ "austringer-sessions",
+ "austringer-skills",
+ "axum",
+ "clap",
+ "futures-util",
+ "interprocess",
+ "predicates",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "austringer-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-test-support",
+ "blake3",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "austringer-daemon"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-core",
+ "austringer-exec",
+ "austringer-intel",
+ "austringer-lsp",
+ "austringer-mcp",
+ "austringer-media",
+ "austringer-orchestration",
+ "austringer-providers",
+ "austringer-safety",
+ "austringer-sessions",
+ "austringer-skills",
+ "austringer-snapshots",
+ "austringer-test-support",
+ "austringer-tools",
+ "austringer-web",
+ "axum",
+ "base64ct",
+ "blake3",
+ "bytes",
+ "futures-util",
+ "getrandom 0.3.4",
+ "interprocess",
+ "libc",
+ "portable-pty",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "win32job",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "austringer-evals"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "austringer-exec"
+version = "0.1.0"
+dependencies = [
+ "austringer-ast",
+ "austringer-core",
+ "austringer-safety",
+ "austringer-vfs",
+ "blake3",
+ "libc",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "thiserror 2.0.20",
+ "vt100",
+ "win32job",
+]
+
+[[package]]
+name = "austringer-intel"
+version = "0.1.0"
+dependencies = [
+ "austringer-providers",
+ "austringer-skills",
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "austringer-lsp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "austringer-mcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-core",
+ "axum",
+ "blake3",
+ "bytes",
+ "futures-util",
+ "http",
+ "reqwest",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sse-stream",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "austringer-media"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "async-trait",
+ "austringer-core",
+ "austringer-media",
+ "austringer-safety",
+ "austringer-test-support",
+ "base64 0.22.1",
+ "blake3",
+ "bytes",
+ "comrak",
+ "csv",
+ "flacenc",
+ "gltf",
+ "hound",
+ "html5gum",
+ "image-webp",
+ "jpeg-encoder",
+ "jxl-oxide",
+ "kamadak-exif",
+ "krilla",
+ "libc",
+ "lopdf",
+ "maud",
+ "parquet",
+ "png",
+ "quick-xml",
+ "ravif",
+ "serde",
+ "serde_json",
+ "sha2",
+ "symphonia",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tiff",
+ "tokio",
+ "toml",
+ "usvg",
+ "win32job",
+ "zip",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "austringer-orchestration"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-intel",
+ "austringer-providers",
+ "austringer-safety",
+ "blake3",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "austringer-providers"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-core",
+ "austringer-test-support",
+ "base64ct",
+ "blake3",
+ "bytes",
+ "futures-util",
+ "keyring",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "austringer-repomap"
+version = "0.1.0"
+dependencies = [
+ "austringer-ast",
+]
+
+[[package]]
+name = "austringer-safety"
+version = "0.1.0"
+dependencies = [
+ "base64ct",
+ "getrandom 0.3.4",
+ "hmac",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "url",
+ "win32job",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "austringer-search"
+version = "0.1.0"
+dependencies = [
+ "grep-regex",
+ "grep-searcher",
+ "ignore",
+ "tantivy",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "austringer-sessions"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "austringer-core",
+ "blake3",
+ "chacha20poly1305",
+ "getrandom 0.3.4",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "austringer-skills"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "austringer-snapshots"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "getrandom 0.3.4",
+ "gix",
+ "ignore",
+ "reflink-copy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
+name = "austringer-test-support"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "austringer-tools"
+version = "0.1.0"
+dependencies = [
+ "austringer-ast",
+ "blake3",
+ "imara-diff",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "austringer-tui"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-core",
+ "austringer-daemon",
+ "axum",
+ "crossterm",
+ "futures-util",
+ "ignore",
+ "insta",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "toml",
+]
+
+[[package]]
+name = "austringer-vfs"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "gix",
+ "reflink-copy",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
+name = "austringer-wasm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "wasmtime",
+]
+
+[[package]]
+name = "austringer-web"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "austringer-core",
+ "austringer-daemon",
+ "austringer-providers",
+ "axum",
+ "base64ct",
+ "blake3",
+ "futures-util",
+ "reqwest",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2967,514 +3475,6 @@ dependencies = [
  "crunchy",
  "num-traits",
  "zerocopy",
-]
-
-[[package]]
-name = "harness-ast"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tree-sitter",
- "tree-sitter-bash",
- "tree-sitter-c",
- "tree-sitter-c-sharp",
- "tree-sitter-cmake",
- "tree-sitter-commonlisp",
- "tree-sitter-cpp",
- "tree-sitter-css",
- "tree-sitter-dart",
- "tree-sitter-elisp",
- "tree-sitter-elixir",
- "tree-sitter-elm",
- "tree-sitter-erlang",
- "tree-sitter-fortran",
- "tree-sitter-fsharp",
- "tree-sitter-go",
- "tree-sitter-graphql",
- "tree-sitter-groovy",
- "tree-sitter-haskell",
- "tree-sitter-hcl",
- "tree-sitter-html",
- "tree-sitter-java",
- "tree-sitter-javascript",
- "tree-sitter-json",
- "tree-sitter-julia",
- "tree-sitter-lua",
- "tree-sitter-make",
- "tree-sitter-matlab",
- "tree-sitter-nim",
- "tree-sitter-nix",
- "tree-sitter-objc",
- "tree-sitter-ocaml",
- "tree-sitter-php",
- "tree-sitter-powershell",
- "tree-sitter-python",
- "tree-sitter-r",
- "tree-sitter-regex",
- "tree-sitter-rst",
- "tree-sitter-ruby",
- "tree-sitter-rust",
- "tree-sitter-scala",
- "tree-sitter-scheme",
- "tree-sitter-solidity",
- "tree-sitter-swift",
- "tree-sitter-toml-ng",
- "tree-sitter-typescript",
- "tree-sitter-verilog",
- "tree-sitter-yaml",
- "tree-sitter-zig",
-]
-
-[[package]]
-name = "harness-bench"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "async-trait",
- "clap",
- "criterion",
- "crossterm",
- "dhat",
- "harness-core",
- "harness-daemon",
- "harness-exec",
- "harness-repomap",
- "harness-sessions",
- "harness-tui",
- "mimalloc",
- "predicates",
- "ratatui",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "harness-cli"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "async-trait",
- "axum",
- "clap",
- "futures-util",
- "harness-core",
- "harness-daemon",
- "harness-mcp",
- "harness-safety",
- "harness-sessions",
- "harness-skills",
- "interprocess",
- "predicates",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
-]
-
-[[package]]
-name = "harness-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "blake3",
- "harness-test-support",
- "rusqlite",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "harness-daemon"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "base64ct",
- "blake3",
- "bytes",
- "futures-util",
- "getrandom 0.3.4",
- "harness-core",
- "harness-exec",
- "harness-intel",
- "harness-lsp",
- "harness-mcp",
- "harness-media",
- "harness-orchestration",
- "harness-providers",
- "harness-safety",
- "harness-sessions",
- "harness-skills",
- "harness-snapshots",
- "harness-test-support",
- "harness-tools",
- "harness-web",
- "interprocess",
- "libc",
- "portable-pty",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "win32job",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "harness-evals"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "harness-exec"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "harness-ast",
- "harness-core",
- "harness-safety",
- "harness-vfs",
- "libc",
- "portable-pty",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "thiserror 2.0.20",
- "vt100",
- "win32job",
-]
-
-[[package]]
-name = "harness-intel"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "harness-providers",
- "harness-skills",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "harness-lsp"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "harness-mcp"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "blake3",
- "bytes",
- "futures-util",
- "harness-core",
- "http",
- "reqwest",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "sse-stream",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
-name = "harness-media"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "async-trait",
- "base64 0.22.1",
- "blake3",
- "bytes",
- "comrak",
- "csv",
- "flacenc",
- "gltf",
- "harness-core",
- "harness-media",
- "harness-safety",
- "harness-test-support",
- "hound",
- "html5gum",
- "image-webp",
- "jpeg-encoder",
- "jxl-oxide",
- "kamadak-exif",
- "krilla",
- "libc",
- "lopdf",
- "maud",
- "parquet",
- "png",
- "quick-xml",
- "ravif",
- "serde",
- "serde_json",
- "sha2",
- "symphonia",
- "tempfile",
- "thiserror 2.0.20",
- "tiff",
- "tokio",
- "toml",
- "usvg",
- "win32job",
- "zip",
- "zune-jpeg",
-]
-
-[[package]]
-name = "harness-orchestration"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "blake3",
- "harness-intel",
- "harness-providers",
- "harness-safety",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "harness-providers"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64ct",
- "blake3",
- "bytes",
- "futures-util",
- "harness-core",
- "harness-test-support",
- "keyring",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "harness-repomap"
-version = "0.1.0"
-dependencies = [
- "harness-ast",
-]
-
-[[package]]
-name = "harness-safety"
-version = "0.1.0"
-dependencies = [
- "base64ct",
- "getrandom 0.3.4",
- "hmac",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.20",
- "url",
- "win32job",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "harness-search"
-version = "0.1.0"
-dependencies = [
- "grep-regex",
- "grep-searcher",
- "ignore",
- "tantivy",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "harness-sessions"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "blake3",
- "chacha20poly1305",
- "getrandom 0.3.4",
- "harness-core",
- "rusqlite",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "harness-skills"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "harness-snapshots"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "getrandom 0.3.4",
- "gix",
- "ignore",
- "reflink-copy",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tracing",
-]
-
-[[package]]
-name = "harness-test-support"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "harness-tools"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "harness-ast",
- "imara-diff",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "harness-tui"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "crossterm",
- "futures-util",
- "harness-core",
- "harness-daemon",
- "ignore",
- "insta",
- "ratatui",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "toml",
-]
-
-[[package]]
-name = "harness-vfs"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "gix",
- "reflink-copy",
- "tempfile",
- "thiserror 2.0.20",
- "tracing",
-]
-
-[[package]]
-name = "harness-wasm"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "harness-core",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "wasmtime",
-]
-
-[[package]]
-name = "harness-web"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "base64ct",
- "blake3",
- "futures-util",
- "harness-core",
- "harness-daemon",
- "harness-providers",
- "reqwest",
- "serde_json",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

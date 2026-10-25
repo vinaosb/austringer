@@ -1,6 +1,6 @@
 # nextest configuration (workspace-wide).
 #
-# The harness-exec live-PTY suites (pty_chaos, pty_qa, pty_live,
+# The austringer-exec live-PTY suites (pty_chaos, pty_qa, pty_live,
 # pathologies) spawn and enumerate real process trees (PING.EXE on
 # Windows, sleep on Unix). nextest runs every test in its own process,
 # so the in-binary LiveGate (todo 20 flake fix) cannot see across test
@@ -14,5 +14,5 @@
 pty-live = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'package(harness-exec) and binary(/^(pty_chaos|pty_qa|pty_live|pathologies)$/)'
+filter = 'package(austringer-exec) and binary(/^(pty_chaos|pty_qa|pty_live|pathologies)$/)'
 test-group = "pty-live"

@@ -1,0 +1,82 @@
+[[migrating,Migration]]
+== Migration
+
+Coming from another harness — Claude Code, Codex CLI, goose, opencode, or
+any ACP-capable editor agent? This chapter maps what you already have onto
+austringer. The design goal is boring: your keys stay where they are, your
+editor keeps working, and nothing you already installed breaks.
+
+[[mig-env]]
+=== API keys and environment
+
+austringer never asks you to copy a key into a new config file. It reads
+key *values* from any environment variable you *name* — so the variable you
+already export keeps working:
+
+[cols="1,1,2"]
+|===
+|If you have |Run once |Effect
+
+|`ANTHROPIC_API_KEY`
+|`setx AUSTRINGER_PROVIDER anthropic` + `setx AUSTRINGER_PROVIDER_KEY_ENV ANTHROPIC_API_KEY`
+|The daemon reads your existing Anthropic key; model defaults to the seeded catalog.
+
+|`OPENAI_API_KEY`
+|`AUSTRINGER_PROVIDER=openai AUSTRINGER_PROVIDER_KEY_ENV=OPENAI_API_KEY`
+|Same passthrough for OpenAI.
+
+|`GEMINI_API_KEY` / `GOOGLE_API_KEY`
+|`AUSTRINGER_PROVIDER=google AUSTRINGER_PROVIDER_KEY_ENV=GEMINI_API_KEY`
+|Same passthrough for Google.
+
+|An OpenAI-compatible endpoint
+|`AUSTRINGER_PROVIDER=compat AUSTRINGER_PROVIDER_BASE_URL=... AUSTRINGER_PROVIDER_KEY_ENV=MY_KEY_VAR`
+|Point at any compatible gateway; the model id comes from `AUSTRINGER_MODEL`.
+|===
+
+(Windows: use `setx` once or set the vars in your session; macOS/Linux:
+export them.) Then run `austringer doctor` — it health-checks config,
+sandbox, MCP, sessions, and env in one pass and names exactly what is
+missing. An unconfigured daemon is still fully servable and answers
+inference with a typed, actionable error.
+
+Cost safety defaults on: a per-session spend cap of $20.00
+(`AUSTRINGER_SESSION_COST_CAP_USD`), warning at 80%, typed stop at 100%.
+
+[[mig-editor]]
+=== Editor coexistence
+
+- The VS Code extension installs beside any other agent extension; it talks
+  only to its own loopback daemon and reads only its own settings section
+  (`austringer.*` in `settings.json`). No shared state, no conflicts.
+- Zed and other ACP hosts: add austringer as one more external agent (see
+  xref:getting-started.adoc#getting-started[getting started]) — it appears
+  alongside whatever agents you already have registered.
+
+[[mig-skills]]
+=== Skills you already have
+
+The skills loader reads the vendor directories you may already populate —
+`.austringer/`, opencode, claude, and agents skills paths — behind the same
+trust gates and quarantine regardless of origin. Third-party packs install
+through the registry with pin + content-hash verification; nothing executes
+on load.
+
+[[mig-sessions]]
+=== Sessions and history (honest status)
+
+Transcript importers for Claude Code (JSONL) and Codex (rollouts) exist at
+library level in `austringer-sessions` (the `foreign` adapters), but no CLI
+import verb is wired yet — importing is roadmap, not a claim. Your old
+tools' histories are untouched either way: austringer writes only its own
+encrypted store and never reads another tool's state directory.
+
+[[mig-acp]]
+=== If you are an orchestrator author
+
+austringer is an ACP *guest*: `austringer-daemon --acp` speaks JSON-RPC over
+stdio (`initialize`, `session/new`, `session/prompt`, `session/update`,
+permission round-trips, `session/cancel`, fs reads). Permission asks and
+cost caps surface through the protocol like any first-class frontend. A
+host-side registration is three lines — see the README's ACP section for a
+Zed example.

@@ -26,12 +26,12 @@ Steps or the smallest command sequence that triggers it:
 
 - OS and shell:
 - Rust version (`rustc -V`) and whether it matches the workspace MSRV:
-- Harness commit (`git rev-parse --short HEAD`):
+- Austringer commit (`git rev-parse --short HEAD`):
 - Frontend involved (CLI / TUI / web / VS Code / daemon):
 
 **Evidence**
 
-Test output, `harness doctor` output, perf-gate report, or an eval
+Test output, `austringer doctor` output, perf-gate report, or an eval
 artifact that demonstrates the defect — anything that turns this report
 into a reproducible receipt. If you can pin it with a failing test, even
 better (see the test-discipline section of CONTRIBUTING.md).

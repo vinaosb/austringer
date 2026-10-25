@@ -1,0 +1,27 @@
+---
+source: austringer-tui/tests/screens.rs
+expression: rendered
+---
+┌completions─────────────────────────────┐
+│src/lib.rs                              │
+│src/main.rs                             │
+└────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+disconnected (ctrl+r reconnect) ctx: ≈17/10000 (0%) | cache: 72.5% | cost: front
+austringer (i typed / esc blur / enter send)────────────────────────────────────
+open @src|

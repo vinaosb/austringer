@@ -1,0 +1,26 @@
+---
+source: austringer-tui/tests/screens.rs
+expression: rendered
+---
+> transcript (2)
+> tools (0)
+> diffs (0)
+> agents (1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+failed: daemon unreachable: refused ctx: ≈17/10000 (0%) | cache: 72.5% | cost: f
+austringer (i to type, q quits)─────────────────────────────────────────────────

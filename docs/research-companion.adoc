@@ -8,7 +8,7 @@
 == What this page indexes
 
 The project was designed from a working research artifact: the file
-`.omo/research/harness-research.md` — a 33-section study of 25+ agent
+`.omo/research/harness-research.md` — a 40-section study of 25+ agent
 harnesses, built from pinned source snapshots, git archaeology, and
 post-mortems. It stays Markdown because it is alive; this page is its
 index. The repository README links the file directly; read it there.
@@ -70,7 +70,7 @@ program blocklists.
 commit provenance with session-id trailers.
 |§18
 |Qwen Code
-|Eval-transparency README discipline (harness-matched rows, exhaustive
+|Eval-transparency README discipline (austringer-matched rows, exhaustive
 disclosure); fail-closed writer leases; MCP transport pooling.
 |§19
 |Cursor

@@ -1,6 +1,30 @@
 [[getting-started,Getting started]]
 = Getting started
 
+[[gs-install]]
+== Install (prebuilt)
+
+The Release workflow ships installer scripts (first austringer-named release
+lands with the rename merge; until it appears on the GitHub Releases page,
+build from source below):
+
+```sh
+# macOS / Linux
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.ps1 | iex
+```
+
+The release archives are `cargo binstall`-compatible, and a daemon+CLI
+container image is published to GHCR by the same pipeline. After installing,
+`austringer doctor` verifies the setup in one pass. Coming from another
+harness? xref:migrating.adoc[The migration chapter] maps your existing keys
+and setup.
+
 [[gs-build]]
 == Build
 
@@ -8,14 +32,14 @@ The workspace builds with a stock Rust toolchain (MSRV pinned in the root
 `Cargo.toml`; CI installs exactly that version). A minimal from-source run:
 
 ```sh
-cargo build --release -p harness-daemon -p harness-cli -p harness-tui
-./target/release/harness-daemon        # Windows: target\release\harness-daemon.exe
-./target/release/harness doctor
+cargo build --release -p austringer-daemon -p austringer-cli -p austringer-tui
+./target/release/austringer-daemon        # Windows: target\release\austringer-daemon.exe
+./target/release/austringer doctor
 ```
 
 The daemon binds loopback only (it refuses non-loopback addresses), picks a
 free port unless `--port` is given, prints its URL on the ready line, and
-writes the generated auth token under `.harness-daemon/daemon-token`. The
+writes the generated auth token under `.austringer-daemon/daemon-token`. The
 `doctor` subcommand probes configuration, provider, sandbox, MCP, sessions,
 and environment health, and exits nonzero on induced failure — that is its
 acceptance test.
@@ -29,32 +53,32 @@ rule against committing machine-specific SDK paths.
 [[gs-cli]]
 == The CLI surface
 
-`harness` is a thin client over the daemon — it never hosts the loop
+`austringer` is a thin client over the daemon — it never hosts the loop
 itself:
 
 ```sh
-harness run --session work "explain the failure in src/exec"   # one headless turn
-harness capture "note: check the PTY bounds"                   # submit without waiting
-harness repl                                                    # interactive
-harness attach --session work --max-events 50                   # tail the event stream
-harness doctor                                                  # health check
-harness --output-json run --session eval-1 "..."                # NDJSON (eval adapter)
+austringer run --session work "explain the failure in src/exec"   # one headless turn
+austringer capture "note: check the PTY bounds"                   # submit without waiting
+austringer repl                                                    # interactive
+austringer attach --session work --max-events 50                   # tail the event stream
+austringer doctor                                                  # health check
+austringer --output-json run --session eval-1 "..."                # NDJSON (eval adapter)
 ```
 
 `--output-json` emits the event stream plus a `turn_result` envelope — the
 stable contract the evals suite drives (the adapter argv shape is pinned by
-test in harness-evals).
+test in austringer-evals).
 
 [[gs-frontends]]
 == Attaching the other frontends
 
-* TUI: `harness-tui --url http://127.0.0.1:<port>` (the daemon's ready line
+* TUI: `austringer-tui --url http://127.0.0.1:<port>` (the daemon's ready line
   prints the URL; the token is read from the default token file, or pass
   `--token-file`). Sessions are selected with `--session`.
 * Web: open the daemon URL in a browser — the daemon serves the dashboard
   SPA itself; there is no node server to run.
-* VS Code: the `harness-vscode` extension is a TypeScript thin client over
-  the same daemon protocol (see its README-level docs in `harness-vscode/`).
+* VS Code: the `austringer-vscode` extension is a TypeScript thin client over
+  the same daemon protocol (see its README-level docs in `austringer-vscode/`).
 
 Multiple frontends may be attached at once; permission decisions are
 mediated across all attached clients.
@@ -74,17 +98,32 @@ Separate from the developer suite, the agent-facing `run_tests` tool
 detects the framework (cargo test / cargo nextest) and returns a typed
 per-test report that the completion gate binds as evidence. Its
 detection can be replaced with a custom command line through the
-user-global `HARNESS_TEST_COMMAND` environment variable (read by the
+user-global `AUSTRINGER_TEST_COMMAND` environment variable (read by the
 daemon at startup) — a repo-local override file is refused with a typed
 error, so a repository under review can never redefine how its own
 tests run.
+
+[[gs-acp]]
+== ACP: hosting austringer in an editor
+
+Any ACP host — Zed, JetBrains, Neovim plugins, orchestrating agents — can
+drive the daemon as a guest agent over stdio:
+
+```sh
+austringer-daemon --acp
+```
+
+Registration is three lines of host config (the README's ACP section has a
+worked Zed `agent_servers` example); permission asks and cost caps ride the
+same mediation queues as the first-party frontends. The migration chapter
+covers arriving from another editor agent.
 
 [[gs-automations]]
 == Automations
 
 Schedules are declarative, terraform-style definitions persisted as
 `automations.json` under the daemon data dir (default
-`.harness-daemon/automations.json`): each entry names a cron expression,
+`.austringer-daemon/automations.json`): each entry names a cron expression,
 the job action, and its network policy (offline wins any intersection).
 Definitions are validated on registration and reload; a draft-tier or
 unknown pack is never schedulable — the gate fails closed. The running
@@ -95,7 +134,7 @@ notifications to attached clients on the event stream.
 [[gs-status]]
 == What runs without a provider
 
-A daemon without `HARNESS_PROVIDER` set is fully servable: frontends, the
+A daemon without `AUSTRINGER_PROVIDER` set is fully servable: frontends, the
 protocol layer, permissions, sessions, snapshots, the scheduler, and
 automations all work, and an inference request returns a typed
 `no provider configured` error rather than a guess. With the provider
@@ -136,12 +175,12 @@ design-receipts table):
 * *Automations* — declarative schedules (`automations.json`) with cron,
   network policy, and pack-tier gating; visible at `GET /automations`.
 * *Cost caps* — every session governs its spend against a micro-USD
-  ledger: default cap $20 (override with `HARNESS_SESSION_COST_CAP_USD`),
+  ledger: default cap $20 (override with `AUSTRINGER_SESSION_COST_CAP_USD`),
   a warning at 80%, and a typed stop at 100%. A stop is a terminal
   event, never a silent model substitution.
 
 NOTE: Release notes live under `docs/release/` (leaderboard + eval
 tables) rather than in-product: OpenCode V2's `/highlights` pattern was
 evaluated and deliberately WATCH-recorded as not adopted (research
-§35.6) — our release surface stays the published, harness-matched
+§35.6) — our release surface stays the published, austringer-matched
 tables.

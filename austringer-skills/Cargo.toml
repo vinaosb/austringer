@@ -1,0 +1,27 @@
+[package]
+name = "austringer-skills"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Zero new external dependencies (task-30 root-manifest discipline): the
+# frontmatter parser is a hand-rolled YAML *subset* (agentskills.io shape),
+# and trigger matching is lexical containment/word-boundary — see
+# `frontmatter`/`routing` module docs for the no-serde_yaml/no-regex
+# rationale. austringer-core is deliberately NOT a dependency: its glob
+# engine is being reshaped by the parallel todo-13 worker, and the only
+# wildcard this crate needs is `*` in allowed-tools patterns, so a
+# 20-line matcher lives in `skill::tool_pattern_matches`.
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

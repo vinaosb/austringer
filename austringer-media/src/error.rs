@@ -1,0 +1,139 @@
+//! The typed media error vocabulary.
+//!
+//! Every failure mode of the media subsystem is one of these variants, and
+//! every `Display` message names the next action. Unsupported operations
+//! are typed errors with reasons - never fakes, never silent degradation.
+//! The vocabulary mirrors the seam discipline of
+//! `austringer-core/src/tools/provider.rs` (typed ProviderError/DispatchError).
+
+use serde::{Deserialize, Serialize};
+
+use crate::descriptor::Operation;
+use crate::format::FormatId;
+
+/// Why a pinned tool installation failed (M15 install gate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallFailure {
+    /// Downloaded bytes did not match the pinned SHA-256 (or the pin was
+    /// malformed - malformed pins fail closed the same way).
+    ShaMismatch,
+    /// The asset could not be fetched.
+    Download,
+}
+
+impl std::fmt::Display for InstallFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::ShaMismatch => "sha-256 mismatch",
+            Self::Download => "download failed",
+        })
+    }
+}
+
+/// Why a media operation failed. Every variant's `Display` is actionable.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+pub enum MediaError {
+    /// The format is not registered / not in the CORE slate.
+    #[error(
+        "unsupported media format: probe the bytes first and dispatch through the adapter registry"
+    )]
+    UnsupportedFormat,
+    /// The format is registered but rejects this operation.
+    #[error(
+        "format {format} does not support {op}: {reason}; request a supported operation or a different output format"
+    )]
+    UnsupportedOperation {
+        /// The format asked about.
+        format: FormatId,
+        /// The operation that was refused.
+        op: Operation,
+        /// The honest why, surfaced verbatim from the descriptor.
+        reason: String,
+    },
+    /// The input uses a format FEATURE the adapter deliberately does not
+    /// implement (M12: compressed glTF primitives). The bytes are refused
+    /// whole - never mangled into a partial extraction.
+    #[error(
+        "format {format} uses unsupported feature {feature}: {reason}; request an \
+         uncompressed variant or route the file through its tool tier"
+    )]
+    UnsupportedFeature {
+        /// The format carrying the feature.
+        format: FormatId,
+        /// The feature name (extension identifier, codec, ...).
+        feature: String,
+        /// The honest why.
+        reason: String,
+    },
+    /// An opt-in external tool is not installed.
+    #[error("external tool {tool} is unavailable: {install_hint}")]
+    ToolUnavailable {
+        /// The missing tool's name.
+        tool: String,
+        /// How to install it (pack name / pinned installer pointer).
+        install_hint: String,
+    },
+    /// A pinned tool installation failed.
+    #[error(
+        "pinned tool installation failed ({reason}): re-run the install step and verify the \
+         recorded SHA-256 release pin"
+    )]
+    InstallFailed {
+        /// Which install discipline failed.
+        reason: InstallFailure,
+    },
+    /// The external tool ran and exited non-zero.
+    #[error(
+        "external tool exited with code {code}: {stderr_head}; check the command and input \
+         and retry (stderr is head-bounded)"
+    )]
+    NonZeroExit {
+        /// The tool's exit code.
+        code: i32,
+        /// Bounded stderr head (<= 4096 bytes) - never the full pipe.
+        stderr_head: String,
+    },
+    /// The OS sandbox refused the operation.
+    #[error(
+        "the OS sandbox denied the operation: check the tool's writable-scope and network profile, then widen the sandbox explicitly if warranted"
+    )]
+    SandboxDenied,
+    /// The operation exceeded its deadline.
+    #[error(
+        "the media operation exceeded its deadline: narrow the input or raise the caller-provided budget and retry"
+    )]
+    Timeout,
+    /// A generation spec did not satisfy the format's contract.
+    #[error(
+        "invalid generation spec: fix the params for the target format (see its descriptor) and resubmit"
+    )]
+    InvalidSpec,
+    /// The bytes did not parse as the probed format.
+    #[error(
+        "the input failed to parse: it may be corrupt or not the probed format; re-probe the bytes and check integrity"
+    )]
+    ParseFailure,
+    /// The document is encrypted; execution of embedded code is banned and
+    /// so is opaque decryption of container-level encryption.
+    #[error(
+        "encrypted documents are not supported: decrypt out-of-band and resubmit the plaintext copy"
+    )]
+    EncryptedUnsupported,
+    /// No deterministic text projection exists for this format.
+    #[error(
+        "no text projector is registered for this format: use a capability-flagged model or register a projector for it"
+    )]
+    NoProjector,
+    /// Extraction exceeded its wall-clock deadline or total-size cap.
+    #[error(
+        "extraction exceeded its budget (deadline or size cap): raise the caller-provided ExtractBudgets or split the input into smaller pieces"
+    )]
+    ExtractTooLarge,
+    /// The structural diff exceeded its depth cap (64) or node cap
+    /// (100_000 compared nodes).
+    #[error(
+        "structural diff exceeded its budget (depth or node cap): project or split the trees into smaller canonical forms and diff those"
+    )]
+    DiffTooLarge,
+}

@@ -1,0 +1,18 @@
+#!/bin/sh
+# Full pre-push gate: the local CI parity rig (docker ubuntu legs +
+# native windows legs — scripts/local-ci.ps1). Run it before spending
+# GitHub Actions credits on runner-environment divergences.
+# Bypass (emergencies only): AUSTRINGER_SKIP_LOCAL_CI=1 git push ...
+[ "$AUSTRINGER_SKIP_LOCAL_CI" = "1" ] && exit 0
+
+ROOT=$(git rev-parse --show-toplevel) || exit 1
+cd "$ROOT" || exit 1
+PS1_SCRIPT=$(cygpath -w "$ROOT/scripts/local-ci.ps1" 2>/dev/null || echo "$ROOT/scripts/local-ci.ps1")
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS1_SCRIPT"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo >&2 "pre-push: local CI failed (exit $rc); push aborted."
+    echo >&2 "fix the failing phase, or bypass once: AUSTRINGER_SKIP_LOCAL_CI=1 git push"
+fi
+exit "$rc"

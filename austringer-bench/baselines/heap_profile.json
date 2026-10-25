@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "recorded_on": "windows",
+  "metrics": {
+    "eviction.alloc_bytes": 11191006.0,
+    "eviction.alloc_count": 120149.0,
+    "prompt.alloc_bytes": 9791253.0,
+    "prompt.alloc_count": 81249.0,
+    "pty.alloc_bytes": 8901081.0,
+    "pty.alloc_count": 59486.0,
+    "repomap.alloc_bytes": 25452528.0,
+    "repomap.alloc_count": 204172.0,
+    "sessions.alloc_bytes": 928351.0,
+    "sessions.alloc_count": 3321.0,
+    "tui.alloc_bytes": 9003254.0,
+    "tui.alloc_count": 27370.0
+  }
+}

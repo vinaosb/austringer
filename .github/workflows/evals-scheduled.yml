@@ -16,7 +16,7 @@
 # file's PR path — this file has no PR path.
 #
 # Publication: the sweep writes docs/release/evals-conformance-report.json
-# (the evals.adoc publication source — harness-matched rows only) and the
+# (the evals.adoc publication source — austringer-matched rows only) and the
 # rendered table is uploaded as a workflow artifact. The in-repo
 # docs/release copy is refreshed by a maintainer commit, never pushed
 # from CI (persist-credentials: false).
@@ -62,7 +62,7 @@ jobs:
         # regression; exit 2 = drift/regression surfaced; exit 3 =
         # fixture/config error. Any non-zero fails this job loudly.
         run: >-
-          cargo run -p harness-evals --bin run_sweep --
+          cargo run -p austringer-evals --bin run_sweep --
           --conformance
           --trigger ${{ github.event_name == 'schedule' && 'scheduled' || inputs.trigger || 'scheduled' }}
           --report docs/release/evals-conformance-report.json

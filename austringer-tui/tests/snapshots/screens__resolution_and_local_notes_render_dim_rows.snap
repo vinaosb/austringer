@@ -1,0 +1,26 @@
+---
+source: austringer-tui/tests/screens.rs
+expression: rendered
+---
+> transcript (2)
+> tools (0)
+> diffs (0)
+> agents (1)
+* ask 4 denied by web
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ctx: ≈17/10000 (0%) | cache: 72.5% | cost: frontier-x $0.42
+austringer (i to type, q quits)─────────────────────────────────────────────────

@@ -1,0 +1,66 @@
+[package]
+name = "austringer-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Thin client over the daemon's typed protocol (todo 35): reuse of the
+# protocol types IS the client contract; no daemon logic is duplicated.
+austringer-daemon = { path = "../austringer-daemon", version = "0.1.0" }
+# Event/content rendering + the typed image-marker and media-store
+# contracts the CLI reuses (never re-implements).
+austringer-core = { path = "../austringer-core", version = "0.1.0" }
+# Doctor only: sessions store migration probe (SessionError::Schema /
+# Corrupt on open).
+austringer-sessions = { path = "../austringer-sessions", version = "0.1.0" }
+# Doctor only: skills scan report (multi-vendor loader).
+austringer-skills = { path = "../austringer-skills", version = "0.1.0" }
+# Doctor's config scan + the `mcp` subcommand family (todo 7: the
+# manager scan, client smoke-calls, and the server core over stdio).
+austringer-mcp = { path = "../austringer-mcp", version = "0.1.0" }
+# Doctor only: sandbox backend name (passive, no enforcement).
+austringer-safety = { path = "../austringer-safety", version = "0.1.0" }
+# Implementing austringer-mcp's #[async_trait]-desugared seams (AskSeam /
+# SessionControl) for `mcp serve` (todo 7; previously test-only here).
+async-trait.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+reqwest.workspace = true
+interprocess.workspace = true
+# The WS attach carrier: tokio-tungstenite is the daemon's own tested
+# client-side WS stack (its ws_e2e suite), already in the workspace
+# lockfile. Default features (connect+handshake, no TLS) are sufficient
+# for the loopback-only auth model. Workspace-pinned (todo 28): the
+# same single major the daemon's axum ws surface and the TUI ride.
+tokio-tungstenite.workspace = true
+# Driving the split WS sink/source halves (SinkExt/StreamExt).
+futures-util.workspace = true
+# CLI-added features over the workspace tokio baseline (sync/time/
+# macros): rt-multi-thread drives the client runtime, io-util splits
+# the IPC stream into a line reader/writer, net backs the HTTP
+# transport, io-std feeds the REPL and permission-answer stdin.
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util", "io-std"] }
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
+# Scripted Inference impls in the in-process daemon flow tests (the
+# trait is #[async_trait]-desugared, so impls carry the attribute too).
+# The attribute itself now comes from [dependencies].
+# In-process daemon for scripted-inference flow tests (real axum router).
+axum.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+# cargo-dist marks this crate as a distable package; the [[bin]] target is
+# src/bin/austringer.rs (plan todo 39). See root dist-workspace.toml.
+[package.metadata.dist]
+dist = true

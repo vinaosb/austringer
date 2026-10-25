@@ -1,0 +1,19 @@
+[package]
+name = "austringer-repomap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Sole dependency: the tag tables (name/kind/span Definitions +
+# References per file) are the graph's input contract. CSR assembly,
+# Personalized PageRank, the chars/4 token approximation and the seeded
+# synthetic-repo generator are all hand-rolled below (~700 LOC total) —
+# ZERO new external crates (parallel-worker anchor on root Cargo.toml;
+# none of this needs one).
+austringer-ast = { path = "../austringer-ast", version = "0.1.0" }

@@ -63,7 +63,7 @@ compaction-boundary re-search.
 [[cs-rewind]]
 == Snapshots and rewind
 
-Checkpoints land under `refs/harness/snapshots/{session}/{turn}`;
+Checkpoints land under `refs/austringer/snapshots/{session}/{turn}`;
 `/rewind N` restores files and truncates event history in sync. Restore is
 transactional: dirty user work is stashed to a private ref first, and a
 restore never knocks later user commits off the branch.

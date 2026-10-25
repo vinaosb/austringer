@@ -56,7 +56,7 @@ itu-fiber-validator). The subset here keeps the workflow skeletons and
 cross-domain negative scoping; a full port would add the calculation
 scripts, standards reference tables (IEC/ITU-T/ACI), and the ITU fiber
 validator. Source of record: the bare-markdown engineering skills under
-`harness-skills/tests/fixtures/corpus/opencode/`.
+`austringer-skills/tests/fixtures/corpus/opencode/`.
 
 ## Workflow
 

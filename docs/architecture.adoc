@@ -7,7 +7,7 @@
 [[architecture]]
 == One daemon, four thin clients
 
-The system has exactly one owner of state: the `harness-daemon` process. It
+The system has exactly one owner of state: the `austringer-daemon` process. It
 hosts the agent loop, the event log, the session store, the permission
 engine, the scheduler, and the sandbox policy. Everything a user touches is
 a thin client:
@@ -20,22 +20,22 @@ a thin client:
 |Headless one-shot `run`/`capture`, interactive REPL, `attach` event tail,
 `doctor` health checks, and `--output-json` NDJSON output that doubles as
 the eval-adapter contract.
-|harness-cli
+|austringer-cli
 
 |TUI
 |Event-driven ratatui interface (no polling, no timers on the render
 thread): context gauge, cache-hit and cost HUD, omnibar, hunk review gates.
-|harness-tui
+|austringer-tui
 
 |Web
 |A dashboard SPA served by the daemon itself — no node server, no cloud
 dependency. Live session view, hunk review, cost/cache/context dashboards.
-|harness-web (static assets)
+|austringer-web (static assets)
 
 |VS Code
 |TypeScript thin client over the same protocol: native diff decorations,
 per-hunk code lenses, opt-in editor telemetry.
-|harness-vscode (not a Cargo crate)
+|austringer-vscode (not a Cargo crate)
 |===
 
 Both carriers are loopback-only and authenticated: HTTP/WS/SSE on
@@ -58,126 +58,126 @@ layer:
 |===
 |Crate |What it owns |Layer
 
-|harness-core
+|austringer-core
 |Typed append-only event log, the operation-pipeline agent loop, the
 invariant tool set with deferred schema hydration, the tool inspector
 chain, autonomy modes, tiered eviction, doctrine-compliant compaction,
 budget ceilings, lifecycle hooks.
 |engine
 
-|harness-tools
+|austringer-tools
 |The bounded file-tool implementations behind `view_window` and
 `edit_lines`: windowed reads, anchored line edits, hashline anchors,
 AST-validated application, semantic hunk staging — no whole-file
 rewrites, no full-file echo.
 |engine
 
-|harness-providers
+|austringer-providers
 |The `Provider` trait: resilient streaming with mid-stream recovery, five
 adapters (Anthropic, OpenAI, Google, xAI, OpenAI-compatible) with OAuth
 device-flow subscription auth and per-response cost accounting.
 |models
 
-|harness-intel
+|austringer-intel
 |Model-weakness profiles from transcript taxonomies, per-model protocol
 dialects and the 400-trap feature-detection table, per-role model routing
 with confirmed fallback.
 |models
 
-|harness-orchestration
+|austringer-orchestration
 |Fork-join subagents, the spec-driven launcher (decompose, heterogeneous
 launch, synthesis), best-of-N and plan-branch comparison, optional
-harness-as-subagent backends.
+austringer-as-subagent backends.
 |models
 
-|harness-ast
+|austringer-ast
 |Tree-sitter tag tables with validation gates, feature-gated per language.
 |context
 
-|harness-repomap
+|austringer-repomap
 |The repository map: file graph from tag tables, Personalized PageRank on a
 CSR, signature-only rendering inside a token budget.
 |context
 
-|harness-search
+|austringer-search
 |Tantivy BM25 lexical index plus grep — no embeddings, by scope decision.
 |context
 
-|harness-lsp
+|austringer-lsp
 |Headless LSP client with RSS-sampled bounded server supervision.
 |context
 
-|harness-exec
+|austringer-exec
 |PTY pipeline with screen-delta scraping, Windows ConPTY hardening and the
 WSL2 bridge, kill trees, the deterministic pre-flight pipeline.
 |exec + safety
 
-|harness-vfs
+|austringer-vfs
 |Transactional shadows: reflink/CoW copies with a git worktree fallback,
 apply-and-rollback before anything touches the user tree.
 |exec + safety
 
-|harness-snapshots
-|Namespace checkpoints under `refs/harness/snapshots/`, `/rewind` restoring
+|austringer-snapshots
+|Namespace checkpoints under `refs/austringer/snapshots/`, `/rewind` restoring
 files and history in sync, restore transactions.
 |exec + safety
 
-|harness-safety
+|austringer-safety
 |OS-native sandboxes (Seatbelt, Landlock/seccomp, Windows restricted tokens
 + ACLs + Job Objects), egress control, the unified permission engine.
 |exec + safety
 
-|harness-wasm
+|austringer-wasm
 |The late-wave WASM plugin runtime (wasmtime, WASI 0.2): resource limits,
 fuel metering, declared capabilities. Off by default.
 |exec + safety
 
-|harness-sessions
+|austringer-sessions
 |SQLite source-of-truth with XChaCha20-Poly1305 encryption at rest, lazy
 turn paging, fork/resume, cross-session memory.
 |persistence
 
-|harness-media
+|austringer-media
 |The 34-format media adapter slate: typed format/capability vocabulary,
 probe registry, structural diff + round-trip verification, tiered
 executor dispatch — served by the daemon's media surface (upload/fetch
 with delivery-cap projection).
 |surfaces
 
-|harness-mcp
+|austringer-mcp
 |MCP client and server modes over rmcp: per-server timeouts, transport
 pooling, full-entry-hash trust binding, org allowlists.
 |extension
 
-|harness-skills
+|austringer-skills
 |The SKILL.md loader with cross-vendor discovery, the Skill Forge
 (distillation, correction journal, quarantine and trust gates), pack
 resolution.
 |extension
 
-|harness-daemon
+|austringer-daemon
 |The state owner: HTTP/WS/SSE + IPC protocol, multi-client attach with
 mediated permissions, scheduler, notifications, web SPA serving, hardened
 auth (token + Host-header checks).
 |surfaces
 
-|harness-cli, harness-tui, harness-web, harness-vscode
+|austringer-cli, austringer-tui, austringer-web, austringer-vscode
 |The four thin clients above.
 |surfaces
 
-|harness-test-support
+|austringer-test-support
 |The hermetic test kit: rule-based fake provider, SSE event-builder DSL,
 mid-stream drop injection, cassettes with strict replay, race gates.
 |meta
 
-|harness-bench
+|austringer-bench
 |The perf suite: budgets of record, deterministic committed baselines, the
 `perf-gate` CI binary, dhat heap profiles.
 |meta
 
-|harness-evals
-|The eval harness: scripted subjects, deterministic graders, integrity
-guards, pass^k metrics, expected-failure pinning, harness cards.
+|austringer-evals
+|The eval rig: scripted subjects, deterministic graders, integrity
+guards, pass^k metrics, expected-failure pinning, Austringer cards.
 |meta
 |===
 
