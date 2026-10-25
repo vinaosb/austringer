@@ -1,10 +1,9 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-10-25 (regenerated for the harness→austringer rename)
-**Branch:** ecosystem-alignment
 
 ## OVERVIEW
-One small Rust daemon runs an AI coding agent; four thin clients attach (CLI, TUI, browser SPA, VS Code). 24 Rust workspace crates + TS extension. Every design decision cites a receipt from `.omo/research/harness-research.md` (40-section post-mortem study of 25+ harnesses — the file keeps its category-descriptive name). Public name: **austringer** (decision record: `.omo/research/naming-decision.md`).
+One small Rust daemon runs an AI coding agent; four thin clients attach (CLI, TUI, browser SPA, VS Code). 25 Rust workspace crates + TS extension. Every design decision cites a receipt from `.omo/research/harness-research.md` (40-section post-mortem study of 25+ harnesses — the file keeps its category-descriptive name). Public name: **austringer** (decision record: `.omo/research/naming-decision.md`).
 
 ## STRUCTURE
 ```

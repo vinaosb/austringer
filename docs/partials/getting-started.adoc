@@ -1,6 +1,30 @@
 [[getting-started,Getting started]]
 = Getting started
 
+[[gs-install]]
+== Install (prebuilt)
+
+The Release workflow ships installer scripts (first austringer-named release
+lands with the rename merge; until it appears on the GitHub Releases page,
+build from source below):
+
+```sh
+# macOS / Linux
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.ps1 | iex
+```
+
+The release archives are `cargo binstall`-compatible, and a daemon+CLI
+container image is published to GHCR by the same pipeline. After installing,
+`austringer doctor` verifies the setup in one pass. Coming from another
+harness? xref:migrating.adoc[The migration chapter] maps your existing keys
+and setup.
+
 [[gs-build]]
 == Build
 
@@ -78,6 +102,21 @@ user-global `AUSTRINGER_TEST_COMMAND` environment variable (read by the
 daemon at startup) — a repo-local override file is refused with a typed
 error, so a repository under review can never redefine how its own
 tests run.
+
+[[gs-acp]]
+== ACP: hosting austringer in an editor
+
+Any ACP host — Zed, JetBrains, Neovim plugins, orchestrating agents — can
+drive the daemon as a guest agent over stdio:
+
+```sh
+austringer-daemon --acp
+```
+
+Registration is three lines of host config (the README's ACP section has a
+worked Zed `agent_servers` example); permission asks and cost caps ride the
+same mediation queues as the first-party frontends. The migration chapter
+covers arriving from another editor agent.
 
 [[gs-automations]]
 == Automations

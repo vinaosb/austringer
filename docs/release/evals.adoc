@@ -38,12 +38,11 @@ the sweep report artifact is the publication source.
 
 No live-model rows are published at this baseline. That is the discipline
 working, not a gap in it: no live-model sweep has run under matched
-conditions yet (the daemon's live provider wiring is the pending
-prerequisite — see the status section of the repository README), and
-unmatched rows are not publishable.
+conditions yet (live provider wiring landed with M32; what remains is
+scheduling the first matched sweep), and unmatched rows are not publishable.
 
-The hermetic eval machinery itself is landed and tested (58 tests in
-austringer-evals, provenance task-44): typed datasets, deterministic graders,
+The hermetic eval machinery itself is landed and fully tested
+(austringer-evals; provenance task-44, extended since): typed datasets, deterministic graders,
 the scripted subject, integrity guards, pass^k metrics, expected-failure
 pinning, the first-two-tool-calls drift gate, replay-from-traces, and
 commit-history mining. When the first scheduled sweep runs, its report

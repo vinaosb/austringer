@@ -8,7 +8,7 @@
 == What this page indexes
 
 The project was designed from a working research artifact: the file
-`.omo/research/harness-research.md` — a 33-section study of 25+ agent
+`.omo/research/harness-research.md` — a 40-section study of 25+ agent
 harnesses, built from pinned source snapshots, git archaeology, and
 post-mortems. It stays Markdown because it is alive; this page is its
 index. The repository README links the file directly; read it there.

@@ -35,7 +35,7 @@ edition = "2024"
 rust-version = "1.98"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/vinaosb/austringer" # placeholder until the canonical repo URL exists (cargo-dist requires a GitHub-shaped URL)
+repository = "https://github.com/vinaosb/austringer" # cargo-dist requires a GitHub-shaped URL
 
 [workspace.dependencies]
 # Shared dependency versions. Serialization must stay sorted-key stable:

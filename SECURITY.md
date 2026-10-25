@@ -11,8 +11,11 @@
 We take security bugs seriously. Please do **not** report security
 vulnerabilities through public GitHub issues, discussions, or pull requests.
 
-**Private reporting channel:** email **security@example.com**
-(placeholder — replace with a monitored mailbox before any public release).
+**Private reporting channel:** GitHub's private vulnerability reporting —
+open **Report a vulnerability** under the repository's *Security* tab
+(https://github.com/vinaosb/austringer/security/advisories/new). A monitored
+mailbox may be added alongside it later; until then this GitHub channel is
+the supported one.
 
 Please include as much of the following as you can:
 
