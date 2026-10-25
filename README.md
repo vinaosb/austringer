@@ -53,9 +53,7 @@ The corollaries:
 ## Install
 
 No Rust toolchain required — the Release workflow ships installer scripts and
-a multi-arch container (first austringer-named release lands with the rename
-merge; until it appears on the [Releases](https://github.com/vinaosb/austringer/releases)
-page, use the source build below):
+a multi-arch container for every tagged release (latest: **v0.1.1**):
 
 ```sh
 # macOS / Linux
