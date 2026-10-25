@@ -238,6 +238,42 @@ impl TurnCapture {
     }
 }
 
+/// Drains both channels until they are momentarily empty, recording the
+/// frames `read_turns` cares about. Fixes a select! race: TurnFinished and
+/// FallbackResolved are frequently ready simultaneously on the two
+/// channels, and select! randomization could return the reader with the
+/// pending control frame (e.g. FallbackResolved) still unread - coverage
+/// instrumentation widens that coincidence window.
+async fn drain_late_frames(
+    events: &mut broadcast::Receiver<ServerMsg>,
+    control: &mut broadcast::Receiver<ServerMsg>,
+    capture: &mut TurnCapture,
+) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        let mut received = false;
+        while let Ok(msg) = events.try_recv() {
+            received = true;
+            if let ServerMsg::Usage { model, effort, .. } = msg {
+                capture.usage.push((model.provider, model.model, effort));
+            }
+        }
+        while let Ok(msg) = control.try_recv() {
+            received = true;
+            match msg {
+                ServerMsg::FallbackAsk { ask } => capture.fallback_asks.push(ask),
+                ServerMsg::FallbackResolved { chosen, .. } => {
+                    capture.fallback_resolved.push(chosen);
+                }
+                _ => {}
+            }
+        }
+        if !received || tokio::time::Instant::now() >= deadline {
+            return;
+        }
+    }
+}
+
 async fn read_turns(
     mut events: broadcast::Receiver<ServerMsg>,
     mut control: broadcast::Receiver<ServerMsg>,
@@ -257,6 +293,7 @@ async fn read_turns(
                     SessionEvent::TurnFinished { .. } => {
                         capture.finished += 1;
                         if capture.finished >= want_finished {
+                            drain_late_frames(&mut events, &mut control, &mut capture).await;
                             return capture;
                         }
                     }
