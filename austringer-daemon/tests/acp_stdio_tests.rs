@@ -27,6 +27,7 @@ struct Fixture {
     scripts: Mutex<VecDeque<String>>,
     bodies: Mutex<Vec<String>>,
     gate: Mutex<Option<Arc<tokio::sync::Notify>>>,
+    held: Mutex<Option<Arc<tokio::sync::Notify>>>,
 }
 
 impl Fixture {
@@ -34,6 +35,9 @@ impl Fixture {
         self.bodies.lock().expect("bodies").push(body.clone());
         let hold = self.gate.lock().expect("gate").take();
         if let Some(gate) = hold {
+            if let Some(held) = self.held.lock().expect("held").take() {
+                held.notify_one();
+            }
             gate.notified().await;
         }
         self.scripts
@@ -104,6 +108,7 @@ async fn spawn_fixture(scripts: Vec<String>) -> (String, Arc<Fixture>) {
         scripts: Mutex::new(scripts.into()),
         bodies: Mutex::new(Vec::new()),
         gate: Mutex::new(None),
+        held: Mutex::new(None),
     });
     let app = Router::new()
         .route(
@@ -420,21 +425,29 @@ async fn acp_stdio_cancel_lands_through_the_bridge() {
     // session/cancel into the daemon Cancel path and maps the
     // cancelled outcome to its ACP stop reason.
     let gate = Arc::new(tokio::sync::Notify::new());
+    let held = Arc::new(tokio::sync::Notify::new());
     let (base, fixture) =
         spawn_fixture(vec![text_turn("slow turn done"), text_turn("second")]).await;
     *fixture.gate.lock().expect("gate") = Some(Arc::clone(&gate));
+    *fixture.held.lock().expect("held") = Some(Arc::clone(&held));
     let (mut acp, _workspace) = spawn_acp(&base).await;
     let session = acp.initialize_and_new_session().await;
 
-    // Turn 1: prompt, then cancel MID-TURN (the fixture is still
-    // holding its response), then release the held response.
+    // Turn 1: prompt, then cancel MID-TURN. Waiting on `held` (fired by
+    // the fixture right before it blocks on the gate) makes mid-turn
+    // deterministic - a fixed sleep raced the turn's start on loaded
+    // runners, and a cancel landing before the turn is cancellable
+    // leaves no sticky token for turn 2.
     acp.request(
         3,
         "session/prompt",
         json!({"sessionId": session, "prompt": [{"type": "text", "text": "go"}]}),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::timeout(Duration::from_secs(10), held.notified())
+        .await
+        .expect("fixture must reach the held turn")
+        .expect("held notify not closed");
     acp.notify("session/cancel", json!({"sessionId": session}))
         .await;
     // notify_one (not notify_waiters): a stored permit also releases a
