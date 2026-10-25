@@ -53,17 +53,21 @@ The corollaries:
 ## Install
 
 No Rust toolchain required — the Release workflow ships installer scripts and
-a multi-arch container for every tagged release (latest: **v0.1.1**):
+a multi-arch container for every tagged release (latest: **v0.1.1**). The
+CLI and the daemon install as separate apps:
 
 ```sh
-# macOS / Linux
+# macOS / Linux — CLI (austringer) and daemon (austringer-daemon)
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.sh | sh
+  https://github.com/vinaosb/austringer/releases/latest/download/austringer-cli-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/vinaosb/austringer/releases/latest/download/austringer-daemon-installer.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell)
-iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-installer.ps1 | iex
+iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-cli-installer.ps1 | iex
+iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-daemon-installer.ps1 | iex
 ```
 
 The release archives are `cargo binstall`-compatible by construction, so
