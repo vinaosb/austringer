@@ -14,7 +14,9 @@
 # smaller, ships ca-certificates (the daemon speaks HTTPS to model APIs),
 # libgcc + glibc for Rust gnu binaries, and a nonroot UID (65532) by default.
 
-FROM rust:1.98-slim AS build
+# Debian 12 (bookworm) builder to match the distroless/cc-debian12 runtime
+# glibc — building on trixie produces binaries needing GLIBC_2.39+.
+FROM rust:1.98-slim-bookworm AS build
 WORKDIR /app
 # rust:slim ships no toolchain linker; gcc/libc6-dev are required once real
 # [[bin]] targets exist. Unpinned on purpose (hadolint ignore=DL3008): the
@@ -36,22 +38,48 @@ RUN apt-get update \
 # the real [[bin]] targets do not exist, not ship empty ones.
 COPY Cargo.toml Cargo.lock ./
 COPY --parents austringer-*/Cargo.toml ./
+# Stub every DECLARED target path (bins/benches with explicit or implicit
+# paths) plus each lib, so workspace manifests resolve in the cache layer;
+# `--lib` compiles only the (empty) libs, warming dependency compilation.
+# Real sources overwrite every stub in the final stage - no hollow bins.
 RUN for d in austringer-*/; do \
-        mkdir -p "$d/src" && printf '' > "$d/src/lib.rs"; \
+        mkdir -p "$d/src" "$d/src/bin" "$d/benches"; \
+        printf '' > "$d/src/lib.rs"; \
     done \
- && cargo build --release --locked
+ && for d in austringer-*/; do \
+        awk -v d="$d" \
+            'function emit() { \
+                 if (path != "") print d path; \
+                 else if (name != "") print d sec "/" name ".rs"; \
+                 name = ""; path = "" \
+             } \
+             /^\[\[bin\]\]/ { if (sec != "") emit(); sec = "src/bin"; next } \
+             /^\[\[bench\]\]/ { if (sec != "") emit(); sec = "benches"; next } \
+             /^\[/ { if (sec != "") emit(); sec = ""; next } \
+             sec != "" && /^name/ { gsub(/[\r", ]/, "", $3); name = $3 } \
+             sec != "" && /^path/ { gsub(/[\r", ]/, "", $3); path = $3 } \
+             END { if (sec != "") emit() }' "$d/Cargo.toml"; \
+    done | sort -u | xargs -r -n1 sh -c 'mkdir -p "$(dirname "$0")"; printf "" > "$0"' \
+ && cargo build --release --locked --lib
 
 # --- real build ----------------------------------------------------------
 COPY --parents austringer-*/src ./
-RUN cargo build --release --locked --bin austringer-daemon --bin austringer-cli \
+# Embedded non-src resources (austringer-web assets/, austringer-media
+# fixture fonts) pulled in by include_str!/include_bytes! at compile time.
+COPY --parents austringer-*/assets austringer-*/fixtures ./
+# BuildKit COPY preserves (possibly older-than-stub) source mtimes, which
+# cargo would read as "unchanged since the stub compile". Touch everything
+# so the real sources always outrank the cache-layer stubs.
+RUN find austringer-*/src -type f -exec touch {} + \
+ && cargo build --release --locked --bin austringer-daemon --bin austringer \
  && mkdir /out \
- && cp target/release/austringer-daemon target/release/austringer-cli /out/
+ && cp target/release/austringer-daemon target/release/austringer /out/
 
 FROM gcr.io/distroless/cc-debian12:nonroot
 # Daemon is the entrypoint; the CLI is equally present for
-# `docker run <image> austringer-cli <args>` exec-style usage.
+# `docker run <image> austringer <args>` exec-style usage.
 COPY --from=build /out/austringer-daemon /usr/local/bin/austringer-daemon
-COPY --from=build /out/austringer-cli /usr/local/bin/austringer-cli
+COPY --from=build /out/austringer /usr/local/bin/austringer
 # Listening port(s) are pinned with the daemon protocol (todo 35); add
 # EXPOSE then.
 ENTRYPOINT ["austringer-daemon"]
