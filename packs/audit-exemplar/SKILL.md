@@ -49,7 +49,7 @@ squad patterns: security, dependencies, test coverage. A full port
 would add the remaining squads (architecture, fault-tolerance,
 observability, regulatory-*, …), the v3.2 trending fields, delta
 tracking, and the consolidated-report orchestrator. Source of record:
-`harness-skills/tests/fixtures/corpus/opencode/audit-*` +
+`austringer-skills/tests/fixtures/corpus/opencode/audit-*` +
 `_shared/audit-template.md`.
 
 This pack audits CODEBASES and their dependency trees. It is

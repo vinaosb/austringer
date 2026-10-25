@@ -4,7 +4,7 @@
 [[perf-budgets]]
 == Budgets are the contract
 
-The budgets of record live in `harness-bench/budgets.json` and are enforced
+The budgets of record live in `austringer-bench/budgets.json` and are enforced
 by the `perf-gate` CI binary on every push (the CI job builds release
 binaries and runs the gate against them). A breach fails the build; a
 greater-than-10% regression against the committed deterministic baselines
@@ -27,9 +27,9 @@ re-measured by CI on every push; the budgets are the normative numbers.
 Reproduce locally:
 
 ```sh
-cargo run --release -p harness-bench --bin perf-gate -- \
-    --budgets harness-bench/budgets.json \
-    --baseline harness-bench/baselines/gate_baseline.json
+cargo run --release -p austringer-bench --bin perf-gate -- \
+    --budgets austringer-bench/budgets.json \
+    --baseline austringer-bench/baselines/gate_baseline.json
 ```
 
 [[perf-baselines]]
@@ -37,12 +37,12 @@ cargo run --release -p harness-bench --bin perf-gate -- \
 
 Wall-clock numbers are load-bound, so the regression gate keys on
 machine-independent deterministic counters committed in
-`harness-bench/baselines/gate_baseline.json`: repomap token output (965),
+`austringer-bench/baselines/gate_baseline.json`: repomap token output (965),
 eviction projection size (523 events), prompt stable-prefix bytes (570834),
 PTY observation bytes (10592), and session page-in bytes (103500). Twelve
 dhat allocation metrics are committed alongside in `heap_profile.json` and
 gated the same way. Re-recording after a deliberate change that moves a
-number is a documented procedure (`harness-bench/baselines/README.md`) and
+number is a documented procedure (`austringer-bench/baselines/README.md`) and
 must be noted in the commit message.
 
 [[perf-frame]]

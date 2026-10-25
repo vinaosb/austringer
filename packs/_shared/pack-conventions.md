@@ -1,6 +1,6 @@
 ## Pack conventions (shared partial)
 
-This pack is registry content loaded by the harness skills loader — not
+This pack is registry content loaded by the austringer skills loader — not
 code compiled into the binary. Conventions every shipped pack follows:
 
 - **Routing**: this pack matches a prompt when one of its `triggers`

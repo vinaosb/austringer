@@ -1,0 +1,15 @@
+# Repo-owned agent-task environment bootstrap (Copilot copilot-setup-steps
+# shape, plan todo 22). The daemon parses and EXECUTES this later; the
+# austringer validates the schema now.
+on:
+  push:
+    branches: [ main ]
+jobs:
+  setup-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Rust toolchain components
+        run: rustup component add rustfmt clippy
+      - name: Pin node
+        run: npm install -g node@22
+      - run: cargo fetch

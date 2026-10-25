@@ -7,7 +7,7 @@
 Skills use the agentskills.io-compatible SKILL.md format with extensions:
 trigger lists (including non-English), negative scoping, language tags,
 versions, allowed-tools, and per-model guidance sections. The loader scans
-the harness, opencode, claude, and agents skills paths with
+the austringer, opencode, claude, and agents skills paths with
 cross-vendor deduplication by name, and injects metadata only — progressive
 disclosure — until a skill is invoked. Project rules (AGENTS.md standard,
 plus the compatibility pickups) stack per directory, gated on folder trust;

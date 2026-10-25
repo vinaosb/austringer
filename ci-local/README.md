@@ -20,7 +20,7 @@ have caught as-is:
 
 | Receipt | What diverged |
 | --- | --- |
-| `46fe3ef` | ANSI color codes from child processes broke the run_tests log parser — fixed by forcing `NO_COLOR`; the harness runs everything ANSI-free (`NO_COLOR=1`, `CARGO_TERM_COLOR=never`) |
+| `46fe3ef` | ANSI color codes from child processes broke the run_tests log parser — fixed by forcing `NO_COLOR`; the rig runs everything ANSI-free (`NO_COLOR=1`, `CARGO_TERM_COLOR=never`) |
 | `3e984a4` / `30ce144` | hardcoded path separators survived every Windows check and died on the ubuntu runner's `/`-only paths |
 | `e7a81a2` | `autocrlf` drifted fixture line endings between checkout platforms until a byte-compare test went red on CI only |
 | `88674b7` | a chaos-oracle test was flaky under the runner's sibling-process layout, not the dev machine's |
@@ -47,8 +47,8 @@ infrastructure).
 | `docker-lint` | container | `ci.yml` job `lint` (fmt, clippy, clippy feature matrices `dhat`/`mimalloc`/`wasm-plugins`, `cargo deny check`) | yes | yes |
 | `docker-test` | container | `ci.yml` job `test`, ubuntu leg (nextest archive + run-from-archive, wasm-plugins run with count guard, doc tests) | yes | yes |
 | `native-test` | host | `ci.yml` job `test`, windows leg (nextest archive + run-from-archive) | yes | yes |
-| `native-frontends` | host | `ci.yml` job `frontends` (e2e_daemon build, `npm ci && npm test` in harness-vscode, web e2e via global playwright-core) | — | yes |
-| `evals` | host | `evals` conformance sweep (`cargo run -p harness-evals --bin run_sweep -- --conformance`) | — | yes |
+| `native-frontends` | host | `ci.yml` job `frontends` (e2e_daemon build, `npm ci && npm test` in austringer-vscode, web e2e via global playwright-core) | — | yes |
+| `evals` | host | `evals` conformance sweep (`cargo run -p austringer-evals --bin run_sweep -- --conformance`) | — | yes |
 | `docs` | host + container | `docs.yml` (linkcheck natively via `.github/scripts/linkcheck.ps1`; asciidoctor zero-warning site build in a throwaway ubuntu:24.04 container) | — | yes |
 | `coverage` | host | `ci.yml` job `coverage` (`cargo llvm-cov nextest --lcov`; requires host-installed `cargo-llvm-cov@0.9.1`) | — | yes |
 | `perf-gate` | host | `ci.yml` job `perf-gate` (release build, perf-gate vs committed baselines, dhat heap-profile check) | — | yes |
@@ -66,19 +66,19 @@ invocation shape documented in `AGENTS.md`.
 
 ## Image, volumes, caches
 
-- Image `harness-localci:<dockerfile-sha8>` (+ `harness-localci:latest`),
+- Image `austringer-localci:<dockerfile-sha8>` (+ `austringer-localci:latest`),
   rebuilt automatically when `ci-local/Dockerfile` changes or on
   `-RebuildImage`. Runs as non-root `runner` (uid 1000 — the GH runner
   convention).
-- Named volume `harness-localci-cargo` at `/opt/cargo` — rustup home with
+- Named volume `austringer-localci-cargo` at `/opt/cargo` — rustup home with
   the pinned tools; seeded from the image on first mount (drop it with
   `-RebuildImage`).
-- Named volume `harness-localci-target` at `/target` — the cargo target
+- Named volume `austringer-localci-target` at `/target` — the cargo target
   dir, so container builds stay incremental across runs.
 - Containers run with `--cpus=4` — the standard ubuntu-latest runner
   shape. This is parity, not throttling for its own sake: nextest sizes
   its default test parallelism from core count, and the suite's
-  wall-clock budget tests (`harness-search::index_perf`'s generous
+  wall-clock budget tests (`austringer-search::index_perf`'s generous
   "CI-safe" bounds) are calibrated for runner-shaped 4-cpu contention;
   unbounded container parallelism on a busy dev host starves them
   (observed: two consecutive docker-test runs, each a different
@@ -97,7 +97,7 @@ invocation shape documented in `AGENTS.md`.
 - **pre-push**: the full default gate via `scripts/local-ci.ps1`
   (docker-lint + docker-test + native-test), exit code propagated.
 
-Bypass either once with `HARNESS_SKIP_LOCAL_CI=1` (e.g. WIP commits,
+Bypass either once with `austringer_SKIP_LOCAL_CI=1` (e.g. WIP commits,
 emergency pushes). Uninstall with
 `git config --unset core.hooksPath`.
 
@@ -113,7 +113,7 @@ divergence on the original dev machine is load-bearing and worth knowing:
 ConPTY children (portable-pty's `CommandBuilder`) get their environment
 from the **registry** SYS+USER PATH overlay, not the spawning process's
 PATH — so a cargo that exists only on the `cargo-env.cmd` wrapper's PATH
-is invisible to `harness-exec`'s PTY tests. That was the documented
+is invisible to `austringer-exec`'s PTY tests. That was the documented
 machine-local red `pty_live::cargo_version_style_command_renders_cleanly`
 (`.omo/notepads/ecosystem-alignment/issues.md`; AGENTS.md "known local
 flakes"). The standard rustup install puts `%USERPROFILE%\.cargo\bin` on
@@ -124,7 +124,7 @@ $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
 $k.SetValue('Path', $k.GetValue('Path','', 'DoNotExpandEnvironmentNames').TrimEnd(';') + ";$env:USERPROFILE\.cargo\bin", $k.GetValueKind('Path'))
 ```
 
-The harness does **not** edit the registry for you — machine config is
+The rig does **not** edit the registry for you — machine config is
 user-owned; this note is the receipt. The hooks and `local-ci.ps1`
 tolerate both worlds (they prepend `~/.cargo/bin` / use the repo's
 cargo wrapper when present, plain `cargo` otherwise).
@@ -164,7 +164,7 @@ gh pr merge 3 --merge                                                          #
 
 The server-side half of that contract ships dormant and ready:
 `ci-local/branch-protection.json` is the exact
-`PUT /repos/vinaosb/harness/branches/main/protection` payload (the nine
+`PUT /repos/vinaosb/austringer/branches/main/protection` payload (the nine
 required check names, verified against real check runs), and
 `scripts/enable-branch-protection.ps1` applies it. The repo owner chose to
 keep protection **off** until the repository goes public ("until then let's

@@ -13,11 +13,11 @@
 # Layout notes:
 #  * RUSTUP_HOME=/opt/rustup and CARGO_HOME=/opt/cargo are baked and owned
 #    by the non-root `runner` user (uid 1000 — the GH runner convention).
-#    scripts/local-ci.ps1 mounts the named volume `harness-localci-cargo`
+#    scripts/local-ci.ps1 mounts the named volume `austringer-localci-cargo`
 #    at /opt/cargo: docker seeds an empty named volume from the image's
 #    directory on first mount, so the pinned tools survive; -RebuildImage
 #    drops the volume so a rebuilt image re-seeds it.
-#  * /target (named volume `harness-localci-target`) is the cargo target
+#  * /target (named volume `austringer-localci-target`) is the cargo target
 #    dir, so incremental state persists across runs.
 #  * /src is the bind-mounted repo (rw — tests write temp fixtures under
 #    the workspace).
@@ -50,7 +50,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y \
 # NO_COLOR=1 / CARGO_TERM_COLOR=never — this repo has a receipt chain of
 # CI-reds caused by ANSI codes defeating log parsers (46fe3ef, and the
 # wasm run-count guard added in 28b27b4). CI pipes logs into machines;
-# the local harness behaves the same instead of being prettier.
+# the local rig behaves the same instead of being prettier.
 ENV CARGO_TERM_COLOR=never \
     NO_COLOR=1 \
     CARGO_PROFILE_DEV_DEBUG=0 \

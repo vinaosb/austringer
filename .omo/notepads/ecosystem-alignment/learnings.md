@@ -1,4 +1,4 @@
-﻿# Learnings â€” ecosystem-alignment
+# Learnings â€” ecosystem-alignment
 
 Conventions, patterns, and successful approaches discovered during work on this plan.
 
@@ -55,7 +55,7 @@ _Auto-scaffolded by /start-work. Append new entries below - never overwrite._
 
 - CLI dispatch order is a hidden contract: in/harness.rs calls Target::resolve before the subcommand match, and IPC resolution HARD-FAILS without {data-dir}/daemon-token. Any daemon-less subcommand family must early-return before that call (borrow via if let Command::X(a) = &cli.command to keep the later exhaustive move-match valid; the dead arm becomes a documented unreachable!).
 - rmcp 3.3 stdio server over (tokio::io::stdin(), tokio::io::stdout()) DOES answer a raw newline-delimited initialize JSON-RPC line and DOES exit cleanly on stdin EOF (service.waiting().await resolves) â€” verified with a real child on Windows; no keepalive leaks. serve_server blocks until the client's initialize arrives (harness-mcp's own common/mod.rs documents the inline-deadlock trap).
-- Hermetic self-referential smoke fixture: an MCP config whose command is env!("CARGO_BIN_EXE_harness") with rgs: ["mcp","serve"] turns mcp call into a full client->spawn->initialize->list round trip against this crate's own serve mode â€” zero external processes, zero network; serde_json::json! macro handles Windows path escaping for free.
+- Hermetic self-referential smoke fixture: an MCP config whose command is env!("CARGO_BIN_EXE_austringer") with rgs: ["mcp","serve"] turns mcp call into a full client->spawn->initialize->list round trip against this crate's own serve mode â€” zero external processes, zero network; serde_json::json! macro handles Windows path escaping for free.
 - Roots::check_arguments (fail-closed) only gates call_tool, not list_tools â€” a roots-less entry can still be smoke-listed, which is exactly the right shape for a call default mode.
 - Implementing harness-mcp's #[async_trait] seams from another crate needs sync-trait as a REAL dep (dev-dep impls do not leak into src/); moving the existing dev-dep line was enough â€” hand-desugaring the trait signatures is not viable.
 - assert_cmd has no timeout story: for a serve/stdio test, hand-roll std::process::Command + a reader thread with mpsc::recv_timeout + a 	ry_wait polling deadline that kills and panics with a cause â€” converts any transport regression into a named failure instead of a hung suite.

@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "recorded_on": "windows",
+  "metrics": {
+    "eviction.projected_events": 523.0,
+    "prompt.stable_prefix_bytes": 570837.0,
+    "pty.observation_bytes": 10592.0,
+    "repomap.tokens": 965.0,
+    "sessions.page_bytes": 103500.0
+  }
+}

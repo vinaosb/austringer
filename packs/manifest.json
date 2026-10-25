@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "schema": "harness pack registry manifest",
-  "install": "Copy or symlink packs/<name>/ into <project>/.harness/skills/<name>/ and packs/_shared/ into <project>/.harness/skills/_shared/ (todo-32 registry automates this with pin+hash verification); the T30 loader discovers them from .harness/skills automatically.",
+  "schema": "austringer pack registry manifest",
+  "install": "Copy or symlink packs/<name>/ into <project>/.austringer/skills/<name>/ and packs/_shared/ into <project>/.austringer/skills/_shared/ (todo-32 registry automates this with pin+hash verification); the T30 loader discovers them from .austringer/skills automatically.",
   "packs": [
     {
       "name": "accounting",

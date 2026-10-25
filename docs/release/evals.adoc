@@ -15,7 +15,7 @@ exhaustively matched, so the disclosure is part of the number.
 [[evals-rules]]
 == Publication rules
 
-* **Harness-matched rows only.** Every published row names its harness
+* **Austringer-matched rows only.** Every published row names austringer
 settings and its matched baseline; a row without a matched baseline
 renders DO NOT PUBLISH.
 * **The unit is the model-by-profile pair.** Regression tables run one
@@ -43,7 +43,7 @@ prerequisite — see the status section of the repository README), and
 unmatched rows are not publishable.
 
 The hermetic eval machinery itself is landed and tested (58 tests in
-harness-evals, provenance task-44): typed datasets, deterministic graders,
+austringer-evals, provenance task-44): typed datasets, deterministic graders,
 the scripted subject, integrity guards, pass^k metrics, expected-failure
 pinning, the first-two-tool-calls drift gate, replay-from-traces, and
 commit-history mining. When the first scheduled sweep runs, its report
@@ -51,7 +51,7 @@ artifact populates the table below.
 
 [cols="3,1,1,1,1,2"]
 |===
-|Run (model x profile) |pass^k |Mean@k |Tokens/solved |Harness card |Status
+|Run (model x profile) |pass^k |Mean@k |Tokens/solved |Austringer card |Status
 
 |_(none published — awaiting the first matched scheduled sweep)_ | | | | |DO NOT PUBLISH
 |===

@@ -1,4 +1,4 @@
-# Local CI parity harness — run the repo's GitHub Actions jobs on the
+# Local CI parity austringer — run the repo's GitHub Actions jobs on the
 # author's PC before spending CI/CD credits. Ubuntu legs run inside the
 # ci-local Docker image (runner parity); windows legs run natively.
 # See ci-local/README.md for the full contract.
@@ -71,16 +71,16 @@ function Test-DockerImage([string]$Tag) {
 
 function Ensure-LocalCiImage {
     $hash = (Get-FileHash -LiteralPath (Join-Path $RepoRoot 'ci-local\Dockerfile') -Algorithm SHA256).Hash.Substring(0, 8).ToLowerInvariant()
-    $tag = "harness-localci:$hash"
+    $tag = "austringer-localci:$hash"
     if (-not (Test-DockerImage $tag) -or $RebuildImage) {
         if ($RebuildImage) {
             # Drop the seeded cargo home so a rebuilt image re-seeds its
             # pinned tools into the volume (target volume is kept: build
             # cache survives image rebuilds).
-            try { docker volume rm -f harness-localci-cargo *> $null } catch { }
+            try { docker volume rm -f austringer-localci-cargo *> $null } catch { }
         }
         Write-Host "building local CI image $tag ..."
-        Invoke-Checked 'docker build' { docker build -t $tag -t harness-localci:latest (Join-Path $RepoRoot 'ci-local') }
+        Invoke-Checked 'docker build' { docker build -t $tag -t austringer-localci:latest (Join-Path $RepoRoot 'ci-local') }
         $imageId = docker image inspect --format '{{.Id}}' $tag
         Write-Host "local CI image id: $imageId"
     }
@@ -93,7 +93,7 @@ function Ensure-LocalCiImage {
 # mirrors the standard ubuntu-latest runner (4 vCPUs): nextest sizes its
 # default parallelism from core count, and on a shared dev host unbounded
 # container parallelism starves the wall-clock budget tests
-# (harness-search::index_perf tripped its 15 s/2 s bounds two runs in a
+# (austringer-search::index_perf tripped its 15 s/2 s bounds two runs in a
 # row under 25+-way parallelism; runner-shaped 4-cpu contention is what
 # those bounds were calibrated against).
 function Invoke-DockerUbuntu([string]$Mode) {
@@ -103,7 +103,7 @@ function Invoke-DockerUbuntu([string]$Mode) {
         docker run --rm --init --cpus=4 `
             --env CARGO_TERM_COLOR=never --env NO_COLOR=1 `
             --env CARGO_PROFILE_DEV_DEBUG=0 --env CARGO_PROFILE_TEST_DEBUG=0 `
-            -v "$($RepoRoot):/src" -v harness-localci-cargo:/opt/cargo -v harness-localci-target:/target `
+            -v "$($RepoRoot):/src" -v austringer-localci-cargo:/opt/cargo -v austringer-localci-target:/target `
             -w /src $tag ci-local/run-ubuntu.sh $Mode
     }
 }
@@ -134,14 +134,14 @@ function Invoke-NativeTest {
 }
 
 function Invoke-NativeFrontends {
-    Invoke-Cargo @('build', '--locked', '-p', 'harness-web', '--example', 'e2e_daemon')
-    Push-Location (Join-Path $RepoRoot 'harness-vscode')
+    Invoke-Cargo @('build', '--locked', '-p', 'austringer-web', '--example', 'e2e_daemon')
+    Push-Location (Join-Path $RepoRoot 'austringer-vscode')
     try {
         Invoke-Checked 'npm ci' { npm ci }
-        Invoke-Checked 'npm test (harness-vscode)' { npm test }
+        Invoke-Checked 'npm test (austringer-vscode)' { npm test }
     } finally { Pop-Location }
     $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $RepoRoot 'target' }
-    $env:HARNESS_E2E_EXE = Join-Path $targetDir 'debug\examples\e2e_daemon.exe'
+    $env:austringer_E2E_EXE = Join-Path $targetDir 'debug\examples\e2e_daemon.exe'
     $env:NODE_PATH = (npm root -g)  # playwright-core resolves from the global npm tree, as in CI
     if (-not $env:PLAYWRIGHT_CHROMIUM -and -not (Test-Path "$env:LOCALAPPDATA\ms-playwright")) {
         # CI points the override at the runner's Chrome stable; fall back
@@ -149,11 +149,11 @@ function Invoke-NativeFrontends {
         $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
         if (Test-Path $chrome) { $env:PLAYWRIGHT_CHROMIUM = $chrome }
     }
-    Invoke-Checked 'web e2e (run-e2e.mjs)' { node (Join-Path $RepoRoot 'harness-web\e2e\run-e2e.mjs') }
+    Invoke-Checked 'web e2e (run-e2e.mjs)' { node (Join-Path $RepoRoot 'austringer-web\e2e\run-e2e.mjs') }
 }
 
 function Invoke-Evals {
-    Invoke-Cargo @('run', '-p', 'harness-evals', '--bin', 'run_sweep', '--', '--conformance')
+    Invoke-Cargo @('run', '-p', 'austringer-evals', '--bin', 'run_sweep', '--', '--conformance')
 }
 
 function Invoke-Docs {
@@ -177,16 +177,16 @@ function Invoke-Coverage {
 }
 
 function Invoke-PerfGate {
-    Invoke-Cargo @('build', '--release', '--locked', '-p', 'harness-cli', '-p', 'harness-daemon', '-p', 'harness-bench')
+    Invoke-Cargo @('build', '--release', '--locked', '-p', 'austringer-cli', '-p', 'austringer-daemon', '-p', 'austringer-bench')
     $rel = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $RepoRoot 'target' }
     $rel = Join-Path $rel 'release'
-    Invoke-Cargo @('run', '--release', '--locked', '-q', '-p', 'harness-bench', '--bin', 'perf-gate', '--',
-        '--budgets', 'harness-bench/budgets.json', '--baseline', 'harness-bench/baselines/gate_baseline.json',
-        '--cli-bin', "$rel\harness.exe", '--daemon-bin', "$rel\harness-daemon.exe",
-        '--binary', "harness=$rel\harness.exe", '--binary', "harness-daemon=$rel\harness-daemon.exe",
+    Invoke-Cargo @('run', '--release', '--locked', '-q', '-p', 'austringer-bench', '--bin', 'perf-gate', '--',
+        '--budgets', 'austringer-bench/budgets.json', '--baseline', 'austringer-bench/baselines/gate_baseline.json',
+        '--cli-bin', "$rel\austringer.exe", '--daemon-bin', "$rel\austringer-daemon.exe",
+        '--binary', "austringer=$rel\austringer.exe", '--binary', "austringer-daemon=$rel\austringer-daemon.exe",
         '--report', "$($env:TEMP)\perf-report.json")
-    Invoke-Cargo @('run', '--release', '--locked', '-q', '-p', 'harness-bench', '--bin', 'heap-profile', '--features', 'dhat', '--',
-        '--check', 'harness-bench/baselines/heap_profile.json', '--report', "$($env:TEMP)\heap-profile-report.json")
+    Invoke-Cargo @('run', '--release', '--locked', '-q', '-p', 'austringer-bench', '--bin', 'heap-profile', '--features', 'dhat', '--',
+        '--check', 'austringer-bench/baselines/heap_profile.json', '--report', "$($env:TEMP)\heap-profile-report.json")
     Write-Host "perf reports: $env:TEMP\perf-report.json, $env:TEMP\heap-profile-report.json"
 }
 

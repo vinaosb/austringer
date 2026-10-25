@@ -1,8 +1,8 @@
 #!/bin/sh
 # Fast pre-commit gate: rustfmt only (seconds, host toolchain — no docker).
 # The full parity gate runs on push (see scripts/hooks/pre-push).
-# Bypass for WIP commits: HARNESS_SKIP_LOCAL_CI=1 git commit ...
-[ "$HARNESS_SKIP_LOCAL_CI" = "1" ] && exit 0
+# Bypass for WIP commits: austringer_SKIP_LOCAL_CI=1 git commit ...
+[ "$austringer_SKIP_LOCAL_CI" = "1" ] && exit 0
 
 # rustup's default install location, prepended unconditionally: harmless
 # where cargo is already on PATH, and required on hosts whose rustup
@@ -14,5 +14,5 @@ if cargo fmt --all -- --check; then
     exit 0
 fi
 echo >&2 "pre-commit: cargo fmt --check failed."
-echo >&2 "fix: cargo fmt --all   |   bypass once: HARNESS_SKIP_LOCAL_CI=1"
+echo >&2 "fix: cargo fmt --all   |   bypass once: austringer_SKIP_LOCAL_CI=1"
 exit 1

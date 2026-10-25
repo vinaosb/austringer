@@ -1,0 +1,37 @@
+[package]
+name = "austringer-sessions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+austringer-core = { path = "../austringer-core", version = "0.1.0" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+# Consolidation decision (task-24): rusqlite-everywhere. T8's bundled
+# build already compiles on this machine (task-8 MSVC evidence) and the
+# sessions store is sync behind async wrappers at the daemon boundary;
+# sqlx would add a second SQLite wrapper plus async weight for no gain.
+# FTS5 ships in the bundled amalgamation (probe in task-24 evidence).
+rusqlite.workspace = true
+# Writer-lease liveness: boot-time anchor + targeted PID probes, same
+# pattern as austringer-lsp's RSS guard.
+sysinfo.workspace = true
+# Encryption at rest (root manifest documents the feature rationale).
+chacha20poly1305.workspace = true
+argon2.workspace = true
+getrandom.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+# Integration tests inject corruption (dropped index/event rows) through
+# a second connection to the store file — the crate itself never
+# exposes its connection.
+rusqlite.workspace = true

@@ -1,6 +1,6 @@
 # Shipped domain packs (registry content)
 
-This directory is the harness **pack registry content source** (plan todo 33).
+This directory is the austringer **pack registry content source** (plan todo 33).
 Packs are DATA loaded by the T30 skills loader at runtime — they are never
 compiled into any binary (plan guardrail: "Must NOT hardcode packs into
 binary"). The todo-32 registry serves and installs from here.
@@ -35,15 +35,15 @@ engineering), `ai-deployment` (microsoft-foundry deployment skills).
 Copy or symlink a pack into a project and the loader picks it up:
 
 ```
-<project>/.harness/skills/<pack-name>/SKILL.md
-<project>/.harness/skills/_shared/*.md
+<project>/.austringer/skills/<pack-name>/SKILL.md
+<project>/.austringer/skills/_shared/*.md
 ```
 
-Vendor precedence is `.harness` > `.opencode` > `.claude` > `.agents` >
-`.cursor`; installing a pack under `.harness/skills` outranks all others.
+Vendor precedence is `.austringer` > `.opencode` > `.claude` > `.agents` >
+`.cursor`; installing a pack under `.austringer/skills` outranks all others.
 The todo-32 registry automates this with pin + content-hash verification.
 
-## Authoring rules (enforced by `harness-skills/tests/packs_acceptance.rs`)
+## Authoring rules (enforced by `austringer-skills/tests/packs_acceptance.rs`)
 
 Every pack MUST carry, in its SKILL.md frontmatter:
 

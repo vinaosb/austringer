@@ -12,14 +12,14 @@ Every release publishes its benchmark numbers against the budget contract
 page under `docs/release/`). Publication rules:
 
 * **Budgets are the contract.** The budget column is normative and
-CI-enforced (`harness-bench/budgets.json`); measured values are
+CI-enforced (`austringer-bench/budgets.json`); measured values are
 machine-specific (recorded on the dev machine for this baseline,
 re-measured by CI on every push) and presented as such.
 * **Deterministic counters are regression-gated.** Wall-clock numbers ride
 absolute budgets with min-of-N sampling; only machine-independent counters
 are compared against committed baselines with a 10% tolerance
-(`harness-bench/baselines/gate_baseline.json`).
-* **Reproducibility.** `cargo run --release -p harness-bench --bin
+(`austringer-bench/baselines/gate_baseline.json`).
+* **Reproducibility.** `cargo run --release -p austringer-bench --bin
 perf-gate` re-measures every number below from source.
 
 [[leaderboard-baseline]]
@@ -60,7 +60,7 @@ regression-gate values):
 |===
 
 Twelve dhat allocation metrics accompany these in
-`harness-bench/baselines/heap_profile.json` (the >10% allocation-regression
+`austringer-bench/baselines/heap_profile.json` (the >10% allocation-regression
 gate). Provenance: recorded task evidence, task-43.
 
 [[leaderboard-procedure]]
@@ -74,5 +74,5 @@ match the baseline platform).
 filled from the report; link it from the README release-transparency
 section.
 . If a deliberate change moved a deterministic counter, re-record the
-baseline first (procedure in `harness-bench/baselines/README.md`) and say
+baseline first (procedure in `austringer-bench/baselines/README.md`) and say
 so in the release notes — silent baseline moves are not publishable.

@@ -6,7 +6,7 @@
 #   pre-push    full gate:  scripts/local-ci.ps1 (docker ubuntu legs +
 #                          native windows legs — the GH Actions parity run)
 #
-# Bypass either hook once:  HARNESS_SKIP_LOCAL_CI=1 git commit|push ...
+# Bypass either hook once:  austringer_SKIP_LOCAL_CI=1 git commit|push ...
 # Uninstall:                git config --unset core.hooksPath
 $ErrorActionPreference = 'Stop'
 
@@ -26,6 +26,6 @@ foreach ($hook in 'pre-commit', 'pre-push') {
 }
 
 Write-Host "installed: git config core.hooksPath = scripts/hooks (pre-commit: fmt gate, pre-push: full local CI)"
-Write-Host 'bypass once:      HARNESS_SKIP_LOCAL_CI=1 git commit|push ...'
+Write-Host 'bypass once:      austringer_SKIP_LOCAL_CI=1 git commit|push ...'
 Write-Host 'uninstall:        git config --unset core.hooksPath'
 exit 0

@@ -1,41 +1,41 @@
 [workspace]
 resolver = "3"
 members = [
-    "harness-ast",
-    "harness-bench",
-    "harness-cli",
-    "harness-core",
-    "harness-daemon",
-    "harness-evals",
-    "harness-exec",
-    "harness-intel",
-    "harness-lsp",
-    "harness-mcp",
-    "harness-media",
-    "harness-orchestration",
-    "harness-providers",
-    "harness-repomap",
-    "harness-safety",
-    "harness-search",
-    "harness-sessions",
-    "harness-skills",
-    "harness-snapshots",
-    "harness-test-support",
-    "harness-tools",
-    "harness-tui",
-    "harness-vfs",
-    "harness-wasm",
-    "harness-web",
+    "austringer-ast",
+    "austringer-bench",
+    "austringer-cli",
+    "austringer-core",
+    "austringer-daemon",
+    "austringer-evals",
+    "austringer-exec",
+    "austringer-intel",
+    "austringer-lsp",
+    "austringer-mcp",
+    "austringer-media",
+    "austringer-orchestration",
+    "austringer-providers",
+    "austringer-repomap",
+    "austringer-safety",
+    "austringer-search",
+    "austringer-sessions",
+    "austringer-skills",
+    "austringer-snapshots",
+    "austringer-test-support",
+    "austringer-tools",
+    "austringer-tui",
+    "austringer-vfs",
+    "austringer-wasm",
+    "austringer-web",
 ]
 
-# harness-vscode is a TypeScript project and deliberately NOT a workspace member.
+# austringer-vscode is a TypeScript project and deliberately NOT a workspace member.
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.98"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/placeholder-org/harness" # placeholder until the canonical repo URL exists (cargo-dist requires a GitHub-shaped URL)
+repository = "https://github.com/vinaosb/austringer" # placeholder until the canonical repo URL exists (cargo-dist requires a GitHub-shaped URL)
 
 [workspace.dependencies]
 # Shared dependency versions. Serialization must stay sorted-key stable:
@@ -67,7 +67,7 @@ grep-searcher = "0.1"
 tempfile = "3"
 # Todo-14 parse/tag engine: tree-sitter facade + the LanguageFn ABI shim that
 # every grammar crate returns; grammar crates themselves are optional deps
-# local to harness-ast (48 of them, feature-gated per language).
+# local to austringer-ast (48 of them, feature-gated per language).
 tree-sitter = "0.27"
 tree-sitter-language = "0.1"
 # Todo-18 RSS-sampled bounded LSP guard: per-process resident-set sampling.
@@ -109,7 +109,7 @@ portable-pty = "0.9"
 vt100 = "0.16"
 # Todo-19 Windows kill trees: Job Objects with KILL_ON_JOB_CLOSE +
 # assign_process + pid enumeration via a safe wrapper, avoiding hand-rolled
-# windows-sys FFI in harness-exec.
+# windows-sys FFI in austringer-exec.
 win32job = "2"
 # Todo-19 Unix kill trees: PR_SET_PDEATHSIG + setpgid/killpg (cfg(unix) only).
 libc = "0.2"
@@ -157,7 +157,7 @@ hmac = "0.12"
 # Pinned 3.3.0 = current stable (2026-09-10), verified via crates.io. Features:
 # client + server + macros (both roles), transport-child-process (client-side
 # stdio spawn w/ captured stderr), transport-io (server-side stdio),
-# transport-streamable-http-client (transport-agnostic; harness-mcp supplies
+# transport-streamable-http-client (transport-agnostic; austringer-mcp supplies
 # its own backend over the workspace reqwest 0.12 so rmcp's optional reqwest
 # 0.13 + its TLS stack stay OUT of the tree), transport-streamable-http-server
 # (StreamableHttpService for the daemon's HTTP surface). Pure Rust tree; the
@@ -165,12 +165,12 @@ hmac = "0.12"
 rmcp = { version = "3.3", features = ["client", "transport-child-process", "transport-streamable-http-client", "transport-io", "transport-streamable-http-server"] }
 # rmcp's StreamableHttpClient trait names http::{HeaderName,HeaderValue} in its
 # signature and sse_stream::{Sse,Error} in its stream type; both are already in
-# the lockfile transitively via rmcp — declared here because harness-mcp's own
+# the lockfile transitively via rmcp — declared here because austringer-mcp's own
 # backend implements the trait.
 http = "1"
 sse-stream = "0.2"
 # Todo-29 file-based multi-provider MCP manager: TOML is one of the scanned
-# config dialects (.harness format). toml_edit-backed, pure Rust. Note toml
+# config dialects (.austringer format). toml_edit-backed, pure Rust. Note toml
 # 0.9 parses documents via toml::Table (Value's FromStr takes bare values).
 toml = "0.9"
 # Todo-29 org allowlist URL matching + HTTP entry validation: scheme/host/port
@@ -184,7 +184,7 @@ regex = "1"
 # JsonSchema derives whose generated code names the schemars crate
 # directly (the rmcp re-export is not enough); same 1.x line rmcp 3.3 uses.
 schemars = "1"
-# Todo-35 daemon HTTP/WS/SSE surface: axum 0.8, promoted from harness-mcp's
+# Todo-35 daemon HTTP/WS/SSE surface: axum 0.8, promoted from austringer-mcp's
 # dev-dependency where todo 29 already served rmcp's StreamableHttpService
 # on it (tests/mcp_http.rs). Already locked at 0.8.9 via rmcp's
 # transport-streamable-http-server feature, so declaring it here pins no new
@@ -204,7 +204,7 @@ interprocess = { version = "2.4", features = ["tokio"] }
 # unchanged but charge fuel for data-segment initialization during
 # instantiation (4097 fuel for the manifest region), which breaks the
 # 1000-fuel PluginLimits floor test; v36 keeps instantiation fuel-free).
-# Deliberately NOT a default dependency of any crate - harness-wasm gates it
+# Deliberately NOT a default dependency of any crate - austringer-wasm gates it
 # behind its `wasm-plugins` feature (default off; the plugin runtime must not
 # weight the default build). Minimal feature set, everything else off:
 # component-model/gc/threads/cache/profiling/pooling/async trees stay out.
@@ -225,7 +225,7 @@ crossterm = "0.29"
 # Todo-36 daemon WebSocket CLIENT (loopback ws://; the server side is
 # todo 35's axum surface). Default features (connect+handshake, no TLS)
 # are sufficient for the loopback-only auth model. Already in the
-# lockfile via harness-daemon's dev tree; declaring it here pins no new
+# lockfile via austringer-daemon's dev tree; declaring it here pins no new
 # vendor code. Pure Rust.
 tokio-tungstenite = "0.29"
 # Todo-36 acceptance: insta snapshot suites for main screens
@@ -246,12 +246,12 @@ predicates = "3"
 # feature. Pure Rust, MIT/Apache-2.0.
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
 # Todo-43 archived heap profiles: dhat-rs (MPL-2.0, deliberate reviewed
-# addition to the deny.toml allow-list). Optional dep of harness-bench
+# addition to the deny.toml allow-list). Optional dep of austringer-bench
 # behind its `dhat` feature; installs a global allocator, so it never
 # touches default builds. Pure Rust.
 dhat = "0.3"
 # Todo-43 allocation-discipline option for the gate binaries (mimalloc,
-# MIT, C build via cc). Optional behind harness-bench's `mimalloc`
+# MIT, C build via cc). Optional behind austringer-bench's `mimalloc`
 # feature, default off.
 mimalloc = "0.1"
 

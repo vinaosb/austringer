@@ -46,7 +46,7 @@ the MCPoison CVE-2025-54136 cannot replay a benign approval against a
 swapped command (research §19). Transports are pooled per server and
 config fingerprint with refcounted release, idle drain, and budget
 hysteresis. The daemon additionally speaks ACP agent-side so editor hosts
-can drive this harness as a native panel agent.
+can drive austringer as a native panel agent.
 
 [[st-quarantine]]
 == Skill quarantine and the lock.json ledger

@@ -1,6 +1,6 @@
-# Contributing to harness
+# Contributing to austringer
 
-Thanks for helping build a harness whose every design decision carries a
+Thanks for helping build austringer, whose every design decision carries a
 receipt. This ramp is written so that one command takes you from a fresh
 clone to green tests — the command below is the actual CI test path, and the
 test suite is hermetic by construction: a scripted mock provider, recorded
@@ -9,7 +9,7 @@ cassettes, and fake clocks. **Zero API keys, zero network, zero live models.**
 ## One command from clone to green
 
 ```sh
-git clone https://github.com/placeholder-org/harness && cd harness  # or your fork
+git clone https://github.com/vinaosb/austringer && cd austringer  # or your fork
 cargo nextest run --workspace     # the whole suite: hermetic, no keys, no network
 ```
 
@@ -25,7 +25,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
 ```
 
-Before pushing, you can run the repo's local CI parity harness — the
+Before pushing, you can run the repo's local CI parity rig — the
 ubuntu legs of the CI workflow inside an `ubuntu:24.04` container with the
 pinned toolchain and tools, the windows legs natively — so runner-environment
 divergences (ANSI codes, path separators, fixture eol, process layout; the
@@ -33,7 +33,7 @@ receipt chain behind it) surface on your PC instead of on billed Actions
 minutes: `powershell -NoProfile -ExecutionPolicy Bypass -File
 scripts/install-hooks.ps1` wires a fast `pre-commit` (fmt) and a full
 `pre-push` gate; see [ci-local/README.md](ci-local/README.md) for the phase
-table and the `HARNESS_SKIP_LOCAL_CI=1` bypass.
+table and the `austringer_SKIP_LOCAL_CI=1` bypass.
 
 The workspace lints (`Cargo.toml`) already escalate `warnings = "deny"` and
 `clippy::all = "deny"` for every crate, so a clean `cargo check` is a
@@ -66,7 +66,7 @@ hit this:
   are written against the intended API before the implementation exists.
   Engine crates use `cargo-nextest` (process-per-test), `insta` snapshot
   suites, `assert_cmd` for the CLI, a fake-clock (`start_paused`) for timer
-  logic, and the `harness-test-support` mock provider (rule DSL, SSE
+  logic, and the `austringer-test-support` mock provider (rule DSL, SSE
   event-builder DSL, mid-stream drop injection, cassettes with strict
   replay) — there is no code path that needs a live model to be tested.
 - **RED evidence is part of the record.** When you fix a defect or land a
@@ -83,7 +83,7 @@ hit this:
   scheduled-only by policy and are never part of the PR path. A handful of
   live-PTY tests are timing-sensitive under heavy parallel load (they spawn
   real processes and kill them): if exactly one flakes in a full-workspace
-  run, re-run it in isolation — `cargo nextest run -p harness-exec --test
+  run, re-run it in isolation — `cargo nextest run -p austringer-exec --test
   <suite>` — before investigating; a genuine regression does not pass
   alone.
 - House style the CI and reviewers hold the line on (it is observable
@@ -102,13 +102,13 @@ or the evals suite):
   is that adopted and avoided decisions stay traceable to evidence.
 - A behavioral claim in docs or PR descriptions should be backed by a test,
   a committed baseline, or an eval artifact in the repository. Numbers
-  published in README/docs must match `harness-bench/budgets.json`,
-  `harness-bench/baselines/`, or recorded eval reports — budgets are the
+  published in README/docs must match `austringer-bench/budgets.json`,
+  `austringer-bench/baselines/`, or recorded eval reports — budgets are the
   contract, measurements are labeled as machine-specific.
 - Perf-relevant PRs: the CI perf gate fails >10% regressions against the
   committed deterministic baselines. If your change legitimately moves a
   baselined number, re-record it per
-  `harness-bench/baselines/README.md` and say so in the commit message.
+  `austringer-bench/baselines/README.md` and say so in the commit message.
 
 The PR template (`.github/PULL_REQUEST_TEMPLATE.md`) has fields for exactly
 this: evidence cited, and guardrail impact.
@@ -145,17 +145,17 @@ for picking up work:
   agent-executable acceptance criteria — those criteria are the issue text.
   Ask on an issue which wave/todo it maps to, or propose one from the README
   roadmap table.
-- **Bottom-up dependency order matters**: engine crates (`harness-core`,
+- **Bottom-up dependency order matters**: engine crates (`austringer-core`,
   `providers`, `ast`, ...) land before the surfaces that consume them
   (`daemon`, `tui`, `web`, `vscode`, `cli`), and the meta crates
-  (`harness-test-support`, `harness-bench`, `harness-evals`) are safe to work
+  (`austringer-test-support`, `austringer-bench`, `austringer-evals`) are safe to work
   on in parallel with the engine.
 - **Parallel-work discipline** for multi-change days: keep edits to shared
   files (`Cargo.toml`, `Cargo.lock`) minimal and anchored — re-read
   immediately before editing, prefer appending a dependency line over
   restructuring, and stage only your hunks when the lockfile carries a
   sibling's deltas.
-- New to the codebase? `harness-test-support` (the mock provider and SSE DSL)
+- New to the codebase? `austringer-test-support` (the mock provider and SSE DSL)
   is small, self-testing, and teaches the provider trait in one sitting.
 
 ## Docs changes

@@ -17,7 +17,7 @@ PHASE 0 â€” CHARACTERIZATION BASELINE (before any production change)
 ================================================================
 Test added first: harness-daemon/tests/provider_binary_tests.rs
 (unconfigured_daemon_fails_typed_over_the_wire). It spawns the REAL shipped
-binary (CARGO_BIN_EXE_harness-daemon, provider env scrubbed), does the
+binary (CARGO_BIN_EXE_austringer-daemon, provider env scrubbed), does the
 stdout handshake, GET / (health surface), one WS attach + HTTP submit, and
 collects frames through turn_finished.
 
@@ -41,7 +41,7 @@ BASELINE PINNED (current error surface, on the wire, unconfigured daemon):
     pre-change tree, so the baseline is a true characterization.
 
 ================================================================
-PHASE 1 — RED (failing-first, new behavior)
+PHASE 1 ï¿½ RED (failing-first, new behavior)
 ================================================================
 Tests added (after the green baseline, unchanged production code):
   harness-daemon/tests/provider_config_tests.rs  (10 tests)
@@ -62,7 +62,7 @@ Output (right-reason RED):
   error: could not compile `harness-daemon` (test ...) due to 2 previous errors
 
 ================================================================
-PHASE 2 — GREEN (implementation landed)
+PHASE 2 ï¿½ GREEN (implementation landed)
 ================================================================
 Implementation:
   harness-daemon/src/provider/mod.rs        (16 pure LOC)  facade + docs
@@ -84,7 +84,7 @@ Implementation:
     the production ReqwestTransport.
   harness-daemon/Cargo.toml: +harness-providers dep, +harness-test-support dev-dep
   (first cut was one 270-LOC provider.rs; split by responsibility to
-   respect the 250 ceiling — mod/selection/compose)
+   respect the 250 ceiling ï¿½ mod/selection/compose)
 
 Command:
   cargo nextest run -p harness-daemon
@@ -112,16 +112,16 @@ Adversarial:
   PASS hanging_provider_surfaces_typed_timeout_without_hanging
       (250ms budget, Hang transport; typed "provider timeout", bounded <5s)
   PASS unknown_family/blank_model/absent_model/compat_no_base/
-       keyed_family_no_keyenv/missing_key_value — all typed actionable,
+       keyed_family_no_keyenv/missing_key_value ï¿½ all typed actionable,
        naming the exact config key; zero panics
 
 ================================================================
-PHASE 3 — MANUAL QA (shipped release binary, dev machine)
+PHASE 3 ï¿½ MANUAL QA (shipped release binary, dev machine)
 ================================================================
 Build: cargo build --release -p harness-daemon
   -> C:\ct\release\harness-daemon.exe, 5.54 MB stripped
      (daemon budget < 40 MB; +~2.4 MB vs 3.09 MB baseline from linking
-      the providers stack — well inside the gate; M27 re-verifies)
+      the providers stack ï¿½ well inside the gate; M27 re-verifies)
 
 --- PART A: unconfigured binary (headless) ---
 Run: harness-daemon.exe --data-dir %TEMP%\m32-qa-a   (no provider env)
@@ -141,7 +141,7 @@ stayed up the whole time (killed manually afterwards; no panic, no crash).
 Env: HARNESS_PROVIDER=compat, HARNESS_MODEL=mock-model,
      HARNESS_PROVIDER_BASE_URL=http://127.0.0.1:18931/v1
      (compat = no key required; loopback mock serves one chat-completions
-      SSE reply — zero external network, zero real keys)
+      SSE reply ï¿½ zero external network, zero real keys)
 Startup stdout:
   harness-daemon listening on http://127.0.0.1:58559 (token: 7a49...20)
 Submit: POST .../cmd {"text":"M32 manual QA: is the projection sufficient?"} -> 202
@@ -150,9 +150,9 @@ WS frames observed:
   {"type":"event","frame":{"id":3,"event":{"type":"recorded","seq":2,"event":{"type":"assistant","blocks":[{"type":"text","text":"m32 manual-qa answer: the projection is sufficient"}]}}} ->
   {"type":"event","frame":{"id":4,"event":{"type":"turn_finished","turn":1,"outcome":"turn_complete"}}}
 RESPONSE CONTENT asserted (assistant event carries the model answer;
-outcome turn_complete — not transport-only success).
+outcome turn_complete ï¿½ not transport-only success).
 Provider request captured by the mock (proof through the REAL reqwest
-transport of the shipped binary — prompt-bytes assertion):
+transport of the shipped binary ï¿½ prompt-bytes assertion):
   POST /v1/chat/completions, User-Agent harness/0.1.0, Accept text/event-stream
   body: {"messages":[{"content":"<focus-chain>\nstatus: 0 open / 0 total\n</focus-chain>\nuser: M32 manual QA: is the projection sufficient?","role":"user"}],"model":"mock-model","stream":true,"stream_options":{"include_usage":true}}
 
@@ -172,7 +172,7 @@ ADVERSARIAL MATRIX
 - malformed-input: unknown family / blank model / absent model / compat
   w/o base URL / keyed family w/o key-env name -> typed actionable errors
   at PARSE; unset key VALUE -> typed KeyEnvUnset at factory build
-  (startup for the binary — run() exits 1 with the message). Zero panics.
+  (startup for the binary ï¿½ run() exits 1 with the message). Zero panics.
 - misleading-success-output: e2e + manual QA assert the response EVENT
   payload (assistant text == cassette/mock text) and outcome
   turn_complete; prompt bytes asserted reaching the provider request.
@@ -190,7 +190,7 @@ FILES CHANGED (one commit)
  harness-daemon/src/provider/{mod,selection,compose}.rs
  harness-daemon/tests/common/{mod.rs,cassette.rs}
  harness-daemon/tests/{provider_binary,provider_config,provider_ws_e2e}_tests.rs
- README.md (Quickstart + Status: wiring landed, env seam documented —
+ README.md (Quickstart + Status: wiring landed, env seam documented ï¿½
    key NAMES only; no key values anywhere)
  .omo/evidence/task-M32-media-formats.txt
 

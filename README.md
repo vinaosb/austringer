@@ -1,7 +1,7 @@
-# harness
+# austringer
 
-[![CI](https://github.com/placeholder-org/harness/actions/workflows/ci.yml/badge.svg)](https://github.com/placeholder-org/harness/actions/workflows/ci.yml)
-[![docs](https://github.com/placeholder-org/harness/actions/workflows/docs.yml/badge.svg)](https://github.com/placeholder-org/harness/actions/workflows/docs.yml)
+[![CI](https://github.com/vinaosb/austringer/actions/workflows/ci.yml/badge.svg)](https://github.com/vinaosb/austringer/actions/workflows/ci.yml)
+[![docs](https://github.com/vinaosb/austringer/actions/workflows/docs.yml/badge.svg)](https://github.com/vinaosb/austringer/actions/workflows/docs.yml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 **One small Rust daemon runs an AI coding agent; four thin clients attach to it — terminal, TUI, browser, VS Code — under hard, CI-enforced performance budgets, and every design decision is a receipt from a studied post-mortem of another harness.**
@@ -15,6 +15,19 @@
   [.omo/research/harness-research.md](.omo/research/harness-research.md)
   (the in-repo study of 25+ harnesses this project is built from); shipped
   mechanics cite the commit that landed them and the recorded task evidence.
+
+**Docs:** this README is the storefront; the composed manual is built from
+`docs/` by CI and served at <https://vinaosb.github.io/austringer/>. Crates
+publish as `austringer-*` (API docs on docs.rs) — see [Naming](#naming).
+
+**Contents:** [Why](#why) · [Quickstart](#quickstart) ·
+[Four frontends, one engine](#four-frontends-one-engine) ·
+[Performance budgets](#performance-budgets) · [Architecture](#architecture) ·
+[Receipts](#receipts) · [Built on post-mortems](#built-on-post-mortems) ·
+[Honest comparison](#honest-comparison) ·
+[Release transparency](#release-transparency) · [Status](#status) ·
+[Roadmap](#roadmap) · [Naming](#naming) · [Contributing](#contributing) ·
+[License](#license)
 
 ## Why
 
@@ -32,9 +45,9 @@ The corollaries:
 - **Budgets are the contract, not aspirations.** Cold start, RSS, frame rate,
   and binary size are enforced by a CI gate against committed baselines
   (research §23 frame-budget discipline; the gate lives in
-  [harness-bench](harness-bench/budgets.json)).
+  [austringer-bench](austringer-bench/budgets.json)).
 - **Claims carry receipts.** No marketing claim on this page lacks an in-repo
-  citation. Benchmark tables publish harness-matched rows only; unmatched rows
+  citation. Benchmark tables publish austringer-matched rows only; unmatched rows
   are marked DO NOT PUBLISH (research §18, the Qwen README discipline).
 - **Windows is first-class.** ConPTY pathologies, Job-Object kill trees, and
   restricted-token sandboxing are built in, not ported later.
@@ -46,10 +59,10 @@ Verified executable at the current commit (see
 environment; on Windows the binaries are `target\release\*.exe`):
 
 ```sh
-git clone https://github.com/placeholder-org/harness && cd harness  # URL is a placeholder until the naming decision
-cargo build --release -p harness-daemon -p harness-cli -p harness-tui
-./target/release/harness-daemon   # loopback-only; prints its URL and writes the auth token
-./target/release/harness doctor   # health-check config, sandbox, MCP, sessions, env
+git clone https://github.com/vinaosb/austringer && cd austringer
+cargo build --release -p austringer-daemon -p austringer-cli -p austringer-tui
+./target/release/austringer-daemon   # loopback-only; prints its URL and writes the auth token
+./target/release/austringer doctor   # health-check config, sandbox, MCP, sessions, env
 cargo nextest run --workspace     # full test suite: hermetic, zero API keys, zero network
 ```
 
@@ -58,14 +71,14 @@ appears in any committed file). Environment variables the daemon reads:
 
 | Variable | Meaning |
 | --- | --- |
-| `HARNESS_PROVIDER` | provider family: `anthropic` \| `openai` \| `google` \| `xai` \| `compat` |
-| `HARNESS_MODEL` | model id from the seeded catalog (effort may be pinned with the `model[effort=xhigh]` bracket grammar) |
-| `HARNESS_PROVIDER_KEY_ENV` | name of the environment variable holding the API key |
-| `HARNESS_PROVIDER_BASE_URL` | `compat` family only: the OpenAI-compatible base URL |
-| `HARNESS_PROVIDER_TIMEOUT_SECS` | inference timeout in whole seconds |
-| `HARNESS_SESSION_COST_CAP_USD` | per-session spend cap in decimal dollars (default 20.00); warning at 80%, typed stop at 100% |
-| `HARNESS_TEST_COMMAND` | user-global override of the `run_tests` tool's framework detection (a repo-local override file is refused with a typed error) |
-| `HARNESS_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint — never on by default |
+| `austringer_PROVIDER` | provider family: `anthropic` \| `openai` \| `google` \| `xai` \| `compat` |
+| `austringer_MODEL` | model id from the seeded catalog (effort may be pinned with the `model[effort=xhigh]` bracket grammar) |
+| `austringer_PROVIDER_KEY_ENV` | name of the environment variable holding the API key |
+| `austringer_PROVIDER_BASE_URL` | `compat` family only: the OpenAI-compatible base URL |
+| `austringer_PROVIDER_TIMEOUT_SECS` | inference timeout in whole seconds |
+| `austringer_SESSION_COST_CAP_USD` | per-session spend cap in decimal dollars (default 20.00); warning at 80%, typed stop at 100% |
+| `austringer_TEST_COMMAND` | user-global override of the `run_tests` tool's framework detection (a repo-local override file is refused with a typed error) |
+| `austringer_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint — never on by default |
 
 An unconfigured daemon stays fully servable and answers inference with a
 typed, actionable error naming those keys.
@@ -78,10 +91,10 @@ a local-socket IPC carrier):
 
 | Frontend | What it is | Entry point |
 | --- | --- | --- |
-| CLI | headless `run`/`capture`, REPL, `attach` event tail, `doctor`, `--output-json` NDJSON for eval drivers | `harness-cli` |
-| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`), hunk review gates | `harness-tui` |
+| CLI | headless `run`/`capture`, REPL, `attach` event tail, `doctor`, `--output-json` NDJSON for eval drivers | `austringer-cli` |
+| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`), hunk review gates | `austringer-tui` |
 | Web | dashboard SPA served by the daemon itself (no node server): live session, hunk review, cost/cache/context dashboards | daemon URL in a browser |
-| VS Code | TypeScript thin client: native diff decorations, per-hunk code lenses, editor telemetry (opt-in), command palette | `harness-vscode` |
+| VS Code | TypeScript thin client: native diff decorations, per-hunk code lenses, editor telemetry (opt-in), command palette | `austringer-vscode` |
 
 Multiple clients can attach to one session simultaneously; a permission granted
 from any client applies to all (crush's shared permission queue, research §1).
@@ -89,9 +102,9 @@ from any client applies to all (crush's shared permission queue, research §1).
 ## Performance budgets
 
 Budgets are normative and CI-enforced
-([harness-bench/budgets.json](harness-bench/budgets.json)); the gate fails the
+([austringer-bench/budgets.json](austringer-bench/budgets.json)); the gate fails the
 build on budget breach or a >10% regression against committed deterministic
-baselines ([harness-bench/baselines/](harness-bench/baselines)). The
+baselines ([austringer-bench/baselines/](austringer-bench/baselines)). The
 "measured" column below was recorded on the dev machine and is re-measured by
 CI on every push; the budget column is the contract.
 
@@ -108,7 +121,7 @@ Deterministic counters are baselined and regression-gated: repomap 965 tokens,
 eviction projection 523 events, prompt stable-prefix 570,834 bytes, PTY
 observation 10,592 bytes, session page-in 103,500 bytes — plus 12 dhat
 allocation metrics. All numbers above are reproducible:
-`cargo run --release -p harness-bench --bin perf-gate` re-measures them.
+`cargo run --release -p austringer-bench --bin perf-gate` re-measures them.
 
 ## Architecture
 
@@ -116,27 +129,27 @@ One daemon, a 25-crate Cargo workspace, four thin clients:
 
 ```
                      ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-   thin clients      │ harness- │ │ harness- │ │  web SPA │ │ harness- │
+   thin clients      │ austringer- │ │ austringer- │ │  web SPA │ │ austringer- │
                      │   cli    │ │   tui    │ │ (daemon- │ │  vscode  │
                      └────┬─────┘ └────┬─────┘ │  served) │ │ (TypeScr)│
                           │  WS/SSE/HTTP (loopback, token) + local IPC  │
                           └──────┬──────┴─────┬──────┴──────────┬──────┘
                                  └────────────┴─────────────────┘
                                               │
-                                       harness-daemon
+                                       austringer-daemon
                      (event log, sessions, permissions, scheduler, sandbox)
                                                │
         ┌───────────────┬──────────────┬──────┴──────┬───────────────┬────────────┐
         │ engine        │ models       │ context     │ exec + safety │ extension  │
-        │ harness-core  │ harness-     │ harness-ast │ harness-exec  │ harness-mcp│
-        │ harness-tools │  providers   │ harness-    │ harness-vfs   │ harness-   │
-        │ (events, loop,│ harness-     │  repomap    │ harness-      │  skills    │
-        │  tools, com-  │  intel       │ harness-    │  snapshots    │            │
-        │  paction)     │ harness-     │  search     │ harness-safety│           │
-        │               │  orchestration│ harness-lsp│ harness-wasm  │           │
+        │ austringer-core  │ austringer-     │ austringer-ast │ austringer-exec  │ austringer-mcp│
+        │ austringer-tools │  providers   │ austringer-    │ austringer-vfs   │ austringer-   │
+        │ (events, loop,│ austringer-     │  repomap    │ austringer-      │  skills    │
+        │  tools, com-  │  intel       │ austringer-    │  snapshots    │            │
+        │  paction)     │ austringer-     │  search     │ austringer-safety│           │
+        │               │  orchestration│ austringer-lsp│ austringer-wasm  │           │
         └───────────────┴──────────────┴─────────────┴───────────────┴────────────┘
-      persistence: harness-sessions   media: harness-media (daemon-served)
-      meta: harness-test-support, harness-bench, harness-evals
+      persistence: austringer-sessions   media: austringer-media (daemon-served)
+      meta: austringer-test-support, austringer-bench, austringer-evals
 ```
 
 Crate-by-crate map with the plan decision each implements:
@@ -155,7 +168,7 @@ failure it exists to avoid, both cited from the
 | Model fallback asks, never substitutes; profile stickiness across resume | Plandex 9-role routing + per-task profile pinning (research §13) | Droid silent failover (research §16); Claude Code silent downgrades #40269 (research §2) |
 | Per-model protocol dialects + 400-trap feature-detection table (feature-detect per model, never per provider) | elicitation SET/PROMPT/THROTTLE constitution (research §33) | dsh thinkingFormat bug — 72k-char reasoning bloat from a wrong dialect (research §6) |
 | Unattended runs end through an adversarial completion gate with CONFIRMED / REFUTED / INCONCLUSIVE verdicts + evidence links | Grok /goal evidence-review pattern (research §15); Droid /verify (research §16) | prose-spiral "done" claims on autonomous runs (research §15) |
-| Evals publish harness-matched rows only; unmatched rows render DO NOT PUBLISH | Qwen Code README exhaustive-disclosure discipline (research §18) | +10-25pt harness inflation in self-reported numbers (research §18) |
+| Evals publish austringer-matched rows only; unmatched rows render DO NOT PUBLISH | Qwen Code README exhaustive-disclosure discipline (research §18) | +10-25pt harness inflation in self-reported numbers (research §18) |
 | pass^k floors reported beside Mean@k; failure-fingerprint vectors | forge + harness-rs micro-harness discipline (research §26) | the 24pt Mean@k/Pass^k consistency gap read as quality (research §26) |
 | Evaluation unit is the model x profile pair (locked profile for regressions; >= 2x2 grids for experiments) | joint model x profile evaluation (research §33) | single-model results with up to 7.8x harness variance unattributed (research §33) |
 | 10 ms frame budget with hang classification as a CI gate | Zed GPUI frame-budget discipline (research §23) | perf regressions landing as benchmark noise (research §23) |
@@ -168,7 +181,7 @@ failure it exists to avoid, both cited from the
 | Collapsed-by-default transcripts: one line per tool, expand on demand, diffstats on the collapsed line | five-project convergence — Amp, Antigravity, Claude Code, Devin, goose (UI/UX pattern catalog 2026-10-20, research §35.6) | wall-of-noise transcripts burying decisions under raw tool output |
 | Changed-files timeline per turn | OpenCode #55064 Changed-files-by-turn; Devin Session Insights (research §22.3) | an unanswerable "what did this turn touch?" at review time |
 | task(category) delegation with ask-first chains | OmO categories (research §35.2–35.3); our no-silent-substitution contract (research §2) | silent chain-walking fallbacks — the exact refusal of research §35.4 |
-| ACP stdio surface: the harness hostable as an editor-side agent | ACP as the LSP-of-agents — Claude Code E2E 2025-07-18, five SDKs, registry + JetBrains co-launch (research §23.3, research §23.8) | every editor reimplementing agent hosting against a private protocol (research §23.2) |
+| ACP stdio surface: austringer hostable as an editor-side agent | ACP as the LSP-of-agents — Claude Code E2E 2025-07-18, five SDKs, registry + JetBrains co-launch (research §23.3, research §23.8) | every editor reimplementing agent hosting against a private protocol (research §23.2) |
 | Plan-as-artifact: opt-in plan mode, approve/edit/reject before any write | Antigravity artifact-centric UX (research §21.2); JetBrains committed `.junie/plans` artifacts + Confirm gate (research §24); Claude Code plan mode, Zed roadmap Plan Mode, Cursor Rollouts (recorded 2026-10-21, task-16) | skip-permissions surfaces auto-approving plans (Antigravity v1.3.2 receipt, task-16) |
 | OSC program-status emission (777 now, 7501 alongside as it standardizes) | OpenCode #55172 + Warp + Antigravity (research §35.6 WATCH, dated 2026-10-20) | terminal tabs blind to blocked-on-permission states |
 | Cross-session transcript search over the maintained event_fts index | Zed #58686 roadmap ticket (recorded 2026-10-21 — a reader over an already-maintained index, the lightweight clause); Zed threads.db lineage (research §23) | sessions as write-only archives nobody can query |
@@ -189,7 +202,7 @@ task-N, internal):
 | Scheduler + completion gate (CONFIRMED/REFUTED/INCONCLUSIVE) | `26e72c3` | task-41 |
 | Role routing with confirmed fallback | `26edbf8` | task-42 |
 | Perf budgets + regression gates + committed baselines | `c8926a4` | task-43 |
-| Evals: conformance + A/B harness, harness-matched discipline | `3fb0b07` | task-44 |
+| Evals: conformance + A/B rig, austringer-matched discipline | `3fb0b07` | task-44 |
 
 ## Built on post-mortems
 
@@ -207,11 +220,11 @@ decision remains traceable to its evidence. The docs-site companion page
 ## Honest comparison
 
 Factual rows only, quoted from the research file's matrix and reversal
-lessons; "harness" column reflects this project's design (research §1
+lessons; "austringer" column reflects this project's design (research §1
 "Ours" column) and current status. All four comparators were studied at the
 cited sections.
 
-| Dimension | Claude Code | Codex CLI | goose | opencode | harness |
+| Dimension | Claude Code | Codex CLI | goose | opencode | austringer |
 | --- | --- | --- | --- | --- | --- |
 | Language / runtime | TS (Bun), ~0.5-1 GiB steady RSS (research §1, research §2) | Rust (research §1) | Rust (research §1) | TS (Bun), heavy-ish (research §1) | Rust workspace; < 80 MB daemon RSS budget, CI-gated |
 | OS sandbox incl. Windows | partial — no Windows (research §1) | yes, 3 OS (research §1) | partial — mac + Docker (research §1) | none (research §1) | OS-native per backend incl. Windows restricted tokens + ACLs + Job Objects (research §1) |
@@ -219,12 +232,12 @@ cited sections.
 | Sessions store | JSONL (research §1) | rollouts (research §1) | SQLite (research §1) | SQLite (research §1) | SQLite + encryption at rest (XChaCha20-Poly1305) + lazy paging (research §1) |
 | Prefix-cache discipline | strong (research §1) | partial (research §1) | partial (research §1) | partial (research §1) | byte-stable prefix + violation tracker (research §27, research §32) |
 | Repo map (AST/PageRank) | partial (research §1) | none (research §1) | none (research §1) | partial (research §1) | CSR + SIMD PageRank repomap (research §1) |
-| Evals transparency | internal (research §1) | internal (research §1) | harbor (research §1) | none (research §1) | harness-matched published tables; unmatched = DO NOT PUBLISH (research §18) |
+| Evals transparency | internal (research §1) | internal (research §1) | harbor (research §1) | none (research §1) | austringer-matched published tables; unmatched = DO NOT PUBLISH (research §18) |
 
 ## Release transparency
 
 Per todo-44 discipline, every release publishes a benchmark leaderboard and
-an eval table, harness-matched rows only:
+an eval table, austringer-matched rows only:
 
 - Bench leaderboard (current pre-release baseline):
   [docs/release/leaderboard.adoc](docs/release/leaderboard.adoc)
@@ -242,21 +255,21 @@ implemented and tested inside a library crate.
 
 | Production-wired at HEAD (exercised through the shipped surfaces) | Library-tested (crate tests green; not wired into the shipped binaries) |
 | --- | --- |
-| All six CORE_TOOLS served in-process: `view_window`/`edit_lines` (harness-tools), `execute_command` (harness-exec under a harness-safety sandbox/egress policy), `lsp_query` (harness-lsp) — no NoExecutor path in production (task-3/4) | `harness-repomap` — CSR + SIMD PageRank repo map; its only consumer today is harness-bench's committed baselines, not the daemon's context pipeline |
-| Provider composition from env (five cassette-tested adapters on the production reqwest transport); typed, actionable no-provider error when unconfigured (M32) | `harness-search` — Tantivy BM25 lexical index; zero dependents (the shipped `tool_search` is core-internal) |
-| Protocol v2 frames: per-turn usage (model/effort/tokens/cost), FallbackAsk/FallbackResolved (mediated, v1-withheld), Verdict with evidence ids (task-1) | `harness-wasm` — wasmtime/WASI 0.2 plugin runtime; feature-gated, off by default, zero dependents |
+| All six CORE_TOOLS served in-process: `view_window`/`edit_lines` (austringer-tools), `execute_command` (austringer-exec under a austringer-safety sandbox/egress policy), `lsp_query` (austringer-lsp) — no NoExecutor path in production (task-3/4) | `austringer-repomap` — CSR + SIMD PageRank repo map; its only consumer today is austringer-bench's committed baselines, not the daemon's context pipeline |
+| Provider composition from env (five cassette-tested adapters on the production reqwest transport); typed, actionable no-provider error when unconfigured (M32) | `austringer-search` — Tantivy BM25 lexical index; zero dependents (the shipped `tool_search` is core-internal) |
+| Protocol v2 frames: per-turn usage (model/effort/tokens/cost), FallbackAsk/FallbackResolved (mediated, v1-withheld), Verdict with evidence ids (task-1) | `austringer-wasm` — wasmtime/WASI 0.2 plugin runtime; feature-gated, off by default, zero dependents |
 | Dispatcher live in the daemon loop: routing.json roles/tiers/categories/fallbacks/cheap-pool, ask-first fallback, same-model retry on timeout (task-9/13) | OAuth device-flow subscription auth (providers `device_flow.rs`, RFC 8628 + PKCE); cassette-tested in the crate, not yet composed into the daemon's env-based selection |
 | 2026-10 model catalog wave (GPT-6 Sol, GPT-6.1 Sol, GPT-6 Luna, Gemini 4 Argon, Grok 4.7, Claude Opus/Sonnet/Haiku 5.5 beside the existing 12; fail-closed effort grids) (task-10) | Orchestration best-of-N (same prompt on up to four models) and plan-branch comparison; the spec-driven launch path and fork-join children ARE wired (task-8) |
-| Cross-session transcript search over the maintained `event_fts` index: `GET /sessions/search`, `harness sessions search`, session-scoped `search_sessions` model tool, ranked rendering (task-11). Search surface production-wired; the live-session feed is library-tested/unwired — the daemon engine does not insert live conversation turns into `event_fts`, so searches see seeded/test data only (follow-up logged to wire the recorded-event path) | Worker (out-of-process executor) protocol — deliberately reserved; in-process executors are the production path (task-3) |
-| ACP stdio agent mode (`harness-daemon --acp`): initialize, session/prompt, session/update, fs read; mediation through the same queues (task-12) | |
+| Cross-session transcript search over the maintained `event_fts` index: `GET /sessions/search`, `austringer sessions search`, session-scoped `search_sessions` model tool, ranked rendering (task-11). Search surface production-wired; the live-session feed is library-tested/unwired — the daemon engine does not insert live conversation turns into `event_fts`, so searches see seeded/test data only (follow-up logged to wire the recorded-event path) | Worker (out-of-process executor) protocol — deliberately reserved; in-process executors are the production path (task-3) |
+| ACP stdio agent mode (`austringer-daemon --acp`): initialize, session/prompt, session/update, fs read; mediation through the same queues (task-12) | |
 | `task(category)` delegation (depth cap, fresh grant state, per-parent fan-out/budget caps) + curated read-only `explore`/`librarian` cheap-pool agents + team surfacing with Warp-style status precedence (task-13/14/15) | |
 | Opt-in interactive plan mode (off by default; write tools gated until approve/edit/reject; session grants suspended while planning) (task-16) | |
-| `run_tests` tool (cargo test/nextest detection, `HARNESS_TEST_COMMAND` user-global override, typed TestReport) with test evidence bound into the completion gate — REFUTED verdicts cite failing test ids (task-17/18) | |
+| `run_tests` tool (cargo test/nextest detection, `austringer_TEST_COMMAND` user-global override, typed TestReport) with test evidence bound into the completion gate — REFUTED verdicts cite failing test ids (task-17/18) | |
 | Snapshot rewind: `ClientMsg::Rewind`, TUI `/rewind`, event_fts truncated to the restore point (task-5) | |
 | Skills runtime: pack loading behind trust gates + quarantine, `/skill` invocation, `GET /packs`; pack MCP entries land disabled (task-6) | |
-| Session cost governance: micro-USD ledger keyed off usage frames, default $20/session cap (`HARNESS_SESSION_COST_CAP_USD`), warning at 80%, typed stop at 100%; children and automations aggregate (task-33) | |
+| Session cost governance: micro-USD ledger keyed off usage frames, default $20/session cap (`austringer_SESSION_COST_CAP_USD`), warning at 80%, typed stop at 100%; children and automations aggregate (task-33) | |
 | History + automations surfaces: `GET /s/{sid}/history`, `GET /automations`, sched/verdict notifications on the event stream; declarative `automations.json` (task-2) | |
-| MCP CLI family (`harness mcp list\|scan\|serve\|call`) (task-7); run-history + automations + team events in the four frontends; unified command grammar; OSC 777 + 7501 program-status emission (task-23/24) | |
+| MCP CLI family (`austringer mcp list\|scan\|serve\|call`) (task-7); run-history + automations + team events in the four frontends; unified command grammar; OSC 777 + 7501 program-status emission (task-23/24) | |
 | Media surface: daemon-served upload/fetch with delivery-cap projection, nine adapter families enabled (image, svg, pdf, audio, office, gltf, georaster, data, text) | |
 | Encrypted sessions store (XChaCha20-Poly1305, lazy paging), transactional shadows, sandboxes, permission engine, TUI/web/VS Code/CLI surfaces, perf gates, evals sweep (hermetic, scheduled-only by policy; live-model sweeps never gate PRs) | |
 
@@ -281,10 +294,28 @@ acceptance criteria, which double as good-first-issue definitions — see
 
 ## Naming
 
-The public name is `harness` (crates `harness-*`). An explicit naming
-decision is deliberately deferred to the pre-v1.0 marketing checklist: a
-crate rename is cheap before the first release and brand-breaking after it.
-The placeholder repository URL above will change with that decision.
+The public name is **austringer** (crates `austringer-*`, binaries
+`austringer` / `austringer-daemon`). An *austringer* is the falconer who
+flies short-winged hawks: the handler whose craft is letting a powerful,
+autonomous bird fly — while staying attached to it. That is this project's
+whole shape: the daemon keeps the attachment (permissions, budgets, sessions,
+ask-first fallback); the model does the flying.
+
+The name was chosen the way everything else here is — by receipt: 160+
+candidates across 14 metaphor families, live collision checks (two
+perfect-availability names, *creance* and *evener*, turned out to be already
+claimed by other agent projects and were rejected), and availability
+verification against crates.io, the GitHub org namespace, and registry RDAP
+before committing. `harness` itself failed that audit: every dictionary-word
+`.com`/`.dev` is squatted, the crate name is taken, and the word names the
+category, not the product. Full decision record:
+[.omo/research/naming-decision.md](.omo/research/naming-decision.md).
+
+Canonical links: code at [vinaosb/austringer](https://github.com/vinaosb/austringer),
+manual at <https://vinaosb.github.io/austringer/>, crates on crates.io as
+`austringer-*`. A custom domain is deliberately deferred (see the decision
+record): `austringer.dev`/`.io`/`.org`/`.sh` were verified unregistered at
+decision time and stay parked until traffic justifies them.
 
 ## Contributing
 

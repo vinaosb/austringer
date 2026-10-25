@@ -30,7 +30,7 @@ if (-not (Test-Path $json)) {
     exit 1
 }
 
-$out = @(& cmd /c "gh api -X PUT /repos/vinaosb/harness/branches/main/protection --input `"$json`" 2>&1")
+$out = @(& cmd /c "gh api -X PUT /repos/vinaosb/austringer/branches/main/protection --input `"$json`" 2>&1")
 if ($LASTEXITCODE -ne 0) {
     $msg = (($out -join "`n")).Trim()
     if ($msg -match 'HTTP 403') {
@@ -47,7 +47,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Applied: re-read the protection and summarize what the server enforces.
-$check = @(& cmd /c 'gh api /repos/vinaosb/harness/branches/main/protection 2>&1')
+$check = @(& cmd /c 'gh api /repos/vinaosb/austringer/branches/main/protection 2>&1')
 if ($LASTEXITCODE -ne 0) {
     Write-Output "ENABLE PROTECTION: applied, but the verification GET failed (gh exit ${LASTEXITCODE}):"
     Write-Output (($check -join "`n")).Trim()

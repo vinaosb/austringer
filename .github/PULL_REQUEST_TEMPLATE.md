@@ -16,7 +16,7 @@ cite existing evidence or add it.
       baseline, eval artifact, or precedent harness is cited where a
       design decision is involved.
 - [ ] Numbers: any performance or benchmark claim in docs/README matches
-      `harness-bench/budgets.json`, `harness-bench/baselines/`, or a
+      `austringer-bench/budgets.json`, `austringer-bench/baselines/`, or a
       recorded report (budgets are the contract; measurements are labeled
       machine-specific).
 
@@ -41,7 +41,7 @@ loses a test, name it.
 If this PR can plausibly move a baselined deterministic counter or a
 budget measurement (allocation counts, prefix bytes, observation bytes,
 page bytes, repomap tokens), say so; if a baseline legitimately moves,
-attach the re-record note (procedure: harness-bench/baselines/README.md).
+attach the re-record note (procedure: austringer-bench/baselines/README.md).
 
 ## Docs
 

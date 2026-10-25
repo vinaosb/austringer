@@ -1,4 +1,4 @@
-= harness documentation
+= austringer documentation
 :toc: left
 :doctype: article
 :idprefix:
@@ -8,7 +8,7 @@
 == What this site is
 
 The documentation layer of the
-https://github.com/placeholder-org/harness[harness] project — a
+https://github.com/vinaosb/austringer[austringer] project — a
 general-purpose AI agent harness written in Rust: one daemon hosts the agent
 loop, and four thin clients (CLI, TUI, browser dashboard, VS Code extension)
 attach to it over a loopback protocol.
@@ -53,10 +53,10 @@ directly when browsing source.
 
 Every claim in this documentation carries a receipt: a citation to the
 research file (written "research §N"), a commit in the repository history,
-a committed baseline under `harness-bench/baselines/`, or a recorded task
+a committed baseline under `austringer-bench/baselines/`, or a recorded task
 evidence file (cited as "task-N"). Where a number is machine-specific it is
 presented as such — the budgets are the contract, and the budgets are what
-CI enforces. Benchmark tables publish harness-matched rows only; unmatched
+CI enforces. Benchmark tables publish austringer-matched rows only; unmatched
 rows are marked DO NOT PUBLISH (research §18).
 
 This documentation embeds no counters, tracking pixels, or telemetry of any
@@ -65,7 +65,11 @@ kind.
 [[naming]]
 == Naming
 
-The public name is `harness` and the crates are `harness-*`. An explicit
-naming decision is deliberately deferred to the pre-v1.0 marketing
-checklist: a crate rename is cheap before the first release and
-brand-breaking after it.
+The public name is `austringer` and the crates are `austringer-*`. An
+*austringer* is the falconer who flies short-winged hawks — the handler who
+lets a powerful, autonomous bird fly while staying attached to it, which is
+the one-daemon, four-clients shape of this project. The name was picked by
+the same receipt discipline as the code: 160+ candidates, live collision
+checks, and registry/crates.io availability verification, recorded in
+`.omo/research/naming-decision.md`. The manual is served from this
+repository's GitHub Pages build; crates publish as `austringer-*`.

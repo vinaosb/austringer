@@ -70,7 +70,7 @@ program blocklists.
 commit provenance with session-id trailers.
 |§18
 |Qwen Code
-|Eval-transparency README discipline (harness-matched rows, exhaustive
+|Eval-transparency README discipline (austringer-matched rows, exhaustive
 disclosure); fail-closed writer leases; MCP transport pooling.
 |§19
 |Cursor

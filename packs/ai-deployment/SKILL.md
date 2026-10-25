@@ -47,7 +47,7 @@ create/invoke/observe). The subset here keeps the deployment decision
 workflow and capacity-discipline; a full port would add the Python
 scripts (capacity queries, dataset validation, training-curve checks)
 and the azd workflows. Source of record:
-`harness-skills/tests/fixtures/corpus/agents/microsoft-foundry`.
+`austringer-skills/tests/fixtures/corpus/agents/microsoft-foundry`.
 
 This pack is about deploying MODELS onto managed AI platforms (SKU,
 quota, throughput, fine-tuning, evals). Plain container/nginx/Kubernetes

@@ -10,10 +10,10 @@
 #    failure can be replayed locally with `cargo nextest run --archive-file`.
 #  * Coverage via cargo-llvm-cov's nextest backend; LCOV report uploaded as
 #    a workflow artifact (no third-party uploader — no token exists yet).
-#  * harness-wasm's wasmtime runtime is default-off (wasm-plugins feature,
+#  * austringer-wasm's wasmtime runtime is default-off (wasm-plugins feature,
 #    plan todo 45): the workspace archive compiles its `#![cfg(feature)]`
 #    suites away, so the test job runs them feature-on in a separate step
-#    (clippy gate rides in the lint job next to the harness-bench matrix).
+#    (clippy gate rides in the lint job next to the austringer-bench matrix).
 #  * Doctests are invisible to nextest (longstanding upstream limitation):
 #    a plain `cargo test --doc` step covers them (ubuntu only — the doctest
 #    corpus is platform-independent; the Windows gate runs locally).
@@ -33,7 +33,7 @@
 #
 # PROCESS NOTE — vendored-upstream duplication gate (Kilo kilocode_change
 # discipline, research §11): this repo currently vendors NO upstream code.
-# If an upstream harness is ever vendored into this tree, vendored files
+# If an upstream austringer is ever vendored into this tree, vendored files
 # must carry annotated-change markers (upstream-ref + marker comments per
 # local hunk), and a duplication-check job gets added to this lint workflow:
 # diff vendored paths against the pinned upstream ref, fail when a hunk
@@ -88,16 +88,16 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: "clippy (harness-bench feature matrix: dhat, mimalloc)"
+      - name: "clippy (austringer-bench feature matrix: dhat, mimalloc)"
         # Feature-gated gate code (global allocators) must stay lint-clean
         # too; the two features are mutually exclusive by compile_error!.
         run: |
-          cargo clippy --locked -p harness-bench --all-targets --features dhat -- -D warnings
-          cargo clippy --locked -p harness-bench --all-targets --features mimalloc -- -D warnings
-      - name: "clippy (harness-wasm feature: wasm-plugins)"
+          cargo clippy --locked -p austringer-bench --all-targets --features dhat -- -D warnings
+          cargo clippy --locked -p austringer-bench --all-targets --features mimalloc -- -D warnings
+      - name: "clippy (austringer-wasm feature: wasm-plugins)"
         # Same discipline for the default-off wasmtime runtime (todo 25):
         # without this the entire plugin engine has 0% lint coverage.
-        run: cargo clippy --locked -p harness-wasm --all-targets --features wasm-plugins -- -D warnings
+        run: cargo clippy --locked -p austringer-wasm --all-targets --features wasm-plugins -- -D warnings
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
@@ -134,7 +134,7 @@ jobs:
       - name: Run tests from archive
         run: cargo nextest run --archive-file nextest-archive.tar.zst
       - name: Run wasm-plugin tests (feature-gated out of the archive)
-        # harness-wasm's wasmtime suites are `#![cfg(feature)]` inner-gated
+        # austringer-wasm's wasmtime suites are `#![cfg(feature)]` inner-gated
         # and wasm-plugins is default-off, so the workspace archive above
         # compiles them away — run them with the feature on (todo 25). The
         # run-count assertion guards against the suites silently shrinking
@@ -142,13 +142,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          NO_COLOR=1 cargo nextest run --locked -p harness-wasm --features wasm-plugins 2>&1 | tee wasm-nextest.log
+          NO_COLOR=1 cargo nextest run --locked -p austringer-wasm --features wasm-plugins 2>&1 | tee wasm-nextest.log
           runs=$(sed $'s/\x1b\[[0-9;]*m//g' wasm-nextest.log | grep -Eo '[0-9]+ tests? run' | tail -n1 | grep -Eo '^[0-9]+')
           if [ -z "$runs" ] || [ "$runs" -eq 0 ]; then
-            echo "::error::harness-wasm --features wasm-plugins ran ${runs:-0} tests (expected >0)"
+            echo "::error::austringer-wasm --features wasm-plugins ran ${runs:-0} tests (expected >0)"
             exit 1
           fi
-          echo "harness-wasm feature-gated tests executed: $runs"
+          echo "austringer-wasm feature-gated tests executed: $runs"
       - name: Doc tests (ubuntu only)
         # nextest cannot execute doctests (upstream limitation); plain
         # cargo test covers them. Ubuntu-only: the doctest corpus is
@@ -188,9 +188,9 @@ jobs:
         run: rustup update 1.98 --no-self-update && rustup default 1.98
       - uses: Swatinem/rust-cache@v2
       - name: Build web e2e fixture daemon
-        run: cargo build --locked -p harness-web --example e2e_daemon
+        run: cargo build --locked -p austringer-web --example e2e_daemon
       - name: VS Code extension tests
-        working-directory: harness-vscode
+        working-directory: austringer-vscode
         run: |
           npm ci
           npm test
@@ -206,9 +206,9 @@ jobs:
         # No ms-playwright browser cache on runners: point the existing
         # override at the runner's Chrome stable.
         env:
-          HARNESS_E2E_EXE: ${{ github.workspace }}\target\debug\examples\e2e_daemon.exe
+          austringer_E2E_EXE: ${{ github.workspace }}\target\debug\examples\e2e_daemon.exe
           PLAYWRIGHT_CHROMIUM: C:\Program Files\Google\Chrome\Application\chrome.exe
-        run: node harness-web/e2e/run-e2e.mjs
+        run: node austringer-web/e2e/run-e2e.mjs
 
   coverage:
     name: cargo-llvm-cov
@@ -244,10 +244,10 @@ jobs:
     # detection, binary <40 MB stripped) + >10% regressions vs committed
     # machine-independent baselines (deterministic counters only; wall
     # clock rides absolute budgets w/ min-of-N — noise-margin discipline,
-    # harness-bench/src/lib.rs). windows-latest matches the platform the
+    # austringer-bench/src/lib.rs). windows-latest matches the platform the
     # committed baselines were recorded on (allocation counts are
     # allocator/OS-sensitive; re-record procedure in
-    # harness-bench/baselines/README.md).
+    # austringer-bench/baselines/README.md).
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -256,22 +256,22 @@ jobs:
       - name: Install Rust 1.98 (workspace MSRV)
         run: rustup update 1.98 --no-self-update && rustup default 1.98
       - uses: Swatinem/rust-cache@v2
-      - name: Build release binaries (harness, harness-daemon, gate)
-        run: cargo build --release --locked -p harness-cli -p harness-daemon -p harness-bench
+      - name: Build release binaries (austringer, austringer-daemon, gate)
+        run: cargo build --release --locked -p austringer-cli -p austringer-daemon -p austringer-bench
       - name: Perf gate (budgets + regression vs committed baseline)
         run: >-
-          cargo run --release --locked -q -p harness-bench --bin perf-gate --
-          --budgets harness-bench/budgets.json
-          --baseline harness-bench/baselines/gate_baseline.json
-          --cli-bin target/release/harness.exe
-          --daemon-bin target/release/harness-daemon.exe
-          --binary harness=target/release/harness.exe
-          --binary harness-daemon=target/release/harness-daemon.exe
+          cargo run --release --locked -q -p austringer-bench --bin perf-gate --
+          --budgets austringer-bench/budgets.json
+          --baseline austringer-bench/baselines/gate_baseline.json
+          --cli-bin target/release/austringer.exe
+          --daemon-bin target/release/austringer-daemon.exe
+          --binary austringer=target/release/austringer.exe
+          --binary austringer-daemon=target/release/austringer-daemon.exe
           --report perf-report.json
       - name: Heap-profile allocation regression gate (dhat)
         run: >-
-          cargo run --release --locked -q -p harness-bench --bin heap-profile --features dhat --
-          --check harness-bench/baselines/heap_profile.json
+          cargo run --release --locked -q -p austringer-bench --bin heap-profile --features dhat --
+          --check austringer-bench/baselines/heap_profile.json
           --report heap-profile-report.json
       - name: Upload perf reports
         if: always()

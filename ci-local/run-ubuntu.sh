@@ -48,14 +48,14 @@ step() {
 wasm_feature_run_with_count_guard() {
     set -o pipefail
     NO_COLOR=1 cargo nextest run --locked \
-        -p harness-wasm --features wasm-plugins 2>&1 | tee /tmp/wasm-nextest.log
+        -p austringer-wasm --features wasm-plugins 2>&1 | tee /tmp/wasm-nextest.log
     runs=$(sed $'s/\x1b\[[0-9;]*m//g' /tmp/wasm-nextest.log \
         | grep -Eo '[0-9]+ tests? run' | tail -n1 | grep -Eo '^[0-9]+' || true)
     if [ -z "$runs" ] || [ "$runs" -eq 0 ]; then
-        echo "harness-wasm --features wasm-plugins ran ${runs:-0} tests (expected >0)" >&2
+        echo "austringer-wasm --features wasm-plugins ran ${runs:-0} tests (expected >0)" >&2
         exit 1
     fi
-    echo "harness-wasm feature-gated tests executed: $runs"
+    echo "austringer-wasm feature-gated tests executed: $runs"
 }
 
 case "$mode" in
@@ -63,12 +63,12 @@ lint)
     # ci.yml `lint` job, ubuntu-latest, in workflow order.
     step "rustfmt" cargo fmt --all -- --check
     step "clippy" cargo clippy --locked --all-targets -- -D warnings
-    step "clippy (harness-bench: dhat)" \
-        cargo clippy --locked -p harness-bench --all-targets --features dhat -- -D warnings
-    step "clippy (harness-bench: mimalloc)" \
-        cargo clippy --locked -p harness-bench --all-targets --features mimalloc -- -D warnings
-    step "clippy (harness-wasm: wasm-plugins)" \
-        cargo clippy --locked -p harness-wasm --all-targets --features wasm-plugins -- -D warnings
+    step "clippy (austringer-bench: dhat)" \
+        cargo clippy --locked -p austringer-bench --all-targets --features dhat -- -D warnings
+    step "clippy (austringer-bench: mimalloc)" \
+        cargo clippy --locked -p austringer-bench --all-targets --features mimalloc -- -D warnings
+    step "clippy (austringer-wasm: wasm-plugins)" \
+        cargo clippy --locked -p austringer-wasm --all-targets --features wasm-plugins -- -D warnings
     step "cargo-deny (advisories, bans, licenses)" cargo deny check
     ;;
 test)

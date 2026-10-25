@@ -18,8 +18,8 @@
 #
 # ── Ignored-test inventory and per-OS assignment (≥21 target) ──────────
 # Base command on both runners:
-#   cargo nextest run --workspace --run-ignored only --exclude harness-media
-# (harness-media excluded: its 7 ignored tests are the real-tool tiers —
+#   cargo nextest run --workspace --run-ignored only --exclude austringer-media
+# (austringer-media excluded: its 7 ignored tests are the real-tool tiers —
 # ffmpeg / blender / freecad / gltf-validator / gdal / size-canary —
 # gated on vendor binaries via FFMPEG_BIN, BLENDER_BIN, FREECAD_BIN,
 # GLTF_VALIDATOR_BIN, GDAL_TRANSLATE_BIN/GDALINFO_BIN. They stay OPT-IN
@@ -27,9 +27,9 @@
 # them requires a human-decided local environment. Do not "fix" that
 # here; it is the media crate's documented contract.)
 #
-# WINDOWS job — 8 tests (nextest filter: package(harness-exec) or the
+# WINDOWS job — 8 tests (nextest filter: package(austringer-exec) or the
 # taskkill-bound golden; nothing else):
-#   harness-exec  pty_qa (7): qa_happy_cargo_version_through_pty,
+#   austringer-exec  pty_qa (7): qa_happy_cargo_version_through_pty,
 #                 qa_progress_bar_collapses [cfg(windows)],
 #                 qa_timeout_tree_enumeration [cfg(windows)],
 #                 qa_100mb_output_spills_bounded (cmd /c type),
@@ -39,46 +39,46 @@
 #                 qa_wsl_typed_statuses (real WSL probe; no-distro
 #                   statuses handled — proven on GH windows runners by
 #                   the un-ignored wsl_bridge suite)
-#   harness-lsp   real_kill9_restart_with_backoff_then_degrade (its
+#   austringer-lsp   real_kill9_restart_with_backoff_then_degrade (its
 #                 kill9() helper shells out to `taskkill` — Windows-only
 #                 by construction; needs the pinned rust-analyzer below)
 #
 # UBUNTU job — 19 tests (Docker available; pinned rust-analyzer
-# installed for the goldens; harness-safety built with
+# installed for the goldens; austringer-safety built with
 # `--features container` — container_args.rs is `#![cfg(feature =
 # "container")]` and default-off, so without the flag the docker smoke
 # test does not even compile in; filter: everything except the windows
 # set and the never-run corpus recorder):
-#   harness-safety  docker_daemon_smoke_run (real `docker run alpine:3`
+#   austringer-safety  docker_daemon_smoke_run (real `docker run alpine:3`
 #                   under the hardened generated args)
-#   harness-lsp     golden_goto_definition_returns_the_exact_location,
+#   austringer-lsp     golden_goto_definition_returns_the_exact_location,
 #                   golden_hover_is_bounded_and_names_the_symbol,
 #                   did_change_refreshes_positions_in_the_live_server
 #                   (goldens against the PINNED rust-analyzer — see
 #                   RUST_ANALYZER_VERSION below)
-#   harness-daemon  real_binary_pty_session_emits_program_status (real
+#   austringer-daemon  real_binary_pty_session_emits_program_status (real
 #                   daemon binary on a real PTY, ~90–150 s wall clock)
-#   harness-core    transcript_happy_three_turn_conversation,
+#   austringer-core    transcript_happy_three_turn_conversation,
 #                   transcript_cancel_mid_tool_execution,
 #                   qa_smart_approve_benign_read,
 #                   qa_plan_mode_freeze_with_schema_snapshot,
 #                   qa_destructive_always_asks_every_mode (FakeApi,
 #                   hermetic)
-#   harness-tools   qa_happy_three_hunk_selective_with_fringe,
+#   austringer-tools   qa_happy_three_hunk_selective_with_fringe,
 #                   qa_drift_small_shift_reanchors_large_shift_rejects,
 #                   qa_strict_mode_rejects_unread_region,
 #                   anchor_scheme_benchmark_harness
-#   harness-vfs     bench_apply_rollback_1k_files,
+#   austringer-vfs     bench_apply_rollback_1k_files,
 #                   bench_apply_rollback_10k_files,
 #                   bench_gix_worktree_backing_1k_files
-#   harness-repomap fifty_k_node_stress_stays_bounded
+#   austringer-repomap fifty_k_node_stress_stays_bounded
 #
 # EXCLUDED FROM BOTH RUNNERS (2, documented — not fixable in a workflow):
-#   harness-daemon capture_v1_ws_and_ipc_corpus — a one-shot STEP-0
+#   austringer-daemon capture_v1_ws_and_ipc_corpus — a one-shot STEP-0
 #     recorder that REWRITES the v1 wire-corpus fixtures; its own ignore
 #     message says re-running after a protocol change would falsify
 #     history. Scheduled CI must never execute it.
-#   harness-media  7 real-tool tier tests — opt-in by design (above).
+#   austringer-media  7 real-tool tier tests — opt-in by design (above).
 #
 # Accounting: windows 8 + ubuntu 19 = 27 executed ≥ 21 target. Neither
 # job alone reaches it (8 < 21, 19 < 21) — the union is the contract.
@@ -109,7 +109,7 @@
 # deliberately tiny sampling parameters (warm-up 1 s, measurement 2 s,
 # 10 samples) — this is an existence + plumbing check, NOT a performance
 # measurement; numbers from this job must never be recorded as
-# baselines (harness-bench/baselines/ has its own recorded procedure).
+# baselines (austringer-bench/baselines/ has its own recorded procedure).
 # The exact flags were validated locally (task-27 evidence): exit 0.
 
 name: deep-qa
@@ -170,14 +170,14 @@ jobs:
           $env:PATH = "$dir;$env:PATH"
           rust-analyzer --version
       - name: Run ignored deep-QA tests (windows set — 8 tests)
-        # Windows assignment only: the whole harness-exec package (its 7
+        # Windows assignment only: the whole austringer-exec package (its 7
         # ignored pty_qa tests; 3 are #[cfg(windows)], 2 more need
         # cmd.exe) plus the taskkill-bound golden. Everything else is
         # the ubuntu job's — see the inventory in the header comment.
         run: >-
           cargo nextest run --workspace --run-ignored only
-          --exclude harness-media --locked
-          -E "package(harness-exec) or test(real_kill9_restart_with_backoff_then_degrade)"
+          --exclude austringer-media --locked
+          -E "package(austringer-exec) or test(real_kill9_restart_with_backoff_then_degrade)"
 
   ignored-ubuntu:
     name: ignored deep-QA (ubuntu — docker + goldens + cross-platform remainder)
@@ -212,17 +212,17 @@ jobs:
         # Ubuntu assignment: everything ignored and cross-platform, on a
         # Docker-equipped runner (docker_daemon_smoke_run pulls alpine:3
         # — Docker is preinstalled on ubuntu-latest images), MINUS the
-        # windows-only set (harness-exec; the taskkill golden) and MINUS
+        # windows-only set (austringer-exec; the taskkill golden) and MINUS
         # the never-run v1 corpus recorder (rewrites its fixtures; see
-        # header). `--features harness-safety/container` is REQUIRED:
+        # header). `--features austringer-safety/container` is REQUIRED:
         # container_args.rs is compiled empty without it (the test would
         # silently not exist — the exact silent-skip class this
         # workflow's accounting exists to prevent).
         run: >-
           cargo nextest run --workspace --run-ignored only
-          --exclude harness-media --locked
-          --features harness-safety/container
-          -E "not (package(harness-exec) or test(real_kill9_restart_with_backoff_then_degrade) or test(capture_v1_ws_and_ipc_corpus))"
+          --exclude austringer-media --locked
+          --features austringer-safety/container
+          -E "not (package(austringer-exec) or test(real_kill9_restart_with_backoff_then_degrade) or test(capture_v1_ws_and_ipc_corpus))"
 
   bench-smoke:
     name: criterion bench smoke (6 benches, tiny samples)
@@ -246,10 +246,10 @@ jobs:
         # and rejects criterion's args (`Unrecognized option:
         # 'warm-up-time'`, exit 101 — CI receipt 2026-10-24). The six
         # explicit `--bench` flags select exactly the criterion targets;
-        # a new bench target added to harness-bench must be appended to
+        # a new bench target added to austringer-bench must be appended to
         # this list.
         run: >-
-          cargo bench --locked -p harness-bench --bench repomap
+          cargo bench --locked -p austringer-bench --bench repomap
           --bench eviction --bench prompt --bench pty --bench sessions
           --bench tui -- --warm-up-time 1 --measurement-time 2
           --sample-size 10

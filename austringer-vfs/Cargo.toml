@@ -1,0 +1,29 @@
+[package]
+name = "austringer-vfs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Typed error surface for the shadow transaction contract.
+thiserror.workspace = true
+# Base-manifest + edit-expected hashes (the workspace's content hash).
+blake3.workspace = true
+# CoW shadow backing (FICLONE / APFS clonefile / ReFS block cloning) with a
+# detected-and-disclosed plain-copy fallback per file.
+reflink-copy.workspace = true
+# Committed-tree worktree fallback: HEAD subtree materialization via the
+# always-on odb + reclaimed-ref writes. default-features = false (see the
+# workspace anchor for the full scope justification).
+gix.workspace = true
+# Standard facade only (this lib never installs a subscriber): warn lines
+# for best-effort teardown paths (Drop retire, GC sweep skips).
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -239,3 +239,20 @@ _Auto-scaffolded by /start-work. Append new entries below - never overwrite._
 - Acceptance for the future fix: a real daemon conversation's terms return as ranked hits via the same daemon's search route.
 
 
+
+## 2026-10-24 Follow-up: regenerate release.yml (cargo-dist template drift)
+PR #1 first-ever pull_request trigger exposed: cargo-dist on runners is newer than the
+committed release.yml template (dist plan: 'out of date contents', drift at ~line 288;
+workflow has zero prior runs on main; branch never touched release.yml; harness-evals
+properly excluded package-level per bench precedent). Fix on main: regenerate via
+cargo dist init/plan, commit updated workflow. Not caused by / not blocking this PR.
+
+
+## 2026-10-24 Follow-up: main CI green tail (post-merge)
+Four precisely-diagnosed items (see ledger goal-status entry): fmt diff check;
+pty_chaos windows-runner variance (fails 2x on main CI, passed PR run - needs
+robustness not deletion); bench-smoke 101 with --benches (identify panicking
+criterion bench on ubuntu); RA goldens generalized readiness (per-error retries
+insufficient - hover golden flaked next). Commands: gh api jobs/<id>/logs + ANSI
+strip; failing runs 40079977727 (main CI) + 40080001402 (deep-qa).
+

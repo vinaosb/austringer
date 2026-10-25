@@ -1,0 +1,10 @@
+title = "doc"
+
+[owner]
+name = "austringer"
+active = true
+
+[server]
+ports = [8000, 8001]
+start = 2026-01-01T00:00:00Z
+ratio = 0.5
