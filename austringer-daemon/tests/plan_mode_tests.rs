@@ -220,18 +220,18 @@ async fn drive_golden_scenario() -> String {
 /// Plan mode is OFF by default: a session driven with NO plan-mode
 /// commands must produce a transcript byte-identical to the fixture
 /// recorded at pre-task-16 HEAD. Re-record deliberately with
-/// `austringer_UPDATE_GOLDEN=1` (never to make a diff pass silently).
+/// `AUSTRINGER_UPDATE_GOLDEN=1` (never to make a diff pass silently).
 #[tokio::test]
 async fn golden_transcript_unchanged_with_plan_mode_off() {
     let transcript = drive_golden_scenario().await;
     let path = golden_path();
-    if std::env::var_os("austringer_UPDATE_GOLDEN").is_some() {
+    if std::env::var_os("AUSTRINGER_UPDATE_GOLDEN").is_some() {
         std::fs::create_dir_all(path.parent().expect("fixtures dir")).expect("fixtures dir");
         std::fs::write(&path, &transcript).expect("record golden fixture");
         return;
     }
     let golden = std::fs::read_to_string(&path)
-        .expect("golden fixture must exist (record once with austringer_UPDATE_GOLDEN=1)");
+        .expect("golden fixture must exist (record once with AUSTRINGER_UPDATE_GOLDEN=1)");
     assert_eq!(
         transcript, golden,
         "plan mode OFF must leave the session transcript byte-identical \

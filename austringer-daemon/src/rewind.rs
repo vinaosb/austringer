@@ -1,5 +1,5 @@
 //! The explicit `/rewind` bridge (plan todo 5): `ClientMsg::Rewind`
-//! restores the session to a austringer-snapshots restore point and
+//! restores the session to an austringer-snapshots restore point and
 //! truncates the persisted session log to the restore head. Restore is
 //! EXPLICIT-ONLY — nothing in the daemon ever calls into this module
 //! except the client-protocol dispatch arms.

@@ -57,7 +57,7 @@ fn spawn_probe(
     let command = SandboxCommand {
         program: fixture.probe_in_root.clone(),
         args: vec!["--write".into(), target.to_string_lossy().into_owned()],
-        env: vec![("austringer_SANDBOX_TEST".into(), "1".into())],
+        env: vec![("AUSTRINGER_SANDBOX_TEST".into(), "1".into())],
         cwd: fixture.root.clone(),
     };
     let mut child = sandbox.spawn(&command).expect("spawn");

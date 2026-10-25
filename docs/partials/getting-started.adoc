@@ -74,7 +74,7 @@ Separate from the developer suite, the agent-facing `run_tests` tool
 detects the framework (cargo test / cargo nextest) and returns a typed
 per-test report that the completion gate binds as evidence. Its
 detection can be replaced with a custom command line through the
-user-global `austringer_TEST_COMMAND` environment variable (read by the
+user-global `AUSTRINGER_TEST_COMMAND` environment variable (read by the
 daemon at startup) — a repo-local override file is refused with a typed
 error, so a repository under review can never redefine how its own
 tests run.
@@ -95,7 +95,7 @@ notifications to attached clients on the event stream.
 [[gs-status]]
 == What runs without a provider
 
-A daemon without `austringer_PROVIDER` set is fully servable: frontends, the
+A daemon without `AUSTRINGER_PROVIDER` set is fully servable: frontends, the
 protocol layer, permissions, sessions, snapshots, the scheduler, and
 automations all work, and an inference request returns a typed
 `no provider configured` error rather than a guess. With the provider
@@ -136,7 +136,7 @@ design-receipts table):
 * *Automations* — declarative schedules (`automations.json`) with cron,
   network policy, and pack-tier gating; visible at `GET /automations`.
 * *Cost caps* — every session governs its spend against a micro-USD
-  ledger: default cap $20 (override with `austringer_SESSION_COST_CAP_USD`),
+  ledger: default cap $20 (override with `AUSTRINGER_SESSION_COST_CAP_USD`),
   a warning at 80%, and a typed stop at 100%. A stop is a terminal
   event, never a silent model substitution.
 

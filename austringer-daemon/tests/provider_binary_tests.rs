@@ -32,10 +32,10 @@ async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
         cmd.arg(arg);
     }
     for var in [
-        "austringer_PROVIDER",
-        "austringer_MODEL",
-        "austringer_PROVIDER_KEY_ENV",
-        "austringer_PROVIDER_BASE_URL",
+        "AUSTRINGER_PROVIDER",
+        "AUSTRINGER_MODEL",
+        "AUSTRINGER_PROVIDER_KEY_ENV",
+        "AUSTRINGER_PROVIDER_BASE_URL",
     ] {
         cmd.env_remove(var);
     }
@@ -158,7 +158,7 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
         "typed unconfigured error must reach the wire: {joined}"
     );
     assert!(
-        joined.contains("austringer_PROVIDER") && joined.contains("austringer_MODEL"),
+        joined.contains("AUSTRINGER_PROVIDER") && joined.contains("AUSTRINGER_MODEL"),
         "the error must name the config keys to set: {joined}"
     );
     assert!(

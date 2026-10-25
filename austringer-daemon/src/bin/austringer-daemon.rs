@@ -56,7 +56,7 @@ fn config_from_env_and_args() -> Result<DaemonConfig, String> {
     }
     config.provider = provider_from_env()?;
     // Todo 33: the user-global session cost cap override.
-    if let Ok(raw) = std::env::var("austringer_SESSION_COST_CAP_USD")
+    if let Ok(raw) = std::env::var("AUSTRINGER_SESSION_COST_CAP_USD")
         && !raw.trim().is_empty()
     {
         config.session_cost_cap_micros =
@@ -65,7 +65,7 @@ fn config_from_env_and_args() -> Result<DaemonConfig, String> {
     // Todo 17: the user-global test-command override for `run_tests`.
     // Daemon-owned user-global config ONLY — the tool refuses a
     // repo-local override file with a typed error.
-    if let Ok(raw) = std::env::var("austringer_TEST_COMMAND")
+    if let Ok(raw) = std::env::var("AUSTRINGER_TEST_COMMAND")
         && !raw.trim().is_empty()
     {
         config.test_command = Some(raw.trim().to_owned());
@@ -74,27 +74,27 @@ fn config_from_env_and_args() -> Result<DaemonConfig, String> {
 }
 
 /// The provider seam (M32): family, model, key-variable NAME, optional
-/// base URL and timeout, read from the environment. No austringer_PROVIDER
+/// base URL and timeout, read from the environment. No AUSTRINGER_PROVIDER
 /// leaves the daemon unconfigured (frontends and the protocol stay
 /// exercisable; inference fails typed); a set-but-invalid value is a
 /// startup error. Key VALUES are resolved from the named variable at
 /// factory build — never stored, never logged, never committed.
 fn provider_from_env() -> Result<Option<austringer_daemon::provider::ProviderSelection>, String> {
     let env_str = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
-    let Some(family) = env_str("austringer_PROVIDER") else {
+    let Some(family) = env_str("AUSTRINGER_PROVIDER") else {
         return Ok(None);
     };
-    let timeout = match env_str("austringer_PROVIDER_TIMEOUT_SECS") {
+    let timeout = match env_str("AUSTRINGER_PROVIDER_TIMEOUT_SECS") {
         Some(raw) => Some(raw.trim().parse::<u64>().map_err(|_| {
-            format!("austringer_PROVIDER_TIMEOUT_SECS must be whole seconds, got {raw:?}")
+            format!("AUSTRINGER_PROVIDER_TIMEOUT_SECS must be whole seconds, got {raw:?}")
         })?),
         None => None,
     };
     let selection = austringer_daemon::provider::ProviderSelection::from_parts(
         &family,
-        env_str("austringer_MODEL").as_deref(),
-        env_str("austringer_PROVIDER_KEY_ENV").as_deref(),
-        env_str("austringer_PROVIDER_BASE_URL").as_deref(),
+        env_str("AUSTRINGER_MODEL").as_deref(),
+        env_str("AUSTRINGER_PROVIDER_KEY_ENV").as_deref(),
+        env_str("AUSTRINGER_PROVIDER_BASE_URL").as_deref(),
         timeout,
     )
     .map_err(|failure| failure.to_string())?;

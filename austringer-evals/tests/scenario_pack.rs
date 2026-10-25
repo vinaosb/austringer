@@ -4,7 +4,7 @@
 //! run_tests report shape, search_sessions scoping) are exercised by
 //! the conformance sweep — these tests pin that the pack loads, every
 //! pinned case conforms, corrupted fixtures fail LOUDLY with the
-//! cassette named, and the driver produces a austringer-matched report.
+//! cassette named, and the driver produces an austringer-matched report.
 
 mod pack {
     use austringer_evals::conformance::ConformanceVerdict;
@@ -193,7 +193,7 @@ mod driver {
     }
 
     /// HAPPY PATH: the hermetic conformance sweep over the committed
-    /// pack exits clean and writes a austringer-MATCHED report (matched
+    /// pack exits clean and writes an austringer-MATCHED report (matched
     /// baseline, pass^k floor, no DO-NOT-PUBLISH row).
     #[test]
     fn happy_sweep_writes_matched_artifacts_and_exits_zero() {

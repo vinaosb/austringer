@@ -71,14 +71,14 @@ appears in any committed file). Environment variables the daemon reads:
 
 | Variable | Meaning |
 | --- | --- |
-| `austringer_PROVIDER` | provider family: `anthropic` \| `openai` \| `google` \| `xai` \| `compat` |
-| `austringer_MODEL` | model id from the seeded catalog (effort may be pinned with the `model[effort=xhigh]` bracket grammar) |
-| `austringer_PROVIDER_KEY_ENV` | name of the environment variable holding the API key |
-| `austringer_PROVIDER_BASE_URL` | `compat` family only: the OpenAI-compatible base URL |
-| `austringer_PROVIDER_TIMEOUT_SECS` | inference timeout in whole seconds |
-| `austringer_SESSION_COST_CAP_USD` | per-session spend cap in decimal dollars (default 20.00); warning at 80%, typed stop at 100% |
-| `austringer_TEST_COMMAND` | user-global override of the `run_tests` tool's framework detection (a repo-local override file is refused with a typed error) |
-| `austringer_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint — never on by default |
+| `AUSTRINGER_PROVIDER` | provider family: `anthropic` \| `openai` \| `google` \| `xai` \| `compat` |
+| `AUSTRINGER_MODEL` | model id from the seeded catalog (effort may be pinned with the `model[effort=xhigh]` bracket grammar) |
+| `AUSTRINGER_PROVIDER_KEY_ENV` | name of the environment variable holding the API key |
+| `AUSTRINGER_PROVIDER_BASE_URL` | `compat` family only: the OpenAI-compatible base URL |
+| `AUSTRINGER_PROVIDER_TIMEOUT_SECS` | inference timeout in whole seconds |
+| `AUSTRINGER_SESSION_COST_CAP_USD` | per-session spend cap in decimal dollars (default 20.00); warning at 80%, typed stop at 100% |
+| `AUSTRINGER_TEST_COMMAND` | user-global override of the `run_tests` tool's framework detection (a repo-local override file is refused with a typed error) |
+| `AUSTRINGER_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint — never on by default |
 
 An unconfigured daemon stays fully servable and answers inference with a
 typed, actionable error naming those keys.
@@ -255,7 +255,7 @@ implemented and tested inside a library crate.
 
 | Production-wired at HEAD (exercised through the shipped surfaces) | Library-tested (crate tests green; not wired into the shipped binaries) |
 | --- | --- |
-| All six CORE_TOOLS served in-process: `view_window`/`edit_lines` (austringer-tools), `execute_command` (austringer-exec under a austringer-safety sandbox/egress policy), `lsp_query` (austringer-lsp) — no NoExecutor path in production (task-3/4) | `austringer-repomap` — CSR + SIMD PageRank repo map; its only consumer today is austringer-bench's committed baselines, not the daemon's context pipeline |
+| All six CORE_TOOLS served in-process: `view_window`/`edit_lines` (austringer-tools), `execute_command` (austringer-exec under an austringer-safety sandbox/egress policy), `lsp_query` (austringer-lsp) — no NoExecutor path in production (task-3/4) | `austringer-repomap` — CSR + SIMD PageRank repo map; its only consumer today is austringer-bench's committed baselines, not the daemon's context pipeline |
 | Provider composition from env (five cassette-tested adapters on the production reqwest transport); typed, actionable no-provider error when unconfigured (M32) | `austringer-search` — Tantivy BM25 lexical index; zero dependents (the shipped `tool_search` is core-internal) |
 | Protocol v2 frames: per-turn usage (model/effort/tokens/cost), FallbackAsk/FallbackResolved (mediated, v1-withheld), Verdict with evidence ids (task-1) | `austringer-wasm` — wasmtime/WASI 0.2 plugin runtime; feature-gated, off by default, zero dependents |
 | Dispatcher live in the daemon loop: routing.json roles/tiers/categories/fallbacks/cheap-pool, ask-first fallback, same-model retry on timeout (task-9/13) | OAuth device-flow subscription auth (providers `device_flow.rs`, RFC 8628 + PKCE); cassette-tested in the crate, not yet composed into the daemon's env-based selection |
@@ -264,10 +264,10 @@ implemented and tested inside a library crate.
 | ACP stdio agent mode (`austringer-daemon --acp`): initialize, session/prompt, session/update, fs read; mediation through the same queues (task-12) | |
 | `task(category)` delegation (depth cap, fresh grant state, per-parent fan-out/budget caps) + curated read-only `explore`/`librarian` cheap-pool agents + team surfacing with Warp-style status precedence (task-13/14/15) | |
 | Opt-in interactive plan mode (off by default; write tools gated until approve/edit/reject; session grants suspended while planning) (task-16) | |
-| `run_tests` tool (cargo test/nextest detection, `austringer_TEST_COMMAND` user-global override, typed TestReport) with test evidence bound into the completion gate — REFUTED verdicts cite failing test ids (task-17/18) | |
+| `run_tests` tool (cargo test/nextest detection, `AUSTRINGER_TEST_COMMAND` user-global override, typed TestReport) with test evidence bound into the completion gate — REFUTED verdicts cite failing test ids (task-17/18) | |
 | Snapshot rewind: `ClientMsg::Rewind`, TUI `/rewind`, event_fts truncated to the restore point (task-5) | |
 | Skills runtime: pack loading behind trust gates + quarantine, `/skill` invocation, `GET /packs`; pack MCP entries land disabled (task-6) | |
-| Session cost governance: micro-USD ledger keyed off usage frames, default $20/session cap (`austringer_SESSION_COST_CAP_USD`), warning at 80%, typed stop at 100%; children and automations aggregate (task-33) | |
+| Session cost governance: micro-USD ledger keyed off usage frames, default $20/session cap (`AUSTRINGER_SESSION_COST_CAP_USD`), warning at 80%, typed stop at 100%; children and automations aggregate (task-33) | |
 | History + automations surfaces: `GET /s/{sid}/history`, `GET /automations`, sched/verdict notifications on the event stream; declarative `automations.json` (task-2) | |
 | MCP CLI family (`austringer mcp list\|scan\|serve\|call`) (task-7); run-history + automations + team events in the four frontends; unified command grammar; OSC 777 + 7501 program-status emission (task-23/24) | |
 | Media surface: daemon-served upload/fetch with delivery-cap projection, nine adapter families enabled (image, svg, pdf, audio, office, gltf, georaster, data, text) | |

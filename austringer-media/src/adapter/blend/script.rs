@@ -15,8 +15,8 @@ const DUMP_TEMPLATE: &str = include_str!("dump_script.py");
 const SPEC_PLACEHOLDER: &str = "__SPEC_JSON__";
 
 /// Dump-script stdout markers (the extractor scans between them).
-pub const DUMP_BEGIN: &str = "austringer_BLEND_DUMP_BEGIN";
-pub const DUMP_END: &str = "austringer_BLEND_DUMP_END";
+pub const DUMP_BEGIN: &str = "AUSTRINGER_BLEND_DUMP_BEGIN";
+pub const DUMP_END: &str = "AUSTRINGER_BLEND_DUMP_END";
 
 /// The dump script handed to `--python` on the extract lane.
 #[must_use]

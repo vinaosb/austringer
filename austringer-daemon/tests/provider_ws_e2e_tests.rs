@@ -21,7 +21,7 @@ async fn cassette_configured_daemon_answers_submit_over_ws() {
     let selection = ProviderSelection {
         family: ProviderFamily::Anthropic,
         model: "claude-m32-cassette".to_owned(),
-        api_key_env: Some("austringer_M32_E2E_KEY".to_owned()),
+        api_key_env: Some("AUSTRINGER_M32_E2E_KEY".to_owned()),
         base_url: None,
         inference_timeout: Duration::from_secs(30),
     };

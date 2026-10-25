@@ -492,10 +492,10 @@ fn real_binary_pty_session_emits_program_status() {
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_austringer-daemon"));
     command.arg("--data-dir");
     command.arg(data.path());
-    command.env("austringer_PROVIDER", "compat");
-    command.env("austringer_MODEL", "fixture-model");
-    command.env("austringer_PROVIDER_BASE_URL", &base_url);
-    command.env_remove("austringer_PROVIDER_KEY_ENV");
+    command.env("AUSTRINGER_PROVIDER", "compat");
+    command.env("AUSTRINGER_MODEL", "fixture-model");
+    command.env("AUSTRINGER_PROVIDER_BASE_URL", &base_url);
+    command.env_remove("AUSTRINGER_PROVIDER_KEY_ENV");
     let mut child = pty
         .slave
         .spawn_command(command)

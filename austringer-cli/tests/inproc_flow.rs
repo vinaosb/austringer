@@ -259,7 +259,7 @@ async fn doctor_is_green_against_a_clean_environment() {
         .arg(&server.base)
         .arg("--token")
         .arg(&server.token)
-        .env_remove("austringer_PROVIDER")
+        .env_remove("AUSTRINGER_PROVIDER")
         .assert()
         .success()
         .stdout(predicate::str::contains("FAIL").not());

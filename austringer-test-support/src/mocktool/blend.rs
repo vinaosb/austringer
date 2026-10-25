@@ -23,10 +23,10 @@ use serde_json::{Value, json};
 use super::python::validate_python;
 
 /// Marker the builder script contract carries (must match the adapter).
-const CENSUS_MARKER: &[u8] = b"austringer_BLEND_MOCK_CENSUS";
+const CENSUS_MARKER: &[u8] = b"AUSTRINGER_BLEND_MOCK_CENSUS";
 /// Dump-script stdout markers (must match the adapter's extractor).
-const DUMP_BEGIN: &str = "austringer_BLEND_DUMP_BEGIN";
-const DUMP_END: &str = "austringer_BLEND_DUMP_END";
+const DUMP_BEGIN: &str = "AUSTRINGER_BLEND_DUMP_BEGIN";
+const DUMP_END: &str = "AUSTRINGER_BLEND_DUMP_END";
 /// 12-byte blend header the fixture carries (64-bit, little-endian,
 /// version 305 - probes Certain through the M2 sniffer).
 const BLEND_HEADER: &[u8] = b"BLENDER_v305";

@@ -15,7 +15,7 @@ use common::cassette::{Cassette, CassetteTransport, anthropic_text_cassette};
 
 type Factory = InferenceFactory;
 
-const KEY_ENV: &str = "austringer_M32_E2E_KEY";
+const KEY_ENV: &str = "AUSTRINGER_M32_E2E_KEY";
 
 fn anthropic_selection() -> ProviderSelection {
     ProviderSelection {
@@ -65,7 +65,7 @@ async fn unconfigured_factory_names_config_keys_not_the_stale_todo() {
         "typed unconfigured error must survive: {failure}"
     );
     assert!(
-        failure.contains("austringer_PROVIDER") && failure.contains("austringer_MODEL"),
+        failure.contains("AUSTRINGER_PROVIDER") && failure.contains("AUSTRINGER_MODEL"),
         "error must name the config keys to set: {failure}"
     );
     assert!(
@@ -82,7 +82,7 @@ async fn unknown_family_is_typed_and_actionable() {
     };
     assert!(text.contains("anthropik"), "echo the bad value: {text}");
     assert!(
-        text.contains("austringer_PROVIDER"),
+        text.contains("AUSTRINGER_PROVIDER"),
         "name the config key: {text}"
     );
     for known in ["anthropic", "openai", "google", "xai", "compat"] {
@@ -96,7 +96,7 @@ async fn blank_model_is_typed_and_actionable() {
         Err(failure) => failure.to_string(),
         Ok(selection) => panic!("blank model must be rejected: {selection:?}"),
     };
-    assert!(text.contains("austringer_MODEL"), "name the key: {text}");
+    assert!(text.contains("AUSTRINGER_MODEL"), "name the key: {text}");
 }
 
 #[tokio::test]
@@ -105,7 +105,7 @@ async fn absent_model_is_typed_and_actionable() {
         Err(failure) => failure.to_string(),
         Ok(selection) => panic!("absent model must be rejected: {selection:?}"),
     };
-    assert!(text.contains("austringer_MODEL"), "name the key: {text}");
+    assert!(text.contains("AUSTRINGER_MODEL"), "name the key: {text}");
 }
 
 #[tokio::test]
@@ -115,7 +115,7 @@ async fn compat_without_base_url_is_typed_and_actionable() {
         Ok(selection) => panic!("compat without base url must be rejected: {selection:?}"),
     };
     assert!(
-        text.contains("austringer_PROVIDER_BASE_URL"),
+        text.contains("AUSTRINGER_PROVIDER_BASE_URL"),
         "name the key: {text}"
     );
 }
@@ -127,16 +127,16 @@ async fn keyed_family_without_key_env_name_is_typed_and_actionable() {
         Ok(selection) => panic!("keyed family without key env must be rejected: {selection:?}"),
     };
     assert!(
-        text.contains("austringer_PROVIDER_KEY_ENV"),
+        text.contains("AUSTRINGER_PROVIDER_KEY_ENV"),
         "name the key: {text}"
     );
 }
 
 #[tokio::test]
 async fn missing_key_env_value_fails_typed_naming_the_variable() {
-    // austringer_M32_ABSENT_KEY is never set anywhere in the workspace.
+    // AUSTRINGER_M32_ABSENT_KEY is never set anywhere in the workspace.
     let selection = ProviderSelection {
-        api_key_env: Some("austringer_M32_ABSENT_KEY".to_owned()),
+        api_key_env: Some("AUSTRINGER_M32_ABSENT_KEY".to_owned()),
         ..anthropic_selection()
     };
     let transport = CassetteTransport::new(vec![]);
@@ -148,7 +148,7 @@ async fn missing_key_env_value_fails_typed_naming_the_variable() {
         Err(failure) => failure.to_string(),
     };
     assert!(
-        failure.contains("austringer_M32_ABSENT_KEY"),
+        failure.contains("AUSTRINGER_M32_ABSENT_KEY"),
         "name the unset variable: {failure}"
     );
 }

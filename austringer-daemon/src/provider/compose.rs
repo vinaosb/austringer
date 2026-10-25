@@ -215,9 +215,9 @@ impl Inference for UnconfiguredInference {
         _cancel: &CancelToken,
     ) -> Result<AssistantTurn, InferenceError> {
         Err(InferenceError::Failure(
-            "no provider configured: set austringer_PROVIDER (one of anthropic, openai, \
-             google, xai, compat), austringer_MODEL, and — for keyed families — \
-             austringer_PROVIDER_KEY_ENV naming the environment variable that holds \
+            "no provider configured: set AUSTRINGER_PROVIDER (one of anthropic, openai, \
+             google, xai, compat), AUSTRINGER_MODEL, and — for keyed families — \
+             AUSTRINGER_PROVIDER_KEY_ENV naming the environment variable that holds \
              the API key, then restart the daemon"
                 .to_owned(),
         ))
@@ -243,7 +243,7 @@ impl Inference for DeadlineInference {
             Ok(outcome) => outcome,
             Err(_elapsed) => Err(InferenceError::Failure(format!(
                 "provider timeout: inference exceeded the {}s budget \
-                 (austringer_PROVIDER_TIMEOUT_SECS adjusts it)",
+                 (AUSTRINGER_PROVIDER_TIMEOUT_SECS adjusts it)",
                 self.deadline.as_secs_f64()
             ))),
         }

@@ -17,12 +17,12 @@ use austringer_media::format::FormatId;
 use austringer_media::generate::GenerationSpec;
 use austringer_media::tool::{ToolCall, ToolConfig, ToolExecutor, ToolOverride};
 
-/// T40-style re-exec entry: when austringer_MOCKTOOL_ARGV is set, THIS test
+/// T40-style re-exec entry: when AUSTRINGER_MOCKTOOL_ARGV is set, THIS test
 /// becomes a mocktool child; the executor spawns this binary as the
 /// substituted blender program.
 #[test]
 fn mocktool_child_entry() {
-    if std::env::var("austringer_MOCKTOOL_ARGV").is_err() {
+    if std::env::var("AUSTRINGER_MOCKTOOL_ARGV").is_err() {
         return; // normal suite run: nothing to do
     }
     std::process::exit(austringer_test_support::mocktool::run_from_env());
@@ -50,7 +50,7 @@ fn blend_exec(mode: &str, temp: &Path) -> ToolExecutor {
         enabled: [("blender".to_owned(), mocktool_override())].into(),
         install_enabled: false,
         session_temp: temp.to_path_buf(),
-        env: [("austringer_MOCKTOOL_ARGV".to_owned(), mode.to_owned())].into(),
+        env: [("AUSTRINGER_MOCKTOOL_ARGV".to_owned(), mode.to_owned())].into(),
     })
 }
 
@@ -414,7 +414,7 @@ fn mock_failure_is_typed_nonzero_exit_no_partial_artifact() {
         install_enabled: false,
         session_temp: temp.path().to_path_buf(),
         env: [(
-            "austringer_MOCKTOOL_ARGV".to_owned(),
+            "AUSTRINGER_MOCKTOOL_ARGV".to_owned(),
             "exit 3 blender-boom".to_owned(),
         )]
         .into(),

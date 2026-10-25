@@ -16,8 +16,8 @@ const DUMP_TEMPLATE: &str = include_str!("dump_script.py");
 const SPEC_PLACEHOLDER: &str = "__SPEC_JSON__";
 
 /// Dump-script stdout markers (the verifier scans between them).
-pub const DUMP_BEGIN: &str = "austringer_STEP_DUMP_BEGIN";
-pub const DUMP_END: &str = "austringer_STEP_DUMP_END";
+pub const DUMP_BEGIN: &str = "AUSTRINGER_STEP_DUMP_BEGIN";
+pub const DUMP_END: &str = "AUSTRINGER_STEP_DUMP_END";
 
 /// The dump script handed to freecadcmd on the verify lane.
 #[must_use]

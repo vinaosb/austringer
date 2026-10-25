@@ -37,17 +37,17 @@ fn fixture(name: &str) -> Vec<u8> {
 /// T40-style re-exec child entries: one per TOOL so a single adapter
 /// call that spawns ffmpeg AND ffprobe is drivable hermetically (the
 /// mode words arrive through distinct env vars, not one shared
-/// austringer_MOCKTOOL_ARGV).
+/// AUSTRINGER_MOCKTOOL_ARGV).
 #[test]
 fn mocktool_ffmpeg_child() {
-    if let Ok(words) = std::env::var("austringer_MOCKTOOL_FFMPEG_ARGV") {
+    if let Ok(words) = std::env::var("AUSTRINGER_MOCKTOOL_FFMPEG_ARGV") {
         std::process::exit(austringer_test_support::mocktool::dispatch_words(&words));
     }
 }
 
 #[test]
 fn mocktool_ffprobe_child() {
-    if let Ok(words) = std::env::var("austringer_MOCKTOOL_FFPROBE_ARGV") {
+    if let Ok(words) = std::env::var("AUSTRINGER_MOCKTOOL_FFPROBE_ARGV") {
         std::process::exit(austringer_test_support::mocktool::dispatch_words(&words));
     }
 }
@@ -88,15 +88,15 @@ fn lane(ffmpeg_mode: &str, ffprobe_mode: &str) -> Lane {
     });
     let mut env = BTreeMap::new();
     env.insert(
-        "austringer_MOCKTOOL_FFMPEG_ARGV".to_owned(),
+        "AUSTRINGER_MOCKTOOL_FFMPEG_ARGV".to_owned(),
         ffmpeg_mode.to_owned(),
     );
     env.insert(
-        "austringer_MOCKTOOL_FFPROBE_ARGV".to_owned(),
+        "AUSTRINGER_MOCKTOOL_FFPROBE_ARGV".to_owned(),
         ffprobe_mode.to_owned(),
     );
     env.insert(
-        "austringer_MOCKTOOL_GOLDEN_DIR".to_owned(),
+        "AUSTRINGER_MOCKTOOL_GOLDEN_DIR".to_owned(),
         golden_dir().display().to_string(),
     );
     Lane { tools, env }

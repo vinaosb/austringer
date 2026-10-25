@@ -171,7 +171,7 @@ fn name_at(source: &[u8], node: tree_sitter::Node) -> String {
 /// Extract the symbol table from an already-parsed source.
 ///
 /// Errors: [`AstError::NoGrammarCompiled`] (feature off) or
-/// [`AstError::TagsQuery`] (a shipped query failed to compile — a austringer
+/// [`AstError::TagsQuery`] (a shipped query failed to compile — an austringer
 /// bug). Broken syntax is NOT an error: tags come from whatever parsed.
 pub fn extract(parsed: &ParseResult) -> Result<TagTable, AstError> {
     let language = parsed.language();

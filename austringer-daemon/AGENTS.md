@@ -38,7 +38,7 @@ launch/          spec-driven launch + orchestration bridge (children, sink)
 
 ## ANTI-PATTERNS
 - No silent model substitution anywhere; every fallback hop asks.
-- No new config formats; routing.json and austringer_TEST_COMMAND extend existing shapes.
+- No new config formats; routing.json and AUSTRINGER_TEST_COMMAND extend existing shapes.
 - Cost Stop halts spend; it never switches models.
 - Permission asks never auto-answer; timeout and deadline never approve.
 - A declared write-set is never an approval.

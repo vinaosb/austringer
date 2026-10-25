@@ -72,7 +72,7 @@ impl CoreExecutors {
     }
 
     /// Sets the user-global test-command override (todo 17; read from
-    /// `austringer_TEST_COMMAND` by the binary — never a repo-local file).
+    /// `AUSTRINGER_TEST_COMMAND` by the binary — never a repo-local file).
     #[must_use]
     pub fn with_test_command(mut self, command: Option<String>) -> Self {
         let root = self.lsp.root.clone();

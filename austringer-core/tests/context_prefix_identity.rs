@@ -189,7 +189,7 @@ fn layout_places_segments_in_fixed_order_with_typed_boundaries() {
     let mut focus = FocusChain::new();
     focus.upsert(TodoId(1), "write the builder");
     let spec = ContextSpec {
-        system: "You are a austringer agent.".to_owned(),
+        system: "You are an austringer agent.".to_owned(),
         base_schema,
         rules: vec![SlotSegment {
             id: "focus".to_owned(),
@@ -247,7 +247,7 @@ fn layout_places_segments_in_fixed_order_with_typed_boundaries() {
 
     // The exact canonical byte layout (the format contract).
     let expected = format!(
-        "<system>\nYou are a austringer agent.\neffort: high\n</system>\n\
+        "<system>\nYou are an austringer agent.\neffort: high\n</system>\n\
          <tool-schema>\n{}\n</tool-schema>\n\
          <rules>\n{}\n</rules>\n\
          <skills>\n</skills>\n\
@@ -592,7 +592,7 @@ fn twenty_turn_session_keeps_at_least_90_percent_prefix_identity() {
     let mut system_hashes: Vec<austringer_core::event::ContentHash> = vec![];
     for turn in 1..=20u64 {
         let spec = ContextSpec {
-            system: "You are a austringer agent.".to_owned(),
+            system: "You are an austringer agent.".to_owned(),
             base_schema: base_schema.clone(),
             rules: rules.clone(),
             skills: vec![],

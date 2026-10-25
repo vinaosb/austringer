@@ -1,8 +1,8 @@
 //! Config-driven provider composition for the session factory (M32).
 //!
 //! The daemon binary parses the provider seam from the environment
-//! (`austringer_PROVIDER`, `austringer_MODEL`, `austringer_PROVIDER_KEY_ENV`,
-//! `austringer_PROVIDER_BASE_URL`, `austringer_PROVIDER_TIMEOUT_SECS`) into a
+//! (`AUSTRINGER_PROVIDER`, `AUSTRINGER_MODEL`, `AUSTRINGER_PROVIDER_KEY_ENV`,
+//! `AUSTRINGER_PROVIDER_BASE_URL`, `AUSTRINGER_PROVIDER_TIMEOUT_SECS`) into a
 //! [`ProviderSelection`], resolves the API key from the NAMED
 //! environment variable (key values never appear in config or on disk),
 //! and composes the cassette-tested austringer-providers adapters behind

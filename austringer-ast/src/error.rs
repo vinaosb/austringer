@@ -43,7 +43,7 @@ pub enum AstError {
     #[error("parser returned no tree for {0}")]
     ParseCanceled(PathBuf),
 
-    /// A per-language tags query failed to compile — a austringer bug (queries
+    /// A per-language tags query failed to compile — an austringer bug (queries
     /// ship with the crate); carries language and the query error.
     #[error("tags query failed to compile for {language}: {query_error}")]
     TagsQuery {

@@ -137,7 +137,7 @@ fn doctor_exits_nonzero_on_broken_provider_selection() {
         .arg("doctor")
         .arg("--url")
         .arg(format!("http://127.0.0.1:{}", unused_port()))
-        .env("austringer_PROVIDER", "not-a-provider")
+        .env("AUSTRINGER_PROVIDER", "not-a-provider")
         .assert()
         .failure()
         .code(1)

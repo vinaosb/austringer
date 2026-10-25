@@ -141,7 +141,7 @@ function Invoke-NativeFrontends {
         Invoke-Checked 'npm test (austringer-vscode)' { npm test }
     } finally { Pop-Location }
     $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $RepoRoot 'target' }
-    $env:austringer_E2E_EXE = Join-Path $targetDir 'debug\examples\e2e_daemon.exe'
+    $env:AUSTRINGER_E2E_EXE = Join-Path $targetDir 'debug\examples\e2e_daemon.exe'
     $env:NODE_PATH = (npm root -g)  # playwright-core resolves from the global npm tree, as in CI
     if (-not $env:PLAYWRIGHT_CHROMIUM -and -not (Test-Path "$env:LOCALAPPDATA\ms-playwright")) {
         # CI points the override at the runner's Chrome stable; fall back

@@ -35,6 +35,6 @@ def census():
     }
 
 
-print("austringer_STEP_DUMP_BEGIN")
+print("AUSTRINGER_STEP_DUMP_BEGIN")
 print(json.dumps(census(), sort_keys=True))
-print("austringer_STEP_DUMP_END")
+print("AUSTRINGER_STEP_DUMP_END")

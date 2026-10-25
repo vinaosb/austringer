@@ -25,7 +25,7 @@ use austringer_media::pipeline::{
 use austringer_media::projection::ProjectionRegistry;
 use common::cassette::{Cassette, CassetteTransport, anthropic_text_cassette};
 
-const KEY_ENV: &str = "austringer_M10_PROJECTION_KEY";
+const KEY_ENV: &str = "AUSTRINGER_M10_PROJECTION_KEY";
 const MODEL: &str = "claude-m10-cassette";
 const PROJECTION_TEXT: &str = "three bands: red, green, and blue";
 const PNG_BYTES: &[u8] = b"\x89PNG\r\n\x1a\nm10-fixture-payload";

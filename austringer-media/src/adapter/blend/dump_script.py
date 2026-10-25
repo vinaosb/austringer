@@ -70,6 +70,6 @@ def census():
     }
 
 
-print("austringer_BLEND_DUMP_BEGIN")
+print("AUSTRINGER_BLEND_DUMP_BEGIN")
 print(json.dumps(census(), sort_keys=True))
-print("austringer_BLEND_DUMP_END")
+print("AUSTRINGER_BLEND_DUMP_END")

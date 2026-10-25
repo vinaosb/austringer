@@ -53,13 +53,13 @@ pub struct DaemonConfig {
     /// The per-session money cap in micro-USD (todo 33): every session
     /// (scheduled ones included) governs its spend against this —
     /// warning at 80%, a typed terminal stop at 100%. User-global only
-    /// (`austringer_SESSION_COST_CAP_USD`, parsed by
+    /// (`AUSTRINGER_SESSION_COST_CAP_USD`, parsed by
     /// [`parse_session_cost_cap_usd`]); no repo-local override.
     pub session_cost_cap_micros: u128,
     /// The user-global test-command override for the `run_tests` tool
     /// (todo 17): replaces framework detection (cargo nextest / cargo
     /// test) with a custom command line. Read ONLY from daemon-owned
-    /// user-global config (`austringer_TEST_COMMAND`, parsed by the
+    /// user-global config (`AUSTRINGER_TEST_COMMAND`, parsed by the
     /// binary) — a repo-local override file is refused with a typed
     /// error by the tool itself.
     pub test_command: Option<String>,
@@ -97,7 +97,7 @@ impl Default for DaemonConfig {
 /// A message naming the accepted shape for unparseable input.
 pub fn parse_session_cost_cap_usd(raw: &str) -> Result<u128, String> {
     let accepted = "decimal dollars, at most 6 fractional digits (e.g. 12.50)";
-    let rejected = || format!("austringer_SESSION_COST_CAP_USD must be {accepted}, got {raw:?}");
+    let rejected = || format!("AUSTRINGER_SESSION_COST_CAP_USD must be {accepted}, got {raw:?}");
     let (whole, fractional) = match raw.split_once('.') {
         Some((whole, fractional)) if !fractional.is_empty() => (whole, fractional),
         Some(_) => return Err(rejected()),
@@ -120,6 +120,6 @@ pub fn parse_session_cost_cap_usd(raw: &str) -> Result<u128, String> {
     let micros = whole
         .checked_mul(1_000_000)
         .and_then(|base| base.checked_add(scaled * 10_u128.pow(6 - fractional.len() as u32)))
-        .ok_or_else(|| format!("austringer_SESSION_COST_CAP_USD overflows, got {raw:?}"))?;
+        .ok_or_else(|| format!("AUSTRINGER_SESSION_COST_CAP_USD overflows, got {raw:?}"))?;
     Ok(micros)
 }

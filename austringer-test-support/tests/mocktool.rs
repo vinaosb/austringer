@@ -30,11 +30,11 @@ fn run(args: &[&str], envs: &[(&str, &str)]) -> (i32, String, String) {
     )
 }
 
-/// T40-style re-exec entry: when austringer_MOCKTOOL_ARGV is set, THIS test
+/// T40-style re-exec entry: when AUSTRINGER_MOCKTOOL_ARGV is set, THIS test
 /// becomes a mocktool child (mode words from the env var).
 #[test]
 fn mocktool_child_entry() {
-    if std::env::var("austringer_MOCKTOOL_ARGV").is_err() {
+    if std::env::var("AUSTRINGER_MOCKTOOL_ARGV").is_err() {
         return; // normal suite run: nothing to do
     }
     std::process::exit(mocktool::run_from_env());
@@ -46,7 +46,7 @@ fn golden_mode_serves_real_capture() {
     let golden = golden_dir().display().to_string();
     let (code, stdout, stderr) = run(
         &["golden", "ffprobe/probe-av-json"],
-        &[("austringer_MOCKTOOL_GOLDEN_DIR", golden.as_str())],
+        &[("AUSTRINGER_MOCKTOOL_GOLDEN_DIR", golden.as_str())],
     );
     assert_eq!(code, 0, "stderr: {stderr}");
     let parsed: serde_json::Value =

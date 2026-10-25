@@ -48,7 +48,7 @@ use crate::usage::builtin_prices;
 /// heavy turns (~$3-4 each) reach the 80% warning within ~5 turns;
 /// mid-tier sessions run dozens of turns untouched — the same order of
 /// magnitude the 20M-token per-launch guard implies at list prices.
-/// User-global override: `austringer_SESSION_COST_CAP_USD` (decimal
+/// User-global override: `AUSTRINGER_SESSION_COST_CAP_USD` (decimal
 /// dollars, parsed by
 /// [`parse_session_cost_cap_usd`](crate::config::parse_session_cost_cap_usd)).
 pub const DEFAULT_SESSION_COST_CAP_MICROS: u128 = 20_000_000;

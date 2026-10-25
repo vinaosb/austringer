@@ -6,7 +6,7 @@
 //! whisper-cpp, libreoffice, pandoc, freecadcmd, gdal - h5dump dropped,
 //! HDF5 deferred by digest section 6), ALL disabled by default, a
 //! SHA-256-verified install gate behind an explicit opt-in flag, and a
-//! spawn lane with env redaction, a austringer-safety sandbox policy gate,
+//! spawn lane with env redaction, an austringer-safety sandbox policy gate,
 //! timeout, and kernel kill-tree enforcement.
 //!
 //! ## Where each guarantee is enforced (honesty rule)

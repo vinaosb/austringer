@@ -24,7 +24,7 @@ pub enum ProviderFamily {
 }
 
 impl ProviderFamily {
-    /// The wire families `austringer_PROVIDER` accepts.
+    /// The wire families `AUSTRINGER_PROVIDER` accepts.
     pub const KNOWN: [&'static str; 5] = ["anthropic", "openai", "google", "xai", "compat"];
 
     fn parse(value: &str) -> Result<Self, ProviderSetupError> {
@@ -58,9 +58,9 @@ impl ProviderFamily {
 /// Every provider-configuration failure, typed and actionable.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ProviderSetupError {
-    /// `austringer_PROVIDER` held an unknown family name.
+    /// `AUSTRINGER_PROVIDER` held an unknown family name.
     #[error(
-        "unknown provider family {value:?} in austringer_PROVIDER; \
+        "unknown provider family {value:?} in AUSTRINGER_PROVIDER; \
          expected one of {known}",
         known = ProviderFamily::KNOWN.join(", ")
     )]
@@ -68,14 +68,14 @@ pub enum ProviderSetupError {
         /// The rejected value.
         value: String,
     },
-    /// `austringer_MODEL` was absent or blank.
+    /// `AUSTRINGER_MODEL` was absent or blank.
     #[error(
-        "austringer_MODEL is required when austringer_PROVIDER is set (it must name the model id)"
+        "AUSTRINGER_MODEL is required when AUSTRINGER_PROVIDER is set (it must name the model id)"
     )]
     MissingModel,
-    /// A keyed family was configured without `austringer_PROVIDER_KEY_ENV`.
+    /// A keyed family was configured without `AUSTRINGER_PROVIDER_KEY_ENV`.
     #[error(
-        "provider {family} requires austringer_PROVIDER_KEY_ENV naming the \
+        "provider {family} requires AUSTRINGER_PROVIDER_KEY_ENV naming the \
          environment variable that holds its API key (never the key itself)"
     )]
     MissingKeyEnvName {
@@ -84,12 +84,12 @@ pub enum ProviderSetupError {
     },
     /// The compat family was configured without a base URL.
     #[error(
-        "provider compat requires austringer_PROVIDER_BASE_URL (everything up to, but excluding, /chat/completions)"
+        "provider compat requires AUSTRINGER_PROVIDER_BASE_URL (everything up to, but excluding, /chat/completions)"
     )]
     MissingBaseUrl,
     /// The named key variable is not set in the environment.
     #[error(
-        "environment variable {env_var} (named by austringer_PROVIDER_KEY_ENV) \
+        "environment variable {env_var} (named by AUSTRINGER_PROVIDER_KEY_ENV) \
          is not set; export the API key under that name and restart"
     )]
     KeyEnvUnset {

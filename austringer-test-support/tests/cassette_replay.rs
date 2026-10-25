@@ -81,7 +81,7 @@ async fn corrupted_cassette_aborts_with_clear_error() {
     }
     assert!(msg.contains("corrupted cassette"), "message was: {msg}");
     assert!(msg.contains("corrupt.json"), "message was: {msg}");
-    if std::env::var_os("austringer_TS_DEMO").is_some() {
+    if std::env::var_os("AUSTRINGER_TS_DEMO").is_some() {
         eprintln!("[demo] corrupted cassette error: {msg}");
     }
 }
@@ -215,7 +215,7 @@ async fn record_then_replay_full_conversation_roundtrip() {
             .unwrap_or_else(|e| panic!("replay of {prompt:?} failed: {e}"));
         let text = reply_text(reply).await;
         assert_eq!(text, answer);
-        if std::env::var_os("austringer_TS_DEMO").is_some() {
+        if std::env::var_os("AUSTRINGER_TS_DEMO").is_some() {
             eprintln!("[demo] replay {prompt:?} -> {text:?}");
         }
     }

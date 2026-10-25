@@ -682,12 +682,12 @@ async fn production_factory_emits_real_provider_usage() {
     let selection = ProviderSelection {
         family: ProviderFamily::Anthropic,
         model: model.to_owned(),
-        api_key_env: Some("austringer_T1_PROD_KEY".to_owned()),
+        api_key_env: Some("AUSTRINGER_T1_PROD_KEY".to_owned()),
         base_url: None,
         inference_timeout: Duration::from_secs(30),
     };
     let resolved = selection
-        .resolve_with(|name| (name == "austringer_T1_PROD_KEY").then(|| "k".to_owned()))
+        .resolve_with(|name| (name == "AUSTRINGER_T1_PROD_KEY").then(|| "k".to_owned()))
         .unwrap_or_else(|e| panic!("resolve: {e}"));
     // The cassette reply carries usage on the wire: message_start
     // input_tokens=12, message_delta output_tokens=7.

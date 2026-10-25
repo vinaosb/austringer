@@ -29,7 +29,7 @@ use austringer_daemon::server::DaemonState;
 use common::CompleteOnlyInference;
 use common::cassette::{Cassette, CassetteTransport, anthropic_text_cassette};
 
-const KEY_ENV: &str = "austringer_M10_SUBMIT_KEY";
+const KEY_ENV: &str = "AUSTRINGER_M10_SUBMIT_KEY";
 const PNG_BYTES: &[u8] = b"\x89PNG\r\n\x1a\n submit-path-fixture";
 
 fn vision_caps() -> DeliveryCapabilities {

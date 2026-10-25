@@ -30,7 +30,7 @@ pub fn chain_over_mediator(mediator: Arc<crate::mediation::PermissionMediator>) 
 }
 
 /// Approval wrapper that lets the loop-reserved `task_completed` call
-/// through without an ask (it is a austringer-internal completion signal,
+/// through without an ask (it is an austringer-internal completion signal,
 /// never a real tool) while every real call goes through the chain.
 pub struct ReservedAwareApproval {
     inner: InspectorChain,

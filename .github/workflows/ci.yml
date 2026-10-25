@@ -206,7 +206,7 @@ jobs:
         # No ms-playwright browser cache on runners: point the existing
         # override at the runner's Chrome stable.
         env:
-          austringer_E2E_EXE: ${{ github.workspace }}\target\debug\examples\e2e_daemon.exe
+          AUSTRINGER_E2E_EXE: ${{ github.workspace }}\target\debug\examples\e2e_daemon.exe
           PLAYWRIGHT_CHROMIUM: C:\Program Files\Google\Chrome\Application\chrome.exe
         run: node austringer-web/e2e/run-e2e.mjs
 

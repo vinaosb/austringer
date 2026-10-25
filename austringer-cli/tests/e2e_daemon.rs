@@ -30,7 +30,7 @@ impl Drop for Daemon {
 }
 
 fn daemon_exe() -> PathBuf {
-    if let Some(path) = std::env::var_os("austringer_DAEMON_EXE") {
+    if let Some(path) = std::env::var_os("AUSTRINGER_DAEMON_EXE") {
         return PathBuf::from(path);
     }
     // Test binaries live in {target}/{profile}/deps; the daemon bin sits

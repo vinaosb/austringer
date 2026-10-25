@@ -23,12 +23,12 @@ fn golden_dir() -> PathBuf {
         .join("mocktool")
 }
 
-/// T40-style re-exec entry: when austringer_MOCKTOOL_ARGV is set, THIS test
+/// T40-style re-exec entry: when AUSTRINGER_MOCKTOOL_ARGV is set, THIS test
 /// becomes a mocktool child; the executor spawns this binary as the
 /// substituted tool program.
 #[test]
 fn mocktool_child_entry() {
-    if std::env::var("austringer_MOCKTOOL_ARGV").is_err() {
+    if std::env::var("AUSTRINGER_MOCKTOOL_ARGV").is_err() {
         return; // normal suite run: nothing to do
     }
     std::process::exit(austringer_test_support::mocktool::run_from_env());
@@ -143,8 +143,8 @@ fn enabled_mocktool_runs_and_serves_the_real_golden_capture() {
     let golden = golden_dir().display().to_string();
     let env = env_map(&[
         ("PATH", "C:\\Windows"),
-        ("austringer_MOCKTOOL_ARGV", "golden ffprobe/probe-av-json"),
-        ("austringer_MOCKTOOL_GOLDEN_DIR", golden.as_str()),
+        ("AUSTRINGER_MOCKTOOL_ARGV", "golden ffprobe/probe-av-json"),
+        ("AUSTRINGER_MOCKTOOL_GOLDEN_DIR", golden.as_str()),
     ]);
     let run = executor
         .run(&ToolCall::new("ffprobe", OP_VERSION_CHECK).env(&env))
@@ -180,7 +180,7 @@ fn child_environment_is_redacted() {
         ("PATH", "C:\\Windows"),
         ("ANTHROPIC_API_KEY", "sk-never-reaches-the-child"),
         ("OPENAI_API_KEY", "sk-either"),
-        ("austringer_MOCKTOOL_ARGV", "env"),
+        ("AUSTRINGER_MOCKTOOL_ARGV", "env"),
     ]);
     let run = executor
         .run(&ToolCall::new("pandoc", OP_VERSION_CHECK).env(&env))
@@ -206,7 +206,7 @@ fn child_environment_is_redacted() {
 fn nonzero_exit_is_typed_with_bounded_stderr_head() {
     let temp = tempfile::tempdir().expect("tempdir");
     let executor = executor_with("ffmpeg", mocktool_override(None), temp.path().to_path_buf());
-    let env = env_map(&[("austringer_MOCKTOOL_ARGV", "exit 7 boom exploded")]);
+    let env = env_map(&[("AUSTRINGER_MOCKTOOL_ARGV", "exit 7 boom exploded")]);
     let error = executor
         .run(&ToolCall::new("ffmpeg", OP_VERSION_CHECK).env(&env))
         .expect_err("failing tool exit is typed");
@@ -238,8 +238,8 @@ fn timeout_kills_the_whole_tree_no_orphans() {
         temp.path().to_path_buf(),
     );
     let env = env_map(&[
-        ("austringer_MOCKTOOL_ARGV", "hang 2"),
-        ("austringer_MOCKTOOL_PIDS_FILE", &pids_path),
+        ("AUSTRINGER_MOCKTOOL_ARGV", "hang 2"),
+        ("AUSTRINGER_MOCKTOOL_PIDS_FILE", &pids_path),
     ]);
     let error = executor
         .run(&ToolCall::new("blender", OP_VERSION_CHECK).env(&env))
@@ -366,7 +366,7 @@ fn install_requires_the_explicit_opt_in_flag() {
 }
 
 /// SANDBOX VIOLATION: an unsanctionable policy (relative session temp =
-/// a relative writable root) is a typed denial carrying a austringer-safety
+/// a relative writable root) is a typed denial carrying an austringer-safety
 /// ViolationEvent - never a silent degrade, never a spawn.
 #[test]
 fn sandbox_violation_is_typed_denial_with_audit() {

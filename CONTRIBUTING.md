@@ -33,7 +33,7 @@ receipt chain behind it) surface on your PC instead of on billed Actions
 minutes: `powershell -NoProfile -ExecutionPolicy Bypass -File
 scripts/install-hooks.ps1` wires a fast `pre-commit` (fmt) and a full
 `pre-push` gate; see [ci-local/README.md](ci-local/README.md) for the phase
-table and the `austringer_SKIP_LOCAL_CI=1` bypass.
+table and the `AUSTRINGER_SKIP_LOCAL_CI=1` bypass.
 
 The workspace lints (`Cargo.toml`) already escalate `warnings = "deny"` and
 `clippy::all = "deny"` for every crate, so a clean `cargo check` is a

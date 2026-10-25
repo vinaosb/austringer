@@ -1,7 +1,7 @@
 //! Typed layout violations and the volatile-data detectors (plan todo 11).
 //!
 //! The layout law: no volatile data may enter any prompt segment above L2.
-//! The detectors below recognize the shapes a austringer actually injects —
+//! The detectors below recognize the shapes an austringer actually injects —
 //! ISO-8601 datetimes, unix-epoch `timestamp` fields, and wall-clock tags —
 //! and the builder turns a hit into a typed [`LayoutViolation`]
 //! (which segment, at which byte offset, with evidence) instead of

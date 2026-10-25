@@ -2,7 +2,7 @@
 //! detection + structured results. Day-one detection is cargo
 //! (`cargo nextest` when installed, else `cargo test`); a configurable
 //! command override extends the EXISTING [`crate::config::DaemonConfig`]
-//! shape (`test_command`, user-global via `austringer_TEST_COMMAND`) — no
+//! shape (`test_command`, user-global via `AUSTRINGER_TEST_COMMAND`) — no
 //! new config format, and a repo-local override file is refused with a
 //! typed error naming the file. Execution rides the executor-#3 lane:
 //! the todo-4 safety gate applies verbatim (a network-shaped override
@@ -73,7 +73,7 @@ impl austringer_core::tools::ToolProvider for RunTestsTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "run_tests".into(),
-            description: "Run the workspace's tests and return a structured TestReport (per-test pass/fail/ignored + durations + summary counts) — no output parsing needed. Detects cargo (cargo nextest when installed, else cargo test); a custom command can be set user-globally via austringer_TEST_COMMAND (repo-local override files are refused).".into(),
+            description: "Run the workspace's tests and return a structured TestReport (per-test pass/fail/ignored + durations + summary counts) — no output parsing needed. Detects cargo (cargo nextest when installed, else cargo test); a custom command can be set user-globally via AUSTRINGER_TEST_COMMAND (repo-local override files are refused).".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -276,7 +276,7 @@ enum RunTestsError {
     /// daemon-owned user-global config only.
     #[error(
         "repo-local override file {file:?} refused — the test-command override is read ONLY \
-         from the daemon-owned user-global config (set austringer_TEST_COMMAND / \
+         from the daemon-owned user-global config (set AUSTRINGER_TEST_COMMAND / \
          DaemonConfig.test_command); remove the repo-local file"
     )]
     RepoLocalOverride {
@@ -287,7 +287,7 @@ enum RunTestsError {
     #[error(
         "unknown test framework at {searched:?} (no Cargo.toml) — day-one detection covers \
          cargo (cargo nextest / cargo test); to run another framework set the user-global \
-         command override via austringer_TEST_COMMAND (DaemonConfig.test_command)"
+         command override via AUSTRINGER_TEST_COMMAND (DaemonConfig.test_command)"
     )]
     UnknownFramework {
         /// The tested root (display path, forward slashes).

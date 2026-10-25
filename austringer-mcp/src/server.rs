@@ -150,7 +150,7 @@ impl AustringerMcpServer {
         json_result(json!(self.status.status()))
     }
 
-    #[tool(description = "Create a austringer session; returns its summary")]
+    #[tool(description = "Create an austringer session; returns its summary")]
     async fn session_create(
         &self,
         Parameters(args): Parameters<CreateArgs>,

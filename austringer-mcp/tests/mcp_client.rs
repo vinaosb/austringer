@@ -170,7 +170,7 @@ async fn stdio_child_process_interop() {
         },
     );
     entry.env.insert(
-        "austringer_T29_FS_ROOT".to_owned(),
+        "AUSTRINGER_T29_FS_ROOT".to_owned(),
         dir.path().to_string_lossy().into_owned(),
     );
     entry.roots.push(dir.path().to_path_buf());

@@ -8,7 +8,7 @@
 //   node e2e/run-e2e.mjs
 // The fixture exe defaults to $CARGO_TARGET_DIR (or ./target when
 // unset, e.g. CI) under debug/examples/e2e_daemon(.exe); override
-// with austringer_E2E_EXE. The browser defaults to the dev machine's
+// with AUSTRINGER_E2E_EXE. The browser defaults to the dev machine's
 // LOCALAPPDATA ms-playwright cache; on any other machine (e.g. a CI
 // runner) point PLAYWRIGHT_CHROMIUM at a chromium-family executable.
 import { createRequire } from "node:module";
@@ -25,11 +25,11 @@ const { chromium } = require("playwright-core");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const targetDir = process.env.CARGO_TARGET_DIR || join(repoRoot, "target");
 const EXE =
-  process.env.austringer_E2E_EXE || join(targetDir, "debug", "examples", "e2e_daemon.exe");
+  process.env.AUSTRINGER_E2E_EXE || join(targetDir, "debug", "examples", "e2e_daemon.exe");
 if (!existsSync(EXE)) {
   assert.fail(
-    `austringer_E2E_EXE resolved to ${EXE} but it does not exist — build it with ` +
-      `cargo build -p austringer-web --example e2e_daemon (or set austringer_E2E_EXE)`,
+    `AUSTRINGER_E2E_EXE resolved to ${EXE} but it does not exist — build it with ` +
+      `cargo build -p austringer-web --example e2e_daemon (or set AUSTRINGER_E2E_EXE)`,
   );
 }
 const CHROMIUM =

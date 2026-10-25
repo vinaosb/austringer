@@ -1,8 +1,8 @@
 //! Version reporting with nightly SHA embedding (plan todo 39): nightly
 //! builds embed the head SHA in the version tag
 //! (`vX.Y-nightly.DATE.SHA`) so tag<->SHA traceability holds by
-//! construction — the release pipeline injects `austringer_NIGHTLY_DATE`
-//! and `austringer_NIGHTLY_SHA` at build time; release builds embed
+//! construction — the release pipeline injects `AUSTRINGER_NIGHTLY_DATE`
+//! and `AUSTRINGER_NIGHTLY_SHA` at build time; release builds embed
 //! neither and print the bare package version.
 
 /// The full version string for `--version`.
@@ -21,11 +21,11 @@ pub fn nightly_tag(pkg_version: &str, date: &str, sha: &str) -> String {
 }
 
 fn nightly_date() -> Option<&'static str> {
-    option_env!("austringer_NIGHTLY_DATE")
+    option_env!("AUSTRINGER_NIGHTLY_DATE")
 }
 
 fn nightly_sha() -> Option<&'static str> {
-    option_env!("austringer_NIGHTLY_SHA")
+    option_env!("AUSTRINGER_NIGHTLY_SHA")
 }
 
 #[cfg(test)]

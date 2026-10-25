@@ -17,11 +17,11 @@ use austringer_orchestration::backend::{
 };
 
 /// The mock child entry: when the austringer re-executes the test binary with
-/// austringer_ORCHESTRATION_MOCK_CHILD set, THIS test becomes the protocol
+/// AUSTRINGER_ORCHESTRATION_MOCK_CHILD set, THIS test becomes the protocol
 /// child (reads one request line, writes one response line, exits 0).
 #[test]
 fn mock_backend_child() {
-    let Ok(script) = std::env::var("austringer_ORCHESTRATION_MOCK_CHILD") else {
+    let Ok(script) = std::env::var("AUSTRINGER_ORCHESTRATION_MOCK_CHILD") else {
         return; // normal suite run: nothing to do
     };
     let mut line = String::new();
@@ -58,7 +58,7 @@ fn backend_smoke_mock_child_protocol() {
 
     let mut env = BTreeMap::new();
     env.insert(
-        "austringer_ORCHESTRATION_MOCK_CHILD".into(),
+        "AUSTRINGER_ORCHESTRATION_MOCK_CHILD".into(),
         "claude-mock".into(),
     );
 

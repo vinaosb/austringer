@@ -13,7 +13,7 @@ pub const AGENT_MARKER_TRAILER: &str = "Austringer-Agent-Commit";
 pub const AGENT_EMAIL: &str = "agent@austringer.invalid";
 const AGENT_NAME: &str = "austringer-agent";
 
-/// The canonical provenance block for a austringer-authored commit: subject
+/// The canonical provenance block for an austringer-authored commit: subject
 /// line, blank line, then the trailer paragraph.
 #[must_use]
 pub fn provenance_message(session: &SessionId, turn: Turn) -> String {

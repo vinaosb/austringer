@@ -4,8 +4,8 @@
 //! through the M15 [`ToolExecutor`] (redaction, kill-tree, timeout).
 //!
 //! Staging contract: the adapter publishes its staged input/output
-//! paths in the child environment as `austringer_MEDIA_STAGE_IN` /
-//! `austringer_MEDIA_STAGE_OUT` (absolute paths). Real ffmpeg ignores
+//! paths in the child environment as `AUSTRINGER_MEDIA_STAGE_IN` /
+//! `AUSTRINGER_MEDIA_STAGE_OUT` (absolute paths). Real ffmpeg ignores
 //! them; the mocktool stand-in uses them for its `stagecopy` /
 //! `stagegolden` modes (the pass-through remux echo + canned
 //! thumbnail). Staged files are removed on both the success and
@@ -28,8 +28,8 @@ use super::policy::{FFMPEG_TOOL, FFPROBE_TOOL, TranscodeSpec};
 
 static STAGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-const STAGE_IN_ENV: &str = "austringer_MEDIA_STAGE_IN";
-const STAGE_OUT_ENV: &str = "austringer_MEDIA_STAGE_OUT";
+const STAGE_IN_ENV: &str = "AUSTRINGER_MEDIA_STAGE_IN";
+const STAGE_OUT_ENV: &str = "AUSTRINGER_MEDIA_STAGE_OUT";
 
 /// The ffmpeg adapter handle: the tool executor plus the caller
 /// environment every spawned child inherits (after redaction).

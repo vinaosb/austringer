@@ -107,13 +107,13 @@ pub fn network(daemon: &Probe) -> Probe {
     }
 }
 
-/// Selected-provider validity (austringer_PROVIDER) plus its key env.
+/// Selected-provider validity (AUSTRINGER_PROVIDER) plus its key env.
 pub fn provider() -> Probe {
-    let Some(selected) = std::env::var("austringer_PROVIDER").ok() else {
+    let Some(selected) = std::env::var("AUSTRINGER_PROVIDER").ok() else {
         return Probe {
             name: "provider",
             status: Status::Pass,
-            detail: "no austringer_PROVIDER selected".to_owned(),
+            detail: "no AUSTRINGER_PROVIDER selected".to_owned(),
         };
     };
     let Some((_, key_env)) = PROVIDER_KEYS.iter().find(|(known, _)| *known == selected) else {
@@ -121,7 +121,7 @@ pub fn provider() -> Probe {
             name: "provider",
             status: Status::Fail,
             detail: format!(
-                "austringer_PROVIDER={selected} is not a known provider (known: {})",
+                "AUSTRINGER_PROVIDER={selected} is not a known provider (known: {})",
                 PROVIDER_KEYS
                     .iter()
                     .map(|(known, _)| *known)
@@ -148,8 +148,8 @@ pub fn provider() -> Probe {
 /// Informational austringer-relevant env listing (never fails).
 pub fn env() -> Probe {
     let names = [
-        "austringer_PROVIDER",
-        "austringer_DAEMON_URL",
+        "AUSTRINGER_PROVIDER",
+        "AUSTRINGER_DAEMON_URL",
         "NO_COLOR",
         "CLICOLOR",
     ];

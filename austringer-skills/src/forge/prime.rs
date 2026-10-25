@@ -42,7 +42,7 @@ pub struct ContinualHarness {
 }
 
 impl ContinualHarness {
-    /// A austringer over an immutable base.
+    /// An austringer over an immutable base.
     pub fn new(base: BasePrompt) -> Self {
         Self {
             base,

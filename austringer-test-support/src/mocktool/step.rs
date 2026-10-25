@@ -25,10 +25,10 @@ use super::python::validate_python;
 
 /// Marker carrying the census inside the mock-written STEP (a Part 21
 /// block remark - skipped by every conforming reader).
-const CENSUS_MARKER: &str = "austringer_STEP_MOCK_CENSUS";
+const CENSUS_MARKER: &str = "AUSTRINGER_STEP_MOCK_CENSUS";
 /// Dump-script stdout markers (must match the adapter's verifier).
-const DUMP_BEGIN: &str = "austringer_STEP_DUMP_BEGIN";
-const DUMP_END: &str = "austringer_STEP_DUMP_END";
+const DUMP_BEGIN: &str = "AUSTRINGER_STEP_DUMP_BEGIN";
+const DUMP_END: &str = "AUSTRINGER_STEP_DUMP_END";
 
 /// `stepbuild`: validate the builder script, derive the census, write
 /// the AP214-flavored .step.

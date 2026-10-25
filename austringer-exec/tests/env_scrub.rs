@@ -13,16 +13,16 @@ use austringer_safety::scrub::EnvScrub;
 use common::{live_gate, runner_with_temp_spill, spec};
 
 /// Dropped by the default scrub (contains `SECRET`, not a CORE_VAR).
-const SENTINEL: &str = "austringer_EXEC_TEST_SECRET_SENTINEL";
+const SENTINEL: &str = "AUSTRINGER_EXEC_TEST_SECRET_SENTINEL";
 const SENTINEL_VALUE: &str = "scrubbed-sentinel-value-4c1d";
 
 #[cfg(windows)]
 const SHELL: (&str, [&str; 3]) = (
     "cmd",
-    ["/d", "/c", "echo %austringer_EXEC_TEST_SECRET_SENTINEL%"],
+    ["/d", "/c", "echo %AUSTRINGER_EXEC_TEST_SECRET_SENTINEL%"],
 );
 #[cfg(unix)]
-const SHELL: (&str, [&str; 2]) = ("sh", ["-c", "echo $austringer_EXEC_TEST_SECRET_SENTINEL"]);
+const SHELL: (&str, [&str; 2]) = ("sh", ["-c", "echo $AUSTRINGER_EXEC_TEST_SECRET_SENTINEL"]);
 
 fn sentinel_spec(env_scrub: Option<EnvScrub>) -> ExecSpec {
     let mut command = spec(SHELL.0, &SHELL.1);
@@ -65,7 +65,7 @@ fn env_scrub_keeps_scrub_exceptions() {
 
     let excepted = runner
         .run(&sentinel_spec(Some(EnvScrub::with_exceptions([
-            "austringer_EXEC_TEST_SECRET_SENTINEL",
+            "AUSTRINGER_EXEC_TEST_SECRET_SENTINEL",
         ]))))
         .expect("excepted run");
     assert!(

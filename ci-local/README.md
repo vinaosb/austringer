@@ -97,7 +97,7 @@ invocation shape documented in `AGENTS.md`.
 - **pre-push**: the full default gate via `scripts/local-ci.ps1`
   (docker-lint + docker-test + native-test), exit code propagated.
 
-Bypass either once with `austringer_SKIP_LOCAL_CI=1` (e.g. WIP commits,
+Bypass either once with `AUSTRINGER_SKIP_LOCAL_CI=1` (e.g. WIP commits,
 emergency pushes). Uninstall with
 `git config --unset core.hooksPath`.
 

@@ -17,7 +17,7 @@
 //! * (d) a repo-local command override file is refused with a typed
 //!   error naming the file — overrides are read ONLY from the
 //!   daemon-owned user-global config (`DaemonConfig::test_command`,
-//!   `austringer_TEST_COMMAND`).
+//!   `AUSTRINGER_TEST_COMMAND`).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -333,7 +333,7 @@ async fn run_tests_unknown_framework_is_typed_error_with_config_instructions() {
         "the error names the condition: {message}"
     );
     assert!(
-        message.contains("austringer_TEST_COMMAND"),
+        message.contains("AUSTRINGER_TEST_COMMAND"),
         "the error carries configuration instructions: {message}"
     );
 }

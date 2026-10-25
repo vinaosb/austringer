@@ -200,7 +200,7 @@ mod tests {
         };
 
         // Guard: when spawned as the successor, adopt and serve echo.
-        let handoff_env = std::env::var("austringer_TEST_HANDOFF_RAW").ok();
+        let handoff_env = std::env::var("AUSTRINGER_TEST_HANDOFF_RAW").ok();
         if let Some(raw) = handoff_env.and_then(|v| v.parse::<u64>().ok()) {
             log(format!("child adopt raw={raw}"));
             let listener = match adopt(raw) {
@@ -253,7 +253,7 @@ mod tests {
                 "reload::tests::socket_handoff_survives_process_boundary".to_owned(),
                 "--nocapture".to_owned(),
             ])
-            .env("austringer_TEST_HANDOFF_RAW", raw.to_string())
+            .env("AUSTRINGER_TEST_HANDOFF_RAW", raw.to_string())
             .spawn();
         let mut child = match spawned {
             Ok(child) => child,

@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 /// The env-var arm of the double opt-in.
-pub const ENV_OPT_IN: &str = "austringer_TELEMETRY";
+pub const ENV_OPT_IN: &str = "AUSTRINGER_TELEMETRY";
 
 /// Independent content gates. All `false` by default: telemetry without
 /// explicit opt-in carries counters and names only — never content.
@@ -60,7 +60,7 @@ impl TelemetryConfig {
         self.enabled && env_arm && self.endpoint.is_some()
     }
 
-    /// Live decision: config arm AND `austringer_TELEMETRY=1` AND endpoint.
+    /// Live decision: config arm AND `AUSTRINGER_TELEMETRY=1` AND endpoint.
     #[must_use]
     pub fn active(&self) -> bool {
         let env_arm = std::env::var(ENV_OPT_IN).ok().as_deref() == Some("1");

@@ -5,21 +5,21 @@
 //!   use and F3/dev-machine lanes;
 //! - the test re-exec entry ([`run_from_env`]): a test binary re-executes
 //!   itself with `--exact <mocktool test>` and the mode words arrive via
-//!   `austringer_MOCKTOOL_ARGV` (exactly how T40's mock backend child works).
+//!   `AUSTRINGER_MOCKTOOL_ARGV` (exactly how T40's mock backend child works).
 //!
 //! Modes (argv words, e.g. `exit 1 boom`):
 //!
 //! - `env` — print the child's environment KEY names (never values),
 //!   sorted, one per line. The env-redaction assertion surface.
 //! - `golden <name>` — print golden file `<name>.golden` from
-//!   `austringer_MOCKTOOL_GOLDEN_DIR` byte-for-byte. Golden files are real
+//!   `AUSTRINGER_MOCKTOOL_GOLDEN_DIR` byte-for-byte. Golden files are real
 //!   captures (see `golden/mocktool/capture.md`); never hand-written.
-//! - `stagecopy` — copy the file at `austringer_MEDIA_STAGE_IN` to
-//!   `austringer_MEDIA_STAGE_OUT` (the M17 adapter's staging contract: the
+//! - `stagecopy` — copy the file at `AUSTRINGER_MEDIA_STAGE_IN` to
+//!   `AUSTRINGER_MEDIA_STAGE_OUT` (the M17 adapter's staging contract: the
 //!   adapter publishes its staged input/output paths in the child env;
 //!   real ffmpeg ignores them, the mock is the pass-through remux echo).
 //! - `stagegolden <name>` — write golden `<name>.golden` bytes to
-//!   `austringer_MEDIA_STAGE_OUT` (the M17 canned-thumbnail lane).
+//!   `AUSTRINGER_MEDIA_STAGE_OUT` (the M17 canned-thumbnail lane).
 //! - `blendbuild` / `blenddump` — the M16 parameterized blender
 //!   stand-in: derive the scene census from the builder script's
 //!   embedded spec / emit a fixture's census between the dump markers
@@ -37,7 +37,7 @@
 //! - `write <path> <text>` — write text to path (utf-8), exit 0.
 //! - `hang [children]` — spawn `children` (default 1) `sleep 60`
 //!   grandchildren, record child+self pids to
-//!   `austringer_MOCKTOOL_PIDS_FILE` if set, then sleep 60. The
+//!   `AUSTRINGER_MOCKTOOL_PIDS_FILE` if set, then sleep 60. The
 //!   timeout-kill-tree test surface.
 //! - `sleep <secs>` — sleep, exit 0.
 //!
@@ -53,19 +53,19 @@ mod step;
 
 pub use python::validate_python;
 
-/// Re-exec entry: mode words come from `austringer_MOCKTOOL_ARGV`
+/// Re-exec entry: mode words come from `AUSTRINGER_MOCKTOOL_ARGV`
 /// (whitespace-split, e.g. `"golden ffprobe/probe-av-json"`).
 pub fn run_from_env() -> i32 {
-    let Some(words) = std::env::var("austringer_MOCKTOOL_ARGV").ok() else {
-        eprintln!("mocktool: austringer_MOCKTOOL_ARGV is unset");
+    let Some(words) = std::env::var("AUSTRINGER_MOCKTOOL_ARGV").ok() else {
+        eprintln!("mocktool: AUSTRINGER_MOCKTOOL_ARGV is unset");
         return 2;
     };
     dispatch_words(&words)
 }
 
 /// Dispatch mode words from an arbitrary env-var string (the M17
-/// per-tool child entries read `austringer_MOCKTOOL_FFMPEG_ARGV` /
-/// `austringer_MOCKTOOL_FFPROBE_ARGV` so one adapter call can drive two
+/// per-tool child entries read `AUSTRINGER_MOCKTOOL_FFMPEG_ARGV` /
+/// `AUSTRINGER_MOCKTOOL_FFPROBE_ARGV` so one adapter call can drive two
 /// distinct tool children).
 pub fn dispatch_words(words: &str) -> i32 {
     let split: Vec<String> = words.split_whitespace().map(String::from).collect();
@@ -115,10 +115,10 @@ fn stage_var(name: &str) -> Option<std::path::PathBuf> {
 
 fn stagecopy_mode() -> i32 {
     let (Some(source), Some(target)) = (
-        stage_var("austringer_MEDIA_STAGE_IN"),
-        stage_var("austringer_MEDIA_STAGE_OUT"),
+        stage_var("AUSTRINGER_MEDIA_STAGE_IN"),
+        stage_var("AUSTRINGER_MEDIA_STAGE_OUT"),
     ) else {
-        eprintln!("mocktool: stagecopy needs austringer_MEDIA_STAGE_IN/OUT");
+        eprintln!("mocktool: stagecopy needs AUSTRINGER_MEDIA_STAGE_IN/OUT");
         return 2;
     };
     match std::fs::copy(&source, &target) {
@@ -135,13 +135,13 @@ fn stagecopy_mode() -> i32 {
 }
 
 fn stagegolden_mode(name: Option<&str>) -> i32 {
-    let (Some(name), Some(target)) = (name, stage_var("austringer_MEDIA_STAGE_OUT")) else {
-        eprintln!("mocktool: stagegolden needs <name> and austringer_MEDIA_STAGE_OUT");
+    let (Some(name), Some(target)) = (name, stage_var("AUSTRINGER_MEDIA_STAGE_OUT")) else {
+        eprintln!("mocktool: stagegolden needs <name> and AUSTRINGER_MEDIA_STAGE_OUT");
         return 2;
     };
-    let Some(dir) = std::env::var_os("austringer_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
+    let Some(dir) = std::env::var_os("AUSTRINGER_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
     else {
-        eprintln!("mocktool: austringer_MOCKTOOL_GOLDEN_DIR is unset");
+        eprintln!("mocktool: AUSTRINGER_MOCKTOOL_GOLDEN_DIR is unset");
         return 2;
     };
     let path = std::path::Path::new(&dir).join(format!("{name}.golden"));
@@ -178,9 +178,9 @@ fn golden_mode(name: Option<&str>) -> i32 {
         eprintln!("mocktool: golden mode needs a name");
         return 2;
     };
-    let Some(dir) = std::env::var_os("austringer_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
+    let Some(dir) = std::env::var_os("AUSTRINGER_MOCKTOOL_GOLDEN_DIR").filter(|d| !d.is_empty())
     else {
-        eprintln!("mocktool: austringer_MOCKTOOL_GOLDEN_DIR is unset");
+        eprintln!("mocktool: AUSTRINGER_MOCKTOOL_GOLDEN_DIR is unset");
         return 2;
     };
     let path = std::path::Path::new(&dir).join(format!("{name}.golden"));
@@ -237,7 +237,7 @@ fn hang_mode(children: Option<u32>) -> i32 {
             pids.push(child.id());
         }
     }
-    if let Some(file) = std::env::var_os("austringer_MOCKTOOL_PIDS_FILE").filter(|f| !f.is_empty())
+    if let Some(file) = std::env::var_os("AUSTRINGER_MOCKTOOL_PIDS_FILE").filter(|f| !f.is_empty())
     {
         let mut line = std::process::id().to_string();
         for pid in &pids {
@@ -266,7 +266,7 @@ fn bin_spawn(mode: &str) -> Command {
 }
 
 /// Re-exec lane: children re-run the host test binary's mocktool entry;
-/// the mode travels via `austringer_MOCKTOOL_ARGV` (T40 pattern), so the
+/// the mode travels via `AUSTRINGER_MOCKTOOL_ARGV` (T40 pattern), so the
 /// child argv needs only the libtest selector.
 fn reexec_spawn(mode: &str) -> Command {
     let mut cmd = Command::new(std::env::current_exe().unwrap_or_default());
@@ -276,12 +276,12 @@ fn reexec_spawn(mode: &str) -> Command {
     {
         cmd.arg("--exact").arg(name).arg("--nocapture");
     }
-    cmd.env("austringer_MOCKTOOL_ARGV", mode);
+    cmd.env("AUSTRINGER_MOCKTOOL_ARGV", mode);
     cmd
 }
 
 fn current_spawn_style() -> fn(&str) -> Command {
-    if std::env::var_os("austringer_MOCKTOOL_ARGV").is_some() {
+    if std::env::var_os("AUSTRINGER_MOCKTOOL_ARGV").is_some() {
         reexec_spawn
     } else {
         bin_spawn
