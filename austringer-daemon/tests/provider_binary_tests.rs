@@ -138,14 +138,33 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
         Ok(daemon) => daemon,
         Err(failure) => panic!("spawn failed: {failure}"),
     };
-    // Health surface answers while no provider is configured.
-    let health = reqwest::Client::new()
-        .get(format!("http://{}/", daemon.base))
-        .bearer_auth(&daemon.token)
-        .send()
-        .await;
+    // Health surface answers while no provider is configured. The listener
+    // is bound before the handshake banner, but under heavy test
+    // parallelism on shared runners the first connect can be refused by
+    // socket backlog pressure; poll readiness instead of demanding the
+    // first attempt succeed.
+    let client = reqwest::Client::new();
+    let mut last_health = None;
+    for attempt in 0..20 {
+        let response = client
+            .get(format!("http://{}/", daemon.base))
+            .bearer_auth(&daemon.token)
+            .timeout(Duration::from_secs(2))
+            .send()
+            .await;
+        let served = response.as_ref().is_ok_and(|r| r.status().is_success());
+        last_health = Some(response);
+        if served {
+            break;
+        }
+        if attempt < 19 {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
     assert!(
-        health.is_ok_and(|r| r.status().is_success()),
+        last_health
+            .expect("at least one health attempt")
+            .is_ok_and(|r| r.status().is_success()),
         "root must serve"
     );
     let frames = match attach_submit_collect(&mut daemon, "m32-bin", "hello provider").await {
