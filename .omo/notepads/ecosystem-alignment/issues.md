@@ -256,3 +256,30 @@ criterion bench on ubuntu); RA goldens generalized readiness (per-error retries
 insufficient - hover golden flaked next). Commands: gh api jobs/<id>/logs + ANSI
 strip; failing runs 40079977727 (main CI) + 40080001402 (deep-qa).
 
+## 2026-10-26 Flake: acp_stdio_cancel on macOS CI leg (observed once)
+`acp_stdio_cancel_lands_through_the_bridge` (austringer-daemon/tests/acp_stdio_tests.rs:474)
+failed ONCE on PR #8's nextest archive (macos-latest) job 121423597872:
+"assertion left == right failed: the sticky cancel must land on turn 2",
+left: "end_turn". Clean on `gh run rerun --failed` and green on ubuntu/windows
+legs of the same commit; unrelated to the PR's austringer-safety test change.
+Same family as the held-signal handshake fix earlier this session - the
+macOS runner's slower IO scheduling is the suspected trigger. Root-cause if it
+recurs; NOT added to the known-local-flakes list (that list is machine-local).
+
+## 2026-10-26 Resolved: deep-qa never-green (docker smoke DAC denial)
+deep-qa ubuntu leg failed 3/3 since Oct 24: docker_daemon_smoke_run wrote to
+the worktree volume and got Permission denied - uid 0 with --cap-drop=ALL has
+no CAP_DAC_OVERRIDE, so DAC on tempfile's 0700 runner-uid dir denies. Fixture
+now chmods the worktree 0777 on unix (PR #8); proven with a docker-native DAC
+repro (0700 -> exit 1 exact CI error, 0777 -> exit 0). deep-qa run 40279682259
+is the workflow's first-ever green (all three jobs).
+
+## 2026-10-26 Resolved: wasm watcher test read the truncate-write window
+watcher_thread_emits_reload_events failed on the macOS leg of a docs-only PR
+(#9): the 10 ms PluginWatcher read fs::write's zero-byte window mid-swap and
+compiled an empty module (Failed, not Reloaded). Swap is now stage+rename
+(atomic; PR #10, macOS leg green on its own PR). Product semantics unchanged:
+a failed reload keeps the old instance serving - typed behavior for
+non-atomic operator saves. Same-runner suspect for the #8 acp_stdio_cancel
+one-off is runner load/scheduling, still watch-listed above.
+
