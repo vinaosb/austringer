@@ -139,19 +139,79 @@ pub(crate) fn argv_line(program: &Path, argv: &[String]) -> String {
 /// Resolves a bare program name against PATH (`.exe` probe on Windows);
 /// an explicit path passes through when the file exists.
 pub(crate) fn find_program(name: &str) -> Option<PathBuf> {
+    find_program_in(name, std::env::var("PATH").ok()?)
+}
+
+/// PATH-separator-correct core of [`find_program`] (split on `;` broke every
+/// unix host: one phantom directory, resolution always `None`).
+pub(crate) fn find_program_in(name: &str, path: String) -> Option<PathBuf> {
     let candidate = Path::new(name);
     if candidate.components().count() > 1 {
         return candidate.is_file().then(|| candidate.to_path_buf());
     }
-    let path = std::env::var("PATH").ok()?;
     let extensions: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
-    for dir in path.split(';') {
+    for dir in std::env::split_paths(&path) {
         for extension in extensions {
-            let program = Path::new(dir).join(format!("{name}{extension}"));
+            let program = dir.join(format!("{name}{extension}"));
             if program.is_file() {
                 return Some(program);
             }
         }
     }
     None
+}
+
+#[cfg(test)]
+mod find_program_tests {
+    use super::find_program_in;
+    use std::fs;
+
+    fn touch(dir: &std::path::Path, name: &str) {
+        fs::write(dir.join(name), b"probe").expect("write probe");
+    }
+
+    fn path_var(dirs: &[&std::path::Path]) -> String {
+        std::env::join_paths(dirs.iter().copied())
+            .expect("join_paths")
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn resolves_bare_name_from_a_separator_correct_path() {
+        let first = tempfile::tempdir().expect("first tempdir");
+        let second = tempfile::tempdir().expect("second tempdir");
+        touch(second.path(), "austringer-probe-tool");
+        let resolved = find_program_in(
+            "austringer-probe-tool",
+            path_var(&[first.path(), second.path()]),
+        );
+        let expected = second.path().join("austringer-probe-tool");
+        assert_eq!(resolved, Some(expected));
+    }
+
+    #[test]
+    fn bare_name_absent_everywhere_yields_none() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(
+            find_program_in("austringer-missing-tool", path_var(&[dir.path()])),
+            None
+        );
+    }
+
+    #[test]
+    fn explicit_multi_component_path_passes_through_on_existence() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        touch(dir.path(), "probe.txt");
+        let existing = dir.path().join("probe.txt");
+        let missing = dir.path().join("absent.txt");
+        assert_eq!(
+            find_program_in(existing.to_str().expect("utf8"), String::new()),
+            Some(existing)
+        );
+        assert_eq!(
+            find_program_in(missing.to_str().expect("utf8"), String::new()),
+            None
+        );
+    }
 }
