@@ -8,8 +8,8 @@
 
 use std::sync::Arc;
 
-use interprocess::local_socket::tokio::Stream;
 use interprocess::local_socket::tokio::prelude::*;
+use interprocess::local_socket::tokio::{Listener, Stream};
 use interprocess::local_socket::{GenericNamespaced, ListenerOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
@@ -25,9 +25,32 @@ use crate::transport::{PumpParams, pump_client};
 ///
 /// # Errors
 /// listener creation failure.
-pub async fn serve_ipc(state: Arc<DaemonState>, name: &str) -> std::io::Result<()> {
+/// Bind the IPC listener, synchronously. The readiness contract: the
+/// daemon writes `daemon-token` only after this returns, so any client
+/// that waited on the token file finds the socket (CI receipt
+/// 2026-10-26, macOS leg: `capture` over IPC raced the spawned serve
+/// task and got ENOENT).
+///
+/// # Errors
+/// name validation or listener creation failure.
+pub fn bind_ipc(name: &str) -> std::io::Result<Listener> {
     let ns_name = name.to_ns_name::<GenericNamespaced>()?;
-    let listener = ListenerOptions::new().name(ns_name).create_tokio()?;
+    ListenerOptions::new().name(ns_name).create_tokio()
+}
+
+/// Bind and serve the IPC listener until the process ends.
+///
+/// # Errors
+/// listener creation failure.
+pub async fn serve_ipc(state: Arc<DaemonState>, name: &str) -> std::io::Result<()> {
+    serve_ipc_bound(state, bind_ipc(name)?).await
+}
+
+/// Serve an already-bound IPC listener until the process ends.
+///
+/// # Errors
+/// accept-loop I/O failure (non-fatal callers log and continue).
+pub async fn serve_ipc_bound(state: Arc<DaemonState>, listener: Listener) -> std::io::Result<()> {
     loop {
         match listener.accept().await {
             Ok(stream) => {

@@ -316,6 +316,13 @@ async fn run() -> Result<(), String> {
         .local_addr()
         .map_err(|e| format!("local addr: {e}"))?;
 
+    // IPC binds BEFORE the token handoff: `daemon-token` is the
+    // readiness contract (clients wait on it, then dial), so the local
+    // socket must exist first. Bind failure keeps the daemon up (HTTP
+    // still serves; the IPC absence is logged, not fatal — same posture
+    // the old spawned-task error had).
+    let ipc_listener = austringer_daemon::ipc::bind_ipc(&ipc_name);
+
     // Token handoff to frontends: file under the data dir + stdout.
     let token_path = state.config.data_dir.join("daemon-token");
     std::fs::write(&token_path, &state.token).map_err(|e| format!("persist token: {e}"))?;
@@ -391,11 +398,16 @@ async fn run() -> Result<(), String> {
     }
 
     let ipc_state = Arc::clone(&state);
-    tokio::spawn(async move {
-        if let Err(e) = austringer_daemon::ipc::serve_ipc(ipc_state, &ipc_name).await {
-            eprintln!("austringer-daemon: ipc listener failed: {e}");
+    match ipc_listener {
+        Ok(listener) => {
+            tokio::spawn(async move {
+                if let Err(e) = austringer_daemon::ipc::serve_ipc_bound(ipc_state, listener).await {
+                    eprintln!("austringer-daemon: ipc listener failed: {e}");
+                }
+            });
         }
-    });
+        Err(e) => eprintln!("austringer-daemon: ipc bind failed: {e}"),
+    }
 
     let app = build_router(Arc::clone(&state));
     let mut drain_rx = state.drain.subscribe();
