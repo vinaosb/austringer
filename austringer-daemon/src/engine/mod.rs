@@ -5,84 +5,31 @@
 //! registry-backed), mid-run steering through a shared queue the
 //! loop's Steer stage drains, and durable turn-workflow journals when
 //! a journal root is configured.
+//!
+//! Layout: the steer stage lives in [`steerer`], the notification sink
+//! and host resolver in [`sink`]; this module owns the driver (spawn,
+//! the turn loop, the sessions-store live feed, and the stage-set
+//! builders).
+
+mod sink;
+mod steerer;
+
+pub use sink::{EventStreamSink, HostResolver};
+pub use steerer::SharedSteerer;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use austringer_core::agent_loop::stages::{Flow, StageCtx, StageError, Steer, ToolExecutor};
+use austringer_core::agent_loop::stages::ToolExecutor;
 use austringer_core::agent_loop::{
     AgentLoop, CancelHandle, Inference, LoopConfig, RunOutcome, StageSet,
 };
 use austringer_core::event::{ContentBlock, Event, RecordedEvent};
 
 use crate::attach::{HostCommand, SessionHost, SteerQueue};
-use crate::notify::{Notification, NotificationKind, NotificationSink, NotifyError};
-
-/// Pops one drained signal or notice from a shared queue (poison-safe).
-fn pop_queued(queue: &SteerQueue) -> Option<String> {
-    let mut guard = match queue.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    guard.pop_front()
-}
-
-/// A Steer stage draining the daemon's shared queue (mid-run steering:
-/// each drained signal becomes a recorded user event inside the live
-/// turn).
-pub struct SharedSteerer {
-    queue: SteerQueue,
-    notices: SteerQueue,
-}
-
-impl SharedSteerer {
-    /// Stage over the shared steer queue and the projection notice
-    /// queue.
-    #[must_use]
-    pub fn new(queue: SteerQueue, notices: SteerQueue) -> Self {
-        Self { queue, notices }
-    }
-}
-
-#[async_trait]
-impl Steer for SharedSteerer {
-    async fn steer(&mut self, ctx: &mut StageCtx<'_>) -> Result<Flow, StageError> {
-        // Typed block turns (protocol v2 media submits) first, then
-        // the loop's own submit queue (turn prompts), then any
-        // mid-run signals from the daemon's shared queue.
-        while let Some(blocks) = ctx.block_queue.pop_front() {
-            ctx.append(Event::User { blocks })?;
-            *ctx.steered = true;
-        }
-        // Projection notices (plan M10): one Event::System per media a
-        // submit could not project, riding the turn their blocks queued
-        // into. LlmVisible by design — the model is told what the
-        // marker stands for.
-        while let Some(text) = pop_queued(&self.notices) {
-            ctx.append(Event::System { text })?;
-            *ctx.steered = true;
-        }
-        while let Some(text) = ctx.steer_queue.pop_front() {
-            ctx.append(Event::User {
-                blocks: vec![ContentBlock::Text { text }],
-            })?;
-            *ctx.steered = true;
-        }
-        loop {
-            let next = pop_queued(&self.queue);
-            let Some(text) = next else { break };
-            ctx.append(Event::User {
-                blocks: vec![ContentBlock::Text { text }],
-            })?;
-            *ctx.steered = true;
-        }
-        Ok(Flow::Continue)
-    }
-}
 
 /// How a turn starts: plain text or typed blocks (v2 media submits).
 enum TurnKickoff {
@@ -357,105 +304,5 @@ impl SessionHost {
         ));
         stages.execution = executor;
         stages
-    }
-}
-
-/// Resolves a session id to its live host (read-only; never creates).
-pub type HostResolver = Arc<dyn Fn(&str) -> Option<Arc<SessionHost>> + Send + Sync>;
-
-/// Notification sink mirroring the daemon's scheduled-run kinds onto
-/// the owning session's event stream as `SessionEvent::Notification`
-/// frames — kind `sched` for a fired automation, `verdict` for a gated
-/// completion. Complementary to the `Verdict` frame (todo 1): the same
-/// facts on the v1-visible notification lane, beside the engine's own
-/// `steer` kind. Other notification kinds keep their existing lanes
-/// (asks ride `PermissionAsk`, workers their own frames).
-pub struct EventStreamSink {
-    resolve: HostResolver,
-}
-
-impl EventStreamSink {
-    /// Sink resolving sessions through `resolve`.
-    #[must_use]
-    pub fn new(resolve: HostResolver) -> Self {
-        Self { resolve }
-    }
-}
-
-impl NotificationSink for EventStreamSink {
-    fn deliver(&self, notification: &Notification) -> Result<(), NotifyError> {
-        let kind = match notification.kind {
-            NotificationKind::ScheduledFired => "sched",
-            NotificationKind::TurnComplete => "verdict",
-            NotificationKind::ApprovalNeeded | NotificationKind::WorkerLost => return Ok(()),
-        };
-        if let Some(session) = &notification.session_id
-            && let Some(host) = (self.resolve)(session)
-        {
-            host.publish(crate::protocol::SessionEvent::Notification {
-                kind: kind.to_owned(),
-                message: notification.message.clone(),
-            });
-        }
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    use crate::mediation::MediationPolicy;
-    use crate::protocol::{ServerMsg, SessionEvent};
-
-    #[tokio::test]
-    async fn event_stream_sink_maps_only_sched_and_verdict() {
-        let (host, _cmd_rx) = SessionHost::new(
-            "s-sink",
-            64,
-            16,
-            8,
-            MediationPolicy::FirstResponder,
-            Duration::from_millis(200),
-            None,
-        );
-        let sink = EventStreamSink::new(Arc::new({
-            let host = Arc::clone(&host);
-            move |sid: &str| (sid == "s-sink").then(|| Arc::clone(&host))
-        }));
-        let mut hub = host.hub_subscribe();
-
-        for kind in [
-            NotificationKind::ScheduledFired,
-            NotificationKind::TurnComplete,
-            NotificationKind::ApprovalNeeded,
-            NotificationKind::WorkerLost,
-        ] {
-            sink.deliver(&Notification {
-                kind,
-                session_id: Some("s-sink".into()),
-                message: format!("m-{}", kind.as_str()),
-            })
-            .expect("deliver never fails");
-        }
-        // A session-scoped notification for an unknown session is a
-        // no-op, not an error.
-        sink.deliver(&Notification {
-            kind: NotificationKind::ScheduledFired,
-            session_id: Some("gone".into()),
-            message: "nope".into(),
-        })
-        .expect("unknown session is a no-op");
-
-        let mut kinds = Vec::new();
-        while let Ok(msg) = hub.try_recv() {
-            if let ServerMsg::Event { frame } = msg
-                && let SessionEvent::Notification { kind, .. } = frame.event
-            {
-                kinds.push(kind);
-            }
-        }
-        assert_eq!(kinds, vec!["sched".to_owned(), "verdict".to_owned()]);
     }
 }
