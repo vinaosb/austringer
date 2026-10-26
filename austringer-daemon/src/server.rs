@@ -173,6 +173,7 @@ impl DaemonState {
         // The projection intake must be set BEFORE the engine spawns:
         // the steer stage captures its notice queue at stage construction.
         let _ = host.media_dir.set(session_dir.clone());
+        let _ = host.sessions_store_root.set(self.config.data_dir.clone());
         let _ = host.skills.set(Arc::clone(&self.skills));
         let _ = host.launcher.set(Arc::clone(&self.launch_services));
         // Todo 33: the per-session cost ledger binds before the engine

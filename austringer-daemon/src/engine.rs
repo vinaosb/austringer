@@ -233,6 +233,10 @@ impl SessionHost {
         };
         let new_events: Vec<RecordedEvent> = engine.events()[*published_through..].to_vec();
         *published_through = engine.events().len();
+        // Durable before broadcast: the store append precedes the
+        // Recorded frames, so a client that saw the events can find
+        // them through `sessions search` immediately.
+        self.persist_session_events(&new_events);
         for recorded in new_events {
             self.publish(crate::protocol::SessionEvent::Recorded {
                 seq: recorded.seq.0,
@@ -255,6 +259,41 @@ impl SessionHost {
         self.projection
             .get()
             .map_or_else(SteerQueue::default, |intake| intake.notice_queue())
+    }
+
+    /// The sessions-store live feed: appends the turn's recorded events
+    /// (event rows + FTS) so `sessions search` covers live sessions; the
+    /// first append creates the session row. Hosts built outside the
+    /// session factory have no store root — honest absence. Best-effort
+    /// by design: a store failure degrades the turn's search coverage,
+    /// never the conversation (surfaced as a warn log, the fail-open
+    /// transcript-notice posture would need a wire kind per surface).
+    fn persist_session_events(&self, recorded: &[RecordedEvent]) {
+        use austringer_sessions::{LeaseOwner, SessionStore};
+        let Some(root) = self.sessions_store_root.get() else {
+            return;
+        };
+        if recorded.is_empty() {
+            return;
+        }
+        let events: Vec<Event> = recorded.iter().map(|r| r.event.clone()).collect();
+        let id = self.session_id();
+        let result = (|| {
+            let store = SessionStore::open(root)?;
+            let owner = LeaseOwner::new(id);
+            let handle = match store.open_session_rw(id, &owner) {
+                Ok(handle) => handle,
+                Err(austringer_sessions::SessionError::NotFound { .. }) => {
+                    store.create(id, "")?;
+                    store.open_session_rw(id, &owner)?
+                }
+                Err(error) => return Err(error),
+            };
+            handle.append_batch(&events).map(|_| ())
+        })();
+        if let Err(error) = result {
+            tracing::warn!(session = %id, %error, "sessions store live feed degraded; this turn's search coverage is stale");
+        }
     }
 
     /// Build the daemon's standard stage set over a tool-execution
