@@ -35,6 +35,16 @@ fn echo(handle: &PluginHandle) -> Result<Vec<u8>, WasmError> {
     handle.call_raw("echo", b"{\"v\":1}").output
 }
 
+/// Swap the plugin file atomically: stage beside the target, then rename.
+/// A plain `fs::write` truncates first, and the watcher thread can read the
+/// zero-byte window mid-write (CI receipt 2026-10-26, macOS runner: reload
+/// compiled an empty module and emitted Failed instead of Reloaded).
+fn swap_atomic(path: &std::path::Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let staged = path.with_extension("wat.new");
+    std::fs::write(&staged, bytes)?;
+    std::fs::rename(&staged, path)
+}
+
 #[test]
 fn poll_swap_applies_to_new_calls() -> R {
     let dir = tempfile::tempdir()?;
@@ -103,7 +113,7 @@ fn watcher_thread_emits_reload_events() -> R {
     let handle = load_staged(&path, scope.path())?;
 
     let guard = PluginWatcher::spawn(handle, Duration::from_millis(10))?;
-    std::fs::write(&path, common::fixture_bytes("good2.wat")?)?;
+    swap_atomic(&path, common::fixture_bytes("good2.wat")?)?;
 
     match guard.events().recv_timeout(Duration::from_secs(3)) {
         Ok(ReloadEvent::Reloaded { plugin }) => assert_eq!(plugin, "echo-fixture"),
