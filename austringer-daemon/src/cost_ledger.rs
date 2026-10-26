@@ -30,12 +30,13 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 
+use austringer_core::agent_loop::stages::{ErrorFlow, ExitOnError, StageCtx, StageError};
 use austringer_core::agent_loop::{
     AssistantTurn, CancelToken, Inference, InferenceError, InferenceRequest,
 };
 use austringer_core::budget::{
-    BudgetCap, BudgetPeriod, BudgetSignal, BudgetSignalSink, BudgetSpec, Cost, Dimension, MicroUsd,
-    Spend, SpendLedger, StopReason, TokenCount,
+    BudgetCap, BudgetPeriod, BudgetSignal, BudgetSignalSink, BudgetSpec, Cost, Dimension,
+    MONEY_STOP_PREFIX, MicroUsd, Spend, SpendLedger, StopReason, TOKEN_STOP_PREFIX, TokenCount,
 };
 use austringer_providers::cost::Priced;
 use austringer_providers::identity::ModelIdentity;
@@ -234,10 +235,11 @@ impl Inference for CostLedgerInference {
         cancel: &CancelToken,
     ) -> Result<AssistantTurn, InferenceError> {
         if let Err(reason) = self.ledger.preflight() {
-            // The cap is spent: no provider call, a typed failure the
-            // engine surfaces as the turn outcome. The Stop EVENT
-            // already landed when the crossing record booked; any
-            // pending fallback ask resolved inside that record's call.
+            // The cap is spent: no provider call. The refusal rides the
+            // inference seam; CostStopExit maps it onto the loop's quiet
+            // EndTurn flow. The Stop EVENT already landed when the
+            // crossing record booked; any pending fallback ask resolved
+            // inside that record's call.
             return Err(InferenceError::Failure(reason.to_string()));
         }
         let turn = self.inner.infer(request, cancel).await?;
@@ -270,5 +272,36 @@ impl Inference for CostLedgerInference {
             }
         }
         Ok(turn)
+    }
+}
+
+/// The ExitOnError stage piece of the cost contract: provider-seam budget
+/// refusals end the turn QUIETLY (the CostStop event on the session
+/// stream is the failure surface — signal.rs's graceful-stop), while
+/// every other inference error keeps the wrapped policy (fail-fast).
+pub struct CostStopExit {
+    inner: Box<dyn ExitOnError>,
+}
+
+impl CostStopExit {
+    /// Wraps `inner` (the shipped composition passes the core default).
+    #[must_use]
+    pub fn new(inner: Box<dyn ExitOnError>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl ExitOnError for CostStopExit {
+    async fn on_error(
+        &mut self,
+        ctx: &mut StageCtx<'_>,
+        error: &InferenceError,
+    ) -> Result<ErrorFlow, StageError> {
+        let message = error.message();
+        if message.starts_with(MONEY_STOP_PREFIX) || message.starts_with(TOKEN_STOP_PREFIX) {
+            return Ok(ErrorFlow::EndTurn);
+        }
+        self.inner.on_error(ctx, error).await
     }
 }

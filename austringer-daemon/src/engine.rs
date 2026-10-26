@@ -271,6 +271,9 @@ impl SessionHost {
             self.steer_queue(),
             self.projection_notice_queue(),
         ));
+        stages.exit_on_error = Box::new(crate::cost_ledger::CostStopExit::new(Box::new(
+            austringer_core::agent_loop::stages::defaults::FailFast,
+        )));
         stages.approval = Box::new(crate::plan::PlanAwareApproval::new(
             Box::new(crate::stages::ReservedAwareApproval::new(
                 crate::stages::chain_over_mediator(self.mediator()),
@@ -302,6 +305,9 @@ impl SessionHost {
             self.steer_queue(),
             self.projection_notice_queue(),
         ));
+        stages.exit_on_error = Box::new(crate::cost_ledger::CostStopExit::new(Box::new(
+            austringer_core::agent_loop::stages::defaults::FailFast,
+        )));
         stages.approval = Box::new(crate::task::ReadOnlyApproval::new(
             Box::new(crate::stages::ReservedAwareApproval::new(
                 crate::stages::chain_over_mediator(self.mediator()),

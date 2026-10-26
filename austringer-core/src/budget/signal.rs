@@ -15,6 +15,11 @@ use super::caps::BudgetPeriod;
 pub const WARN_THRESHOLD_PCT: u32 = 80;
 /// The hard-stop threshold, in percent of the cap (plan: stop at 100%).
 pub const STOP_THRESHOLD_PCT: u32 = 100;
+/// Display prefix of [`StopReason::MoneyExhausted`] — the inference seam
+/// stringifies stop refusals, so downstream classifiers match this prefix.
+pub const MONEY_STOP_PREFIX: &str = "money budget exhausted";
+/// Display prefix of [`StopReason::TokenExhausted`].
+pub const TOKEN_STOP_PREFIX: &str = "token budget exhausted";
 
 /// Which ceiling dimension a signal refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -129,7 +134,28 @@ pub trait BudgetSignalSink {
 
 #[cfg(test)]
 mod tests {
-    use super::{BudgetPeriod, BudgetSignal, Dimension, Exhaustion, StopReason};
+    use super::{
+        BudgetPeriod, BudgetSignal, Dimension, Exhaustion, MONEY_STOP_PREFIX, StopReason,
+        TOKEN_STOP_PREFIX,
+    };
+
+    #[test]
+    fn stop_display_prefixes_stay_pinned() {
+        let money = StopReason::MoneyExhausted(Exhaustion {
+            period: BudgetPeriod::Session,
+            dimension: Dimension::Money,
+            consumed: 12,
+            cap: 10,
+        });
+        assert!(money.to_string().starts_with(MONEY_STOP_PREFIX));
+        let tokens = StopReason::TokenExhausted(Exhaustion {
+            period: BudgetPeriod::Session,
+            dimension: Dimension::Tokens,
+            consumed: 12,
+            cap: 10,
+        });
+        assert!(tokens.to_string().starts_with(TOKEN_STOP_PREFIX));
+    }
 
     #[test]
     fn signal_accessors_report_period_and_stopness() {

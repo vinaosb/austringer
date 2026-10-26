@@ -21,6 +21,10 @@ pub(super) async fn retry(agent: &mut AgentLoop) -> OpAction {
     match flow {
         Ok(RetryFlow::Retry) => {
             agent.last_error = None;
+            // Demanding inference invalidates turn-completeness: StopHook
+            // runs before Inference and must not consult over a demanded
+            // turn (force_inference is consumed at iteration top).
+            agent.turn_ended = false;
             agent.force_inference = true;
             OpAction::SkipRest
         }
@@ -31,7 +35,12 @@ pub(super) async fn retry(agent: &mut AgentLoop) -> OpAction {
 
 pub(super) async fn stop_hook(agent: &mut AgentLoop) -> OpAction {
     let operation = Operation::StopHook;
+    // `turn_ended` is NOT reset between run() calls, so it stays true from
+    // the previous clean turn; without the last_error guard a FIRST-inference
+    // failure on turn >= 2 reached StopHook before ExitOnError and was
+    // swallowed as TurnComplete (ledger todo-33 receipt).
     let consulted = agent.turn_ended
+        && agent.last_error.is_none()
         && agent.pending_calls.is_empty()
         && agent.steer_queue.is_empty()
         && !agent.steered
@@ -57,6 +66,7 @@ pub(super) async fn stop_hook(agent: &mut AgentLoop) -> OpAction {
                 if let Err(error) = agent.record(Event::System { text: reason }) {
                     return stage_failure(operation, error.to_string());
                 }
+                agent.turn_ended = false;
                 agent.force_inference = true;
                 OpAction::SkipRest
             }
@@ -84,12 +94,19 @@ pub(super) async fn exit_on_error(agent: &mut AgentLoop) -> OpAction {
                 retries: agent.config.max_inference_retries,
             })
         }
+        Ok(ErrorFlow::EndTurn) => {
+            // Handled quietly (e.g. a budget stop already surfaced by the
+            // ledger): the error must not haunt the next run.
+            agent.last_error = None;
+            OpAction::TurnComplete
+        }
         Ok(ErrorFlow::FeedModel) => {
             let notice = format!("inference error surfaced to the model: {error}");
             if let Err(error) = agent.record(Event::System { text: notice }) {
                 return stage_failure(operation, error.to_string());
             }
             agent.last_error = None;
+            agent.turn_ended = false;
             agent.force_inference = true;
             OpAction::SkipRest
         }

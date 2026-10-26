@@ -111,4 +111,8 @@ pub enum ErrorFlow {
     FailSession,
     /// Surface the error to the model and continue.
     FeedModel,
+    /// End the turn without failing the session. For typed budget stops:
+    /// the stop is already surfaced through the ledger's signal sink, so
+    /// the run ends quietly instead of loudly (signal.rs graceful-stop).
+    EndTurn,
 }
