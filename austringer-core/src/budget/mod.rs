@@ -50,6 +50,6 @@ pub use quota::{OpClass, PoolSpec, PoolTier, QuotaError, QuotaSpec, Weight};
 pub use resume::{IncompleteBudget, ResumeError, ResumePlan};
 pub use rollup::{RollupError, RollupNode};
 pub use signal::{
-    BudgetSignal, BudgetSignalSink, Dimension, Exhaustion, STOP_THRESHOLD_PCT, StopReason,
-    ThresholdCrossed, WARN_THRESHOLD_PCT,
+    BudgetSignal, BudgetSignalSink, Dimension, Exhaustion, MONEY_STOP_PREFIX, STOP_THRESHOLD_PCT,
+    StopReason, TOKEN_STOP_PREFIX, ThresholdCrossed, WARN_THRESHOLD_PCT,
 };

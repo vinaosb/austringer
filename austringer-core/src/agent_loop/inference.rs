@@ -78,6 +78,18 @@ pub enum InferenceError {
     Failure(String),
 }
 
+impl InferenceError {
+    /// The provider-side failure text, without this seam's `Display`
+    /// wrapper. Consumers classifying the failure (e.g. budget-stop
+    /// prefixes) must match on this, not on `to_string()`.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Failure(message) => message,
+        }
+    }
+}
+
 /// The inference seam. See the module docs for the todo-9 contract.
 #[async_trait]
 pub trait Inference: Send {

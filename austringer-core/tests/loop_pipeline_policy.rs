@@ -9,7 +9,7 @@ use austringer_core::agent_loop::{
 use austringer_core::event::{ContentBlock, Event, RecordedEvent};
 use common::TempSession;
 use common::loopkit::{ScriptedInference, call_turn, text_turn};
-use common::stages_kit::{AlwaysBlockStopHook, stages};
+use common::stages_kit::{AlwaysBlockStopHook, BlockOnceStopHook, EndTurnOnAnyError, stages};
 
 fn assistant_texts(events: &[RecordedEvent]) -> Vec<String> {
     events
@@ -145,6 +145,88 @@ async fn inference_failure_retry_then_success_completes_the_turn() {
     session.submit("try");
     assert_eq!(session.run().await, RunOutcome::TurnComplete);
     assert_eq!(assistant_texts(session.events()), vec!["recovered"]);
+}
+
+#[tokio::test]
+async fn turn_two_inference_failure_fails_typed_not_turn_complete() {
+    // turn_ended stays true from the first clean turn; the stop-hook guard
+    // must not consult over a pending inference error (swallow bug: the
+    // failure surfaced as TurnComplete with zero failure events).
+    let dir = TempSession::new("turn2fail");
+    use austringer_core::agent_loop::InferenceError;
+    let inference = ScriptedInference::from_results(vec![
+        Ok(text_turn("first turn fine")),
+        Err(InferenceError::Failure("boom".to_owned())),
+        Err(InferenceError::Failure("boom".to_owned())),
+    ]);
+    let config = LoopConfig {
+        max_inference_retries: 1,
+        ..LoopConfig::default()
+    };
+    let mut session = AgentLoop::open(dir.path(), config, StageSet::default(), Box::new(inference))
+        .expect("open session");
+    session.submit("first");
+    assert_eq!(session.run().await, RunOutcome::TurnComplete);
+
+    session.submit("second");
+    assert_eq!(
+        session.run().await,
+        RunOutcome::Failed(FailureReason::InferenceExhausted {
+            cause: "boom".to_owned(),
+            retries: 1,
+        })
+    );
+    assert_eq!(session.status(), SessionStatus::Failed);
+    assert_eq!(assistant_texts(session.events()), vec!["first turn fine"]);
+}
+
+#[tokio::test]
+async fn post_block_inference_failure_fails_typed_not_turn_complete() {
+    // Within-run variant: the hook blocks once over a clean no-tool turn
+    // (turn_ended=true), the demanded re-inference fails, retries exhaust —
+    // the stale turn_ended must not let StopHook exit the turn first.
+    let dir = TempSession::new("blockfail");
+    use austringer_core::agent_loop::InferenceError;
+    let inference = ScriptedInference::from_results(vec![
+        Ok(text_turn("draft")),
+        Err(InferenceError::Failure("boom".to_owned())),
+        Err(InferenceError::Failure("boom".to_owned())),
+    ]);
+    let stages = stages(|s| s.stop_hook = Box::new(BlockOnceStopHook::new()));
+    let config = LoopConfig {
+        max_inference_retries: 1,
+        ..LoopConfig::default()
+    };
+    let mut session =
+        AgentLoop::open(dir.path(), config, stages, Box::new(inference)).expect("open session");
+    session.submit("go");
+    assert_eq!(
+        session.run().await,
+        RunOutcome::Failed(FailureReason::InferenceExhausted {
+            cause: "boom".to_owned(),
+            retries: 1,
+        })
+    );
+    assert_eq!(session.status(), SessionStatus::Failed);
+}
+
+#[tokio::test]
+async fn end_turn_flow_ends_quietly_without_failing_the_session() {
+    let dir = TempSession::new("endturn");
+    use austringer_core::agent_loop::InferenceError;
+    let inference = ScriptedInference::from_results(vec![Err(InferenceError::Failure(
+        "money budget exhausted".to_owned(),
+    ))]);
+    let stages = stages(|s| s.exit_on_error = Box::new(EndTurnOnAnyError));
+    let config = LoopConfig {
+        max_inference_retries: 0,
+        ..LoopConfig::default()
+    };
+    let mut session =
+        AgentLoop::open(dir.path(), config, stages, Box::new(inference)).expect("open session");
+    session.submit("go");
+    assert_eq!(session.run().await, RunOutcome::TurnComplete);
+    assert_eq!(session.status(), SessionStatus::InProgress);
 }
 
 #[test]

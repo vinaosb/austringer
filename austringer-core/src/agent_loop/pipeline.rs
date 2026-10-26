@@ -177,8 +177,12 @@ impl AgentLoop {
             }
             SessionStatus::InProgress | SessionStatus::Cancelling => {}
         }
+        // Per-run working state: `turn_ended` describes the LAST inference
+        // of THIS run — a stale-true carryover from a previous run let
+        // StopHook return TurnComplete over pending work (ledger todo-33).
         self.stop_blocks = 0;
         self.failures = 0;
+        self.turn_ended = false;
         loop {
             if self.token.is_cancelling() {
                 return self.cancel_run(Operation::EntryHook, false);

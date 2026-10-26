@@ -158,6 +158,20 @@ impl ExitOnError for CancelAwareExitOnError {
     }
 }
 
+/// Ends the turn quietly on any error (tests the EndTurn flow contract).
+pub struct EndTurnOnAnyError;
+
+#[async_trait]
+impl ExitOnError for EndTurnOnAnyError {
+    async fn on_error(
+        &mut self,
+        _ctx: &mut StageCtx<'_>,
+        _error: &austringer_core::agent_loop::InferenceError,
+    ) -> Result<ErrorFlow, StageError> {
+        Ok(ErrorFlow::EndTurn)
+    }
+}
+
 /// Sleeps 100 ms (virtual under `start_paused`), then continues.
 pub struct SlowCompactor;
 
@@ -187,6 +201,30 @@ pub struct AlwaysBlockStopHook;
 impl StopHook for AlwaysBlockStopHook {
     async fn on_stop(&mut self, _ctx: &mut StageCtx<'_>) -> Result<StopDecision, StageError> {
         Ok(StopDecision::Block("keep going".to_owned()))
+    }
+}
+
+/// Blocks exactly the first consultation, then always proceeds (tests
+/// turn-exit gating around a demanded re-inference).
+pub struct BlockOnceStopHook {
+    blocked: bool,
+}
+
+impl BlockOnceStopHook {
+    pub fn new() -> Self {
+        Self { blocked: false }
+    }
+}
+
+#[async_trait]
+impl StopHook for BlockOnceStopHook {
+    async fn on_stop(&mut self, _ctx: &mut StageCtx<'_>) -> Result<StopDecision, StageError> {
+        if self.blocked {
+            Ok(StopDecision::Proceed)
+        } else {
+            self.blocked = true;
+            Ok(StopDecision::Block("once more".to_owned()))
+        }
     }
 }
 
