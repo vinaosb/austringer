@@ -79,6 +79,20 @@ fn docker_daemon_smoke_run() {
     }
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join("worktree")).expect("mkdir");
+    // CI receipt 2026-10-26 (run 40270157402): the container runs as uid 0
+    // but --cap-drop=ALL strips CAP_DAC_OVERRIDE, so uid 0 still obeys DAC;
+    // tempfile's 0700 dir owned by the runner uid rejects the write
+    // (`can't create /workspace/worktree/proof.txt: Permission denied`).
+    // The worktree volume is the granted writable — the fixture must say so.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            dir.path().join("worktree"),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .expect("chmod worktree");
+    }
     let policy = SandboxPolicy::for_worktree(
         &dir.path().join("worktree"),
         &dir.path().join("worktree/settings.toml"),
