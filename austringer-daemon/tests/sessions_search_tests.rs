@@ -134,6 +134,23 @@ async fn get(base: &str, token: &str, path_and_query: &str) -> (u16, serde_json:
     (status, json)
 }
 
+async fn post_cmd(base: &str, token: &str, sid: &str, text: &str) -> u16 {
+    let body = serde_json::json!({
+        "type": "command",
+        "command": { "type": "submit", "text": text }
+    })
+    .to_string();
+    let response = reqwest::Client::new()
+        .post(format!("http://{base}/s/{sid}/cmd"))
+        .bearer_auth(token)
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("http");
+    response.status().as_u16()
+}
+
 fn user(text: &str) -> Event {
     Event::User {
         blocks: vec![ContentBlock::Text {
@@ -478,4 +495,44 @@ async fn search_tool_bad_fts_syntax_is_a_typed_invalid_arguments_error() {
         !joined.contains("panic"),
         "the session continues past the bad query:\n{joined}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Live feed: the engine's recorded events land in the store, so a real
+// conversation's terms rank through the same daemon's search route
+// (the 2026-10-23 ledger follow-up's acceptance, verbatim)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn live_conversation_events_reach_the_search_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let complete: Factory = Arc::new(|| {
+        Box::new(ScriptedInference::from_steps(vec![text_turn(
+            "the quokka phenomenon is unlike anything else",
+            vec![],
+        )]))
+    });
+    let (base, token) = spawn_in(dir.path(), complete).await;
+    const SID: &str = "live-feed-1";
+
+    let status = post_cmd(&base, &token, SID, "tell me about quokkas").await;
+    assert_eq!(status, 202, "submit accepted");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let (status, body) = get(&base, &token, "/sessions/search?q=quokka").await;
+        assert_eq!(status, 200, "{body}");
+        let hits = body.as_array().expect("array");
+        let ours = hits
+            .iter()
+            .any(|hit| hit["session_id"] == SID && hit["snippet"].to_string().contains("quokka"));
+        if ours || std::time::Instant::now() > deadline {
+            assert!(
+                ours,
+                "the live session's terms must rank in the same daemon's search route: {body}"
+            );
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }

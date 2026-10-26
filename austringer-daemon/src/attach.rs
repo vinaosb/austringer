@@ -121,6 +121,11 @@ pub struct SessionHost {
     /// those sessions have no cost surface (honest absence, fail-open:
     /// nothing to trip).
     pub(crate) cost_ledger: std::sync::OnceLock<Arc<crate::cost_ledger::SessionLedger>>,
+    /// Sessions-store root (data dir); set once by the session factory.
+    /// The engine's live feed appends each turn's recorded events to the
+    /// store so `sessions search` covers live sessions. Unset on hosts
+    /// built outside the factory — honest absence (nothing persisted).
+    pub(crate) sessions_store_root: std::sync::OnceLock<PathBuf>,
     /// The interactive plan-mode gate (todo 16); inactive by default.
     plan: crate::plan::PlanGate,
     pub(crate) turn_counter: AtomicU64,
@@ -165,6 +170,7 @@ impl SessionHost {
             skills: std::sync::OnceLock::new(),
             launcher: std::sync::OnceLock::new(),
             cost_ledger: std::sync::OnceLock::new(),
+            sessions_store_root: std::sync::OnceLock::new(),
             plan: crate::plan::PlanGate::default(),
             turn_counter: AtomicU64::new(0),
             journal_root,
