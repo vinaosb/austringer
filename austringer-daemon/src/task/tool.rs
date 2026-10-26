@@ -40,7 +40,7 @@ impl TaskTool {
     /// invoking task must see the DepthExceeded vocabulary, not a
     /// missing-parent error (its host is never in the resolver's map).
     fn depth_refusal(&self) -> Option<String> {
-        super::DepthGuard::default()
+        austringer_orchestration::fork::DepthGuard::default()
             .check(super::depth_of(&self.session_id) + 1)
             .err()
             .map(|exceeded| self.refusal_text(exceeded.into()))
