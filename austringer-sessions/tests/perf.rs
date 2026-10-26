@@ -116,8 +116,12 @@ fn fork_of_large_session_stays_efficient() {
     let elapsed = start.elapsed();
     assert_eq!(meta.event_count, 1_000);
     println!("fork of 500-turn/25MB session at midpoint: {elapsed:?}");
+    // CI receipt 2026-10-26 (PR #22 windows leg): a saturated 2-core
+    // runner took 23.6 s against the 20 s scaled budget. The budget's
+    // job is catching per-row rescan regressions (quadratic = minutes
+    // at this size); 5 s strict (50 s scaled in debug) still does.
     assert!(
-        elapsed.as_millis() < u128::from(budget_scale_ms(2_000)),
+        elapsed.as_millis() < u128::from(budget_scale_ms(5_000)),
         "row-copy fork of 25MB took {elapsed:?} (budget: one-shot copy, not per-row rescans)"
     );
 }

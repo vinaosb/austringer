@@ -141,30 +141,32 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
     // Health surface answers while no provider is configured. The listener
     // is bound before the handshake banner, but under heavy test
     // parallelism on shared runners the first connect can be refused by
-    // socket backlog pressure; poll readiness instead of demanding the
-    // first attempt succeed.
+    // socket backlog pressure; poll readiness until a deadline instead
+    // of demanding early attempts succeed (CI receipts 2026-10-26: the
+    // fixed 20x250ms budget lost twice to sustained backlog under the
+    // coverage build).
     let client = reqwest::Client::new();
-    let mut last_health = None;
-    for attempt in 0..20 {
+    // CI receipt 2026-10-26 (PR #15 coverage leg): even the 30 s
+    // deadline lost under the llvm-cov build on a saturated runner —
+    // the daemon's bind can lag by a minute there. 90 s, exits on
+    // first success.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
+    let last_health = loop {
         let response = client
             .get(format!("http://{}/", daemon.base))
             .bearer_auth(&daemon.token)
             .timeout(Duration::from_secs(2))
             .send()
             .await;
-        let served = response.as_ref().is_ok_and(|r| r.status().is_success());
-        last_health = Some(response);
-        if served {
-            break;
+        if response.as_ref().is_ok_and(|r| r.status().is_success())
+            || tokio::time::Instant::now() >= deadline
+        {
+            break response;
         }
-        if attempt < 19 {
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
-    }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    };
     assert!(
-        last_health
-            .expect("at least one health attempt")
-            .is_ok_and(|r| r.status().is_success()),
+        last_health.is_ok_and(|r| r.status().is_success()),
         "root must serve"
     );
     let frames = match attach_submit_collect(&mut daemon, "m32-bin", "hello provider").await {
