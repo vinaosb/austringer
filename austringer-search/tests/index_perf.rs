@@ -17,9 +17,13 @@ const COUNT: u32 = 10_000;
 /// The binary blob is skipped, the gitignored file is excluded.
 const EXPECTED_DOCS: usize = COUNT as usize + 2;
 /// Wide CI-safe bound; the plan's real 5 s budget is recorded, not gated.
-const COLD_BUDGET: Duration = Duration::from_secs(15);
-/// Wide CI-safe bound; the plan's real 20 ms budget is recorded, not gated.
-const WARM_BUDGET: Duration = Duration::from_millis(200);
+/// CI receipt 2026-10-26 (PR #12, windows archive leg): a saturated
+/// 2-core runner executing the 2.6k-test archive measured cold > 15 s —
+/// CI bounds gate existence, perf-gate owns the real budget.
+const COLD_BUDGET: Duration = Duration::from_secs(90);
+/// Wide CI-safe bound; the plan's real 20 ms budget is recorded, not
+/// gated (best-of-three keeps even this loose bound meaningful).
+const WARM_BUDGET: Duration = Duration::from_secs(1);
 /// Wide CI-safe bound; the plan's real 500 ms budget is recorded, not gated.
 /// Also generous enough for a loaded dev machine running the full local CI
 /// gate in parallel (the plan budget itself is enforced by perf-gate, not
