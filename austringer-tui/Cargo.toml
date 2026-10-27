@@ -33,6 +33,11 @@ toml.workspace = true
 # @file omnibar completions: gitignore-respecting bounded walker.
 ignore.workspace = true
 
+# cargo-dist marks this crate as a distable package; the bin target is
+# src/main.rs (binary `austringer-tui`). See root dist-workspace.toml.
+[package.metadata.dist]
+dist = true
+
 [dev-dependencies]
 insta.workspace = true
 tempfile.workspace = true
