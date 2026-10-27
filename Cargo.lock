@@ -494,7 +494,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "austringer-ast"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "serde",
@@ -554,7 +554,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "assert_cmd",
  "async-trait",
@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "assert_cmd",
  "async-trait",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-test-support",
@@ -622,7 +622,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-daemon"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-core",
@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-evals"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "serde",
@@ -674,7 +674,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-exec"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "austringer-ast",
  "austringer-core",
@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-intel"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "austringer-providers",
  "austringer-skills",
@@ -707,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-launch"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "tempfile",
  "thiserror 2.0.20",
@@ -717,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-lsp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-mcp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-core",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-media"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow",
  "async-trait",
@@ -803,7 +803,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-orchestration"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-intel",
@@ -820,7 +820,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-providers"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-core",
@@ -841,14 +841,14 @@ dependencies = [
 
 [[package]]
 name = "austringer-repomap"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "austringer-ast",
 ]
 
 [[package]]
 name = "austringer-safety"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64ct",
  "getrandom 0.3.4",
@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-search"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "grep-regex",
  "grep-searcher",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-sessions"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "austringer-core",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-skills"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "serde",
@@ -907,7 +907,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-snapshots"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "getrandom 0.3.4",
@@ -923,7 +923,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-test-support"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -933,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-tools"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "austringer-ast",
  "blake3",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-tui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-core",
@@ -970,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-vfs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "gix",
@@ -982,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-wasm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-core",
@@ -997,7 +997,7 @@ dependencies = [
 
 [[package]]
 name = "austringer-web"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "austringer-core",
