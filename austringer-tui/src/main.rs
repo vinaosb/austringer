@@ -10,40 +10,96 @@ use austringer_tui::app::{App, UiAction, UiEvent};
 use austringer_tui::client::{ClientCmd, ClientEvent};
 use austringer_tui::complete::FileCompletions;
 use austringer_tui::keys::Key;
+use clap::Parser as _;
 use crossterm::event::{Event as TermEvent, KeyEvent};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 
+#[derive(Debug, clap::Parser)]
+#[command(
+    name = "austringer-tui",
+    version,
+    about = "Terminal client over the austringer daemon"
+)]
 struct Args {
+    /// Daemon base URL; omit to attach to (or spawn) the local default
+    /// daemon.
+    #[arg(long)]
+    url: Option<String>,
+    /// Session id to bind.
+    #[arg(long, default_value = "default")]
+    session: String,
+    /// Daemon auth token file (default: {data-dir}/daemon-token).
+    #[arg(long = "token-file")]
+    token_file: Option<std::path::PathBuf>,
+    /// Daemon data dir (default .austringer-daemon).
+    #[arg(long = "data-dir")]
+    data_dir: Option<std::path::PathBuf>,
+    /// IPC socket name used when spawning (default austringer-daemon).
+    #[arg(long = "ipc-name")]
+    ipc_name: Option<String>,
+}
+
+/// The wired connection the client task consumes.
+struct Connection {
     url: String,
     session: String,
     token_file: std::path::PathBuf,
 }
 
-fn parse_args() -> Result<Args, String> {
-    let mut args = Args {
-        url: String::new(),
-        session: "default".into(),
-        token_file: std::path::PathBuf::from(".austringer-daemon/daemon-token"),
-    };
-    let mut iter = std::env::args().skip(1);
-    while let Some(flag) = iter.next() {
-        let value = iter.next();
-        match flag.as_str() {
-            "--url" => args.url = value.ok_or("--url needs a value")?,
-            "--session" => args.session = value.ok_or("--session needs a value")?,
-            "--token-file" => {
-                args.token_file =
-                    std::path::PathBuf::from(value.ok_or("--token-file needs a value")?)
+fn data_dir_of(args: &Args) -> std::path::PathBuf {
+    args.data_dir
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from(austringer_launch::DEFAULT_DATA_DIR))
+}
+
+/// Explicit `--url` passes straight through; without it the TUI uses
+/// the running daemon's `daemon-url` file, probing it first, and
+/// auto-spawns one (visible notice) when nothing answers — the same
+/// just-starts posture as the CLI.
+async fn resolve_connection(args: Args) -> Result<Connection, String> {
+    let data_dir = data_dir_of(&args);
+    let token_file = args
+        .token_file
+        .clone()
+        .unwrap_or_else(|| data_dir.join(austringer_launch::TOKEN_FILENAME));
+    let url = match args.url {
+        Some(url) => url,
+        None => match live_daemon_url(&data_dir).await {
+            Some(url) => url,
+            None => {
+                let ipc_name = args
+                    .ipc_name
+                    .clone()
+                    .unwrap_or_else(|| austringer_launch::DEFAULT_IPC_NAME.to_owned());
+                austringer_launch::ensure_daemon(&data_dir, &ipc_name)
+                    .await
+                    .map_err(|failure| failure.to_string())?;
+                austringer_launch::read_daemon_url(&data_dir)
+                    .ok_or_else(|| "daemon became ready but wrote no daemon-url".to_owned())?
             }
-            other => return Err(format!("unknown argument {other}")),
-        }
-    }
-    if args.url.is_empty() {
-        return Err("usage: austringer-tui --url http://127.0.0.1:<port> [--session <id>] [--token-file <path>]".into());
-    }
-    Ok(args)
+        },
+    };
+    Ok(Connection {
+        url,
+        session: args.session,
+        token_file,
+    })
+}
+
+async fn live_daemon_url(data_dir: &std::path::Path) -> Option<String> {
+    let url = austringer_launch::read_daemon_url(data_dir)?;
+    let addr = url.trim_start_matches("http://").to_owned();
+    let probe = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    drop(probe);
+    Some(url)
 }
 
 fn to_ui_event(event: TermEvent) -> Option<UiEvent> {
@@ -98,25 +154,27 @@ fn spawn_bridge_thread(receiver: Receiver<ClientEvent>, sender: Sender<UiEvent>)
 }
 
 async fn client_task(
-    args: Args,
+    connection: Connection,
     events: Sender<ClientEvent>,
     cmd: tokio::sync::mpsc::Receiver<ClientCmd>,
 ) {
-    let token = std::fs::read_to_string(&args.token_file)
+    let token = std::fs::read_to_string(&connection.token_file)
         .unwrap_or_default()
         .trim()
         .to_owned();
-    austringer_tui::client::run(&args.url, &args.session, &token, "tui", events, cmd).await;
+    austringer_tui::client::run(
+        &connection.url,
+        &connection.session,
+        &token,
+        "tui",
+        events,
+        cmd,
+    )
+    .await;
 }
 
 fn main() {
-    let args = match parse_args() {
-        Ok(args) => args,
-        Err(usage) => {
-            eprintln!("austringer-tui: {usage}");
-            std::process::exit(2);
-        }
-    };
+    let args = Args::parse();
     // Multi-thread: the UI thread parks in recv() for long stretches,
     // so the client task needs its own runtime worker to keep the
     // socket pumping (pings, live events).
@@ -131,11 +189,18 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let connection = match runtime.block_on(resolve_connection(args)) {
+        Ok(connection) => connection,
+        Err(failure) => {
+            eprintln!("austringer-tui: {failure}");
+            std::process::exit(1);
+        }
+    };
 
     let (ui_tx, ui_rx) = std::sync::mpsc::channel::<UiEvent>();
     let (client_tx, client_rx) = std::sync::mpsc::channel::<ClientEvent>();
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<ClientCmd>(16);
-    runtime.spawn(client_task(args, client_tx, cmd_rx));
+    runtime.spawn(client_task(connection, client_tx, cmd_rx));
     spawn_input_thread(ui_tx.clone());
     spawn_bridge_thread(client_rx, ui_tx);
 
@@ -196,4 +261,55 @@ fn main() {
     let _ = cmd_tx.blocking_send(ClientCmd::Shutdown);
     let _ = disable_raw_mode();
     let _ = crossterm::execute!(std::io::stdout(), LeaveAlternateScreen);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_url_and_session_parse() {
+        let args = Args::try_parse_from([
+            "austringer-tui",
+            "--url",
+            "http://127.0.0.1:9000",
+            "--session",
+            "work",
+        ])
+        .unwrap_or_else(|e| panic!("parse: {e}"));
+        assert_eq!(args.url.as_deref(), Some("http://127.0.0.1:9000"));
+        assert_eq!(args.session, "work");
+        assert!(args.token_file.is_none());
+    }
+
+    #[test]
+    fn bare_invocation_defaults_to_the_local_daemon_discovery() {
+        let args =
+            Args::try_parse_from(["austringer-tui"]).unwrap_or_else(|e| panic!("parse: {e}"));
+        assert!(args.url.is_none());
+        assert_eq!(args.session, "default");
+        assert_eq!(
+            data_dir_of(&args),
+            std::path::PathBuf::from(austringer_launch::DEFAULT_DATA_DIR)
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_url_skips_daemon_discovery_and_spawn() {
+        let connection = resolve_connection(Args {
+            url: Some("http://127.0.0.1:9".to_owned()),
+            session: "s".to_owned(),
+            token_file: None,
+            data_dir: Some(std::path::PathBuf::from("nowhere")),
+            ipc_name: None,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("resolve: {e}"));
+        assert_eq!(connection.url, "http://127.0.0.1:9");
+        assert_eq!(connection.session, "s");
+        assert_eq!(
+            connection.token_file,
+            std::path::PathBuf::from("nowhere").join(austringer_launch::TOKEN_FILENAME)
+        );
+    }
 }

@@ -15,6 +15,7 @@ pub mod client;
 pub mod doctor;
 pub mod doctor_probes;
 pub mod error;
+pub mod frontdoor;
 pub mod image;
 pub mod mcp;
 pub mod render;

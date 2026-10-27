@@ -55,6 +55,22 @@ fn bad_subcommand_is_a_clap_usage_error() {
 }
 
 #[test]
+fn bare_austringer_execs_the_tui_front_door() {
+    // No TUI installed on the test PATH and no override: the front
+    // door fails with the typed not-found error naming the binary.
+    austringer()
+        .env(
+            "AUSTRINGER_TUI_BIN",
+            "C:\\definitely\\not\\austringer-tui.exe",
+        )
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("austringer-tui"))
+        .stderr(predicate::str::contains("AUSTRINGER_TUI_BIN"));
+}
+
+#[test]
 fn run_without_prompt_is_a_usage_error() {
     austringer().arg("run").assert().failure().code(2);
 }

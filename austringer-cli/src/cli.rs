@@ -45,10 +45,12 @@ pub struct Cli {
     pub output_json: bool,
 
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
-/// The five daemon subcommands plus the daemon-less `mcp` family.
+/// The five daemon subcommands plus the daemon-less `mcp` family;
+/// `None` (bare `austringer`) execs the TUI — the codex/opencode
+/// default-experience pattern (research §34.2).
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Run one headless turn and print its result.
