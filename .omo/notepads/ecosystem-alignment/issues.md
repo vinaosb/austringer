@@ -283,3 +283,37 @@ a failed reload keeps the old instance serving - typed behavior for
 non-atomic operator saves. Same-runner suspect for the #8 acp_stdio_cancel
 one-off is runner load/scheduling, still watch-listed above.
 
+
+## 2026-10-27 Resolved: the open-items ledger (the /goal fix pass)
+
+All five open items from the 2026-10-26 audit, receipts:
+
+1. event_fts live-feed gap (2026-10-23 entry) - RESOLVED, PR #13: the
+   engine driver appends each turn's recorded events to the sessions
+   store (durable-then-broadcast); acceptance met verbatim - a real
+   HTTP conversation's terms rank via the same daemon's search route
+   (red on the pre-feed tree).
+2. Core StopHook swallow (todo-33 entry) - RESOLVED, PRs #12+#14: BOTH
+   swallow paths fixed (cross-run stale turn_ended + the within-run
+   force_inference window the first regression test exposed), and the
+   cost-cap quiet-stop the swallow accidentally implemented is now the
+   explicit ErrorFlow::EndTurn + CostStopExit contract. Three
+   regression tests; daemon cost test stays green.
+3. media find_program PATH separator - RESOLVED, PR #11:
+   std::env::split_paths behind testable find_program_in + 3 hermetic
+   tests.
+4. Over-ceiling files - RESOLVED, PRs #15,#16,#17,#18,#21,#22,#23:
+   mediation (5 modules), task/runner, engine/{steerer,sink},
+   attach/intake, tui transcript/{team,status}, cli render/{ndjson,human},
+   web ui.js -> seven spa/* modules on the import map. All
+   behavior-identical; docs moved verbatim; prod-pure all under 250.
+5. Watch-list - documented (#9); acp_stdio macOS one-off never
+   recurred.
+
+CI rulings this pass: search cold/warm (#14) and incremental (#20)
+and sessions fork (#24) bounds are EXISTENCE gates - perf-gate owns
+the real budgets. Flake fixes: ipc readiness ordering (#19 - token
+file now means the socket exists), provider-binary poll deadline 90s
++ spawned-daemon stderr capture (diagnostics; the cov-leg 90 s hang
+stayed green with them in tree - watch if it recurs, the panic now
+carries daemon stderr), wasm watcher atomic swap (#10).
