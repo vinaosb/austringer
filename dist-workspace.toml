@@ -14,8 +14,10 @@ members = ["cargo:."]
 # Pinned: the release workflow installs exactly this version.
 cargo-dist-version = "0.33.0"
 ci = ["github"]
-# Shell installer (macOS/Linux) + PowerShell installer (Windows).
-installers = ["shell", "powershell"]
+# Shell installer (macOS/Linux) + PowerShell installer (Windows) +
+# Homebrew tap (the codex/goose/Amp distribution channel; formulae
+# pushed to vinaosb/homebrew-austringer by the release pipeline).
+installers = ["shell", "powershell", "homebrew"]
 # Native release targets. The linux/arm64 story is handled by the container
 # image (see publish-jobs below), not by native dist artifacts.
 targets = [
@@ -27,7 +29,13 @@ targets = [
 # Custom publish phase job: builds + pushes the multi-arch (amd64+arm64)
 # daemon+CLI container image to GHCR. Reusable workflow file, per
 # https://opensource.axo.dev/cargo-dist/book/ci/customizing/
-publish-jobs = ["./publish-container"]
+# "homebrew": pushes the generated formulae to vinaosb/homebrew-austringer
+# (the tap repo must exist; the job needs a repo-scoped token in the
+# HOMEBREW_TAP_TOKEN secret to push cross-repo).
+publish-jobs = ["./publish-container", "homebrew"]
+# The Homebrew tap the formulae are pushed to (pre-created and empty;
+# the publish job authenticates with the HOMEBREW_TAP_TOKEN secret).
+tap = "vinaosb/homebrew-austringer"
 # PRs touching release config only re-run `dist plan` (cheap dry-run), never
 # a full artifact build.
 pr-run-mode = "plan"
