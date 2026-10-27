@@ -2,6 +2,7 @@
 //! auth token, serves HTTP/WS/SSE + IPC, and adopts an inherited
 //! listener when spawned as a reload successor.
 
+use std::io::Write;
 use std::sync::Arc;
 
 use austringer_daemon::config::DaemonConfig;
@@ -332,7 +333,12 @@ async fn run() -> Result<(), String> {
         .map_err(|e| format!("persist url: {e}"))?;
     let token_path = state.config.data_dir.join("daemon-token");
     std::fs::write(&token_path, &state.token).map_err(|e| format!("persist token: {e}"))?;
-    println!(
+    // Startup prints never kill the daemon: a parent that piped stdout
+    // and stopped reading (a test harness, a supervisor) turns
+    // println!'s EPIPE panic into a dead daemon before the first
+    // request (CI receipt 2026-10-27: three burned deadlines).
+    let _ = writeln!(
+        std::io::stdout().lock(),
         "austringer-daemon listening on http://{bound} (token: {})",
         state.token
     );
@@ -348,7 +354,8 @@ async fn run() -> Result<(), String> {
             Ok(pack_gate) => {
                 match austringer_daemon::automations::AutomationStore::load(&data_dir, &pack_gate) {
                     Ok(store) => {
-                        println!(
+                        let _ = writeln!(
+                            std::io::stdout().lock(),
                             "austringer-daemon: {} automation(s) scheduled",
                             store.defs().len()
                         );
