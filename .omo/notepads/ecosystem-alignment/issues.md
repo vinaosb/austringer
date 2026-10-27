@@ -317,3 +317,41 @@ file now means the socket exists), provider-binary poll deadline 90s
 + spawned-daemon stderr capture (diagnostics; the cov-leg 90 s hang
 stayed green with them in tree - watch if it recurs, the panic now
 carries daemon stderr), wasm watcher atomic swap (#10).
+
+## 2026-10-27 The launch wave: austringer just starts (the 34.2 wiring)
+
+The audit found our daemon-first architecture lacked the convenience
+layer peers ship: TUI was build-from-source, every client assumed a
+manually started foreground daemon, the web SPA needed a hand-copied
+URL, and install was four curl/iwr invocations. The wave (research
+34.2 receipt - opencode 2.0 daemon-by-default, Codex /daemon, Amp
+shared runners):
+
+- austringer-launch crate (#27): exe lookup (env override must exist
+  or typed error - never silent fallback; exe-dir sibling; PATH),
+  detached spawn, readiness wait on the token-file change, terminal-
+  aware stderr. TWO production bugs fixed en route: a detached
+  Windows child inherits EVERY inheritable handle, so a spawned
+  daemon held an ancestor stdout pipe forever - `austringer capture |
+  jq` would wedge until the daemon died (inherit flags now cleared
+  around the spawn); and the daemon now writes daemon-url before the
+  token so clients never parse daemon stdout.
+- CLI auto-spawn (#27): pure default path only (no --url/--token),
+  one retry, visible notice, AUSTRINGER_NO_AUTOSPAWN=1 typed refusal.
+- Bare `austringer` execs the TUI; TUI ported to clap + the same
+  just-starts default (#28 via #31).
+- `austringer web` (#29 via #31): ensure daemon, print URL, browser
+  unless --no-browser; missing opener = printed hint.
+- TUI ships in release artifacts (#26); one-command same-tag
+  install.sh/install.ps1 at the repo root, eol=lf pinned (#32).
+- Homebrew tap vinaosb/homebrew-austringer wired into the release
+  pipeline (#33; needs the owner-set HOMEBREW_TAP_TOKEN secret).
+
+Discipline receipts: spawn-tests get watchdog threads (a wedged e2e
+aborts at 90s with diagnostics instead of hanging the runner - proven
+live); CI time bounds are existence gates (health poll 180s, #30,
+third receipt of the #24 ruling). Unexplained, watch-listed: the
+v0.1.1 release already serves austringer-tui installer assets
+although the tui dist=true metadata postdates it. Stacked-PR lesson:
+verify baseRefName==main before merging; GitHub retargets only when
+the base branch is deleted.
