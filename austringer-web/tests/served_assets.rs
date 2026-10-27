@@ -134,6 +134,12 @@ const JS_SOURCES: &[(&str, &str)] = &[
     ("store", include_str!("../assets/store.js")),
     ("share", include_str!("../assets/share.js")),
     ("ui", include_str!("../assets/ui.js")),
+    ("ui-dom", include_str!("../assets/ui-dom.js")),
+    ("ui-dashboard", include_str!("../assets/ui-dashboard.js")),
+    ("ui-history", include_str!("../assets/ui-history.js")),
+    ("ui-team", include_str!("../assets/ui-team.js")),
+    ("ui-session", include_str!("../assets/ui-session.js")),
+    ("ui-share", include_str!("../assets/ui-share.js")),
 ];
 
 #[test]

@@ -42,9 +42,28 @@ const STORE_JS: &str = include_str!("../assets/store.js");
 /// Share links: redaction, expiry, URL-safe codec (410 on expiry).
 const SHARE_JS: &str = include_str!("../assets/share.js");
 
-/// DOM rendering (text-only injection; untrusted text never reaches
-/// `innerHTML`).
+/// DOM rendering root (text-only injection; untrusted text never
+/// reaches `innerHTML`): token gate, banner, view switch.
 const UI_JS: &str = include_str!("../assets/ui.js");
+
+/// DOM primitives shared by the panels (the ui split's base module).
+const UI_DOM_JS: &str = include_str!("../assets/ui-dom.js");
+
+/// Dashboard panels (sessions list, tool heatmap, packs).
+const UI_DASHBOARD_JS: &str = include_str!("../assets/ui-dashboard.js");
+
+/// History panels (trends, scheduled-run history, changed files).
+const UI_HISTORY_JS: &str = include_str!("../assets/ui-history.js");
+
+/// The team grid panel (cells, budget, Warp-precedence aggregate).
+const UI_TEAM_JS: &str = include_str!("../assets/ui-team.js");
+
+/// The session surface (HUD, gates, hunks, transcript, composer,
+/// replay).
+const UI_SESSION_JS: &str = include_str!("../assets/ui-session.js");
+
+/// Share surfaces (mint box + standalone reader).
+const UI_SHARE_JS: &str = include_str!("../assets/ui-share.js");
 
 /// Mark inline icon.
 const FAVICON_SVG: &str = include_str!("../assets/favicon.svg");
@@ -57,6 +76,12 @@ const JS_MODULES: &[(&str, &str)] = &[
     ("spa/store", STORE_JS),
     ("spa/share", SHARE_JS),
     ("spa/ui", UI_JS),
+    ("spa/ui-dom", UI_DOM_JS),
+    ("spa/ui-dashboard", UI_DASHBOARD_JS),
+    ("spa/ui-history", UI_HISTORY_JS),
+    ("spa/ui-team", UI_TEAM_JS),
+    ("spa/ui-session", UI_SESSION_JS),
+    ("spa/ui-share", UI_SHARE_JS),
 ];
 
 /// Content-addressed route for one artifact: `/assets/<name>-<blake3[0..12]>.<ext>`.
