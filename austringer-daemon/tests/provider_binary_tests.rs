@@ -1,6 +1,6 @@
 //! Subprocess acceptance over the SHIPPED daemon binary: the real
 //! `austringer-daemon` process, its stdout handshake, the HTTP surface,
-//! and the WebSocket protocol — no in-process state shortcuts.
+//! and the WebSocket protocol â€” no in-process state shortcuts.
 
 use std::time::Duration;
 
@@ -8,11 +8,24 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncBufReadExt;
 
 /// One spawned daemon process: parses the stdout handshake line,
-/// keeps the child alive, and kills it on drop.
+/// keeps the child alive, captures its stderr tail for failure
+/// diagnostics, and kills it on drop.
 struct Daemon {
     base: String,
     token: String,
     child: tokio::process::Child,
+    stderr_tail: std::sync::Arc<std::sync::Mutex<String>>,
+}
+
+impl Daemon {
+    /// The captured stderr tail (daemon-side errors this test was
+    /// blind to; CI receipt 2026-10-26: the cov leg burned a 90 s
+    /// health poll against a daemon whose failure was nulled).
+    fn stderr_tail(&self) -> String {
+        self.stderr_tail
+            .lock()
+            .map_or_else(|poisoned| poisoned.to_string(), |guard| guard.clone())
+    }
 }
 
 impl Drop for Daemon {
@@ -22,7 +35,9 @@ impl Drop for Daemon {
 }
 
 /// Starts the real binary with a temp data dir and a scrubbed provider
-/// environment, then waits for the `listening` handshake line.
+/// environment, then waits for the `listening` handshake line. The
+/// daemon's stderr is captured (bounded) so spawn/health failures can
+/// report what the daemon actually said.
 async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
     let data_arg = dir.path().to_string_lossy().to_string();
@@ -40,11 +55,36 @@ async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
         cmd.env_remove(var);
     }
     cmd.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     let mut child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
     std::mem::forget(dir);
     let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_owned())?;
+    let stderr_tail = {
+        let stderr = child.stderr.take().ok_or_else(|| "no stderr".to_owned())?;
+        let tail = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let sink = std::sync::Arc::clone(&tail);
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut reader = tokio::io::BufReader::new(stderr);
+            let mut chunk = [0u8; 1024];
+            loop {
+                match reader.read(&mut chunk).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if let Ok(mut guard) = sink.lock() {
+                            guard.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                            let len = guard.len();
+                            if len > 4096 {
+                                guard.replace_range(..(len - 4096), "");
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        tail
+    };
     let mut lines = tokio::io::BufReader::new(stdout).lines();
     let deadline = Duration::from_secs(60);
     let started = tokio::time::Instant::now();
@@ -54,13 +94,28 @@ async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
             .map_err(|e| format!("read timeout: {e}"))?
             .map_err(|e| format!("read: {e}"))?;
         let Some(line) = line else {
-            return Err("stdout closed".to_owned());
+            return Err(format!(
+                "stdout closed; daemon stderr: {}",
+                stderr_tail
+                    .lock()
+                    .map_or_else(|p| p.to_string(), |g| g.clone())
+            ));
         };
         if let Some((base, token)) = parse_handshake(&line) {
-            return Ok(Daemon { base, token, child });
+            return Ok(Daemon {
+                base,
+                token,
+                child,
+                stderr_tail,
+            });
         }
     }
-    Err("no handshake line within deadline".to_owned())
+    Err(format!(
+        "no handshake line within deadline; daemon stderr: {}",
+        stderr_tail
+            .lock()
+            .map_or_else(|p| p.to_string(), |g| g.clone())
+    ))
 }
 
 /// `austringer-daemon listening on http://127.0.0.1:PORT (token: TOK)`.
@@ -147,7 +202,7 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
     // coverage build).
     let client = reqwest::Client::new();
     // CI receipt 2026-10-26 (PR #15 coverage leg): even the 30 s
-    // deadline lost under the llvm-cov build on a saturated runner —
+    // deadline lost under the llvm-cov build on a saturated runner â€”
     // the daemon's bind can lag by a minute there. 90 s, exits on
     // first success.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
@@ -167,7 +222,8 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
     };
     assert!(
         last_health.is_ok_and(|r| r.status().is_success()),
-        "root must serve"
+        "root must serve; daemon stderr: {}",
+        daemon.stderr_tail()
     );
     let frames = match attach_submit_collect(&mut daemon, "m32-bin", "hello provider").await {
         Ok(frames) => frames,
