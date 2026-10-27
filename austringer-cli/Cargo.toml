@@ -13,6 +13,9 @@ workspace = true
 # Thin client over the daemon's typed protocol (todo 35): reuse of the
 # protocol types IS the client contract; no daemon logic is duplicated.
 austringer-daemon = { path = "../austringer-daemon", version = "0.1.0" }
+# Client-side daemon lifecycle (auto-spawn + readiness wait) shared
+# with the TUI; the CLI never duplicates the wiring.
+austringer-launch = { path = "../austringer-launch", version = "0.1.0" }
 # Event/content rendering + the typed image-marker and media-store
 # contracts the CLI reuses (never re-implements).
 austringer-core = { path = "../austringer-core", version = "0.1.0" }

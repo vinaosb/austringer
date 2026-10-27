@@ -324,6 +324,12 @@ async fn run() -> Result<(), String> {
     let ipc_listener = austringer_daemon::ipc::bind_ipc(&ipc_name);
 
     // Token handoff to frontends: file under the data dir + stdout.
+    // The URL file lands first so anything that waited on the token
+    // (the readiness contract) can read the bound base URL without
+    // parsing stdout.
+    let url_path = state.config.data_dir.join("daemon-url");
+    std::fs::write(&url_path, format!("http://{bound}"))
+        .map_err(|e| format!("persist url: {e}"))?;
     let token_path = state.config.data_dir.join("daemon-token");
     std::fs::write(&token_path, &state.token).map_err(|e| format!("persist token: {e}"))?;
     println!(

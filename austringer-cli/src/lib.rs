@@ -9,6 +9,7 @@
 //! given).
 
 pub mod attach;
+pub mod autospawn;
 pub mod cli;
 pub mod client;
 pub mod doctor;

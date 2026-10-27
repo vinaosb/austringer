@@ -587,6 +587,7 @@ dependencies = [
  "async-trait",
  "austringer-core",
  "austringer-daemon",
+ "austringer-launch",
  "austringer-mcp",
  "austringer-safety",
  "austringer-sessions",
@@ -702,6 +703,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "austringer-launch"
+version = "0.1.1"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

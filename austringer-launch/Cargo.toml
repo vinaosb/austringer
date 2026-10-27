@@ -1,0 +1,22 @@
+[package]
+name = "austringer-launch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Detached spawn + readiness wait run on tokio (callers are async
+# frontends); startup errors surface through stderr inheritance.
+tokio = { workspace = true, features = ["process"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Console"] }
