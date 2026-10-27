@@ -1,6 +1,6 @@
 //! Subprocess acceptance over the SHIPPED daemon binary: the real
 //! `austringer-daemon` process, its stdout handshake, the HTTP surface,
-//! and the WebSocket protocol — no in-process state shortcuts.
+//! and the WebSocket protocol â€” no in-process state shortcuts.
 
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ impl Daemon {
     fn stderr_tail(&self) -> String {
         self.stderr_tail
             .lock()
-            .map_or_else(|poisoned| poisoned.into_string(), |guard| guard.clone())
+            .map_or_else(|poisoned| poisoned.to_string(), |guard| guard.clone())
     }
 }
 
@@ -98,7 +98,7 @@ async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
                 "stdout closed; daemon stderr: {}",
                 stderr_tail
                     .lock()
-                    .map_or_else(|p| p.into_string(), |g| g.clone())
+                    .map_or_else(|p| p.to_string(), |g| g.clone())
             ));
         };
         if let Some((base, token)) = parse_handshake(&line) {
@@ -114,7 +114,7 @@ async fn spawn_binary(args: &[&str]) -> Result<Daemon, String> {
         "no handshake line within deadline; daemon stderr: {}",
         stderr_tail
             .lock()
-            .map_or_else(|p| p.into_string(), |g| g.clone())
+            .map_or_else(|p| p.to_string(), |g| g.clone())
     ))
 }
 
@@ -202,7 +202,7 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
     // coverage build).
     let client = reqwest::Client::new();
     // CI receipt 2026-10-26 (PR #15 coverage leg): even the 30 s
-    // deadline lost under the llvm-cov build on a saturated runner —
+    // deadline lost under the llvm-cov build on a saturated runner â€”
     // the daemon's bind can lag by a minute there. 90 s, exits on
     // first success.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
