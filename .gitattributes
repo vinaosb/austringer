@@ -14,3 +14,8 @@ austringer-daemon/src/grammar.json text eol=lf
 # overrides autocrlf on every platform; the committed blobs are LF.
 # (Same discipline as grammar.json above, commit c836542.)
 austringer-daemon/tests/fixtures/** text eol=lf
+
+# Raw-fetched shell scripts (install.sh is piped straight to `sh` from
+# raw.githubusercontent.com): a CRLF blob would break POSIX sh on every
+# non-Windows platform, so eol=lf overrides autocrlf on every checkout.
+*.sh text eol=lf
