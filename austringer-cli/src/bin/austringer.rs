@@ -18,6 +18,7 @@ use austringer_cli::repl;
 use austringer_cli::run::{self, RunOptions};
 use austringer_cli::sessions;
 use austringer_cli::target::{Target, TargetSpec, default_session};
+use austringer_cli::web;
 use clap::Parser as _;
 
 fn main() -> ExitCode {
@@ -69,6 +70,9 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
             SessionsCommand::List => sessions::list(&spec).await,
             SessionsCommand::History(args) => sessions::history(&spec, &args.session).await,
         };
+    }
+    if let Command::Web(args) = &command {
+        return web::open(&spec, args.no_browser).await;
     }
     let target = autospawn::resolve_target(&spec).await?;
     let allow_spawn = spec.url.is_none() && spec.token.is_none();
@@ -132,6 +136,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
         }
         Command::Mcp(_) => unreachable!("mcp dispatched before transport resolution"),
         Command::Sessions(_) => unreachable!("sessions dispatched before transport resolution"),
+        Command::Web(_) => unreachable!("web dispatched before transport resolution"),
     }
 }
 

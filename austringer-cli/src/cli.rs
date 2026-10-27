@@ -69,6 +69,16 @@ pub enum Command {
     /// Session-store surface over the daemon's HTTP routes (todo 11:
     /// transcript search; todo 22: session list + run history).
     Sessions(SessionsArgs),
+    /// Ensure the daemon is running and open its served web dashboard.
+    Web(WebArgs),
+}
+
+/// `web` arguments.
+#[derive(Debug, Args)]
+pub struct WebArgs {
+    /// Print the dashboard URL without launching a browser.
+    #[arg(long = "no-browser")]
+    pub no_browser: bool,
 }
 
 /// `mcp` arguments.
