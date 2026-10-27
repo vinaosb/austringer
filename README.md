@@ -69,6 +69,9 @@ iwr -useb https://raw.githubusercontent.com/vinaosb/austringer/main/install.ps1 
 
 Both accept a pinned tag (`install.sh v0.1.2` / `install.ps1 -Tag v0.1.2`)
 and delegate to the official per-app installers, which verify checksums.
+On macOS/Linux, [Homebrew](https://brew.sh) works too:
+`brew install vinaosb/austringer/austringer-cli` (same tap serves
+`austringer-daemon` and `austringer-tui`).
 Individual installers remain available per app (`austringer-cli-installer`,
 `austringer-daemon-installer`, `austringer-tui-installer` — add `.sh` or
 `.ps1`), and the release archives are `cargo binstall`-compatible by
