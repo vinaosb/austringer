@@ -11,6 +11,54 @@ task-N evidence lives in `.omo/evidence/`, internal).
 
 (none yet)
 
+## [0.1.2] - 2026-10-27
+
+The launch wave: `austringer` just starts (research §34.2, the
+daemon-by-default convergence receipt — opencode 2.0, Codex `/daemon`,
+Amp shared runners). Installers and the container image attach to this
+tag via the Release workflow; the Homebrew tap
+([vinaosb/homebrew-austringer](https://github.com/vinaosb/homebrew-austringer))
+receives its first formulae.
+
+### Added — the just-starts launch posture
+
+- **Client auto-spawn** (#27): on the pure default transport (no
+  `--url`/`--token`), a missing token or a dead daemon spawns one
+  `austringer-daemon` and retries exactly once, with a visible notice
+  (pid, loopback-only, token path). `AUSTRINGER_NO_AUTOSPAWN=1` keeps
+  a typed refusal. New `austringer-launch` crate: binary lookup
+  (explicit env override must exist or the error names it — never a
+  silent fallback), detached spawn, readiness wait on the token-file
+  change (the bind-before-token contract), terminal-aware stderr.
+- **The daemon writes `daemon-url`** (bound base URL) just before the
+  token, so clients never parse daemon stdout (#27).
+- **Bare `austringer` execs the TUI** (#28, via #31) — the
+  codex/opencode default-experience pattern; subcommands stay for
+  scripts. The TUI is ported to clap (`--help` works) and attaches by
+  discovery (`daemon-url` + probe) or auto-spawn, no `--url` needed.
+- **`austringer web`** (#29, via #31): ensures the daemon, prints the
+  dashboard URL, opens the browser unless `--no-browser`; a missing
+  opener is a printed hint, never a failure.
+- **One-command install** (#32): `install.sh` / `install.ps1` at the
+  repo root install CLI, daemon, and TUI from the SAME release (latest
+  or a pinned tag), delegating to the checksum-verifying official
+  installers.
+- **The TUI ships in release artifacts** (#26) and **Homebrew
+  formulae** publish to the tap on every release (#33).
+
+### Fixed
+
+- **Windows handle-inheritance pipe hold** (#27): a detached child
+  inherits every inheritable handle, so a spawned daemon held an
+  ancestor's stdout pipe forever — `austringer capture | jq` would
+  wedge until the daemon died. Inherit flags are now cleared around
+  the spawn (except an inherited terminal stderr).
+- **Daemon startup prints no longer panic on a closed stdout pipe**
+  (#35): `println!` panics on EPIPE; a parent that piped the daemon's
+  stdout and stopped reading killed it before the first request (the
+  root cause behind four burned CI health-poll deadlines — 30 s ×2,
+  90 s, 180 s — finally caught by the #15 stderr diagnostics).
+
 ## [0.1.1] - 2026-10-25
 
 The first austringer-named release: everything below previously sat under

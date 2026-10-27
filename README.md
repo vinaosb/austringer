@@ -53,7 +53,7 @@ The corollaries:
 ## Install
 
 No Rust toolchain required — the Release workflow ships installer scripts and
-a multi-arch container for every tagged release (latest: **v0.1.1**). One
+a multi-arch container for every tagged release (latest: **v0.1.2**). One
 command installs all three apps from the same release:
 
 ```sh
