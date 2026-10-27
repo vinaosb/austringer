@@ -14,6 +14,10 @@ workspace = true
 # zero timers); only the daemon WebSocket client task runs on tokio.
 [dependencies]
 austringer-daemon = { path = "../austringer-daemon", version = "0.1.0" }
+# Client-side daemon lifecycle: the default (no --url) target uses
+# daemon-url discovery + auto-spawn, same as the CLI.
+austringer-launch = { path = "../austringer-launch", version = "0.1.0" }
+clap.workspace = true
 # Protocol v1 `recorded` frames carry austringer-core events by value; the
 # transcript reducer must match on them (already in the tree via
 # austringer-daemon).

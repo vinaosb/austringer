@@ -24,6 +24,15 @@ pub const URL_FILENAME: &str = "daemon-url";
 /// installs).
 pub const DAEMON_BIN_ENV: &str = "AUSTRINGER_DAEMON_BIN";
 
+/// Environment override naming the TUI binary (tests, relocatable
+/// installs).
+pub const TUI_BIN_ENV: &str = "AUSTRINGER_TUI_BIN";
+
+/// Default daemon data dir and IPC name, mirroring the daemon
+/// binary's `DaemonConfig::default()`.
+pub const DEFAULT_DATA_DIR: &str = ".austringer-daemon";
+pub const DEFAULT_IPC_NAME: &str = "austringer-daemon";
+
 /// Set to `1` to refuse auto-spawn: clients then fail with a typed
 /// error telling the user to start the daemon themselves.
 pub const NO_AUTOSPAWN_ENV: &str = "AUSTRINGER_NO_AUTOSPAWN";
@@ -39,10 +48,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 #[derive(Debug, thiserror::Error)]
 pub enum LaunchError {
     #[error(
-        "austringer-daemon not found next to the client or on PATH; \
-         install it alongside or set {DAEMON_BIN_ENV}"
+        "{which} not found next to the client or on PATH; install it \
+         alongside or set {env}"
     )]
-    DaemonNotFound,
+    BinaryNotFound { which: String, env: String },
     #[error(
         "auto-spawn refused ({NO_AUTOSPAWN_ENV}=1); start austringer-daemon \
          manually or unset the variable"
@@ -82,21 +91,43 @@ pub struct Spawned {
 /// the running executable (the installer layout), then `PATH`.
 ///
 /// # Errors
-/// [`LaunchError::DaemonNotFound`] when no candidate exists.
+/// [`LaunchError::BinaryNotFound`] when no candidate exists.
 pub fn find_daemon_exe() -> Result<PathBuf, LaunchError> {
-    if let Some(set) = override_from(std::env::var(DAEMON_BIN_ENV).ok().as_deref()) {
-        return Ok(set);
+    locate_exe(DAEMON_BIN_ENV, &daemon_binary_name())
+}
+
+/// Resolve the TUI binary the same way [`find_daemon_exe`] resolves
+/// the daemon (env override, exe-dir sibling, `PATH`).
+///
+/// # Errors
+/// [`LaunchError::BinaryNotFound`] when no candidate exists.
+pub fn find_tui_exe() -> Result<PathBuf, LaunchError> {
+    locate_exe(TUI_BIN_ENV, &tui_binary_name())
+}
+
+fn locate_exe(env_key: &str, name: &str) -> Result<PathBuf, LaunchError> {
+    let not_found = || LaunchError::BinaryNotFound {
+        which: name.trim_end_matches(".exe").to_owned(),
+        env: env_key.to_owned(),
+    };
+    // An explicit override is honored exactly: it must exist, or the
+    // error names it (never silently fall back to a sibling/PATH hit).
+    if let Some(set) = override_from(std::env::var(env_key).ok().as_deref()) {
+        return if set.is_file() {
+            Ok(set)
+        } else {
+            Err(not_found())
+        };
     }
-    let name = daemon_binary_name();
     if let Ok(self_exe) = std::env::current_exe()
         && let Some(dir) = self_exe.parent()
     {
-        let sibling = dir.join(&name);
+        let sibling = dir.join(name);
         if sibling.is_file() {
             return Ok(sibling);
         }
     }
-    search_path(&name).ok_or(LaunchError::DaemonNotFound)
+    search_path(name).ok_or_else(not_found)
 }
 
 /// Spawn the daemon detached, announce it, and wait for readiness
@@ -210,6 +241,14 @@ fn daemon_binary_name() -> String {
         "austringer-daemon.exe".to_owned()
     } else {
         "austringer-daemon".to_owned()
+    }
+}
+
+fn tui_binary_name() -> String {
+    if cfg!(windows) {
+        "austringer-tui.exe".to_owned()
+    } else {
+        "austringer-tui".to_owned()
     }
 }
 

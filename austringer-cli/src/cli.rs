@@ -45,10 +45,12 @@ pub struct Cli {
     pub output_json: bool,
 
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
-/// The five daemon subcommands plus the daemon-less `mcp` family.
+/// The five daemon subcommands plus the daemon-less `mcp` family;
+/// `None` (bare `austringer`) execs the TUI — the codex/opencode
+/// default-experience pattern (research §34.2).
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Run one headless turn and print its result.
@@ -67,6 +69,16 @@ pub enum Command {
     /// Session-store surface over the daemon's HTTP routes (todo 11:
     /// transcript search; todo 22: session list + run history).
     Sessions(SessionsArgs),
+    /// Ensure the daemon is running and open its served web dashboard.
+    Web(WebArgs),
+}
+
+/// `web` arguments.
+#[derive(Debug, Args)]
+pub struct WebArgs {
+    /// Print the dashboard URL without launching a browser.
+    #[arg(long = "no-browser")]
+    pub no_browser: bool,
 }
 
 /// `mcp` arguments.

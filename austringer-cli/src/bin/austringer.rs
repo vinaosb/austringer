@@ -11,12 +11,14 @@ use austringer_cli::cli::{Cli, Command, SessionsArgs, SessionsCommand};
 use austringer_cli::client::{Connect, LIVE_ONLY};
 use austringer_cli::doctor::{DoctorOptions, doctor};
 use austringer_cli::error::CliError;
+use austringer_cli::frontdoor;
 use austringer_cli::image;
 use austringer_cli::mcp;
 use austringer_cli::repl;
 use austringer_cli::run::{self, RunOptions};
 use austringer_cli::sessions;
 use austringer_cli::target::{Target, TargetSpec, default_session};
+use austringer_cli::web;
 use clap::Parser as _;
 
 fn main() -> ExitCode {
@@ -41,10 +43,15 @@ fn main() -> ExitCode {
 }
 
 async fn dispatch(cli: Cli) -> Result<i32, CliError> {
+    // Bare `austringer` is the TUI front door (subcommands stay for
+    // scripts; the interactive client is the product).
+    let Some(command) = cli.command else {
+        return frontdoor::exec_tui();
+    };
     // `mcp` commands are daemon-less (scan/serve/call never contact
     // the daemon), so they run before transport resolution — no token
     // file is required to inspect configs or serve stdio.
-    if let Command::Mcp(args) = &cli.command {
+    if let Command::Mcp(args) = &command {
         return mcp::run(&args.command).await;
     }
     let spec = TargetSpec {
@@ -57,17 +64,20 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
     // (the IPC carrier has no HTTP base), so it checks its transport
     // BEFORE resolve — a missing --url is the typed hint, not a
     // token-file failure.
-    if let Command::Sessions(SessionsArgs { command }) = &cli.command {
-        return match command {
+    if let Command::Sessions(SessionsArgs { command: sessions }) = &command {
+        return match sessions {
             SessionsCommand::Search(args) => sessions::search(&spec, args).await,
             SessionsCommand::List => sessions::list(&spec).await,
             SessionsCommand::History(args) => sessions::history(&spec, &args.session).await,
         };
     }
+    if let Command::Web(args) = &command {
+        return web::open(&spec, args.no_browser).await;
+    }
     let target = autospawn::resolve_target(&spec).await?;
     let allow_spawn = spec.url.is_none() && spec.token.is_none();
     let images = image::attachments(&cli.images, false)?;
-    match cli.command {
+    match command {
         Command::Run(args) => {
             let session = args.session.unwrap_or_else(default_session);
             let options = RunOptions {
@@ -126,6 +136,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
         }
         Command::Mcp(_) => unreachable!("mcp dispatched before transport resolution"),
         Command::Sessions(_) => unreachable!("sessions dispatched before transport resolution"),
+        Command::Web(_) => unreachable!("web dispatched before transport resolution"),
     }
 }
 

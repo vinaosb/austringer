@@ -121,8 +121,8 @@ a local-socket IPC carrier):
 | Frontend | What it is | Entry point |
 | --- | --- | --- |
 | CLI | headless `run`/`capture`, REPL, `attach` event tail, `doctor`, `--output-json` NDJSON for eval drivers | `austringer-cli` |
-| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`), hunk review gates | `austringer-tui` |
-| Web | dashboard SPA served by the daemon itself (no node server): live session, hunk review, cost/cache/context dashboards | daemon URL in a browser |
+| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`), hunk review gates | `austringer` (no arguments) · `austringer-tui` |
+| Web | dashboard SPA served by the daemon itself (no node server): live session, hunk review, cost/cache/context dashboards | `austringer web` · the daemon URL in a browser |
 | VS Code | TypeScript thin client: native diff decorations, per-hunk code lenses, editor telemetry (opt-in), command palette | `austringer-vscode` |
 
 Multiple clients can attach to one session simultaneously; a permission granted
