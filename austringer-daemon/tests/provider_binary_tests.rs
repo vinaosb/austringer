@@ -205,7 +205,13 @@ async fn unconfigured_daemon_fails_typed_over_the_wire() {
     // deadline lost under the llvm-cov build on a saturated runner â€”
     // the daemon's bind can lag by a minute there. 90 s, exits on
     // first success.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
+    // Existence gate, not a perf budget (PR #24 ruling): the
+    // uninstrumented run answers in ~0.1 s, but coverage builds on
+    // saturated 2-core runners have needed the full ceiling (receipts:
+    // PR #15 cov leg x2 at 30 s, PR #26 archive leg at 90 s — daemon
+    // startup work between TCP bind and the serve loop starves under
+    // instrumentation). 180 s bounds existence only.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(180);
     let last_health = loop {
         let response = client
             .get(format!("http://{}/", daemon.base))
