@@ -53,30 +53,29 @@ The corollaries:
 ## Install
 
 No Rust toolchain required — the Release workflow ships installer scripts and
-a multi-arch container for every tagged release (latest: **v0.1.1**). The
-CLI, daemon, and TUI install as separate apps:
+a multi-arch container for every tagged release (latest: **v0.1.1**). One
+command installs all three apps from the same release:
 
 ```sh
-# macOS / Linux — CLI (austringer), daemon (austringer-daemon), TUI (austringer-tui)
+# macOS / Linux — austringer (CLI), austringer-daemon, austringer-tui
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/vinaosb/austringer/releases/latest/download/austringer-cli-installer.sh | sh
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/vinaosb/austringer/releases/latest/download/austringer-daemon-installer.sh | sh
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/vinaosb/austringer/releases/latest/download/austringer-tui-installer.sh | sh
+  https://raw.githubusercontent.com/vinaosb/austringer/main/install.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell)
-iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-cli-installer.ps1 | iex
-iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-daemon-installer.ps1 | iex
-iwr -useb https://github.com/vinaosb/austringer/releases/latest/download/austringer-tui-installer.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/vinaosb/austringer/main/install.ps1 | iex
 ```
 
-The release archives are `cargo binstall`-compatible by construction, so
-`cargo install cargo-binstall && cargo binstall austringer-cli` also works
-once the crates are published. A daemon+CLI container image is published to
-GHCR by the same pipeline (see `publish-container.yml`).
+Both accept a pinned tag (`install.sh v0.1.2` / `install.ps1 -Tag v0.1.2`)
+and delegate to the official per-app installers, which verify checksums.
+Individual installers remain available per app (`austringer-cli-installer`,
+`austringer-daemon-installer`, `austringer-tui-installer` — add `.sh` or
+`.ps1`), and the release archives are `cargo binstall`-compatible by
+construction, so `cargo install cargo-binstall && cargo binstall
+austringer-cli` also works once the crates are published. A daemon+CLI
+container image is published to GHCR by the same pipeline (see
+`publish-container.yml`).
 
 After installing: `austringer doctor` health-checks config, sandbox, MCP,
 sessions, and env in one pass.
