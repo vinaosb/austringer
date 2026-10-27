@@ -9,6 +9,7 @@ members = [
     "austringer-evals",
     "austringer-exec",
     "austringer-intel",
+    "austringer-launch",
     "austringer-lsp",
     "austringer-mcp",
     "austringer-media",

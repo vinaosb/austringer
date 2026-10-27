@@ -6,8 +6,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use austringer_cli::attach;
+use austringer_cli::autospawn;
 use austringer_cli::cli::{Cli, Command, SessionsArgs, SessionsCommand};
-use austringer_cli::client::{Connect, LIVE_ONLY, SessionTransport};
+use austringer_cli::client::{Connect, LIVE_ONLY};
 use austringer_cli::doctor::{DoctorOptions, doctor};
 use austringer_cli::error::CliError;
 use austringer_cli::image;
@@ -63,7 +64,8 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
             SessionsCommand::History(args) => sessions::history(&spec, &args.session).await,
         };
     }
-    let target = Target::resolve(&spec)?;
+    let target = autospawn::resolve_target(&spec).await?;
+    let allow_spawn = spec.url.is_none() && spec.token.is_none();
     let images = image::attachments(&cli.images, false)?;
     match cli.command {
         Command::Run(args) => {
@@ -73,7 +75,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
                 timeout: Duration::from_secs(args.timeout.unwrap_or(120)),
             };
             let connect = connect_for(&spec, &target, &session, LIVE_ONLY);
-            let mut transport = SessionTransport::connect(&connect).await?;
+            let mut transport = autospawn::connect_transport(&connect, allow_spawn).await?;
             run::run(
                 &mut transport,
                 &args.prompt.join(" "),
@@ -86,7 +88,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
         Command::Capture(args) => {
             let session = args.session.unwrap_or_else(default_session);
             let connect = connect_for(&spec, &target, &session, LIVE_ONLY);
-            let mut transport = SessionTransport::connect(&connect).await?;
+            let mut transport = autospawn::connect_transport(&connect, allow_spawn).await?;
             run::capture(
                 &mut transport,
                 &args.prompt.join(" "),
@@ -98,7 +100,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
         Command::Repl(args) => {
             let session = args.session.unwrap_or_else(default_session);
             let connect = connect_for(&spec, &target, &session, LIVE_ONLY);
-            let mut transport = SessionTransport::connect(&connect).await?;
+            let mut transport = autospawn::connect_transport(&connect, allow_spawn).await?;
             repl::repl(
                 &mut transport,
                 &images,
@@ -110,7 +112,7 @@ async fn dispatch(cli: Cli) -> Result<i32, CliError> {
             let session = args.session.unwrap_or_else(default_session);
             let after = args.after.unwrap_or(0);
             let connect = connect_for(&spec, &target, &session, after);
-            let mut transport = SessionTransport::connect(&connect).await?;
+            let mut transport = autospawn::connect_transport(&connect, allow_spawn).await?;
             attach::attach(&mut transport, cli.output_json, args.max_events).await
         }
         Command::Doctor(args) => {
