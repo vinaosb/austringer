@@ -3,7 +3,7 @@
 **Generated:** 2026-10-25 (regenerated for the harness→austringer rename)
 
 ## OVERVIEW
-One small Rust daemon runs an AI coding agent; four thin clients attach (CLI, TUI, browser SPA, VS Code). 25 Rust workspace crates + TS extension. Every design decision cites a receipt from `.omo/research/harness-research.md` (40-section post-mortem study of 25+ harnesses — the file keeps its category-descriptive name). Public name: **austringer** (decision record: `.omo/research/naming-decision.md`).
+One small Rust daemon runs an AI coding agent; four thin clients attach (CLI, TUI, browser SPA, VS Code). 26 Rust workspace crates + TS extension. Every design decision cites a receipt from `.omo/research/harness-research.md` (40-section post-mortem study of 25+ harnesses — the file keeps its category-descriptive name). Public name: **austringer** (decision record: `.omo/research/naming-decision.md`).
 
 ## STRUCTURE
 ```
@@ -14,6 +14,7 @@ austringer-cli/       # thin client: run/capture/REPL/attach/doctor, NDJSON for 
 austringer-tui/       # ratatui client: HUD, diffs accordion, modals, insta snapshots
 austringer-vscode/    # TS extension (NOT a cargo member), node --test with type stripping
 austringer-web/       # daemon-served SPA (no node server) + e2e runner
+austringer-launch/    # client-side daemon lifecycle: autospawn, socket handoff, TUI discovery (shared by cli+tui)
 austringer-sessions/  # SQLite + XChaCha20-Poly1305 store, event_fts, lazy paging
 austringer-intel/     # model catalog seed + routing surface (R2 grids, trap rows)
 docs/                 # AsciiDoc "depth layer"; manual.adoc composed from partials/ via include::; CI deploys Pages

@@ -156,10 +156,10 @@ allocation metrics. All numbers above are reproducible:
 
 ## Architecture
 
-One daemon, a 25-crate Cargo workspace, four thin clients:
+One daemon, a 26-crate Cargo workspace, four thin clients:
 
 ```
- thin clients ── cli · tui · web SPA (daemon-served) · vscode
+ thin clients ── cli · tui (shared spawner: launch) · web SPA (daemon-served) · vscode
                      │   WS/SSE/HTTP on loopback (token) + local IPC
                      ▼
               austringer-daemon
@@ -279,7 +279,12 @@ Library-tested, not yet wired into the shipped binaries: `austringer-repomap`
 and `austringer-search` (zero daemon dependents today), the wasm plugin
 runtime (feature-gated, off by default), OAuth device-flow auth,
 orchestration best-of-N / plan-branch comparison (the spec-driven launch
-path and fork-join children **are** wired), and the worker
+path and fork-join children **are** wired), the VFS shadow-preflight edit
+path (`austringer-vfs` + `exec::preflight`, no daemon caller yet), semantic
+hunk staging (`austringer-tools` hunks/staged-apply), sessions dream
+consolidation, the core `PromptBuilder`/`ContextSpec` composition surface
+with its cache-violation tracker (the wire-level stable-prefix gate itself
+is perf-gate-wired), and the worker
 (out-of-process executor) protocol — deliberately reserved.
 
 ## Migrating from another harness

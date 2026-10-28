@@ -51,7 +51,7 @@ shared permission queue, research §1).
 [[crate-map]]
 == The workspace map
 
-Twenty-five Cargo crates plus the TypeScript VS Code project. Grouped by
+Twenty-six Cargo crates plus the TypeScript VS Code project. Grouped by
 layer:
 
 [cols="1,3,2"]
@@ -159,6 +159,11 @@ resolution.
 |The state owner: HTTP/WS/SSE + IPC protocol, multi-client attach with
 mediated permissions, scheduler, notifications, web SPA serving, hardened
 auth (token + Host-header checks).
+|surfaces
+
+|austringer-launch
+|Client-side daemon lifecycle shared by the CLI and TUI: autospawn,
+socket handoff on restart, TUI binary discovery.
 |surfaces
 
 |austringer-cli, austringer-tui, austringer-web, austringer-vscode
