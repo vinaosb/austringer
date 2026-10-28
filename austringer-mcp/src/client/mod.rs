@@ -8,6 +8,7 @@
 mod connect;
 mod descriptors;
 
+pub use connect::connect_retry_delay;
 pub use descriptors::{PromptDescriptor, ResourceDescriptor, ToolDescriptor};
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

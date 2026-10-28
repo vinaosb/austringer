@@ -274,7 +274,11 @@ fn curated_kit(
                     .register(Arc::new(TaskTool::new(session_dir, Arc::clone(services))))
                     .expect("register task tool");
             }
-            Box::new(RegistryToolExecutor::open(registry))
+            let tools = {
+                let pinned = registry.pin_current();
+                registry.pinned_wire_tools(&pinned)
+            };
+            (Box::new(RegistryToolExecutor::open(registry)), tools)
         })
     };
     let mut state = DaemonState::new(config, factory).expect("daemon state");

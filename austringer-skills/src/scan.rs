@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::SkillError;
 use crate::loader::{ScanReport, ShadowRecord, Vendor};
+use crate::lock::SkillsLockFile;
 use crate::skill::{SkillMeta, SkillName, SkillParseError, SkillWarning, parse_skill_document};
 
 const MAX_DEPTH: u32 = 8;
@@ -16,7 +17,8 @@ const SKIP_DIRS: [&str; 3] = ["node_modules", "target", "__pycache__"];
 /// Accumulates discovery output for one load run.
 #[derive(Debug, Default)]
 pub(crate) struct ScanState {
-    pub found: Vec<(SkillMeta, Vec<SkillWarning>)>,
+    /// (meta, blake3 content hash of the SKILL.md bytes, warnings).
+    pub found: Vec<(SkillMeta, String, Vec<SkillWarning>)>,
     pub parse_errors: Vec<SkillParseError>,
     pub partials: BTreeMap<String, String>,
     pub partial_paths: Vec<PathBuf>,
@@ -77,10 +79,11 @@ impl ScanState {
                 match std::fs::read(&path) {
                     Ok(bytes) => match parse_skill_document(&path, &dir_name, &bytes) {
                         Ok((mut meta, warnings)) => {
+                            let content_hash = SkillsLockFile::hash_bytes(&bytes);
                             meta.vendor = vendor;
                             meta.scope = scope.map(Path::to_path_buf);
                             meta.skill_dir = dir.to_path_buf();
-                            self.found.push((meta, warnings));
+                            self.found.push((meta, content_hash, warnings));
                         }
                         Err(kind) => self.parse_errors.push(kind),
                     },
@@ -151,22 +154,25 @@ impl ScanState {
 
 /// Dedups discovered skills by name: highest vendor precedence wins, ties
 /// keep the first scanned; losers become shadow records (ascending
-/// precedence order). Warnings were already drained by the caller.
+/// precedence order). The winner's scan-time content hash rides through
+/// to the index entry. Warnings were already drained by the caller.
 pub(crate) fn dedup(
-    found: Vec<(SkillMeta, Vec<SkillWarning>)>,
+    found: Vec<(SkillMeta, String, Vec<SkillWarning>)>,
     report: &mut ScanReport,
-) -> BTreeMap<SkillName, (SkillMeta, PathBuf)> {
-    let mut winners: BTreeMap<SkillName, (SkillMeta, PathBuf)> = BTreeMap::new();
+) -> BTreeMap<SkillName, (SkillMeta, String, PathBuf)> {
+    let mut winners: BTreeMap<SkillName, (SkillMeta, String, PathBuf)> = BTreeMap::new();
     let mut shadows: Vec<ShadowRecord> = Vec::new();
-    for (meta, _warnings) in found {
+    for (meta, content_hash, _warnings) in found {
         let skill_md = meta.skill_dir.join("SKILL.md");
-        let lost_to = winners.get(&meta.name).map(|(w, _)| w.vendor);
+        let lost_to = winners.get(&meta.name).map(|(w, _, _)| w.vendor);
         let replace = match lost_to {
             Some(existing) => meta.vendor > existing,
             None => true,
         };
         if replace {
-            if let Some((old, _)) = winners.insert(meta.name.clone(), (meta.clone(), skill_md)) {
+            if let Some((old, _, _)) =
+                winners.insert(meta.name.clone(), (meta, content_hash, skill_md))
+            {
                 shadows.push(ShadowRecord {
                     name: old.name.to_string(),
                     vendor: old.vendor,

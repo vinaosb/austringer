@@ -17,6 +17,14 @@ mod steerer;
 pub use sink::{EventStreamSink, HostResolver};
 pub use steerer::SharedSteerer;
 
+/// The session system prompt riding every inference request (the
+/// stable-first prefix, research §24.6). Frozen by construction: no
+/// timestamps, paths, or session state ever enter it — a byte change
+/// here invalidates every session's provider prefix cache.
+pub const SESSION_SYSTEM_PROMPT: &str = "You are austringer, a local-first coding agent. \
+Work inside the user's repository through the declared tools, respect approval gates and \
+budgets, prefer the smallest correct change, and report outcomes concretely.";
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -88,7 +96,12 @@ impl SessionHost {
         let mut engine = AgentLoop::open(&session_dir, loop_config, stages, inference)?;
         let host = Arc::clone(self);
         let cancel = engine.cancel_handle();
-        let mut published_through: usize = 0;
+        // Resume-safe start: events replayed by `AgentLoop::open` were
+        // already published (and persisted) by the previous host —
+        // publishing resumes AFTER them, or an evicted-and-recreated
+        // session would re-broadcast its entire history to the hub and
+        // re-append it to the sessions store on the next turn.
+        let mut published_through: usize = engine.events().len();
         tokio::spawn(async move {
             while let Some(command) = cmd_rx.recv().await {
                 match command {
@@ -127,6 +140,9 @@ impl SessionHost {
                     HostCommand::Cancel => cancel.cancel(),
                 }
             }
+            // Eviction closed the lane: the engine (and its transcript
+            // mirror) drops with this task's future.
+            host.mark_engine_task_finished();
         });
         Ok(())
     }
@@ -135,12 +151,14 @@ impl SessionHost {
     /// surface it on the event stream.
     pub(crate) fn record_signal(&self, text: &str) {
         if let Some(root) = &self.journal_root
-            && let Ok(mut journal) =
-                crate::journal::Journal::open(&crate::journal::turn_journal_path(
+            && let Ok(mut journal) = crate::journal::Journal::open_capped(
+                &crate::journal::turn_journal_path(
                     root,
                     self.session_id(),
                     self.turn_counter.load(Ordering::SeqCst).max(1),
-                ))
+                ),
+                self.journal_max_bytes(),
+            )
         {
             let _ = journal.record(crate::journal::JournalStep::Signal {
                 text: text.to_owned(),
@@ -159,9 +177,19 @@ impl SessionHost {
         kickoff: TurnKickoff,
         published_through: &mut usize,
     ) {
+        // RAII: an in-flight turn blocks idle eviction (and a panicked
+        // engine still unwinds the flag).
+        let _in_flight = crate::attach::InFlightTurn::mark(self);
+        self.mark_activity();
         let turn = self.turn_counter.fetch_add(1, Ordering::SeqCst) + 1;
         let mut workflow = self.journal_root.as_ref().and_then(|root| {
-            crate::durable::TurnWorkflow::open(root, self.session_id(), turn).ok()
+            crate::durable::TurnWorkflow::open_capped(
+                root,
+                self.session_id(),
+                turn,
+                self.journal_max_bytes(),
+            )
+            .ok()
         });
         if let Some(workflow) = workflow.as_mut() {
             let _ = workflow.begin(&kickoff.journal_text());
@@ -184,12 +212,18 @@ impl SessionHost {
         // Recorded frames, so a client that saw the events can find
         // them through `sessions search` immediately.
         self.persist_session_events(&new_events);
-        for recorded in new_events {
+        for recorded in &new_events {
             self.publish(crate::protocol::SessionEvent::Recorded {
                 seq: recorded.seq.0,
-                event: recorded.event,
+                event: recorded.event.clone(),
             });
         }
+        // Checkpoint recording wraps the pipeline's OUTSIDE: the turn
+        // is done and tools are quiet (the crate's safe boundary), and
+        // TurnFinished is held until the checkpoint lands so a client
+        // that saw the finish can /rewind immediately. Fail-open with
+        // notice — a recording failure never kills the turn.
+        self.record_turn_checkpoint(turn, &new_events).await;
         self.publish(crate::protocol::SessionEvent::TurnFinished {
             turn,
             outcome: outcome_text.clone(),
@@ -270,6 +304,7 @@ impl SessionHost {
             executor,
             Arc::clone(self),
         ));
+        crate::compaction::wire_stages(&mut stages, self.compaction.get().cloned());
         stages
     }
 
@@ -303,6 +338,7 @@ impl SessionHost {
             allowlist,
         ));
         stages.execution = executor;
+        crate::compaction::wire_stages(&mut stages, self.compaction.get().cloned());
         stages
     }
 }

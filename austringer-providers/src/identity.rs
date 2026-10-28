@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use austringer_core::tools::ToolSchema;
 use serde::{Deserialize, Serialize};
 
 /// The identity of a model: provider name plus model id.
@@ -109,7 +110,8 @@ impl AcknowledgedFallback {
 }
 
 /// One streaming completion request: explicit target identity, rendered
-/// model-context prompt, native media payloads for capable models,
+/// model-context prompt, the session-stable wire surfaces (system prompt
+/// and declared tool schemas), native media payloads for capable models,
 /// transport headers, and an optional acknowledged fallback audit trail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompletionRequest {
@@ -118,6 +120,22 @@ pub struct CompletionRequest {
     pub identity: ModelIdentity,
     /// The rendered model-context input (llm-visible events + focus block).
     pub prompt: String,
+    /// The stable system prompt for the provider's native system surface
+    /// (research §33.1). `None` = the legacy shape: no system field rides
+    /// the wire.
+    #[serde(default)]
+    pub system: Option<String>,
+    /// The declared tool surface for the provider's native tools shape.
+    /// Empty = no tools field rides the wire (a provider cannot emit
+    /// tool calls without declarations — research §33.1).
+    #[serde(default)]
+    pub tools: Vec<ToolSchema>,
+    /// Bytes at the END of `prompt` that mutate turn-to-turn (the
+    /// volatile focus tail; the stable-first/volatile-last layout law,
+    /// research §24.6). Native-cache adapters split the stable prefix on
+    /// this boundary; `0` = the whole prompt is stable.
+    #[serde(default)]
+    pub volatile_tail_bytes: usize,
     /// Native media payloads planned for a capable model (plan M8). The
     /// payloads carry content-addressed references plus bytes resolved at
     /// request-build time; bytes are serde-skipped and Debug-redacted so
@@ -134,24 +152,49 @@ pub struct CompletionRequest {
 
 impl CompletionRequest {
     /// Creates a request for `identity` with `prompt`. The stable
-    /// [`TurnId`] derives from the content, so a re-issued (resumed) request
-    /// keeps the same id.
+    /// [`TurnId`] derives from the content (identity, prompt, and wire
+    /// surfaces), so a re-issued (resumed) request keeps the same id.
     pub fn new(identity: ModelIdentity, prompt: impl Into<String>) -> Self {
-        let prompt = prompt.into();
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(identity.provider.as_bytes());
-        hasher.update(&[0]);
-        hasher.update(identity.model.as_bytes());
-        hasher.update(&[0]);
-        hasher.update(prompt.as_bytes());
-        Self {
+        let mut request = Self {
             identity,
-            prompt,
+            prompt: prompt.into(),
+            system: None,
+            tools: Vec::new(),
+            volatile_tail_bytes: 0,
             media: Vec::new(),
             headers: BTreeMap::new(),
             fallback: None,
-            turn_id: TurnId(hasher.finalize().to_hex().to_string()),
-        }
+            turn_id: TurnId(String::new()),
+        };
+        request.rehash();
+        request
+    }
+
+    /// Attaches the stable system prompt. An empty string attaches
+    /// nothing (the legacy shape).
+    #[must_use]
+    pub fn with_system(mut self, system: impl Into<String>) -> Self {
+        let system = system.into();
+        self.system = (!system.is_empty()).then_some(system);
+        self.rehash();
+        self
+    }
+
+    /// Attaches the declared tool surface.
+    #[must_use]
+    pub fn with_tools(mut self, tools: Vec<ToolSchema>) -> Self {
+        self.tools = tools;
+        self.rehash();
+        self
+    }
+
+    /// Declares how many trailing prompt bytes are volatile (the focus
+    /// tail). Does not change the [`TurnId`]: the id keys content, and
+    /// the tail bytes are already inside `prompt`.
+    #[must_use]
+    pub fn with_volatile_tail(mut self, bytes: usize) -> Self {
+        self.volatile_tail_bytes = bytes;
+        self
     }
 
     /// Attaches natively-delivered media (plan M8). The [`TurnId`] is
@@ -181,5 +224,27 @@ impl CompletionRequest {
     /// The stable request identity (content-derived; re-issue-stable).
     pub fn turn_id(&self) -> &TurnId {
         &self.turn_id
+    }
+
+    /// Recomputes the content-derived id over identity + prompt + wire
+    /// surfaces. The tail-byte count is layout metadata, not content,
+    /// and stays out of the hash; the media payloads stay out too (see
+    /// [`Self::with_native_media`]).
+    fn rehash(&mut self) {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(self.identity.provider.as_bytes());
+        hasher.update(&[0]);
+        hasher.update(self.identity.model.as_bytes());
+        hasher.update(&[0]);
+        hasher.update(self.prompt.as_bytes());
+        hasher.update(&[0]);
+        hasher.update(self.system.as_deref().unwrap_or_default().as_bytes());
+        hasher.update(&[0]);
+        for tool in &self.tools {
+            // Byte-stable by type: sorted-key maps, declaration-order fields.
+            hasher.update(serde_json::to_string(tool).unwrap_or_default().as_bytes());
+            hasher.update(&[0]);
+        }
+        self.turn_id = TurnId(hasher.finalize().to_hex().to_string());
     }
 }

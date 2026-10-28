@@ -22,6 +22,8 @@ pub enum ReplLine {
     Rewind(Option<u64>),
     /// `/skill …` — rides the submit lane verbatim.
     Skill(String),
+    /// `/condense` — manual context compaction (submit lane).
+    Condense,
     /// `/exit` — quit the repl.
     Exit,
     /// `/image <path>` — attach to the next submit.
@@ -67,6 +69,7 @@ pub fn parse_line(line: &str) -> ReplLine {
             true => ReplLine::Malformed(usage("skill")),
             false => ReplLine::Skill(format!("/skill {rest}")),
         },
+        "condense" => ReplLine::Condense,
         "exit" => ReplLine::Exit,
         "image" => match rest.is_empty() {
             true => ReplLine::Malformed(usage("image")),
@@ -106,6 +109,8 @@ mod tests {
             parse_line("/skill audit run twice"),
             ReplLine::Skill("/skill audit run twice".into())
         );
+        assert_eq!(parse_line("/condense"), ReplLine::Condense);
+        assert_eq!(parse_line("/condense now"), ReplLine::Condense);
         assert_eq!(parse_line("/exit"), ReplLine::Exit);
         assert_eq!(
             parse_line("/image pic.png"),

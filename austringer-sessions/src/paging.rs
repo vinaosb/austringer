@@ -28,9 +28,11 @@ pub(crate) fn no_such_turn(id: &str, turn: u32, turns: u32) -> SessionError {
 }
 
 impl SessionHandle<'_> {
-    /// Pages in turns `from..=to`. Asserts the row count so interior
-    /// index corruption is a typed [`SessionError::CorruptIndex`], not
-    /// silent data loss.
+    /// Pages in turns `from..=to`. The whole span is read with one
+    /// range query over `[first.start, last.end]` and split into turns
+    /// in memory (the index is contiguous by construction). Asserts the
+    /// row count so interior index corruption is a typed
+    /// [`SessionError::CorruptIndex`], not silent data loss.
     ///
     /// # Errors
     /// Typed: no such turn, corrupt index, decrypt, storage.
@@ -40,7 +42,7 @@ impl SessionHandle<'_> {
         }
         let conn = self.store.lock_conn()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT turn, start_seq, end_seq FROM turn_index
                  WHERE session_id = ?1 AND turn BETWEEN ?2 AND ?3 ORDER BY turn",
             )
@@ -67,13 +69,25 @@ impl SessionHandle<'_> {
             });
         }
         drop(stmt);
-        bounds
+        let first_start = bounds.first().map_or(0, |&(_, start, _)| start);
+        let last_end = bounds.last().map_or(0, |&(_, _, end)| end);
+        let mut rows = read_rows_with_seq(self, &conn, first_start, last_end)?
             .into_iter()
-            .map(|(turn, start, end)| {
-                let events = read_range(self, &conn, start, end)?;
-                Ok(TurnPage { turn, events })
-            })
-            .collect()
+            .peekable();
+        let mut pages = Vec::with_capacity(bounds.len());
+        for (turn, start, end) in bounds {
+            while rows.peek().is_some_and(|(seq, _)| *seq < start) {
+                rows.next();
+            }
+            let mut events = Vec::new();
+            while rows.peek().is_some_and(|(seq, _)| *seq <= end) {
+                if let Some((_, recorded)) = rows.next() {
+                    events.push(recorded);
+                }
+            }
+            pages.push(TurnPage { turn, events });
+        }
+        Ok(pages)
     }
 
     /// Pages in a single turn.
@@ -123,31 +137,53 @@ pub(crate) fn decrypt_payload(
     }
 }
 
+/// Events in a sequence range (inclusive), each tagged with its row's
+/// stored sequence so callers can split one contiguous read into turns.
+fn read_rows_with_seq(
+    handle: &SessionHandle<'_>,
+    conn: &Connection,
+    from: u64,
+    to: u64,
+) -> Result<Vec<(u64, RecordedEvent)>, SessionError> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT seq, payload FROM events WHERE session_id = ?1 AND seq BETWEEN ?2 AND ?3 ORDER BY seq",
+        )
+        .map_err(SessionError::sqlite)?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![handle.meta.id, from as i64, to as i64],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?.max(0) as u64,
+                    row.get::<_, Vec<u8>>(1)?,
+                ))
+            },
+        )
+        .map_err(SessionError::sqlite)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(SessionError::sqlite)?;
+    rows.into_iter()
+        .map(|(seq, payload)| {
+            let bytes = decrypt_payload(handle, &payload)?;
+            let recorded = serde_json::from_slice::<RecordedEvent>(&bytes).map_err(|error| {
+                SessionError::Corrupt {
+                    detail: format!("event payload malformed: {error}"),
+                }
+            })?;
+            Ok((seq, recorded))
+        })
+        .collect()
+}
+
 fn read_range(
     handle: &SessionHandle<'_>,
     conn: &Connection,
     from: u64,
     to: u64,
 ) -> Result<Vec<RecordedEvent>, SessionError> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT payload FROM events WHERE session_id = ?1 AND seq BETWEEN ?2 AND ?3 ORDER BY seq",
-        )
-        .map_err(SessionError::sqlite)?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params![handle.meta.id, from as i64, to as i64],
-            |row| row.get::<_, Vec<u8>>(0),
-        )
-        .map_err(SessionError::sqlite)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(SessionError::sqlite)?;
-    rows.into_iter()
-        .map(|payload| {
-            let bytes = decrypt_payload(handle, &payload)?;
-            serde_json::from_slice::<RecordedEvent>(&bytes).map_err(|error| SessionError::Corrupt {
-                detail: format!("event payload malformed: {error}"),
-            })
-        })
-        .collect()
+    Ok(read_rows_with_seq(handle, conn, from, to)?
+        .into_iter()
+        .map(|(_, recorded)| recorded)
+        .collect())
 }

@@ -383,10 +383,11 @@ async fn run() -> Result<(), String> {
             move |sid: &str| state.try_session(sid)
         }),
     )));
-    let run_sink = match austringer_daemon::bridge::RunSink::open(
+    let run_sink = match austringer_daemon::bridge::RunSink::open_capped(
         &data_dir,
         Arc::new(austringer_daemon::gate::CriteriaGate),
         Arc::new(notifier),
+        state.config.runs_max_bytes,
     ) {
         Ok(sink) => Arc::new(sink),
         Err(e) => return Err(format!("run history open: {e}")),
@@ -396,7 +397,7 @@ async fn run() -> Result<(), String> {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs())
     });
-    match austringer_daemon::runner::CronRunner::open(
+    match austringer_daemon::runner::CronRunner::open_capped(
         &data_dir,
         defs,
         Arc::new(austringer_daemon::kickoff::DaemonKicker::new(Arc::clone(
@@ -405,10 +406,21 @@ async fn run() -> Result<(), String> {
         run_sink,
         austringer_daemon::runner::DEFAULT_JITTER_WINDOW_SECS,
         austringer_daemon::automations::NetworkPolicy::Online,
+        state.config.scheduler_journal_max_bytes,
     ) {
-        Ok(runner) => runner.spawn_loop(wall_clock, std::time::Duration::from_secs(5)),
+        Ok(runner) => {
+            runner.spawn_loop(wall_clock, austringer_daemon::runner::SCHEDULER_TICK_PERIOD);
+        }
         Err(e) => eprintln!("austringer-daemon: scheduler failed to start: {e}"),
     }
+
+    // Sessions-retention janitor: one pass at startup, then hourly.
+    // The all-None default policy keeps it entirely inert.
+    austringer_daemon::janitor::spawn(Arc::clone(&state));
+
+    // Idle-session eviction: releases abandoned hosts' engine loops
+    // (the transcript mirrors). ZERO threshold keeps it inert.
+    austringer_daemon::eviction::spawn(Arc::clone(&state));
 
     let ipc_state = Arc::clone(&state);
     match ipc_listener {
@@ -431,5 +443,14 @@ async fn run() -> Result<(), String> {
     .with_graceful_shutdown(async move {
         let _ = drain_rx.changed().await;
     });
-    serve.await.map_err(|e| format!("serve: {e}"))
+    let served = serve.await;
+    // Shutdown hygiene: this instance's readiness files leave with it
+    // — unless a reload successor already rewrote them (the content
+    // check never deletes another instance's files).
+    austringer_daemon::janitor::remove_instance_files(
+        &state.config.data_dir,
+        &format!("http://{bound}"),
+        &state.token,
+    );
+    served.map_err(|e| format!("serve: {e}"))
 }

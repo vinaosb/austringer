@@ -1,10 +1,10 @@
 //! Interactive REPL (plan todo 39, unified grammar todo 23): colored
 //! prompt, streaming turns, the shared slash-command grammar
 //! (`/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`,
-//! `/skill` plus the CLI-local `/exit`, `/image`), and permission
-//! asks answered interactively. Lines that are not commands submit a
-//! turn and stream it to completion before the next prompt (matching
-//! the headless run loop exactly).
+//! `/skill`, `/condense` plus the CLI-local `/exit`, `/image`), and
+//! permission asks answered interactively. Lines that are not
+//! commands submit a turn and stream it to completion before the
+//! next prompt (matching the headless run loop exactly).
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -78,6 +78,7 @@ impl ReplSession<'_> {
             ReplLine::Rewind(steps) => self.transport.rewind(steps.unwrap_or(1)).await?,
             ReplLine::Image(path) => self.attach(&path),
             ReplLine::Skill(text) => self.submit_and_wait(&text).await?,
+            ReplLine::Condense => self.submit_and_wait("/condense").await?,
             ReplLine::Malformed(usage) => println!("{usage}"),
             ReplLine::Unknown(word) => println!("{}", grammar::unknown_help(&word)),
             ReplLine::Turn(text) => self.submit_and_wait(&text).await?,

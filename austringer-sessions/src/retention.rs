@@ -51,7 +51,9 @@ pub struct PruneReport {
 impl SessionStore {
     /// The only deletion path in the store. Applies the policy tiers in
     /// order: GC of old archives, age tier, size tier. Never runs
-    /// implicitly; an empty policy does nothing.
+    /// implicitly; an empty policy does nothing. When the run deleted
+    /// anything, the WAL is checkpointed and truncated so the deletions
+    /// actually shrink the on-disk footprint.
     ///
     /// # Errors
     /// Typed storage / IO failure (partial archives are impossible: the
@@ -69,7 +71,54 @@ impl SessionStore {
         if let Some(max_bytes) = policy.max_store_bytes {
             self.size_tier(max_bytes, &mut report)?;
         }
+        if !report.archived.is_empty() || !report.gc_removed.is_empty() {
+            self.checkpoint_wal()?;
+        }
         Ok(report)
+    }
+
+    /// Copies the WAL back into `store.db` and truncates the `-wal`
+    /// file to zero bytes. SQLite's periodic auto-checkpoint is passive
+    /// and never shrinks the file, so without this a deleting prune
+    /// leaves the same disk footprint behind. Runs on the store's
+    /// single writer after the deletion commits; no read transaction is
+    /// open on this path (handles lock the connection per operation).
+    fn checkpoint_wal(&self) -> Result<(), SessionError> {
+        let conn = self.lock_conn()?;
+        let (busy, _log, _checkpointed): (i64, i64, i64) = conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(SessionError::sqlite)?;
+        if busy != 0 {
+            return Err(SessionError::Sqlite {
+                detail: "wal_checkpoint(TRUNCATE) busy: a reader still holds the log".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Opt-in `VACUUM`: rebuilds `store.db` so pages freed by
+    /// [`Self::prune`] return to the filesystem. In WAL mode the
+    /// rewrite itself commits through the `-wal` file, so the run ends
+    /// with a truncating checkpoint that lands the compacted image in
+    /// the main file — anything else leaves the old pages on disk.
+    /// Heavy (a full file rewrite); never called by `prune` itself —
+    /// the caller's policy decides when to pay for it.
+    ///
+    /// # Errors
+    /// Typed storage failure.
+    pub fn vacuum(&self) -> Result<(), SessionError> {
+        {
+            let conn = self.lock_conn()?;
+            conn.execute_batch("VACUUM;")
+                .map_err(SessionError::sqlite)?;
+        }
+        self.checkpoint_wal()
     }
 
     fn gc_archives(

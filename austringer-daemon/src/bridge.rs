@@ -41,7 +41,8 @@ pub struct RunSink {
 }
 
 impl RunSink {
-    /// Sink over `{root}/runs.jsonl`.
+    /// Sink over `{root}/runs.jsonl` with the default rotation cap
+    /// ([`crate::run_history::DEFAULT_RUNS_MAX_BYTES`]).
     ///
     /// # Errors
     /// history open failure.
@@ -50,8 +51,27 @@ impl RunSink {
         gate: Arc<dyn CompletionGate>,
         notifier: Arc<Notifier>,
     ) -> Result<Self, RunHistoryError> {
+        Self::open_capped(
+            root,
+            gate,
+            notifier,
+            crate::run_history::DEFAULT_RUNS_MAX_BYTES,
+        )
+    }
+
+    /// Sink with an explicit `runs.jsonl` rotation cap; `0` disables
+    /// rotation (unlimited growth).
+    ///
+    /// # Errors
+    /// history open failure.
+    pub fn open_capped(
+        root: &Path,
+        gate: Arc<dyn CompletionGate>,
+        notifier: Arc<Notifier>,
+        runs_max_bytes: u64,
+    ) -> Result<Self, RunHistoryError> {
         Ok(Self {
-            history: RunHistory::open(root)?,
+            history: RunHistory::open_capped(root, runs_max_bytes)?,
             gate,
             notifier,
             pending: Mutex::new(HashMap::new()),

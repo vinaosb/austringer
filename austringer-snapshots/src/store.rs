@@ -73,6 +73,15 @@ impl SnapshotStore {
         &self.workdir
     }
 
+    /// The persistent scratch stat-cache root for this store's workdir
+    /// (`<workdir>/.austringer/scratch`): the maintenance seam hosts
+    /// call [`crate::scratch::reap_scratch`] on — the same root the
+    /// backends write their per-session indices under.
+    #[must_use]
+    pub fn scratch_root(&self) -> PathBuf {
+        self.workdir.join(".austringer").join("scratch")
+    }
+
     pub fn snapshot(
         &self,
         session: &SessionId,

@@ -21,6 +21,7 @@ pub mod pty;
 pub mod repomap;
 pub mod sessions;
 pub mod tui;
+pub mod wire_prefix;
 
 #[derive(Debug, Error)]
 pub enum ScenarioError {
@@ -101,6 +102,7 @@ pub const REGISTRY: &[(&str, ScenarioFn)] = &[
     ("pty", pty::run),
     ("sessions", sessions::run),
     ("tui", tui::run),
+    ("wire_prefix", wire_prefix::run),
     ("idle", idle::run),
     ("cold_start", process::cold_start),
     ("rss", process::daemon_rss),
@@ -115,6 +117,7 @@ pub const GATE_BASELINE_METRICS: &[&str] = &[
     "repomap.tokens",
     "eviction.projected_events",
     "prompt.stable_prefix_bytes",
+    "wire.stable_surface_bytes",
     "pty.observation_bytes",
     "sessions.page_bytes",
 ];

@@ -16,15 +16,24 @@ struct BaseSchemaDoc<'a> {
 }
 
 impl ToolRegistry {
+    /// The pinned core schemas in canonical order — the declared wire
+    /// tool surface provider adapters render natively. Invariant: this
+    /// set never varies with autonomy mode, active skills, or
+    /// deferred-loaded tools.
+    #[must_use]
+    pub fn pinned_wire_tools(&self, pinned: &PinnedToolSet) -> Vec<ToolSchema> {
+        CORE_TOOLS
+            .iter()
+            .filter_map(|name| self.pinned_schema(pinned, name).cloned())
+            .collect()
+    }
+
     /// Renders the six core schemas (canonical order, pinned versions) as
     /// a compact JSON array. Invariant: this byte string never varies with
     /// autonomy mode, active skills, or deferred-loaded tools.
     #[must_use]
     pub fn render_core_schemas(&self, pinned: &PinnedToolSet) -> String {
-        let schemas: Vec<ToolSchema> = CORE_TOOLS
-            .iter()
-            .filter_map(|name| self.pinned_schema(pinned, name).cloned())
-            .collect();
+        let schemas = self.pinned_wire_tools(pinned);
         // Infallible by type (strings + Values).
         serde_json::to_string(&schemas).unwrap_or_default()
     }

@@ -6,12 +6,17 @@
 //! the real wire.
 
 use austringer_mcp::client::McpClient;
+use austringer_mcp::client::connect_retry_delay;
 use austringer_mcp::config::{ServerEntry, TransportSpec};
+use austringer_mcp::error::McpClientError;
 use austringer_mcp::reference_server::ReferenceFsServer;
 use rmcp::transport::streamable_http_server::StreamableHttpServerConfig;
 use rmcp::transport::streamable_http_server::StreamableHttpService;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use serde_json::json;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 async fn spawn_http_mcp_server(root: std::path::PathBuf) -> String {
@@ -78,6 +83,94 @@ async fn streamable_http_connect_timeout_typed() {
     };
     let outcome = McpClient::connect(entry).await;
     assert!(outcome.err().is_some(), "refused endpoint must fail");
+}
+
+/// A dead-endpoint stand-in: accepts every connection and immediately
+/// drops it, counting dials so per-attempt connect behavior is
+/// observable without any network egress (loopback only).
+async fn spawn_dropping_endpoint() -> (std::net::SocketAddr, Arc<AtomicU64>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let dials = Arc::new(AtomicU64::new(0));
+    let counter = Arc::clone(&dials);
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            drop(stream);
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+    (addr, dials)
+}
+
+#[tokio::test]
+async fn streamable_http_dead_endpoint_backoff_bounds_dials() {
+    // A dead endpoint must see a handful of connect attempts inside the
+    // budget, never one per 20 ms: with capped exponential backoff
+    // (20 -> 40 -> 80 -> 160 -> 320 ms) retries cannot start before
+    // t=0/20/60/140/300, so a 400 ms budget bounds the loop to <= 5
+    // dials where a fixed-20 ms loop dialed ~20. The failure must still
+    // be the typed ConnectTimeout and must still consume the whole
+    // budget (the retry-to-deadline contract).
+    let (addr, dials) = spawn_dropping_endpoint().await;
+    let entry = ServerEntry {
+        connect_timeout_ms: 400,
+        transport: TransportSpec::Http {
+            url: format!("http://{addr}/mcp"),
+        },
+        ..ServerEntry::new(
+            "dead-endpoint".to_owned(),
+            TransportSpec::Stdio {
+                command: String::new(),
+                args: vec![],
+            },
+        )
+    };
+    let started = Instant::now();
+    let error = McpClient::connect(entry)
+        .await
+        .err()
+        .expect("dead endpoint must fail");
+    let elapsed = started.elapsed();
+    assert!(
+        matches!(
+            error,
+            McpClientError::ConnectTimeout {
+                timeout_ms: 400,
+                ..
+            }
+        ),
+        "retry-to-deadline must surface the typed ConnectTimeout, got {error:?}"
+    );
+    assert!(
+        elapsed >= Duration::from_millis(400),
+        "the connect budget must be consumed, elapsed {elapsed:?}"
+    );
+    let dialed = dials.load(Ordering::Relaxed);
+    assert!(
+        dialed <= 5,
+        "backoff must bound a dead endpoint to <= 5 dials per 400 ms budget, got {dialed}"
+    );
+}
+
+#[test]
+fn streamable_http_connect_retry_delay_is_capped_exponential() {
+    // 20 -> 40 -> 80 -> 160 -> 320 -> 500 (640 capped) -> 500 forever;
+    // saturating, never overflow-prone even at u32::MAX attempts.
+    let expected = [20, 40, 80, 160, 320, 500, 500];
+    for (attempt, delay_ms) in expected.iter().enumerate() {
+        assert_eq!(
+            connect_retry_delay(u32::try_from(attempt).expect("small attempt")),
+            Duration::from_millis(*delay_ms),
+            "attempt {attempt}"
+        );
+    }
+    assert_eq!(
+        connect_retry_delay(u32::MAX),
+        Duration::from_millis(500),
+        "the delay must saturate at the cap"
+    );
 }
 
 #[tokio::test]

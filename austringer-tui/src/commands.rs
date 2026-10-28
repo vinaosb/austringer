@@ -22,6 +22,8 @@ pub enum Parsed {
     Rewind { steps: Option<u64> },
     /// `/skill <name> [args…]`.
     Skill { name: String, rest: String },
+    /// `/condense` — manual context compaction.
+    Condense,
     /// A CLI-local command (`/exit`, `/image`) — known word, refused
     /// here with the shared cli-only note.
     CliOnly { word: String },
@@ -42,6 +44,7 @@ pub const COMMANDS: &[&str] = &[
     "/mode",
     "/rewind",
     "/skill",
+    "/condense",
 ];
 
 /// Parse omnibar content on submit against the shared grammar table.
@@ -98,6 +101,7 @@ pub fn parse(input: &str) -> Parsed {
                 }
             }
         },
+        "condense" => Parsed::Condense,
         "exit" | "image" => Parsed::CliOnly {
             word: word.to_owned(),
         },
@@ -156,8 +160,13 @@ mod tests {
             parse("/wat x"),
             Parsed::UnknownCommand { word: "wat".into() }
         );
-        assert!(matches!(parse("/rewind x"), Parsed::Malformed { .. }));
+        assert!(
+            matches!(parse("/rewind x"), Parsed::Malformed { .. }),
+            "rewind rejects non-numeric steps"
+        );
         assert!(matches!(parse("/mode"), Parsed::Malformed { .. }));
+        assert_eq!(parse("/condense"), Parsed::Condense);
+        assert_eq!(parse("/condense now"), Parsed::Condense);
     }
 
     #[test]

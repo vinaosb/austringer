@@ -6,11 +6,14 @@
 //! steering) lives in [`crate::engine`]; the submit-intake gates
 //! (cost cap, skills, media, `/launch`) in [`intake`].
 
+mod idle;
 mod intake;
+
+pub(crate) use idle::InFlightTurn;
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{broadcast, mpsc};
@@ -67,6 +70,11 @@ pub enum CommandRejected {
     /// cost stop — never a silent drop, never a model switch.
     #[error("{0}")]
     CostCapReached(austringer_core::budget::StopReason),
+    /// The host was evicted (idle) before this command landed; the
+    /// session re-creates on the next touch — retry. Never a silent
+    /// drop.
+    #[error("session evicted; retry")]
+    Evicted,
 }
 
 /// Attach failures.
@@ -75,6 +83,10 @@ pub enum AttachError {
     /// The session's client cap is reached (reconnect-storm bound).
     #[error("session client cap reached")]
     TooManyClients,
+    /// The host was evicted (idle) mid-handshake; the next touch
+    /// re-creates it — reconnect.
+    #[error("session evicted; reconnect")]
+    Evicted,
 }
 
 /// What a client gets when it attaches.
@@ -101,8 +113,14 @@ pub struct SessionHost {
     mediator: Arc<PermissionMediator>,
     clients: Mutex<HashSet<String>>,
     max_clients: usize,
-    cmd_tx: mpsc::Sender<HostCommand>,
-    event_sink_tx: mpsc::Sender<SessionEvent>,
+    /// The engine-driver command lane; taken (dropped) by idle
+    /// eviction so the driver's `recv()` ends and the engine task —
+    /// with its `AgentLoop` — terminates.
+    cmd_tx: Mutex<Option<mpsc::Sender<HostCommand>>>,
+    /// The executor event lane; taken alongside `cmd_tx` (the
+    /// executor's own clone lives inside the engine's stage set, so
+    /// the sink pump ends only after the engine task drops it).
+    event_sink_tx: Mutex<Option<mpsc::Sender<SessionEvent>>>,
     steer_queue: SteerQueue,
     /// Session directory (media store root for submit resolution);
     /// set once by the session factory after construction.
@@ -129,10 +147,35 @@ pub struct SessionHost {
     /// store so `sessions search` covers live sessions. Unset on hosts
     /// built outside the factory — honest absence (nothing persisted).
     pub(crate) sessions_store_root: std::sync::OnceLock<PathBuf>,
+    /// The todo-13 compaction service (auto threshold + `/condense`);
+    /// set once by the session factory BEFORE the engine spawns (the
+    /// stage-set builder reads it). Unset on hosts built outside the
+    /// factory — honest absence (no compaction surface).
+    pub(crate) compaction: std::sync::OnceLock<Arc<crate::compaction::SessionCompaction>>,
+    /// Snapshot GC bound for turn-completion checkpoint recording; set
+    /// once by the session factory. Unset hosts fall back to the
+    /// conservative default.
+    pub(crate) snapshot_keep_last: std::sync::OnceLock<usize>,
     /// The interactive plan-mode gate (todo 16); inactive by default.
     plan: crate::plan::PlanGate,
     pub(crate) turn_counter: AtomicU64,
+    /// Unix-millis of the last turn activity (the eviction idleness
+    /// clock); set at construction and at each turn start.
+    pub(crate) last_activity_ms: AtomicU64,
+    /// An engine turn is running (RAII-marked in the driver; blocks
+    /// idle eviction so an active turn always completes).
+    pub(crate) turn_in_flight: AtomicBool,
+    /// The engine driver task's loop ended — the observable that an
+    /// eviction actually freed the engine.
+    pub(crate) engine_task_done: AtomicBool,
+    /// Channels were taken by eviction; intake and attach refuse
+    /// typed instead of silently dropping.
+    pub(crate) evicted: AtomicBool,
     pub(crate) journal_root: Option<PathBuf>,
+    /// Turn-journal rotation cap (`DaemonConfig::journal_max_bytes`);
+    /// set once by the session factory. Hosts built outside the
+    /// factory keep the 32 MiB default (see [`SessionHost::journal_max_bytes`]).
+    pub(crate) journal_max_bytes: std::sync::OnceLock<u64>,
 }
 
 impl SessionHost {
@@ -165,8 +208,8 @@ impl SessionHost {
             mediator,
             clients: Mutex::new(HashSet::new()),
             max_clients,
-            cmd_tx,
-            event_sink_tx,
+            cmd_tx: Mutex::new(Some(cmd_tx)),
+            event_sink_tx: Mutex::new(Some(event_sink_tx)),
             steer_queue: Arc::clone(&steer_queue),
             media_dir: std::sync::OnceLock::new(),
             projection: std::sync::OnceLock::new(),
@@ -174,10 +217,18 @@ impl SessionHost {
             launcher: std::sync::OnceLock::new(),
             cost_ledger: std::sync::OnceLock::new(),
             sessions_store_root: std::sync::OnceLock::new(),
+            compaction: std::sync::OnceLock::new(),
+            snapshot_keep_last: std::sync::OnceLock::new(),
             plan: crate::plan::PlanGate::default(),
             turn_counter: AtomicU64::new(0),
+            last_activity_ms: AtomicU64::new(0),
+            turn_in_flight: AtomicBool::new(false),
+            engine_task_done: AtomicBool::new(false),
+            evicted: AtomicBool::new(false),
             journal_root,
+            journal_max_bytes: std::sync::OnceLock::new(),
         });
+        host.mark_activity();
         host.pump_event_sink(event_sink_rx);
         (host, cmd_rx)
     }
@@ -209,6 +260,16 @@ impl SessionHost {
         Arc::clone(&self.steer_queue)
     }
 
+    /// The turn-journal rotation cap threaded from
+    /// `DaemonConfig::journal_max_bytes`; hosts built outside the
+    /// session factory keep the 32 MiB default.
+    pub(crate) fn journal_max_bytes(&self) -> u64 {
+        self.journal_max_bytes
+            .get()
+            .copied()
+            .unwrap_or(crate::journal::DEFAULT_JOURNAL_MAX_BYTES)
+    }
+
     /// The session cost ledger (todo 33): the badge-state seam HUD
     /// surfaces consume (`snapshot()`); `None` on hosts built outside
     /// the daemon factory (no cost surface).
@@ -223,18 +284,6 @@ impl SessionHost {
     #[must_use]
     pub fn plan_gate(&self) -> &crate::plan::PlanGate {
         &self.plan
-    }
-
-    /// The executor-side event sink (diffs from tool execution).
-    #[must_use]
-    pub fn event_sink(&self) -> mpsc::Sender<SessionEvent> {
-        self.event_sink_tx.clone()
-    }
-
-    /// The command sender (transports submit commands through this).
-    #[must_use]
-    pub fn commands(&self) -> mpsc::Sender<HostCommand> {
-        self.cmd_tx.clone()
     }
 
     fn lock_clients(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
@@ -313,8 +362,13 @@ impl SessionHost {
         self.with_hub(|hub| hub.snapshot())
     }
 
-    /// Attach a client. Enforces the per-session cap.
+    /// Attach a client. Enforces the per-session cap and refuses
+    /// typed on an evicted host (a racing handshake lost to eviction —
+    /// the next touch re-creates the session).
     pub fn attach(&self, client_id: &str, after: Option<u64>) -> Result<Attachment, AttachError> {
+        if self.is_shutdown() {
+            return Err(AttachError::Evicted);
+        }
         let mut clients = self.lock_clients();
         if clients.len() >= self.max_clients && !clients.contains(client_id) {
             return Err(AttachError::TooManyClients);

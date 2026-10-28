@@ -278,14 +278,34 @@ pub fn resolve_routing(spec: &ExecSpec, probe: &dyn WslProbe) -> Routing {
         return Routing::Native;
     }
     match detect_wsl_with(probe) {
-        WslStatus::Available { exe, .. } => {
-            let mut argv = vec!["--exec".to_string(), spec.program.clone()];
-            for arg in &spec.args {
-                argv.push(map_argument(arg));
-            }
-            Routing::Wsl { exe, argv }
-        }
+        WslStatus::Available { exe, .. } => route_available(spec, &exe),
         status => Routing::Unavailable(status),
+    }
+}
+
+/// Resolves one spec's routing against the process-lifetime cached
+/// detection ([`detect_wsl`]): the two-spawn probe runs once per process,
+/// not once per WSL-routed command. The production path.
+pub fn resolve_routing_cached(spec: &ExecSpec) -> Routing {
+    if spec.run_in == RunIn::Native {
+        return Routing::Native;
+    }
+    match detect_wsl() {
+        WslStatus::Available { exe, .. } => route_available(spec, &exe),
+        status => Routing::Unavailable(status),
+    }
+}
+
+/// Builds the WSL command line for an available machine: `--exec` with
+/// the program verbatim and drive-path arguments mapped. Pure.
+pub fn route_available(spec: &ExecSpec, exe: &Path) -> Routing {
+    let mut argv = vec!["--exec".to_string(), spec.program.clone()];
+    for arg in &spec.args {
+        argv.push(map_argument(arg));
+    }
+    Routing::Wsl {
+        exe: exe.to_path_buf(),
+        argv,
     }
 }
 

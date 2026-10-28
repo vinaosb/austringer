@@ -48,6 +48,7 @@ test("grammar: cheat sheet renders one line per command with cli-only marks", ()
         "/mode plan|off — enter or exit plan mode",
         "/rewind [steps] — rewind to a previous restore point (default 1)",
         "/skill <name> [args] — run a trusted skill through the submit lane",
+        "/condense — condense the session context now",
         "/exit — quit this repl (cli only)",
         "/image <path> — attach an image to the next submit (cli only)",
     ]);
@@ -72,6 +73,7 @@ test("grammar: parse recognizes every core command", () => {
     assert.deepEqual(parseCommand("/rewind 3"), { kind: "rewind", steps: 3 });
     assert.deepEqual(parseCommand("/skill audit"), { kind: "skill", text: "/skill audit" });
     assert.deepEqual(parseCommand("/skill audit run twice"), { kind: "skill", text: "/skill audit run twice" });
+    assert.deepEqual(parseCommand("/condense"), { kind: "condense" });
 });
 
 test("grammar: malformed and unknown commands are typed, never silent submits", () => {

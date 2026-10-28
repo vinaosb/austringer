@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use super::operation::Operation;
 use super::status::SessionStatus;
+use crate::tools::ToolSchema;
 
 /// Typed loop configuration.
 #[derive(Clone, Debug)]
@@ -18,6 +19,15 @@ pub struct LoopConfig {
     /// Cancel-grace window: in-flight operations get this long after a
     /// cancel to reach a clean boundary before a forced terminal cancel.
     pub cancel_grace: Duration,
+    /// The stable system prompt riding every inference request (the
+    /// stable-first prefix discipline, research §24.6). Empty = no
+    /// system surface is declared.
+    pub system: String,
+    /// The declared wire tool surface (research §33.1: a provider cannot
+    /// emit `tool_use` without declared tools). Empty = no tools ride
+    /// the wire. The daemon fills this from the session's pinned tool
+    /// registry once per session — never per request.
+    pub tools: Vec<ToolSchema>,
 }
 
 impl Default for LoopConfig {
@@ -27,6 +37,8 @@ impl Default for LoopConfig {
             max_inference_retries: 0,
             stop_hook_block_cap: 1,
             cancel_grace: Duration::from_secs(5),
+            system: String::new(),
+            tools: Vec::new(),
         }
     }
 }

@@ -561,6 +561,7 @@ dependencies = [
  "austringer-core",
  "austringer-daemon",
  "austringer-exec",
+ "austringer-providers",
  "austringer-repomap",
  "austringer-sessions",
  "austringer-tui",

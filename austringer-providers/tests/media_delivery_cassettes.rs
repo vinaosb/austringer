@@ -107,7 +107,8 @@ async fn google_receives_inline_data_for_image_and_audio() {
     assert!(
         parts[0]["text"]
             .as_str()
-            .is_some_and(|t| t.starts_with("<focus>todos</focus>"))
+            .is_some_and(|t| t.ends_with("<focus>todos</focus>")),
+        "the focus block rides the prompt tail (layout law)"
     );
     assert_eq!(parts[1]["inline_data"]["mime_type"], "image/png");
     assert_eq!(

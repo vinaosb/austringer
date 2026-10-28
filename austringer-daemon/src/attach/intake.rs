@@ -22,10 +22,15 @@ impl SessionHost {
     /// while plain Submits/SubmitBlocks/Cancel queue to the driver.
     /// Turn-starting submits pass the cost-cap gate first (todo 33):
     /// a stopped session refuses NEW spend typed, naming the cap.
+    /// A host evicted mid-flight (idle sweep won a race against this
+    /// command) refuses typed — never a silent drop.
     pub async fn handle_command(
         self: &Arc<Self>,
         command: HostCommand,
     ) -> Result<(), CommandRejected> {
+        if self.is_shutdown() {
+            return Err(CommandRejected::Evicted);
+        }
         match &command {
             HostCommand::Steer(text) => {
                 self.record_signal(text);
@@ -41,7 +46,9 @@ impl SessionHost {
                         .map_err(CommandRejected::LaunchRefused);
                 }
                 let queued = self.route_skills(text)?;
-                let _ = self.cmd_tx.send(queued).await;
+                if let Some(tx) = self.command_sender() {
+                    let _ = tx.send(queued).await;
+                }
             }
             HostCommand::SubmitMedia { text, media } => {
                 self.refuse_at_cost_cap()?;
@@ -56,10 +63,14 @@ impl SessionHost {
             }
             HostCommand::SubmitBlocks(_) => {
                 self.refuse_at_cost_cap()?;
-                let _ = self.cmd_tx.send(command).await;
+                if let Some(tx) = self.command_sender() {
+                    let _ = tx.send(command).await;
+                }
             }
             HostCommand::Cancel => {
-                let _ = self.cmd_tx.send(command).await;
+                if let Some(tx) = self.command_sender() {
+                    let _ = tx.send(command).await;
+                }
             }
         }
         Ok(())
@@ -173,6 +184,8 @@ impl SessionHost {
                 })
             });
         }
-        let _ = self.cmd_tx.try_send(HostCommand::SubmitBlocks(blocks));
+        if let Some(tx) = self.command_sender() {
+            let _ = tx.try_send(HostCommand::SubmitBlocks(blocks));
+        }
     }
 }

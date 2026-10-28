@@ -17,6 +17,17 @@
 // flow, and the SSE fallback opts in via ?version=2.
 export const PROTOCOL_VERSION = 2;
 
+// Pure WS attach URL, mirroring the TUI contract
+// (austringer-tui/src/client.rs ws_attach_url): cursor-less at 0 so the
+// first attach keeps the Resync contract, `&after=N` afterwards so a
+// reconnect replays the delta.
+export function wsAttachUrl(base, session, token, after) {
+  return (
+    `ws://${base}/s/${encodeURIComponent(session)}/attach?token=${encodeURIComponent(token)}` +
+    (after > 0 ? `&after=${after}` : "")
+  );
+}
+
 // Total decoder: garbage in, {ok:false} out — the store never throws.
 export function decode(text) {
   try {
@@ -35,8 +46,9 @@ function encode(msg) {
 }
 
 // Transport controller: WS primary, SSE fallback, POST /cmd for
-// commands when only SSE is reachable. Reconnects with `after` so the
-// daemon replays the delta (or forces a resync snapshot).
+// commands when only SSE is reachable. Both transports carry the
+// `after` replay cursor on reconnect so the daemon replays the delta
+// (or forces a resync snapshot).
 export function connect({ base, token, session, onMessage, onStatus }) {
   const controller = {
     socket: null,
@@ -45,7 +57,6 @@ export function connect({ base, token, session, onMessage, onStatus }) {
     lastEventId: 0,
     closedByUser: false,
   };
-  const wsURL = `ws://${base}/s/${encodeURIComponent(session)}/attach?token=${encodeURIComponent(token)}`;
   const sseURL = (after) =>
     `/s/${encodeURIComponent(session)}/events?token=${encodeURIComponent(token)}` +
     `&version=${PROTOCOL_VERSION}` +
@@ -70,7 +81,7 @@ export function connect({ base, token, session, onMessage, onStatus }) {
     status("connecting");
     let socket;
     try {
-      socket = new WebSocket(wsURL);
+      socket = new WebSocket(wsAttachUrl(base, session, token, controller.lastEventId));
     } catch {
       openSSE();
       return;

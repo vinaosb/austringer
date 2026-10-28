@@ -12,7 +12,7 @@ use std::sync::Arc;
 use austringer_core::agent_loop::{CancelToken, Inference, InferenceRequest};
 use austringer_core::event::Event;
 use austringer_core::event::derived::{DerivedStore, ProjectionKind};
-use austringer_core::media_delivery::{prefix_identity, window_prefix_identity};
+use austringer_core::media_delivery::prefix_identity;
 use austringer_providers::adapter::InferenceAdapter;
 use austringer_providers::media::{DELIVERY_PROJECTION_PRODUCER, MediaDelivery};
 use austringer_test_support::provider::FakeApi;
@@ -81,6 +81,8 @@ async fn twenty_turn_prefix_identity_report() {
                 &InferenceRequest {
                     events: &events,
                     focus_block: FOCUS,
+                    system: "",
+                    tools: &[],
                 },
                 &cancel,
             )
@@ -102,23 +104,36 @@ async fn twenty_turn_prefix_identity_report() {
     }
 
     println!("=== M8 20-turn prefix-identity report (text-only session) ===");
+    // Layout law (context/builder.rs): the focus block rides the volatile
+    // tail, so the cacheable region of a prompt is everything before it.
+    // Identity is measured on that region — whole-prompt chaining was an
+    // artifact of the deprecated head placement, where the constant focus
+    // block made every prompt a strict prefix of the next.
+    fn history_region(prompt: &str) -> &str {
+        &prompt[..prompt.len() - FOCUS.len() - 1]
+    }
     let mut divergent = 0usize;
+    let mut identities = Vec::new();
     for pair in 0..prompts.len().saturating_sub(1) {
-        let identity = prefix_identity(prompts[pair].as_bytes(), prompts[pair + 1].as_bytes());
+        let identity = prefix_identity(
+            history_region(&prompts[pair]).as_bytes(),
+            history_region(&prompts[pair + 1]).as_bytes(),
+        );
         if identity < 1.0 {
             divergent += 1;
         }
+        identities.push(identity);
         println!(
-            "pair {:02}->{:02}: {:.6} (prev {} B)",
+            "pair {:02}->{:02}: {:.6} (history {} B)",
             pair + 1,
             pair + 2,
             identity,
-            prompts[pair].len()
+            history_region(&prompts[pair]).len()
         );
     }
-    let pre_media = &prompts[..IMAGE_TURN - 1];
-    let pre_mean = window_prefix_identity(pre_media);
-    let window_mean = window_prefix_identity(&prompts);
+    let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len() as f64;
+    let pre_mean = mean(&identities[..IMAGE_TURN - 1]);
+    let window_mean = mean(&identities);
     println!(
         "pre-media pairs (1..{}) mean: {pre_mean:.6} [required 1.0]",
         IMAGE_TURN - 1
@@ -139,6 +154,8 @@ async fn twenty_turn_prefix_identity_report() {
             &InferenceRequest {
                 events: &snapshot_at_projection_turn,
                 focus_block: FOCUS,
+                system: "",
+                tools: &[],
             },
             &cancel,
         )

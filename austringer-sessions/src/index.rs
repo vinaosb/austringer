@@ -20,18 +20,18 @@ pub(crate) fn update_on_append(
 ) -> Result<u32, SessionError> {
     if kind == "user" || turn_count == 0 {
         let turn = turn_count + 1;
-        conn.execute(
+        conn.prepare_cached(
             "INSERT INTO turn_index (session_id, turn, start_seq, end_seq) VALUES (?1, ?2, ?3, ?3)",
-            rusqlite::params![session_id, turn, seq as i64],
         )
+        .map_err(SessionError::sqlite)?
+        .execute(rusqlite::params![session_id, turn, seq as i64])
         .map_err(SessionError::sqlite)?;
         return Ok(turn);
     }
-    conn.execute(
-        "UPDATE turn_index SET end_seq = ?3 WHERE session_id = ?1 AND turn = ?2",
-        rusqlite::params![session_id, turn_count, seq as i64],
-    )
-    .map_err(SessionError::sqlite)?;
+    conn.prepare_cached("UPDATE turn_index SET end_seq = ?3 WHERE session_id = ?1 AND turn = ?2")
+        .map_err(SessionError::sqlite)?
+        .execute(rusqlite::params![session_id, turn_count, seq as i64])
+        .map_err(SessionError::sqlite)?;
     Ok(turn_count)
 }
 

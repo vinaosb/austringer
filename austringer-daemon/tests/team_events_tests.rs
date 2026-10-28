@@ -56,7 +56,11 @@ fn services_in(dir: &std::path::Path) -> Arc<LaunchServices> {
     Arc::new(LaunchServices {
         inference_factory: Arc::new(|| ComposedInference::plain(Box::new(CompleteOnlyInference))),
         executor_factory: Arc::new(|_session_dir, _event_sink| {
-            Box::new(austringer_core::agent_loop::stages::defaults::NoToolExecutor)
+            (
+                Box::new(austringer_core::agent_loop::stages::defaults::NoToolExecutor)
+                    as Box<dyn austringer_core::agent_loop::stages::ToolExecutor>,
+                Vec::new(),
+            )
         }),
         sessions_root: dir.join("sessions"),
         ask_policy: MediationPolicy::FirstResponder,

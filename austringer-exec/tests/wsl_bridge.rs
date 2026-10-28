@@ -260,6 +260,134 @@ fn wsl_routing_on_a_wsl_free_machine_is_a_typed_error() {
     assert!(matches!(error, ExecError::WslUnavailable { .. }));
 }
 
+#[test]
+fn route_available_maps_program_and_drive_paths_identically() {
+    let mut spec = native_spec();
+    spec.run_in = RunIn::Wsl;
+    spec.program = "grep".into();
+    spec.args = vec![
+        "-n".into(),
+        "needle".into(),
+        r"C:\logs\a.txt".into(),
+        r"D:\x\y.txt".into(),
+        "--flag".into(),
+        "relative.txt".into(),
+    ];
+    let exe = PathBuf::from(r"C:\Windows\System32\wsl.exe");
+    let routed = wsl::route_available(&spec, &exe);
+    assert_eq!(
+        routed,
+        wsl::Routing::Wsl {
+            exe: exe.clone(),
+            argv: vec![
+                "--exec".to_string(),
+                "grep".to_string(),
+                "-n".to_string(),
+                "needle".to_string(),
+                "/mnt/c/logs/a.txt".to_string(),
+                "/mnt/d/x/y.txt".to_string(),
+                "--flag".to_string(),
+                "relative.txt".to_string(),
+            ],
+        }
+    );
+    // Identical to what the probe-carrying resolver produces today:
+    // the extraction changed nothing about the command line.
+    assert_eq!(routed, wsl::resolve_routing(&spec, &FakeProbe::available()));
+}
+
+// ---------- cached detection: the probe runs once per process ----------
+
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Counts every probe interaction (each `run_wsl` is one process spawn).
+struct CountingProbe {
+    inner: FakeProbe,
+    find_calls: AtomicUsize,
+    run_calls: AtomicUsize,
+}
+
+impl CountingProbe {
+    fn available() -> Self {
+        Self {
+            inner: FakeProbe::available(),
+            find_calls: AtomicUsize::new(0),
+            run_calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl wsl::WslProbe for CountingProbe {
+    fn find_wsl_exe(&self) -> Option<PathBuf> {
+        self.find_calls.fetch_add(1, Ordering::SeqCst);
+        self.inner.find_wsl_exe()
+    }
+    fn run_wsl(&self, args: &[&str]) -> Option<(i32, WslProbeOutput)> {
+        self.run_calls.fetch_add(1, Ordering::SeqCst);
+        self.inner.run_wsl(args)
+    }
+}
+
+/// Mirrors the production shape of [`wsl::resolve_routing_cached`]:
+/// a process-lifetime OnceLock around detection, `route_available` per
+/// spec — but over an injectable probe so it stays hermetic.
+struct CachedProbe<'a> {
+    inner: &'a CountingProbe,
+    cached: OnceLock<WslStatus>,
+}
+
+impl CachedProbe<'_> {
+    fn resolve_routing(&self, spec: &ExecSpec) -> wsl::Routing {
+        if spec.run_in == RunIn::Native {
+            return wsl::Routing::Native;
+        }
+        let status = self
+            .cached
+            .get_or_init(|| wsl::detect_wsl_with(self.inner))
+            .clone();
+        match status {
+            WslStatus::Available { exe, .. } => wsl::route_available(spec, &exe),
+            status => wsl::Routing::Unavailable(status),
+        }
+    }
+}
+
+#[test]
+fn cached_probe_detects_once_and_routes_every_spec() {
+    let counting = CountingProbe::available();
+    let cached = CachedProbe {
+        inner: &counting,
+        cached: OnceLock::new(),
+    };
+
+    // A native spec rides through the cache untouched: zero probes.
+    let routing = cached.resolve_routing(&native_spec());
+    assert!(matches!(routing, wsl::Routing::Native));
+    assert_eq!(counting.find_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(counting.run_calls.load(Ordering::SeqCst), 0);
+
+    // First WSL spec pays the detection (find + `--exec true` + `--status`).
+    let mut spec = native_spec();
+    spec.run_in = RunIn::Wsl;
+    spec.program = "echo".into();
+    spec.args = vec![r"C:\logs\a.txt".into()];
+    assert!(matches!(
+        cached.resolve_routing(&spec),
+        wsl::Routing::Wsl { .. }
+    ));
+    assert_eq!(counting.find_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counting.run_calls.load(Ordering::SeqCst), 2);
+
+    // Second WSL spec: routing again, probe NOT re-run.
+    assert!(matches!(
+        cached.resolve_routing(&spec),
+        wsl::Routing::Wsl { .. }
+    ));
+    assert_eq!(counting.find_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counting.run_calls.load(Ordering::SeqCst), 2);
+}
+
 // ---------- live bridge (gated on real availability) ----------
 
 #[test]

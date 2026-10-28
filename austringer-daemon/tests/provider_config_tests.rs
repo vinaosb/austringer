@@ -35,9 +35,63 @@ async fn infer_once(
     let request = InferenceRequest {
         events: &[],
         focus_block: "M32-FOCUS question about the projection",
+        system: "",
+        tools: &[],
     };
     let cancel = CancelToken::new();
     inference.infer(&request, &cancel).await
+}
+
+/// The composed Anthropic factory renders the NEW wire shape when the
+/// request carries surfaces: top-level system, declared tools, and the
+/// stable-first/volatile-last content split with cache breakpoints
+/// (research §24.6/§27.6/§33.1).
+#[tokio::test]
+async fn composed_anthropic_factory_declares_system_tools_and_breakpoints() {
+    use austringer_core::tools::core_schema;
+    let tools = [core_schema("view_window"), core_schema("edit_lines")];
+    let transport = CassetteTransport::new(vec![Cassette::Sse(anthropic_text_cassette(
+        "claude-m32-cassette",
+        "ok",
+    ))]);
+    let resolved = match anthropic_selection()
+        .resolve_with(|name| (name == KEY_ENV).then(|| "m32-fake-key".to_owned()))
+    {
+        Ok(resolved) => resolved,
+        Err(failure) => panic!("resolve failed: {failure}"),
+    };
+    let factory = resolved.compose_factory(transport.clone());
+    let mut inference = factory().inference;
+    let request = InferenceRequest {
+        events: &[],
+        focus_block: "FOCUS-TAIL",
+        system: "M32 STABLE SYSTEM",
+        tools: &tools,
+    };
+    let _ = inference.infer(&request, &CancelToken::new()).await;
+    let requests = transport.requests();
+    assert_eq!(requests.len(), 1, "exactly one provider request");
+    let body: serde_json::Value =
+        serde_json::from_slice(&requests[0].body).expect("rendered JSON body");
+
+    let system = body["system"].as_array().expect("system is an array");
+    assert_eq!(system[0]["text"], "M32 STABLE SYSTEM");
+    assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
+    let tools_wire = body["tools"].as_array().expect("tools is an array");
+    assert_eq!(tools_wire.len(), 2);
+    assert_eq!(tools_wire[0]["name"], "view_window");
+    assert_eq!(
+        tools_wire[0]["input_schema"],
+        core_schema("view_window").parameters
+    );
+    assert_eq!(tools_wire[1]["cache_control"]["type"], "ephemeral");
+    let content = body["messages"][0]["content"]
+        .as_array()
+        .expect("split content");
+    assert_eq!(content.len(), 2);
+    assert_eq!(content[0]["cache_control"]["type"], "ephemeral");
+    assert_eq!(content[1]["text"], "FOCUS-TAIL");
+    assert!(content[1].get("cache_control").is_none());
 }
 
 fn turn_text(turn: &austringer_core::agent_loop::AssistantTurn) -> String {

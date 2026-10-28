@@ -52,9 +52,13 @@ pub(super) async fn mediate(
             blocks: vec![block.clone()],
         },
     }];
+    // A projection is a text task: no system surface, no declared tools
+    // (a tool-calling answer is a typed failure below, never accepted).
     let request = InferenceRequest {
         events: &events,
         focus_block: instruction(pending.kind),
+        system: "",
+        tools: &[],
     };
     let mut inference = (candidate.factory)();
     let answer = tokio::time::timeout(

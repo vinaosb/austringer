@@ -18,6 +18,21 @@ use crate::scheduler::{CronExpr, MAX_CATCHUP_MINUTES, SchedulerClock};
 /// Default jitter window for coalesced catch-up fires (seconds).
 pub const DEFAULT_JITTER_WINDOW_SECS: u64 = 30;
 
+/// Shipped scheduler loop period (60 s). Cron resolution is
+/// minute-granular and `pump` coalesces missed minutes (cursor
+/// high-water marks + [`MAX_CATCHUP_MINUTES`]), so this period costs
+/// nothing in fire accuracy: a due automation fires on the first tick
+/// at or after `effective`, i.e. with up to one tick of latency — the
+/// jitter window already treats sub-minute spread as non-essential.
+/// A 5 s period woke the daemon 12x/min (12x idle wakeups, plus a
+/// whole-list defs deep-clone per tick) for zero resolution gain;
+/// perf-as-culture receipt, research §23.6.
+pub const SCHEDULER_TICK_PERIOD: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Default rotation cap for the scheduler journal (8 MiB); matches
+/// [`crate::config::DaemonConfig::scheduler_journal_max_bytes`].
+pub const DEFAULT_SCHEDULER_JOURNAL_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
 /// Deterministic jitter in `[0, window)`: blake3 of job + minute, so a
 /// coalesced catch-up burst spreads across the window reproducibly.
 #[must_use]
@@ -83,8 +98,10 @@ pub struct CronRunner {
 }
 
 impl CronRunner {
-    /// Open the runner over `root`: loads the invocation ledger
-    /// (restart cursors) and the durable fire journal.
+    /// Open the runner over `root` with the default scheduler-journal
+    /// rotation cap ([`DEFAULT_SCHEDULER_JOURNAL_MAX_BYTES`]): loads
+    /// the invocation ledger (restart cursors) and the durable fire
+    /// journal.
     ///
     /// # Errors
     /// see [`RunnerError`].
@@ -95,6 +112,31 @@ impl CronRunner {
         sink: Arc<RunSink>,
         jitter_window: u64,
         network_baseline: NetworkPolicy,
+    ) -> Result<Self, RunnerError> {
+        Self::open_capped(
+            root,
+            defs,
+            kicker,
+            sink,
+            jitter_window,
+            network_baseline,
+            DEFAULT_SCHEDULER_JOURNAL_MAX_BYTES,
+        )
+    }
+
+    /// Open with an explicit scheduler-journal rotation cap; `0`
+    /// disables rotation (unlimited growth).
+    ///
+    /// # Errors
+    /// see [`RunnerError`].
+    pub fn open_capped(
+        root: &Path,
+        defs: Vec<AutomationDefinition>,
+        kicker: Arc<dyn RunKicker>,
+        sink: Arc<RunSink>,
+        jitter_window: u64,
+        network_baseline: NetworkPolicy,
+        scheduler_journal_max_bytes: u64,
     ) -> Result<Self, RunnerError> {
         let mut crons = BTreeMap::new();
         for def in &defs {
@@ -113,8 +155,11 @@ impl CronRunner {
                     .map(|minute| (def.id.clone(), minute))
             })
             .collect();
-        let journal = Journal::open(&root.join("scheduler-journal.jsonl"))
-            .map_err(|e| RunnerError::Io(e.to_string()))?;
+        let journal = Journal::open_capped(
+            &root.join("scheduler-journal.jsonl"),
+            scheduler_journal_max_bytes,
+        )
+        .map_err(|e| RunnerError::Io(e.to_string()))?;
         Ok(Self {
             defs,
             crons,
@@ -141,7 +186,11 @@ impl CronRunner {
     pub fn pump(&mut self, now_epoch_secs: u64) -> Result<PumpReport, RunnerError> {
         let now_minute = now_epoch_secs / 60;
         let mut report = PumpReport::default();
-        for def in self.defs.clone() {
+        // Borrow, never clone: this runs every tick for the daemon's
+        // lifetime, and a wholesale defs deep-clone per tick is pure
+        // idle waste (the fire/skip branches take no &mut self, so
+        // the borrow survives the whole loop).
+        for def in &self.defs {
             if !def.enabled {
                 continue;
             }
@@ -177,17 +226,17 @@ impl CronRunner {
                 self.cursors.insert(def.id.clone(), fire_minute - 1);
                 continue;
             }
-            if let Some(reason) = self.cap_reason(&def, fire_minute) {
+            if let Some(reason) = self.cap_reason(def, fire_minute) {
                 self.durable_skip(&def.id, fire_minute, reason)?;
                 self.cursors.insert(def.id.clone(), fire_minute);
                 report.skipped.push((def.id.clone(), reason));
                 continue;
             }
-            let kick = self.fire(&def, fire_minute)?;
+            let kick = self.fire(def, fire_minute)?;
             self.ledger.record(&def.id, fire_minute);
             self.ledger.save(&self.root).map_err(RunnerError::Ledger)?;
             self.sink
-                .run_started(&def, fire_minute, &kick.session_id, kick.network);
+                .run_started(def, fire_minute, &kick.session_id, kick.network);
             if let Some(host) = self.kicker.host_for(&kick.session_id) {
                 self.sink.spawn_watcher(&host, &kick.session_id);
             }
@@ -211,7 +260,7 @@ impl CronRunner {
         None
     }
 
-    fn fire(&mut self, def: &AutomationDefinition, minute: u64) -> Result<KickOff, RunnerError> {
+    fn fire(&self, def: &AutomationDefinition, minute: u64) -> Result<KickOff, RunnerError> {
         let kick = KickOff {
             automation_id: def.id.clone(),
             session_id: format!("auto-{}-{minute}", def.id),
@@ -246,7 +295,7 @@ impl CronRunner {
     }
 
     fn durable_skip(
-        &mut self,
+        &self,
         job: &str,
         minute: u64,
         reason: &'static str,
@@ -573,6 +622,47 @@ mod tests {
         let kicks = kicks_of(&kicker);
         assert_eq!(kicks.len(), 1);
         assert_eq!(kicks[0].network, NetworkPolicy::Offline);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sixty_second_tick_period_fires_due_automations()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // Pins the shipped loop period AND proves it is semantically
+        // sufficient: cron resolution is minute-granular and pump()
+        // coalesces (cursor high-water marks + MAX_CATCHUP_MINUTES),
+        // so a 60 s tick costs at most one tick of fire latency.
+        assert_eq!(
+            SCHEDULER_TICK_PERIOD,
+            std::time::Duration::from_secs(60),
+            "shipped scheduler period changed: revisit the latency receipt"
+        );
+        let dir = tempfile::tempdir()?;
+        let kicker = Arc::new(FakeKicker::default());
+        let now = Arc::new(AtomicU64::new(0));
+        let read = Arc::clone(&now);
+        let clock: SchedulerClock = Arc::new(move || read.load(Ordering::SeqCst));
+        let runner = runner_in(
+            &dir,
+            vec![def("nightly", "* * * * *")],
+            Arc::clone(&kicker),
+            0,
+        )?;
+        runner.spawn_loop(clock, SCHEDULER_TICK_PERIOD);
+
+        // The interval's first tick is immediate: it baselines only.
+        tokio::task::yield_now().await;
+        assert!(kicks_of(&kicker).is_empty(), "baseline tick must not fire");
+
+        // One full period of virtual time: the due minute fires on the
+        // single tick that lands after it.
+        now.store(60, Ordering::SeqCst);
+        tokio::time::advance(SCHEDULER_TICK_PERIOD).await;
+        tokio::task::yield_now().await;
+        let kicks = kicks_of(&kicker);
+        assert_eq!(kicks.len(), 1, "60 s period failed to fire a due minute");
+        assert_eq!(kicks[0].automation_id, "nightly");
         Ok(())
     }
 }

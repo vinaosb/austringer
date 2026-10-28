@@ -161,7 +161,7 @@ impl SkillLoader {
             }
         }
 
-        for (_, warnings) in &state.found {
+        for (_, _, warnings) in &state.found {
             report.warnings.extend(warnings.iter().cloned());
         }
         report.parse_errors = std::mem::take(&mut state.parse_errors);
@@ -171,7 +171,16 @@ impl SkillLoader {
         let mut index = SkillIndex {
             entries: winners
                 .into_iter()
-                .map(|(name, (meta, skill_md))| (name, IndexEntry { meta, skill_md }))
+                .map(|(name, (meta, content_hash, skill_md))| {
+                    (
+                        name,
+                        IndexEntry {
+                            meta,
+                            skill_md,
+                            content_hash,
+                        },
+                    )
+                })
                 .collect(),
             partials: state.partials,
             partial_paths: state.partial_paths,

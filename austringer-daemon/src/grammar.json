@@ -43,6 +43,12 @@
       "local": false
     },
     {
+      "word": "condense",
+      "usage": "/condense",
+      "help": "condense the session context now",
+      "local": false
+    },
+    {
       "word": "exit",
       "usage": "/exit",
       "help": "quit this repl",

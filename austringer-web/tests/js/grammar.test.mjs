@@ -43,9 +43,10 @@ test("grammar: cheat sheet renders one line per command with cli-only marks", ()
     "/cancel — cancel the running turn",
     "/vote-cancel [ask-id] — withdraw an open permission ask (no id = the single open ask)",
     "/mode plan|off — enter or exit plan mode",
-    "/rewind [steps] — rewind to a previous restore point (default 1)",
-    "/skill <name> [args] — run a trusted skill through the submit lane",
-    "/exit — quit this repl (cli only)",
+        "/rewind [steps] — rewind to a previous restore point (default 1)",
+        "/skill <name> [args] — run a trusted skill through the submit lane",
+        "/condense — condense the session context now",
+        "/exit — quit this repl (cli only)",
     "/image <path> — attach an image to the next submit (cli only)",
   ]);
 });
@@ -70,6 +71,7 @@ test("grammar: parse recognizes every core command", () => {
   assert.deepEqual(parseCommand("/rewind 3"), { kind: "rewind", steps: 3 });
   assert.deepEqual(parseCommand("/skill audit"), { kind: "skill", text: "/skill audit" });
   assert.deepEqual(parseCommand("/skill audit run twice"), { kind: "skill", text: "/skill audit run twice" });
+  assert.deepEqual(parseCommand("/condense"), { kind: "condense" });
 });
 
 test("grammar: malformed and unknown commands are typed, never silent submits", () => {
@@ -140,6 +142,10 @@ test("grammar: routing maps every command onto its wire message (todo 23)", () =
   });
   assert.deepEqual(routeCommand("/skill audit now", []), {
     sends: [{ type: "command", command: { type: "submit", text: "/skill audit now" } }],
+    feedback: null,
+  });
+  assert.deepEqual(routeCommand("/condense", []), {
+    sends: [{ type: "command", command: { type: "submit", text: "/condense" } }],
     feedback: null,
   });
   assert.deepEqual(routeCommand("/exit", []), { sends: [], feedback: "/exit is cli-only" });

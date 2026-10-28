@@ -137,6 +137,22 @@ impl CachePlan {
                 .collect(),
         })
     }
+
+    /// A plan over adapter-supplied part boundaries — the entry point
+    /// provider adapters use when no rendered SegmentMap exists (their
+    /// boundaries are stable-surface offsets, e.g. tools / system /
+    /// stable prefix). Same budget law as [`Self::relocate`].
+    pub fn relocate_from(
+        policy: CachePolicy,
+        boundaries: &[usize],
+        ttl: CacheTtl,
+    ) -> Result<Self, CachePlanError> {
+        Self {
+            policy,
+            breakpoints: Vec::new(),
+        }
+        .relocate(boundaries, ttl)
+    }
 }
 
 /// Why a cache plan could not be relocated.

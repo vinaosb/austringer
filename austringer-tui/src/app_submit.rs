@@ -94,6 +94,15 @@ impl App {
                     command: SessionCommand::Submit { text },
                 })]
             }
+            Parsed::Condense => {
+                // Submit verbatim, never Steer: the daemon-side slash
+                // stage runs the compaction.
+                vec![UiAction::Send(ClientMsg::Command {
+                    command: SessionCommand::Submit {
+                        text: "/condense".into(),
+                    },
+                })]
+            }
             Parsed::CliOnly { word } => {
                 self.view.note(&grammar::local_only_note(&word));
                 Vec::new()

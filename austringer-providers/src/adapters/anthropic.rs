@@ -91,12 +91,47 @@ impl WireCodec for AnthropicCodec {
         request: &CompletionRequest,
         auth: &AccessToken,
     ) -> crate::transport::TransportRequest {
-        let body = json!({
+        let system = super::wire_media::anthropic_system(request);
+        let tools = super::wire_media::anthropic_tools(request);
+        // Breakpoints per CachePlan (research §27.6): one marker per
+        // stable surface — last tool, system block, stable prompt prefix
+        // — capped at MAX_CACHE_BREAKPOINTS. Over budget (a larger
+        // surface set would have to appear) the surfaces still ride the
+        // wire, unmarked, with a logged warning: degraded caching is
+        // never a dropped declaration. Without declared surfaces the
+        // legacy shape renders — no markers, no split, string content.
+        let declared = request.system.is_some() || !request.tools.is_empty();
+        let marked = declared
+            && match austringer_core::context::CachePlan::relocate_from(
+                austringer_core::context::CachePolicy::Anthropic,
+                &[
+                    request.tools.len(),
+                    request.tools.len() + request.system.as_deref().map_or(0, str::len),
+                    request
+                        .prompt
+                        .len()
+                        .saturating_sub(request.volatile_tail_bytes),
+                ],
+                austringer_core::context::CacheTtl::FiveMinutes,
+            ) {
+                Ok(plan) => !plan.breakpoints().is_empty(),
+                Err(error) => {
+                    tracing::warn!(%error, "cache plan over the breakpoint budget; surfaces ride unmarked");
+                    false
+                }
+            };
+        let mut body = json!({
             "model": request.identity.model,
             "max_tokens": self.max_tokens,
             "stream": true,
-            "messages": [{ "role": "user", "content": super::wire_media::anthropic_content(request) }],
+            "messages": [{ "role": "user", "content": super::wire_media::anthropic_content(request, marked) }],
         });
+        if let Some(system) = system {
+            body["system"] = system;
+        }
+        if let Some(tools) = tools {
+            body["tools"] = tools;
+        }
         json_request(
             &self.url,
             &body,

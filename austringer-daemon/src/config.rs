@@ -63,6 +63,48 @@ pub struct DaemonConfig {
     /// binary) — a repo-local override file is refused with a typed
     /// error by the tool itself.
     pub test_command: Option<String>,
+    /// Rotation cap for durable turn/child journals
+    /// (`{data}/journal/{session}/{turn}.jsonl`): once the current
+    /// file exceeds this many bytes, the next append rotates it to a
+    /// single forensic `.1` generation and starts a fresh current
+    /// file. `0` disables rotation. The default (32 MiB) is enforced
+    /// at `Journal::open` — the engine's turn-journal seam — so every
+    /// journal rotates even before an explicit wiring lands.
+    pub journal_max_bytes: u64,
+    /// Rotation cap for `{data}/runs.jsonl` (run history). `0`
+    /// disables rotation. Wired through `RunSink::open_capped` at
+    /// daemon startup.
+    pub runs_max_bytes: u64,
+    /// Rotation cap for `{data}/scheduler-journal.jsonl`. `0`
+    /// disables rotation. Wired through `CronRunner::open_capped` at
+    /// daemon startup.
+    pub scheduler_journal_max_bytes: u64,
+    /// Snapshot GC bound for turn-completion checkpoint recording: the
+    /// newest `snapshot_keep_last` restore points per session survive
+    /// maintenance (older ones fall off; `/rewind` reaches back at
+    /// most this many steps). 0 would keep only the newest snapshot.
+    pub snapshot_keep_last: usize,
+    /// Sessions-retention policy for the background janitor: archive /
+    /// size / GC tiers handed verbatim to
+    /// [`SessionStore::prune`](austringer_sessions::SessionStore::prune).
+    /// The all-`None` default keeps the janitor OFF — no prune, no
+    /// orphan cleanup, zero behavior change unless configured.
+    pub retention: austringer_sessions::RetentionPolicy,
+    /// When true, the janitor follows a prune that deleted something
+    /// (archived rows or GC'd archives) with an opt-in `VACUUM` so
+    /// the freed pages return to the filesystem.
+    pub retention_vacuum: bool,
+    /// Idle-host eviction threshold (wave 2b): a session host with NO
+    /// attached clients, NO in-flight turn, and no turn activity for
+    /// this long is evicted — its channels close, the engine task
+    /// ends, and the `AgentLoop`'s transcript mirror is freed. The
+    /// next touch re-creates the host (resume-safe: no history
+    /// re-publish, cost ledger intact). `Duration::ZERO` keeps
+    /// eviction off entirely. Default 1h (the janitor cadence).
+    pub session_idle_eviction: Duration,
+    /// Context-compaction settings (plan todo 13 wiring): what every
+    /// factory-built session's stage set compacts under.
+    pub compaction: CompactionConfig,
 }
 
 impl Default for DaemonConfig {
@@ -84,6 +126,40 @@ impl Default for DaemonConfig {
             provider: None,
             session_cost_cap_micros: crate::cost_ledger::DEFAULT_SESSION_COST_CAP_MICROS,
             test_command: None,
+            journal_max_bytes: crate::journal::DEFAULT_JOURNAL_MAX_BYTES,
+            runs_max_bytes: crate::run_history::DEFAULT_RUNS_MAX_BYTES,
+            scheduler_journal_max_bytes: crate::runner::DEFAULT_SCHEDULER_JOURNAL_MAX_BYTES,
+            snapshot_keep_last: crate::snapshots::DEFAULT_SNAPSHOT_KEEP_LAST,
+            retention: austringer_sessions::RetentionPolicy::default(),
+            retention_vacuum: false,
+            session_idle_eviction: Duration::from_secs(3600),
+            compaction: CompactionConfig::default(),
+        }
+    }
+}
+
+/// The daemon's compaction section: core's engine policy plus the
+/// daemon-only knobs. Defaults mirror core's tested defaults —
+/// enabled, `Percent(75)` of a 200k window (the eviction/compaction
+/// doctrine window until model profiles carry per-model sizes).
+#[derive(Debug, Clone)]
+pub struct CompactionConfig {
+    /// Whether auto-compaction fires in session stage sets. `false`
+    /// keeps `/condense` answering with a typed notice instead of
+    /// going unknown.
+    pub enabled: bool,
+    /// The context window the threshold evaluates against.
+    pub window_tokens: u64,
+    /// The core engine policy (threshold, doctrine, segments, handoff).
+    pub engine: austringer_core::compaction::CompactionConfig,
+}
+
+impl Default for CompactionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            window_tokens: 200_000,
+            engine: austringer_core::compaction::CompactionConfig::default(),
         }
     }
 }

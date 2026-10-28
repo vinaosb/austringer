@@ -88,17 +88,31 @@ pub enum DurableError {
     Io(String),
 }
 
+/// Default rotation cap for file-backed journals (32 MiB); matches
+/// [`crate::config::DaemonConfig::journal_max_bytes`]. 0 would mean
+/// unlimited — this constant never is.
+pub const DEFAULT_JOURNAL_MAX_BYTES: u64 = 33_554_432;
+
 /// Append-only turn journal on disk.
 pub struct Journal {
     path: PathBuf,
     steps: Vec<JournalStep>,
     file: Option<std::fs::File>,
+    max_bytes: u64,
 }
 
 impl Journal {
-    /// Open (creating directories as needed). Replays prior steps;
-    /// torn/malformed lines are skipped, never abort the load.
+    /// Open (creating directories as needed) with the default
+    /// rotation cap ([`DEFAULT_JOURNAL_MAX_BYTES`]). Replays prior
+    /// steps from the CURRENT file only; torn/malformed lines are
+    /// skipped, never abort the load.
     pub fn open(path: &Path) -> Result<Self, DurableError> {
+        Self::open_capped(path, DEFAULT_JOURNAL_MAX_BYTES)
+    }
+
+    /// Open with an explicit rotation cap; `0` disables rotation
+    /// (unlimited growth, the pre-rotation behavior).
+    pub fn open_capped(path: &Path, max_bytes: u64) -> Result<Self, DurableError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| DurableError::Io(e.to_string()))?;
         }
@@ -120,6 +134,7 @@ impl Journal {
             path: path.to_owned(),
             steps,
             file: Some(file),
+            max_bytes,
         })
     }
 
@@ -130,11 +145,24 @@ impl Journal {
             path: PathBuf::new(),
             steps: Vec::new(),
             file: None,
+            max_bytes: 0,
         }
     }
 
-    /// Append one step durably (line per step).
+    /// Append one step durably (line per step). Size-capped rotation:
+    /// when the current file already exceeds `max_bytes`, it is
+    /// rotated to a single forensic `.1` generation (replacing any
+    /// prior one) BEFORE this record is written, so the newest record
+    /// always lands in the fresh current file. Replay (`open`) reads
+    /// the current file only, which is why `.1` is forensic-only and
+    /// correct: the LATEST state (open-turn prompt, last activity
+    /// outputs) always lives in current, and a rotated-away activity
+    /// output simply falls back to real execution on replay — the
+    /// designed behavior for absent history.
     pub fn record(&mut self, step: JournalStep) -> Result<(), DurableError> {
+        if self.file.is_some() && crate::rotation::exceeds_cap(&self.path, self.max_bytes) {
+            self.rotate()?;
+        }
         if let Some(file) = self.file.as_mut() {
             let mut line =
                 serde_json::to_vec(&step).map_err(|e| DurableError::Io(e.to_string()))?;
@@ -144,6 +172,22 @@ impl Journal {
                 .map_err(|e| DurableError::Io(e.to_string()))?;
         }
         self.steps.push(step);
+        Ok(())
+    }
+
+    /// Rotate at a record boundary: close the append handle, rename
+    /// current → current `.1` (atomic; replaces the prior generation,
+    /// dropping the OLDEST history), reopen a fresh current file.
+    fn rotate(&mut self) -> Result<(), DurableError> {
+        self.file = None;
+        crate::rotation::rotate(&self.path).map_err(|e| DurableError::Io(e.to_string()))?;
+        self.file = Some(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)
+                .map_err(|e| DurableError::Io(e.to_string()))?,
+        );
         Ok(())
     }
 
