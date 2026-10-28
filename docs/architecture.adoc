@@ -51,7 +51,7 @@ shared permission queue, research §1).
 [[crate-map]]
 == The workspace map
 
-Twenty-six Cargo crates plus the TypeScript VS Code project. Grouped by
+Twenty-five Cargo crates plus the TypeScript VS Code project. Grouped by
 layer:
 
 [cols="1,3,2"]
@@ -97,10 +97,6 @@ austringer-as-subagent backends.
 |austringer-repomap
 |The repository map: file graph from tag tables, Personalized PageRank on a
 CSR, signature-only rendering inside a token budget.
-|context
-
-|austringer-search
-|Tantivy BM25 lexical index plus grep — no embeddings, by scope decision.
 |context
 
 |austringer-lsp

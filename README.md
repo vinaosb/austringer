@@ -156,7 +156,7 @@ allocation metrics. All numbers above are reproducible:
 
 ## Architecture
 
-One daemon, a 26-crate Cargo workspace, four thin clients:
+One daemon, a 25-crate Cargo workspace, four thin clients:
 
 ```
  thin clients ── cli · tui (shared spawner: launch) · web SPA (daemon-served) · vscode
@@ -276,7 +276,7 @@ per-task landing history is in the [CHANGELOG](CHANGELOG.md).
   fail-closed effort grids).
 
 Library-tested, not yet wired into the shipped binaries: `austringer-repomap`
-and `austringer-search` (zero daemon dependents today), the wasm plugin
+(zero daemon dependents today), the wasm plugin
 runtime (feature-gated, off by default), OAuth device-flow auth,
 orchestration best-of-N / plan-branch comparison (the spec-driven launch
 path and fork-join children **are** wired), the VFS shadow-preflight edit
@@ -286,6 +286,9 @@ consolidation, the core `PromptBuilder`/`ContextSpec` composition surface
 with its cache-violation tracker (the wire-level stable-prefix gate itself
 is perf-gate-wired), and the worker
 (out-of-process executor) protocol — deliberately reserved.
+`austringer-search` was removed outright: a Tantivy BM25 code index with
+zero dependents of any kind, duplicating the wired `event_fts` search
+surface (the no-embeddings scope decision stands; history: git log).
 
 ## Migrating from another harness
 

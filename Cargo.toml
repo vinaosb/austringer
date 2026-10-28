@@ -17,7 +17,6 @@ members = [
     "austringer-providers",
     "austringer-repomap",
     "austringer-safety",
-    "austringer-search",
     "austringer-sessions",
     "austringer-skills",
     "austringer-snapshots",
@@ -56,15 +55,8 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # Todo-9 provider streams: skipped/malformed SSE events are logged through the
 # standard facade (lib never installs a subscriber; embedders own output).
 tracing = "0.1"
-# Todo-17 lexical search: tantivy BM25 index + ripgrep-family regex streaming.
-# Lexical only — vectors/embeddings are plan Scope-OUT. Tantivy defaults are
-# trimmed to mmap + lz4 (defaults would pull columnar-zstd-compression, whose
-# zstd-sys C build breaks the MSVC toolchain in this environment); no
-# stemmer/stopwords extras.
-tantivy = { version = "0.26", default-features = false, features = ["mmap", "lz4-compression"] }
+# austringer-tui: .gitignore-aware walking for the omnibar @file completion.
 ignore = "0.4"
-grep-regex = "0.1"
-grep-searcher = "0.1"
 tempfile = "3"
 # Todo-14 parse/tag engine: tree-sitter facade + the LanguageFn ABI shim that
 # every grammar crate returns; grammar crates themselves are optional deps
@@ -178,8 +170,7 @@ toml = "0.9"
 # comparison must be real URL parsing, not string prefixing (secure matching).
 url = "2"
 # Todo-27 permission grammar: OPT-IN regex rules (regex off by default;
-# prefix matching is the default mode). Already in the lockfile via the
-# grep-regex tree, so this pins no new vendored code.
+# prefix matching is the default mode). Pure Rust.
 regex = "1"
 # Todo-29 reference MCP server tool args: rmcp's #[tool] macro requires
 # JsonSchema derives whose generated code names the schemars crate

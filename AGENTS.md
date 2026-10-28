@@ -3,7 +3,7 @@
 **Generated:** 2026-10-25 (regenerated for the harness→austringer rename)
 
 ## OVERVIEW
-One small Rust daemon runs an AI coding agent; four thin clients attach (CLI, TUI, browser SPA, VS Code). 26 Rust workspace crates + TS extension. Every design decision cites a receipt from `.omo/research/harness-research.md` (40-section post-mortem study of 25+ harnesses — the file keeps its category-descriptive name). Public name: **austringer** (decision record: `.omo/research/naming-decision.md`).
+One small Rust daemon runs an AI coding agent; four thin clients attach (CLI, TUI, browser SPA, VS Code). 25 Rust workspace crates + TS extension. Every design decision cites a receipt from `.omo/research/harness-research.md` (40-section post-mortem study of 25+ harnesses — the file keeps its category-descriptive name). Public name: **austringer** (decision record: `.omo/research/naming-decision.md`).
 
 ## STRUCTURE
 ```
@@ -21,7 +21,7 @@ docs/                 # AsciiDoc "depth layer"; manual.adoc composed from partia
 packs/                # skills data (11 packs + manifest.json) - runtime data, never compiled
 .omo/                 # orchestration state + research + task evidence (run-continuation/ gitignored)
 ```
-Smaller crates: exec (ConPTY/WSL2), safety (sandboxes), skills (quarantine+lock.json, vendor dir `.austringer`), mcp (client/server/acp), orchestration (launch/roles/phases), evals (run_sweep + scenario pack), bench (perf-gate + budgets.json baselines), snapshots (git refs under `refs/austringer/`), vfs, ast/repomap/search/lsp, media, tools, test-support, wasm (host module `"austringer"`).
+Smaller crates: exec (ConPTY/WSL2), safety (sandboxes), skills (quarantine+lock.json, vendor dir `.austringer`), mcp (client/server/acp), orchestration (launch/roles/phases), evals (run_sweep + scenario pack), bench (perf-gate + budgets.json baselines), snapshots (git refs under `refs/austringer/`), vfs, ast/repomap/lsp, media, tools, test-support, wasm (host module `"austringer"`).
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

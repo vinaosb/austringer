@@ -182,5 +182,5 @@ fn degraded_answer_names_the_search_fallback() {
     let Answer::DegradedToSearch { hint, .. } = answer else {
         panic!("expected the degraded variant");
     };
-    assert!(hint.contains("austringer-search"), "hint = {hint}");
+    assert!(hint.contains("lexical search"), "hint = {hint}");
 }
