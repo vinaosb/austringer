@@ -55,6 +55,10 @@ pub struct CoreExecutors {
     /// DaemonState exists — sessions open later, so every registry sees
     /// the bound services. Unbound = the `task` tool is absent.
     task: std::sync::OnceLock<Arc<crate::task::TaskServices>>,
+    /// The daemon-wide MCP mount surface (todo 12); set once by the
+    /// binary after the async startup scan/connect. Unbound = no MCP
+    /// tools in any registry (the worker-protocol default never binds).
+    mcp: std::sync::OnceLock<Arc<crate::mcp_mounts::McpMounts>>,
 }
 
 impl CoreExecutors {
@@ -74,6 +78,7 @@ impl CoreExecutors {
             },
             run_tests: crate::tools::run_tests::RunTestsTool::new(root, None),
             task: std::sync::OnceLock::new(),
+            mcp: std::sync::OnceLock::new(),
         }
     }
 
@@ -90,6 +95,12 @@ impl CoreExecutors {
     /// afterwards serves the `task` tool.
     pub fn bind_task_services(&self, services: Arc<crate::task::TaskServices>) {
         let _ = self.task.set(services);
+    }
+
+    /// Binds the MCP mount surface; every registry opened afterwards
+    /// mounts the enabled servers' cached tools (todo 12).
+    pub fn bind_mcp_mounts(&self, mounts: Arc<crate::mcp_mounts::McpMounts>) {
+        let _ = self.mcp.set(mounts);
     }
 
     /// Starts the RSS-sampled LSP server guard (must run inside a
@@ -150,6 +161,9 @@ impl CoreExecutors {
                     Arc::clone(services),
                 )))
                 .map_err(|error| io::Error::other(error.to_string()))?;
+        }
+        if let Some(mounts) = self.mcp.get() {
+            mounts.mount_into(&mut registry);
         }
         Ok(registry)
     }

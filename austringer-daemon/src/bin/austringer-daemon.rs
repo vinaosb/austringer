@@ -251,6 +251,28 @@ async fn build_state(config: DaemonConfig) -> Result<Arc<DaemonState>, String> {
     );
     core_executors.start_lsp_guard();
     state.executor_factory = core_executors.executor_factory();
+    // Todo 12 (ecosystem alignment): MCP servers declared ENABLED
+    // (`trusted_autostart: true` — explicit user edits only; pack
+    // installs land disabled) mount into every session's tool registry
+    // as `mcp__<server>__<tool>` over one shared pooled connection per
+    // server. Fail-closed by construction: approvals bind to the
+    // full-entry fingerprint and nothing auto-trusts, so with no
+    // recorded approval (the T7 ask flow owns recording) every enabled
+    // entry refuses typed at startup and the daemon serves on.
+    {
+        let data_dir = state.config.data_dir.clone();
+        core_executors.bind_mcp_mounts(Arc::new(
+            austringer_daemon::mcp_mounts::McpMounts::start(
+                &data_dir,
+                Arc::new(austringer_mcp::trust::MemoryTrustStore::new()),
+                austringer_mcp::allowlist::OrgAllowlist::new(),
+                austringer_mcp::pool::TransportPool::new(
+                    austringer_daemon::mcp_mounts::default_pool_config(),
+                ),
+            )
+            .await,
+        ));
+    }
     let state = Arc::new(state);
     // Todo 13: the task(category) delegation tool rides the same
     // registries whenever the dispatcher intake is bound (routing.json

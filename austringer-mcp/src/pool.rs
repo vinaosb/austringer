@@ -272,6 +272,14 @@ impl PoolHandle {
         &self.client
     }
 
+    /// The shared client as an owned Arc: mounted tool providers outlive
+    /// the borrow, while THIS handle keeps the pool refcount — the entry
+    /// cannot be drained out from under a session still holding clones.
+    #[must_use]
+    pub fn client_arc(&self) -> Arc<McpClient> {
+        Arc::clone(&self.client)
+    }
+
     /// Re-arms the per-call deadline on the shared client.
     #[must_use]
     pub fn with_call_timeout(self, timeout: Duration) -> Self {

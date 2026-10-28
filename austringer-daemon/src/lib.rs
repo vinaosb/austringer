@@ -33,6 +33,7 @@ pub mod journal;
 pub mod kickoff;
 pub mod launch;
 pub mod ledger;
+pub mod mcp_mounts;
 pub mod media;
 pub mod mediation;
 pub mod notify;
