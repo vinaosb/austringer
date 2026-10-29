@@ -74,7 +74,52 @@ impl ToolProvider for ViewWindowTool {
 
 /// `edit_lines` over `austringer-tools`' anchored, uniqueness-validated,
 /// syntax-gated edits; the model sees only the changed-region fringe.
-pub(crate) struct EditLinesTool;
+/// The write goes through the staged lane (semantic hunks + VFS drift
+/// contract) and every successful edit surfaces a `SessionEvent::Diff`
+/// on the session's event stream.
+pub(crate) struct EditLinesTool {
+    /// The session's daemon-event lane (bounded; a full channel drops
+    /// the diff — diffs are advisory, the durable record is the edit
+    /// itself, mirroring the worker path's `forward_diff`).
+    pub(crate) sink: tokio::sync::mpsc::Sender<crate::protocol::SessionEvent>,
+}
+
+fn lane_error(error: super::edit_lane::LaneError) -> ProviderError {
+    match error {
+        super::edit_lane::LaneError::Tools(inner) => provider_error(inner),
+        other => ProviderError::Execution {
+            message: other.to_string(),
+        },
+    }
+}
+
+fn parse_edits(arguments: &Value) -> Result<Vec<austringer_tools::edit::LineEdit>, ProviderError> {
+    let raw_edits = arguments
+        .get("edits")
+        .and_then(Value::as_array)
+        .ok_or_else(|| ProviderError::InvalidArguments {
+            message: "arguments must include an 'edits' array".to_owned(),
+        })?;
+    let mut edits = Vec::with_capacity(raw_edits.len());
+    for raw in raw_edits {
+        let line =
+            optional_u64_arg(raw, "line")?.ok_or_else(|| ProviderError::InvalidArguments {
+                message: "each edit needs a 1-based 'line'".to_owned(),
+            })?;
+        if line == 0 {
+            return Err(ProviderError::InvalidArguments {
+                message: "'line' is 1-based; got 0".to_owned(),
+            });
+        }
+        edits.push(austringer_tools::edit::LineEdit {
+            line: line as usize,
+            old_text: str_arg(raw, "old_text")?.to_owned(),
+            new_text: str_arg(raw, "new_text")?.to_owned(),
+            hash: None,
+        });
+    }
+    Ok(edits)
+}
 
 #[async_trait]
 impl ToolProvider for EditLinesTool {
@@ -84,33 +129,16 @@ impl ToolProvider for EditLinesTool {
 
     async fn execute(&self, arguments: &Value) -> Result<Vec<u8>, ProviderError> {
         let path = str_arg(arguments, "path")?;
-        let raw_edits = arguments
-            .get("edits")
-            .and_then(Value::as_array)
-            .ok_or_else(|| ProviderError::InvalidArguments {
-                message: "arguments must include an 'edits' array".to_owned(),
-            })?;
-        let mut edits = Vec::with_capacity(raw_edits.len());
-        for raw in raw_edits {
-            let line =
-                optional_u64_arg(raw, "line")?.ok_or_else(|| ProviderError::InvalidArguments {
-                    message: "each edit needs a 1-based 'line'".to_owned(),
-                })?;
-            if line == 0 {
-                return Err(ProviderError::InvalidArguments {
-                    message: "'line' is 1-based; got 0".to_owned(),
-                });
-            }
-            edits.push(austringer_tools::edit::LineEdit {
-                line: line as usize,
-                old_text: str_arg(raw, "old_text")?.to_owned(),
-                new_text: str_arg(raw, "new_text")?.to_owned(),
-                hash: None,
-            });
-        }
-        let outcome = austringer_tools::edit::apply_edits_path(Path::new(path), &edits, None)
-            .map_err(provider_error)?;
-        Ok(outcome.fringe.render().into_bytes())
+        let edits = parse_edits(arguments)?;
+        let staged = super::edit_lane::staged_edit(Path::new(path), &edits).map_err(lane_error)?;
+        let committed = super::edit_lane::commit_staged(staged).map_err(lane_error)?;
+        let _ = self.sink.try_send(crate::protocol::SessionEvent::Diff {
+            path: super::edit_lane::display_path(&committed.path),
+            before_hash: committed.before_hash.clone(),
+            after_hash: committed.after_hash.clone(),
+            hunks: committed.hunks.clone(),
+        });
+        Ok(committed.fringe.render().into_bytes())
     }
 }
 

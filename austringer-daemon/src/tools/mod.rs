@@ -8,6 +8,7 @@
 //! remains the default executor for un-injected states; unbound tools
 //! keep their typed NoExecutor dispatch error.
 
+pub mod edit_lane;
 pub(crate) mod providers;
 pub mod run_tests;
 mod safety;
@@ -23,7 +24,7 @@ use austringer_core::agent_loop::stages::{StageCtx, StageError, ToolExecutor, To
 use austringer_core::tools::PinnedToolSet;
 use austringer_core::tools::{IoCap, ToolProvider, ToolRegistry, ToolSchema};
 
-use providers::{EditLinesTool, ExecuteCommandTool, LspQueryTool, ViewWindowTool};
+use providers::{ExecuteCommandTool, LspQueryTool, ViewWindowTool};
 
 use crate::protocol::SessionEvent;
 
@@ -48,7 +49,6 @@ pub type ExecutorFactory = Arc<
 /// router (language servers spawn lazily on first use).
 pub struct CoreExecutors {
     view_window: Arc<dyn ToolProvider>,
-    edit_lines: Arc<dyn ToolProvider>,
     lsp: LspQueryTool,
     run_tests: crate::tools::run_tests::RunTestsTool,
     /// The delegation services (todo 13); set once by the binary AFTER
@@ -69,7 +69,6 @@ impl CoreExecutors {
         let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         Self {
             view_window: Arc::new(ViewWindowTool),
-            edit_lines: Arc::new(EditLinesTool),
             lsp: LspQueryTool {
                 router: austringer_lsp::LspRouter::new(austringer_lsp::LspConfig::new(
                     root.clone(),
@@ -115,17 +114,26 @@ impl CoreExecutors {
     /// bound to their day-one contracts, plus the model-facing
     /// `search_sessions` tool (todo 11) and `run_tests` tool (todo 17:
     /// framework detection + typed TestReports; approval-tier parity
-    /// with execute_command).
+    /// with execute_command). `edit_lines` is built per session around
+    /// `event_sink` so successful edits publish `SessionEvent::Diff`
+    /// frames onto the owning session's stream.
     ///
     /// # Errors
     /// spill-store creation failure for the session directory.
-    pub fn open_registry(&self, session_dir: &Path) -> io::Result<ToolRegistry> {
+    pub fn open_registry(
+        &self,
+        session_dir: &Path,
+        event_sink: tokio::sync::mpsc::Sender<SessionEvent>,
+    ) -> io::Result<ToolRegistry> {
         let mut registry = ToolRegistry::open(session_dir, IoCap::DEFAULT)?;
         registry
             .bind_executor("view_window", Arc::clone(&self.view_window))
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
-            .bind_executor("edit_lines", Arc::clone(&self.edit_lines))
+            .bind_executor(
+                "edit_lines",
+                Arc::new(providers::EditLinesTool { sink: event_sink }),
+            )
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
             .bind_executor(
@@ -178,8 +186,8 @@ impl CoreExecutors {
     #[must_use]
     pub fn executor_factory(self: &Arc<Self>) -> ExecutorFactory {
         let executors = Arc::clone(self);
-        Arc::new(
-            move |session_dir, _event_sink| match executors.open_registry(session_dir) {
+        Arc::new(move |session_dir, event_sink| {
+            match executors.open_registry(session_dir, event_sink) {
                 Ok(registry) => {
                     let tools = {
                         let pinned = registry.pin_current();
@@ -197,8 +205,8 @@ impl CoreExecutors {
                         Vec::new(),
                     )
                 }
-            },
-        )
+            }
+        })
     }
 }
 
@@ -279,7 +287,8 @@ mod tests {
     async fn executor_bound_registry_opens_with_all_four_bound() {
         let dir = tempfile::tempdir().expect("tempdir");
         let executors = CoreExecutors::in_process();
-        let registry = executors.open_registry(dir.path()).expect("registry");
+        let (sink, _rx) = tokio::sync::mpsc::channel(4);
+        let registry = executors.open_registry(dir.path(), sink).expect("registry");
         let executor = RegistryToolExecutor::open(registry);
         // All four bound tools answer (a missing-file view is a typed
         // execution failure, NOT a NoExecutor miss).

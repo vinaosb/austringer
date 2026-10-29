@@ -643,6 +643,7 @@ dependencies = [
  "austringer-snapshots",
  "austringer-test-support",
  "austringer-tools",
+ "austringer-vfs",
  "austringer-web",
  "axum",
  "base64ct",
