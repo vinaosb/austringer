@@ -144,6 +144,12 @@
 # qwen2.5:1.5b tag (~1 GB), and executes the two tests. Tag pinned
 # deliberately: if the registry drops it, the step fails loudly — a
 # finding, not noise. Local recipe lives in the test module docs.
+# Both the image and the model are digest-pinned: the image by
+# immutable registry digest; the model by post-pull assert of its
+# `ollama list` ID (65ec06548149…, the manifest digest prefix) because
+# this ollama version rejects pull-by-digest. Re-pin procedure after a
+# DELIBERATE upgrade: `docker image inspect ollama/ollama`
+# (RepoDigests) and `ollama list` (ID column), then update this file.
 #
 # ── Bench smoke ─────────────────────────────────────────────────────────
 # The six criterion benches (repomap, eviction, prompt, pty, sessions,
@@ -167,6 +173,11 @@ on:
   # on pull_request events.
   pull_request:
     branches: [main]
+  # The pr lane is a REQUIRED check, so it must re-run on merge-queue
+  # entries (its != schedule guard admits merge_group). The
+  # path-targeted jobs stay pull_request-only: they gate review, the
+  # lane gates the merge.
+  merge_group:
 
 # Per-ref groups: a new PR push cancels that PR's own superseded run;
 # the weekly main run (refs/heads/main) can only collide with a manual
@@ -246,8 +257,16 @@ jobs:
           AUSTRINGER_OLLAMA_URL: http://127.0.0.1:11434/v1
         run: |
           set -euxo pipefail
-          docker run -d --name ollama-live -p 127.0.0.1:11434:11434 ollama/ollama
+          docker run -d --name ollama-live -p 127.0.0.1:11434:11434 \
+            ollama/ollama@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
           docker exec ollama-live ollama pull qwen2.5:1.5b
+          # This ollama rejects pull-by-digest (400 invalid model name,
+          # verified 2026-10-29), so the tag is asserted post-pull: a
+          # registry re-point of qwen2.5:1.5b fails the step loudly
+          # instead of silently serving a different model.
+          docker exec ollama-live ollama list \
+            | grep -Eq 'qwen2\.5:1\.5b[[:space:]]+65ec06548149' \
+            || { echo '::error::qwen2.5:1.5b digest drifted from pinned 65ec06548149'; exit 1; }
           cargo nextest run --locked -p austringer-providers --run-ignored only -E 'test(live_compat)'
           docker rm -f ollama-live
 
@@ -488,8 +507,16 @@ jobs:
           AUSTRINGER_OLLAMA_URL: http://127.0.0.1:11434/v1
         run: |
           set -euxo pipefail
-          docker run -d --name ollama-live -p 127.0.0.1:11434:11434 ollama/ollama
+          docker run -d --name ollama-live -p 127.0.0.1:11434:11434 \
+            ollama/ollama@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
           docker exec ollama-live ollama pull qwen2.5:1.5b
+          # This ollama rejects pull-by-digest (400 invalid model name,
+          # verified 2026-10-29), so the tag is asserted post-pull: a
+          # registry re-point of qwen2.5:1.5b fails the step loudly
+          # instead of silently serving a different model.
+          docker exec ollama-live ollama list \
+            | grep -Eq 'qwen2\.5:1\.5b[[:space:]]+65ec06548149' \
+            || { echo '::error::qwen2.5:1.5b digest drifted from pinned 65ec06548149'; exit 1; }
           cargo nextest run --locked -p austringer-providers --run-ignored only -E 'test(live_compat)'
           docker rm -f ollama-live
 

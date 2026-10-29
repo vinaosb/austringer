@@ -53,6 +53,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Required checks must also run on merge-queue entries or the queue
+  # can never satisfy them.
+  merge_group:
 
 # Superseded runs on the same ref cancel; PR pushes do not cancel main runs
 # (distinct refs → distinct groups).

@@ -94,7 +94,7 @@ async function scenario(name, fn) {
   }
 }
 
-async function main() {
+async function runAll() {
   const daemon = await startDaemon();
   const { base, token } = daemon;
   const browser = await chromium.launch({ executablePath: CHROMIUM });
@@ -310,8 +310,27 @@ async function main() {
   console.log(`E2E RESULT: ${results.every((r) => r.startsWith("PASS")) ? "ALL PASS" : "FAILURES"}`);
 }
 
-main().catch((err) => {
-  console.error(results.join("\n"));
-  console.error(`E2E RESULT: FATAL ${err.message}`);
-  process.exitCode = 1;
-});
+// One full-run retry, never a per-scenario one: the fixture daemon
+// serves a single scripted echo turn per session, so a partial retry
+// on the same daemon would starve its turn and fail differently. A
+// fresh daemon resets every session. Receipt: PR #37 — the
+// two-browser convergence assertion flaked once under runner load
+// and passed on rerun; this makes that class self-healing while
+// still reporting the flake in the log.
+async function main() {
+  try {
+    await runAll();
+    return;
+  } catch (first) {
+    console.error(`E2E attempt 1 failed (${first.message}) — one retry with a fresh daemon`);
+  }
+  try {
+    await runAll();
+    console.log("E2E FLAKY: passed on retry (attempt 2)");
+  } catch (second) {
+    console.error(`E2E RESULT: FATAL ${second.message}`);
+    process.exitCode = 1;
+  }
+}
+
+main();
