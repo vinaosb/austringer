@@ -14,6 +14,17 @@
 # deterministic tier now stops the PR that caused it, not the weekly
 # report up to 7 days later.
 #
+# WHY PATH-TARGETED PR JOBS: the remaining weekly-only tests are not
+# equally ignorable on PRs — a PR that CHANGES the surface a test
+# exercises should be gated by that test. The `changes` job maps
+# changed paths to owning surfaces and the targeted jobs run only when
+# their surface changed (direct dependencies only: a core change that
+# transitively breaks the daemon PTY session stays with the weekly
+# sweep, otherwise the timing-sensitive tier becomes de-facto
+# always-on). PTY-family targeted runs use nextest --retries so
+# shared-runner load noise does not block a merge while real failures
+# still fail (flaky passes are visible in the log, never silent).
+#
 # WHY SPLIT BY RUNNER OS: a single-OS design is internally contradictory
 # — 3 of pty_qa's 7 tests are `#[cfg(windows)]` (they never even compile
 # on ubuntu), while container_args needs a Docker daemon (GitHub's
@@ -84,7 +95,14 @@
 #     recorder that REWRITES the v1 wire-corpus fixtures; its own ignore
 #     message says re-running after a protocol change would falsify
 #     history. Scheduled CI must never execute it.
-#   austringer-media  7 real-tool tier tests — opt-in by design (above).
+#   austringer-media  real-tool tier tests — split 2026-10-29: the
+#     ffmpeg PAIR (real_probe_transcode_decode_back,
+#     avif_real_ffmpeg_decode_back_pixel_hash) moved to a path-targeted
+#     PR job because ffmpeg is not vendor-rare — it installs from the
+#     ubuntu archive in seconds. The remaining four (blender / freecad
+#     / gdal / gltf-validator) and the size canary STAY opt-in: no
+#     hosted runner has those binaries and the canary needs a release
+#     build; that part of the media contract is unchanged.
 #
 # Accounting (corrects the prior header's "ubuntu 19" — the ubuntu list
 # above contains 18 tests):
@@ -93,6 +111,9 @@
 #   weekly windows: 8 (exec 7 + taskkill golden)
 #   weekly ubuntu: 18 + ollama 2 = 20 (union of weekly jobs = 28 ≥ 21
 #     target; neither job alone reaches it — the union is the contract)
+#   path-targeted PR jobs (conditional, on surface change): exec 7
+#     (austringer-exec/**), kill9 1 (austringer-lsp/**), daemon PTY 1
+#     (austringer-daemon/**), media ffmpeg 2 (austringer-media/**)
 #
 # ── Failure modes (how this workflow fails LOUDLY) ─────────────────────
 #  * A golden drift (rust-analyzer behavior change on the pinned
@@ -230,6 +251,149 @@ jobs:
           cargo nextest run --locked -p austringer-providers --run-ignored only -E 'test(live_compat)'
           docker rm -f ollama-live
 
+  changes:
+    name: detect changed deep-QA surfaces
+    # Path→surface mapping for the targeted jobs below. Runs only on
+    # pull_request (dorny/paths-filter lists PR files via the GitHub
+    # API — no checkout needed; the pull-requests read grant is
+    # required because the workflow-level permissions pin narrows the
+    # token to contents:read).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      exec: ${{ steps.filter.outputs.exec }}
+      lsp: ${{ steps.filter.outputs.lsp }}
+      daemon: ${{ steps.filter.outputs.daemon }}
+      media: ${{ steps.filter.outputs.media }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            exec:
+              - 'austringer-exec/**'
+            lsp:
+              - 'austringer-lsp/**'
+            daemon:
+              - 'austringer-daemon/**'
+            media:
+              - 'austringer-media/**'
+
+  pr-pty-windows:
+    name: pr targeted (windows — exec pty_qa + lsp kill9)
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.exec == 'true' || needs.changes.outputs.lsp == 'true')
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Install pinned rust-analyzer (${{ env.RUST_ANALYZER_VERSION }})
+        # Only the kill9 step needs it; conditional to save a minute on
+        # exec-only PRs.
+        if: needs.changes.outputs.lsp == 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          curl.exe -sSL -o ra.zip "https://github.com/rust-lang/rust-analyzer/releases/download/${env:RUST_ANALYZER_VERSION}/rust-analyzer-x86_64-pc-windows-msvc.zip"
+          Expand-Archive ra.zip -DestinationPath rust-analyzer-bin
+          $dir = (Resolve-Path rust-analyzer-bin).Path
+          Add-Content $env:GITHUB_PATH $dir
+          $env:PATH = "$dir;$env:PATH"
+          rust-analyzer --version
+      - name: Run exec pty_qa set (7 tests — austringer-exec changed)
+        # --retries 2: PTY timing under shared-runner load can flake; a
+        # retry pass still reports the test as flaky in the log, so the
+        # real signal survives while noise does not block the merge.
+        if: needs.changes.outputs.exec == 'true'
+        run: >-
+          cargo nextest run --workspace --run-ignored only --locked
+          --exclude austringer-media --retries 2
+          -E "package(austringer-exec)"
+      - name: Run lsp kill9 golden (austringer-lsp changed)
+        # The other three lsp goldens already run in every PR lane; this
+        # is the taskkill-bound fourth.
+        if: needs.changes.outputs.lsp == 'true'
+        run: >-
+          cargo nextest run --workspace --run-ignored only --locked
+          --exclude austringer-media --retries 2
+          -E "test(real_kill9_restart_with_backoff_then_degrade)"
+
+  pr-daemon-pty:
+    name: pr targeted (ubuntu — daemon real-binary PTY session)
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.changes.outputs.daemon == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/lib/graalvm /opt/ghc
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Run daemon PTY session (1 test, ~90–150 s)
+        # --retries 1: one retry absorbs a single load spike; the test
+        # is long enough that two retries would eat the budget.
+        run: >-
+          cargo nextest run --workspace --run-ignored only --locked
+          --exclude austringer-media --retries 1
+          -E "test(real_binary_pty_session_emits_program_status)"
+
+  pr-media-ffmpeg:
+    name: pr targeted (ubuntu — media ffmpeg tier)
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.changes.outputs.media == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/lib/graalvm /opt/ghc
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Install ffmpeg (ubuntu archive build)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Run media ffmpeg tier (2 tests)
+        # Media contract split 2026-10-29 — see the header. The ubuntu
+        # ffmpeg build carries the AV1 decoders the avif pixel-hash
+        # test needs (verified locally against chocolatey ffmpeg).
+        env:
+          FFMPEG_BIN: /usr/bin/ffmpeg
+        run: >-
+          cargo nextest run --locked -p austringer-media --run-ignored only
+          -E "test(real_probe_transcode_decode_back) or test(avif_real_ffmpeg_decode_back_pixel_hash)"
+
   ignored-windows:
     name: ignored deep-QA (windows — pty_qa + taskkill golden)
     # Weekly/dispatch only — the PR lane covers pull_request events.
@@ -360,3 +524,33 @@ jobs:
           --bench eviction --bench prompt --bench pty --bench sessions
           --bench tui -- --warm-up-time 1 --measurement-time 2
           --sample-size 10
+
+  notify-failure:
+    name: open tracking issue on weekly sweep failure
+    # A failed SCHEDULED run is invisible unless someone goes looking —
+    # which defeats the weekly lane's whole purpose. This job turns a
+    # sweep failure into an open issue (one rolling issue, commented on
+    # repeat failures) so it surfaces in the repo's issue list. PR-lane
+    # failures need no notification: they already block their PR.
+    if: failure() && github.event_name == 'schedule'
+    needs: [ignored-windows, ignored-ubuntu, bench-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Find-or-create the deep-qa failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh label create deep-qa-failure --color B60205 --description "weekly deep-qa sweep failed" 2>/dev/null || true
+          url=$(gh issue list --repo "$GITHUB_REPOSITORY" --label deep-qa-failure --state open --json url --jq '.[0].url')
+          if [ -n "$url" ]; then
+            gh issue comment "$url" --body "Weekly sweep failed again: $run_url"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label deep-qa-failure \
+              --title "weekly deep-qa sweep failed" \
+              --body "The scheduled deep-qa sweep failed. See $run_url — keep this issue open until the sweep is green again."
+          fi
