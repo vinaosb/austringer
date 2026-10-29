@@ -23,6 +23,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Required checks (link check, asciidoctor build) must also run on
+  # merge-queue entries.
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

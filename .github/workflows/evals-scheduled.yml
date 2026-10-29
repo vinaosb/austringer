@@ -77,3 +77,33 @@ jobs:
             docs/release/evals-conformance-report.json
             docs/release/evals-conformance-report.table.txt
           retention-days: 30
+
+  notify-failure:
+    name: open tracking issue on sweep failure
+    # Same rationale as deep-qa's notify-failure: a failed SCHEDULED run
+    # is invisible unless someone goes looking. The daily sweep is the
+    # conformance tripwire (exit 2 = drift/regression surfaced); a
+    # silent red run defeats it. One rolling issue, commented on
+    # repeat failures, closed by a human once the sweep is green again.
+    if: failure() && github.event_name == 'schedule'
+    needs: [conformance-sweep]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Find-or-create the evals sweep failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh label create evals-sweep-failure --color D93F0B --description "scheduled evals conformance sweep failed" 2>/dev/null || true
+          url=$(gh issue list --repo "$GITHUB_REPOSITORY" --label evals-sweep-failure --state open --json url --jq '.[0].url')
+          if [ -n "$url" ]; then
+            gh issue comment "$url" --body "Scheduled evals sweep failed again: $run_url"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label evals-sweep-failure \
+              --title "scheduled evals conformance sweep failed" \
+              --body "The daily evals conformance sweep failed (exit 2 = drift/regression). See $run_url — keep this issue open until the sweep is green again."
+          fi

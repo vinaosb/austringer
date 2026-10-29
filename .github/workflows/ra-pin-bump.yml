@@ -1,0 +1,72 @@
+# Rust-analyzer pin auto-bump — weekly check + PR when upstream moved.
+#
+# WHY: the deep-qa goldens are pinned to a date-tagged rust-analyzer
+# (RUST_ANALYZER_VERSION in deep-qa.yml). The pin guarantees golden
+# determinism, but upstream ships weekly, so without a bump habit the
+# pin rots until someone faces months of drift at once. This workflow
+# turns bumping into a non-event: when upstream's latest release
+# differs from the pin, it opens a PR with just the version change.
+# The deep-qa pr lane runs the three goldens against the NEW pin on
+# that PR — a golden drift after a bump is a finding about
+# rust-analyzer behavior, to be recorded in the PR before merging (see
+# the deep-qa.yml header). No-op exit when the pin is current or a
+# bump branch is already open.
+
+name: ra-pin-bump
+
+on:
+  schedule:
+    # Wednesdays 05:17 UTC — off the hour; two days after the deep-qa
+    # weekly sweep so a bump PR lands on fresh sweep evidence.
+    - cron: '17 5 * * 3'
+  workflow_dispatch:
+
+concurrency:
+  group: ra-pin-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-if-stale:
+    name: bump RUST_ANALYZER_VERSION if upstream moved
+    # Forks have no write token for this — never run scheduled there.
+    if: github.repository == 'vinaosb/austringer'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ github.token }}
+          # persist-credentials stays TRUE (deliberate deviation from
+          # this repo's default): the step must push a branch, and the
+          # run-scoped token is the only credential it should hold.
+      - name: Compare pin to upstream latest, open bump PR if stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          latest=$(gh api repos/rust-lang/rust-analyzer/releases/latest --jq .tag_name)
+          pin=$(grep -oE "RUST_ANALYZER_VERSION: '[0-9]{4}-[0-9]{2}-[0-9]{2}'" .github/workflows/deep-qa.yml | grep -oE "[0-9]{4}-[0-9]{2}-[0-9]{2}")
+          echo "pin=$pin latest=$latest"
+          if [ "$pin" = "$latest" ]; then
+            echo "pin is current — no-op"
+            exit 0
+          fi
+          branch="ra-pin/$latest"
+          if git ls-remote --heads origin "$branch" | grep -q .; then
+            echo "branch $branch already open — no-op"
+            exit 0
+          fi
+          sed -i "s/RUST_ANALYZER_VERSION: '$pin'/RUST_ANALYZER_VERSION: '$latest'/" .github/workflows/deep-qa.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add .github/workflows/deep-qa.yml
+          git commit -m "chore(deep-qa): bump rust-analyzer pin $pin -> $latest"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore(deep-qa): bump rust-analyzer pin $pin -> $latest" \
+            --body "Automated weekly bump ($pin -> $latest). The deep-qa pr lane runs the three lsp goldens against the NEW pin on this PR. A golden drift here is a finding about rust-analyzer behavior — record it in this PR before merging (see the deep-qa.yml header contract)."
