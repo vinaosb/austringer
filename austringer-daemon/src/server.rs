@@ -63,6 +63,13 @@ pub struct DaemonState {
     /// (the cost-cap thresholds survive eviction). Entries drop when
     /// retention GC removes the session itself.
     pub ledgers: Mutex<HashMap<String, Arc<crate::cost_ledger::SessionLedger>>>,
+    /// Per-session prompt epochs keyed by session id, OUTLIVING host
+    /// eviction like the ledgers: the PromptBuilder baseline (blake3
+    /// stable-prefix chain + the cache-violation tracker) records at
+    /// session creation, and a re-created host's re-composition is
+    /// compared against it — drift surfaces as a typed transcript
+    /// notice, never a silent prefix-cache churn. In-memory only.
+    pub prompt_epochs: Mutex<HashMap<String, crate::prompt::PromptEpoch>>,
     /// Engine session dirs root.
     pub sessions_root: PathBuf,
     /// Remote-worker router (split-brain tool execution).
@@ -134,6 +141,7 @@ impl DaemonState {
             routing: None,
             hosts: Mutex::new(HashMap::new()),
             ledgers: Mutex::new(HashMap::new()),
+            prompt_epochs: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             drain,
         })
@@ -283,18 +291,30 @@ impl DaemonState {
         // prompt plus the session registry's pinned core schemas
         // (research §24.6/§33.1). Set once per session — never churned
         // per request — so the provider prefix cache survives turns.
-        // The repomap block composes ONCE here, before spawn, over the
-        // daemon's working directory (the same root the LSP and
-        // run_tests tools use) and is frozen for the session's
-        // lifetime; recomposing mid-session would invalidate the
-        // prefix cache.
+        // The prompt composes ONCE here through the core
+        // PromptBuilder/ContextSpec surface (byte-identical to the
+        // legacy compose_system_prompt contract, pinned by
+        // prompt_composition_tests) over the daemon's working
+        // directory (the same root the LSP and run_tests tools use)
+        // and is frozen for the session's lifetime; the recorded
+        // epoch makes any later re-composition drift observable — a
+        // `prompt_cache` notice on the hub, never a silent churn.
         let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut loop_config = loop_config;
-        loop_config.system = crate::repomap::compose_system_prompt(
+        let (system, prompt_notices) = crate::prompt::bind_system_prompt(
+            &self.prompt_epochs,
+            id,
             &workspace_root,
             &self.config.data_dir.join("ast-cache"),
             self.config.repomap_token_budget,
         );
+        for message in prompt_notices {
+            host.publish(crate::events::SessionEvent::Notification {
+                kind: crate::prompt::PROMPT_CACHE_KIND.to_owned(),
+                message,
+            });
+        }
+        loop_config.system = system;
         loop_config.tools = wire_tools;
         let _ = host.spawn_engine_with_config(
             session_dir,

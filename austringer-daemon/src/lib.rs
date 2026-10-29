@@ -41,6 +41,7 @@ pub mod osc;
 pub mod otel;
 pub mod plan;
 pub mod projection;
+pub mod prompt;
 pub mod protocol;
 pub mod provider;
 pub mod registry;

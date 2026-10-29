@@ -274,9 +274,14 @@ per-task landing history is in the [CHANGELOG](CHANGELOG.md).
   agent mode; session cost governance; OSC 777/7501 program status; media
   surface with nine adapter families; 2026-10 model catalog (20 models,
   fail-closed effort grids).
+- Session prompts composed through the core `PromptBuilder`/`ContextSpec`
+  surface at spawn — byte-identical to the frozen `SESSION_SYSTEM_PROMPT` +
+  `<repomap>` contract (test-pinned) — with the cache-violation tracker
+  guarding recompositions: prefix drift on an eviction-resume surfaces as a
+  typed `prompt_cache` transcript notice, never a silent cache bust
+  (research §32).
 
-Library-tested, not yet wired into the shipped binaries: `austringer-repomap`
-(zero daemon dependents today), the wasm plugin
+Library-tested, not yet wired into the shipped binaries: the wasm plugin
 runtime (feature-gated, off by default), OAuth device-flow auth,
 orchestration best-of-N / plan-branch comparison (the spec-driven launch
 path and fork-join children **are** wired), the whole-tree VFS shadow
@@ -285,9 +290,12 @@ formatters/checkers — the in-process `edit_lines` path already commits
 through the VFS drift contract and staged semantic hunks with
 `SessionEvent::Diff` surfacing; the full shadow-preflight mode is a
 future config-gated wave), sessions dream
-consolidation, the core `PromptBuilder`/`ContextSpec` composition surface
-with its cache-violation tracker (the wire-level stable-prefix gate itself
-is perf-gate-wired), and the worker
+consolidation, the per-turn provider-report side of the cache-violation
+tracker (`CacheReportFeed` — provider adapters do not yet report
+cache-read bytes; the composition-side epoch guard IS wired at session
+spawn), the rules/skills slot hydration and history/tail rendering of the
+seven-segment prompt layout (providers still receive the flat system
+string), and the worker
 (out-of-process executor) protocol — deliberately reserved.
 `austringer-search` was removed outright: a Tantivy BM25 code index with
 zero dependents of any kind, duplicating the wired `event_fts` search
