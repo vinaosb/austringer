@@ -56,7 +56,12 @@ async function startDaemon() {
   let base = "";
   let token = "";
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("daemon banner timeout")), 15000);
+    const fail = (err) => {
+      clearTimeout(timer);
+      child.kill();
+      reject(err);
+    };
+    const timer = setTimeout(() => fail(new Error("daemon banner timeout")), 15000);
     let buffer = "";
     child.stdout.on("data", (chunk) => {
       buffer += String(chunk);
@@ -69,7 +74,14 @@ async function startDaemon() {
         resolve();
       }
     });
-    child.on("exit", (code) => reject(new Error(`daemon exited early: ${code}`)));
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`daemon exited early: ${code}`));
+    });
+    // Both rejection paths above must never leave the child alive: a
+    // live daemon keeps node's event loop spinning after exitCode is
+    // set, hanging the CI step for hours (receipt: PR #43 frontends).
+    child.on("error", (err) => fail(new Error(`daemon spawn failed: ${err}`)));
   });
   return { child, base, token };
 }

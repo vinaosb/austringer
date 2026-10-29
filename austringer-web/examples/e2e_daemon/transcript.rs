@@ -94,6 +94,9 @@ pub(crate) async fn run() -> Result<(), String> {
     let config = DaemonConfig {
         data_dir: dir.path().to_owned(),
         token: Some("e2e-token".into()),
+        // Same receipt as serve(): scripted fixtures opt out of the
+        // repomap so session spawn never walks the host checkout.
+        repomap_token_budget: 0,
         ..DaemonConfig::default()
     };
     let state = Arc::new(DaemonState::new(config, factory()).map_err(|e| format!("state: {e}"))?);

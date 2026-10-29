@@ -177,6 +177,13 @@ pub(crate) async fn serve() -> Result<(), String> {
         data_dir: dir.path().to_owned(),
         token: Some("e2e-token".into()),
         idle_timeout: Duration::from_secs(600),
+        // Scripted echo fixtures gain nothing from a repo map, and the
+        // banner must print before the driver's 15s timeout: seed
+        // sessions compose prompts synchronously at spawn, which with
+        // the default budget would walk+parse the whole runner
+        // checkout cold (CI receipt: PR #43 frontends hang, both e2e
+        // attempts died on daemon banner timeout).
+        repomap_token_budget: 0,
         ..DaemonConfig::default()
     };
     let state = Arc::new(DaemonState::new(config, factory()).map_err(|e| format!("state: {e}"))?);
