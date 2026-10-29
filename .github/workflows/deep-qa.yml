@@ -102,6 +102,17 @@
 #    families. This workflow deliberately does not schedule around
 #    them; if one appears in these jobs it is a new finding, not noise.
 #
+# ── Ollama live tier ────────────────────────────────────────────────────
+# The live_compat pair (austringer-providers/tests/ollama_live.rs, gated
+# on AUSTRINGER_OLLAMA_URL) proves the production ReqwestTransport +
+# CompatAdapter SSE path and the wire surfaces (system prompt + declared
+# tools) against a REAL server — the one class the cassette suites
+# cannot cover. Runs on the ubuntu job (Docker preinstalled): the step
+# docker-runs ollama/ollama bound to 127.0.0.1:11434, pulls the pinned
+# qwen2.5:1.5b tag (~1 GB), and executes the two tests. Tag pinned
+# deliberately: if the registry drops it, the step fails loudly — a
+# finding, not noise. Local recipe lives in the test module docs.
+#
 # ── Bench smoke ─────────────────────────────────────────────────────────
 # The six criterion benches (repomap, eviction, prompt, pty, sessions,
 # tui — all synthetic/hermetic, cross-platform) otherwise NEVER run in
@@ -223,6 +234,20 @@ jobs:
           --exclude austringer-media --locked
           --features austringer-safety/container
           -E "not (package(austringer-exec) or test(real_kill9_restart_with_backoff_then_degrade) or test(capture_v1_ws_and_ipc_corpus))"
+      - name: Run ollama live tier (real OpenAI-compatible server)
+        # See the "Ollama live tier" header section. The 127.0.0.1 bind
+        # keeps the runner port unexposed; the rm keeps ephemeral-runners
+        # tidy anyway. The build cache from the step above is reused, so
+        # this step costs the image+model pull (~2 GB) plus seconds of
+        # test time.
+        env:
+          AUSTRINGER_OLLAMA_URL: http://127.0.0.1:11434/v1
+        run: |
+          set -euxo pipefail
+          docker run -d --name ollama-live -p 127.0.0.1:11434:11434 ollama/ollama
+          docker exec ollama-live ollama pull qwen2.5:1.5b
+          cargo nextest run --locked -p austringer-providers --run-ignored only -E 'test(live_compat)'
+          docker rm -f ollama-live
 
   bench-smoke:
     name: criterion bench smoke (6 benches, tiny samples)
