@@ -62,6 +62,13 @@ austringer-mcp = { path = "../austringer-mcp", version = "0.1.0" }
 # edits (syntax gate, fringe-only results).
 austringer-tools = { path = "../austringer-tools", version = "0.1.0" }
 austringer-web = { path = "../austringer-web", version = "0.1.0" }
+# Session repomap: the bounded gitignore-aware walker + tag tables
+# (austringer-ast) and the PageRank token-budgeted map
+# (austringer-repomap) compose the once-per-session repository map
+# onto the frozen system prompt. Default grammar set (rust, toml,
+# json, bash); breadth is austringer-ast's `langs-extra` feature.
+austringer-ast = { path = "../austringer-ast", version = "0.1.0" }
+austringer-repomap = { path = "../austringer-repomap", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 # Todo 24 (ecosystem alignment): OSC 7501 Program Status reports carry

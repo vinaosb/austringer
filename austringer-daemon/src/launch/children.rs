@@ -93,6 +93,9 @@ impl SubagentExecutor for SessionChildExecutor {
             }
             _ => inference,
         };
+        // Deliberately the PLAIN prompt — no repomap block: the parent
+        // session already carries the map, delegation children stay
+        // cheap.
         let loop_config = austringer_core::agent_loop::LoopConfig {
             system: crate::engine::SESSION_SYSTEM_PROMPT.to_owned(),
             tools: wire_tools,

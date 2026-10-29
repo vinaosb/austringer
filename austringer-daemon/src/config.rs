@@ -63,6 +63,13 @@ pub struct DaemonConfig {
     /// binary) — a repo-local override file is refused with a typed
     /// error by the tool itself.
     pub test_command: Option<String>,
+    /// Token budget of the session repository-map block appended to
+    /// the system prompt (`AUSTRINGER_REPOMAP_TOKEN_BUDGET`, parsed by
+    /// the binary): the map is the largest render fitting the budget —
+    /// a typed cap, never the whole repo injected (bounded hydration,
+    /// the `austringer-intel` `routing/search.rs` pattern). `0`
+    /// disables the block; default 1000.
+    pub repomap_token_budget: u32,
     /// Rotation cap for durable turn/child journals
     /// (`{data}/journal/{session}/{turn}.jsonl`): once the current
     /// file exceeds this many bytes, the next append rotates it to a
@@ -126,6 +133,7 @@ impl Default for DaemonConfig {
             provider: None,
             session_cost_cap_micros: crate::cost_ledger::DEFAULT_SESSION_COST_CAP_MICROS,
             test_command: None,
+            repomap_token_budget: crate::repomap::DEFAULT_REPOMAP_TOKEN_BUDGET,
             journal_max_bytes: crate::journal::DEFAULT_JOURNAL_MAX_BYTES,
             runs_max_bytes: crate::run_history::DEFAULT_RUNS_MAX_BYTES,
             scheduler_journal_max_bytes: crate::runner::DEFAULT_SCHEDULER_JOURNAL_MAX_BYTES,

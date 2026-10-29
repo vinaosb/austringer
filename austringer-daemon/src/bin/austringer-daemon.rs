@@ -71,6 +71,14 @@ fn config_from_env_and_args() -> Result<DaemonConfig, String> {
     {
         config.test_command = Some(raw.trim().to_owned());
     }
+    // The session repository-map token budget (0 disables the block).
+    if let Ok(raw) = std::env::var("AUSTRINGER_REPOMAP_TOKEN_BUDGET")
+        && !raw.trim().is_empty()
+    {
+        config.repomap_token_budget = raw.trim().parse::<u32>().map_err(|_| {
+            format!("AUSTRINGER_REPOMAP_TOKEN_BUDGET must be a whole token count, got {raw:?}")
+        })?;
+    }
     Ok(config)
 }
 

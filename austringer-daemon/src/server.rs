@@ -283,8 +283,18 @@ impl DaemonState {
         // prompt plus the session registry's pinned core schemas
         // (research §24.6/§33.1). Set once per session — never churned
         // per request — so the provider prefix cache survives turns.
+        // The repomap block composes ONCE here, before spawn, over the
+        // daemon's working directory (the same root the LSP and
+        // run_tests tools use) and is frozen for the session's
+        // lifetime; recomposing mid-session would invalidate the
+        // prefix cache.
+        let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut loop_config = loop_config;
-        loop_config.system = crate::engine::SESSION_SYSTEM_PROMPT.to_owned();
+        loop_config.system = crate::repomap::compose_system_prompt(
+            &workspace_root,
+            &self.config.data_dir.join("ast-cache"),
+            self.config.repomap_token_budget,
+        );
         loop_config.tools = wire_tools;
         let _ = host.spawn_engine_with_config(
             session_dir,

@@ -45,6 +45,7 @@ pub mod protocol;
 pub mod provider;
 pub mod registry;
 pub mod reload;
+pub mod repomap;
 pub mod rewind;
 pub mod rotation;
 pub mod routing;

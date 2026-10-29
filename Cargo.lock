@@ -497,6 +497,7 @@ name = "austringer-ast"
 version = "0.1.2"
 dependencies = [
  "blake3",
+ "ignore",
  "serde",
  "serde_json",
  "tempfile",
@@ -626,6 +627,7 @@ name = "austringer-daemon"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "austringer-ast",
  "austringer-core",
  "austringer-exec",
  "austringer-intel",
@@ -634,6 +636,7 @@ dependencies = [
  "austringer-media",
  "austringer-orchestration",
  "austringer-providers",
+ "austringer-repomap",
  "austringer-safety",
  "austringer-sessions",
  "austringer-skills",

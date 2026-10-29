@@ -149,6 +149,9 @@ impl TaskServices {
         };
         // Children ride the same wire surfaces as parents: the stable
         // system prompt plus their own registry's pinned core schemas.
+        // Deliberately the PLAIN prompt — no repomap block: the parent
+        // session already carries the map, delegation children stay
+        // cheap.
         let loop_config = austringer_core::agent_loop::LoopConfig {
             system: crate::engine::SESSION_SYSTEM_PROMPT.to_owned(),
             tools: wire_tools,
