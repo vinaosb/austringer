@@ -1,10 +1,10 @@
-# austringer
+﻿# austringer
 
 [![CI](https://github.com/vinaosb/austringer/actions/workflows/ci.yml/badge.svg)](https://github.com/vinaosb/austringer/actions/workflows/ci.yml)
 [![docs](https://github.com/vinaosb/austringer/actions/workflows/docs.yml/badge.svg)](https://github.com/vinaosb/austringer/actions/workflows/docs.yml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-**One small Rust daemon runs an AI coding agent; four thin clients attach to it — terminal, TUI, browser, VS Code — under hard, CI-enforced performance budgets, and every design decision is a receipt from a studied post-mortem of another harness.**
+**One small Rust daemon runs an AI coding agent; four thin clients attach to it â€” terminal, TUI, browser, VS Code â€” under hard, CI-enforced performance budgets, and every design decision is a receipt from a studied post-mortem of another harness.**
 
 - Pre-release (0.1.x). What shipped and when: [CHANGELOG.md](CHANGELOG.md).
 - The claims on this page cite their evidence: research sections refer to
@@ -14,22 +14,22 @@
 
 **Docs:** this README is the storefront; the composed manual is built from
 `docs/` by CI and served at <https://vinaosb.github.io/austringer/>. Crates
-publish as `austringer-*` (API docs on docs.rs) — see [Naming](#naming).
+publish as `austringer-*` (API docs on docs.rs) â€” see [Naming](#naming).
 
-**Contents:** [Why](#why) · [Install](#install) ·
-[Quickstart from source](#quickstart-from-source) ·
-[Four frontends, one engine](#four-frontends-one-engine) ·
-[Performance budgets](#performance-budgets) · [Architecture](#architecture) ·
-[Receipts](#receipts) · [Built on post-mortems](#built-on-post-mortems) ·
-[Honest comparison](#honest-comparison) ·
-[Release transparency](#release-transparency) · [Status](#status) ·
-[Migrating from another harness](#migrating-from-another-harness) ·
-[ACP: austringer as a guest agent](#acp-austringer-as-a-guest-agent) ·
-[Naming](#naming) · [Contributing](#contributing) · [License](#license)
+**Contents:** [Why](#why) Â· [Install](#install) Â·
+[Quickstart from source](#quickstart-from-source) Â·
+[Four frontends, one engine](#four-frontends-one-engine) Â·
+[Performance budgets](#performance-budgets) Â· [Architecture](#architecture) Â·
+[Receipts](#receipts) Â· [Built on post-mortems](#built-on-post-mortems) Â·
+[Honest comparison](#honest-comparison) Â·
+[Release transparency](#release-transparency) Â· [Status](#status) Â·
+[Migrating from another harness](#migrating-from-another-harness) Â·
+[ACP: austringer as a guest agent](#acp-austringer-as-a-guest-agent) Â·
+[Naming](#naming) Â· [Contributing](#contributing) Â· [License](#license)
 
 ## Why
 
-Most agent harnesses rediscover the same failures — silent model substitution,
+Most agent harnesses rediscover the same failures â€” silent model substitution,
 unbounded context growth, orphaned processes after a crash, sandbox escapes
 treated as noise, benchmark numbers that collapse under matched conditions.
 This project's approach is to not improvise: each mechanism was adopted (or
@@ -42,22 +42,22 @@ The corollaries:
   the user first, every time. Model identity is a contract.
 - **Budgets are the contract, not aspirations.** Cold start, RSS, frame rate,
   and binary size are enforced by a CI gate against committed baselines
-  (research §23 frame-budget discipline; the gate lives in
+  (research Â§23 frame-budget discipline; the gate lives in
   [austringer-bench](austringer-bench/budgets.json)).
 - **Claims carry receipts.** No marketing claim on this page lacks an in-repo
   citation. Benchmark tables publish austringer-matched rows only; unmatched rows
-  are marked DO NOT PUBLISH (research §18, the Qwen README discipline).
+  are marked DO NOT PUBLISH (research Â§18, the Qwen README discipline).
 - **Windows is first-class.** ConPTY pathologies, Job-Object kill trees, and
   restricted-token sandboxing are built in, not ported later.
 
 ## Install
 
-No Rust toolchain required — the Release workflow ships installer scripts and
-a multi-arch container for every tagged release (latest: **v0.1.2**). One
+No Rust toolchain required â€” the Release workflow ships installer scripts and
+a multi-arch container for every tagged release (latest: **v0.1.3**). One
 command installs all three apps from the same release:
 
 ```sh
-# macOS / Linux — austringer (CLI), austringer-daemon, austringer-tui
+# macOS / Linux â€” austringer (CLI), austringer-daemon, austringer-tui
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://raw.githubusercontent.com/vinaosb/austringer/main/install.sh | sh
 ```
@@ -67,13 +67,13 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 iwr -useb https://raw.githubusercontent.com/vinaosb/austringer/main/install.ps1 | iex
 ```
 
-Both accept a pinned tag (`install.sh v0.1.2` / `install.ps1 -Tag v0.1.2`)
+Both accept a pinned tag (`install.sh v0.1.3` / `install.ps1 -Tag v0.1.3`)
 and delegate to the official per-app installers, which verify checksums.
 On macOS/Linux, [Homebrew](https://brew.sh) works too:
 `brew install vinaosb/austringer/austringer-cli` (same tap serves
 `austringer-daemon` and `austringer-tui`).
 Individual installers remain available per app (`austringer-cli-installer`,
-`austringer-daemon-installer`, `austringer-tui-installer` — add `.sh` or
+`austringer-daemon-installer`, `austringer-tui-installer` â€” add `.sh` or
 `.ps1`), and the release archives are `cargo binstall`-compatible by
 construction, so `cargo install cargo-binstall && cargo binstall
 austringer-cli` also works once the crates are published. A daemon+CLI
@@ -109,7 +109,7 @@ appears in any committed file). Environment variables the daemon reads:
 | `AUSTRINGER_PROVIDER_TIMEOUT_SECS` | inference timeout in whole seconds |
 | `AUSTRINGER_SESSION_COST_CAP_USD` | per-session spend cap in decimal dollars (default 20.00); warning at 80%, typed stop at 100% |
 | `AUSTRINGER_TEST_COMMAND` | user-global override of the `run_tests` tool's framework detection (a repo-local override file is refused with a typed error) |
-| `AUSTRINGER_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint — never on by default |
+| `AUSTRINGER_TELEMETRY` | OpenTelemetry opt-in (`1`); requires the config arm and an endpoint â€” never on by default |
 
 An unconfigured daemon stays fully servable and answers inference with a
 typed, actionable error naming those keys.
@@ -123,12 +123,12 @@ a local-socket IPC carrier):
 | Frontend | What it is | Entry point |
 | --- | --- | --- |
 | CLI | headless `run`/`capture`, REPL, `attach` event tail, `doctor`, `--output-json` NDJSON for eval drivers | `austringer-cli` |
-| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`), hunk review gates | `austringer` (no arguments) · `austringer-tui` |
-| Web | dashboard SPA served by the daemon itself (no node server): live session, hunk review, cost/cache/context dashboards | `austringer web` · the daemon URL in a browser |
+| TUI | event-driven ratatui interface: context gauge, cache-hit and cost HUD, omnibar (`@file`, `/help`, `/steer`, `/cancel`, `/vote-cancel`, `/mode`, `/rewind`, `/skill`), hunk review gates | `austringer` (no arguments) Â· `austringer-tui` |
+| Web | dashboard SPA served by the daemon itself (no node server): live session, hunk review, cost/cache/context dashboards | `austringer web` Â· the daemon URL in a browser |
 | VS Code | TypeScript thin client: native diff decorations, per-hunk code lenses, editor telemetry (opt-in), command palette | `austringer-vscode` |
 
 Multiple clients can attach to one session simultaneously; a permission granted
-from any client applies to all (crush's shared permission queue, research §1).
+from any client applies to all (crush's shared permission queue, research Â§1).
 
 ## Performance budgets
 
@@ -148,7 +148,7 @@ CI on every push; the budget column is the contract.
 | TUI idle renders | <= 1 per idle period | 0 |
 | Binary size (CLI / daemon, stripped) | < 40 MB | 6.21 MB / 3.09 MB |
 
-Deterministic counters are baselined and regression-gated — plus 12 dhat
+Deterministic counters are baselined and regression-gated â€” plus 12 dhat
 allocation metrics. All numbers above are reproducible:
 `cargo run --release -p austringer-bench --bin perf-gate` re-measures them
 (the gate re-validated green after the austringer rename: 10 scenarios,
@@ -159,22 +159,22 @@ allocation metrics. All numbers above are reproducible:
 One daemon, a 25-crate Cargo workspace, four thin clients:
 
 ```
- thin clients ── cli · tui (shared spawner: launch) · web SPA (daemon-served) · vscode
-                     │   WS/SSE/HTTP on loopback (token) + local IPC
-                     ▼
+ thin clients â”€â”€ cli Â· tui (shared spawner: launch) Â· web SPA (daemon-served) Â· vscode
+                     â”‚   WS/SSE/HTTP on loopback (token) + local IPC
+                     â–¼
               austringer-daemon
-        loop · sessions · permissions · scheduler
-        cost ledger · mediation · sandbox · event log
-                     │
-     ┌───────────┬───┴───────┬───────────────┬───────────────┐
+        loop Â· sessions Â· permissions Â· scheduler
+        cost ledger Â· mediation Â· sandbox Â· event log
+                     â”‚
+     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
      engine      models      context        exec + safety
      core        providers   ast            exec
      tools       intel       repomap        vfs
                  orchestration search       snapshots
                              lsp            safety
                                             wasm
-     ── persistence: sessions          media: media (daemon-served)
-     ── extension: mcp, skills         meta: test-support, bench, evals
+     â”€â”€ persistence: sessions          media: media (daemon-served)
+     â”€â”€ extension: mcp, skills         meta: test-support, bench, evals
 ```
 
 Crate-by-crate map with the plan decision each implements:
@@ -182,27 +182,27 @@ Crate-by-crate map with the plan decision each implements:
 
 ## Receipts
 
-Design receipts — every row names the harness that proved the pattern and the
+Design receipts â€” every row names the harness that proved the pattern and the
 failure it exists to avoid, both cited from the
 [research file](.omo/research/harness-research.md):
 
-| Feature | Proven by (research §) | Failure we avoid (research §) |
+| Feature | Proven by (research Â§) | Failure we avoid (research Â§) |
 | --- | --- | --- |
-| Third-party skills quarantined: content-hash scan, lock.json ledger, activation only through trust gates | hermes 5-mechanism loop gated by write_approval (research §27) | ClawHub ClawHavoc malicious-skill distribution (research §27) |
-| Model fallback asks, never substitutes; profile stickiness across resume | Plandex 9-role routing + per-task profile pinning (research §13) | Droid silent failover (research §16); Claude Code silent downgrades #40269 (research §2) |
-| Per-model protocol dialects + 400-trap feature-detection table (feature-detect per model, never per provider) | elicitation SET/PROMPT/THROTTLE constitution (research §33) | dsh thinkingFormat bug — 72k-char reasoning bloat from a wrong dialect (research §6) |
-| Unattended runs end through an adversarial completion gate with CONFIRMED / REFUTED / INCONCLUSIVE verdicts + evidence links | Grok /goal evidence-review pattern (research §15); Droid /verify (research §16) | prose-spiral "done" claims on autonomous runs (research §15) |
-| Evals publish austringer-matched rows only; unmatched rows render DO NOT PUBLISH | Qwen Code README exhaustive-disclosure discipline (research §18) | +10-25pt harness inflation in self-reported numbers (research §18) |
-| pass^k floors reported beside Mean@k; failure-fingerprint vectors | forge + harness-rs micro-harness discipline (research §26) | the 24pt Mean@k/Pass^k consistency gap read as quality (research §26) |
-| 10 ms frame budget with hang classification as a CI gate | Zed GPUI frame-budget discipline (research §23) | perf regressions landing as benchmark noise (research §23) |
-| Byte-stable prompt prefixes + cache-violation tracker make cache misses observable events | hermes cache-control engineering (research §27); jcode stable-prefix hash chain (research §32) | silent cache-miss cost spikes (research §32) |
-| Sandboxed runs report requested-vs-enforced isolation honestly | harness-rs isolation reporting (research §26) | vendor-escape domains hidden inside a "sandbox" proxy (research §16) |
-| Daemon + thin clients as the day-one shape | the fall-2026 convergence: OpenCode 2.0 daemon-by-default, Codex `/daemon` (rust-v0.163.0, 2026-10-15), Amp shared runners (2026-09-17–24), Cursor agent-host distribution (2026-10-01) (research §34.2) | rewriting the architecture mid-course under ecosystem pressure — OpenCode's plugin-API break cost (research §34.3) |
-| task(category) delegation with ask-first chains | OmO categories (research §35.2–35.3); our no-silent-substitution contract (research §2) | silent chain-walking fallbacks — the exact refusal of research §35.4 |
-| ACP stdio surface: austringer hostable as an editor-side agent | ACP as the LSP-of-agents — Claude Code E2E 2025-07-18, five SDKs, registry + JetBrains co-launch (research §23.3, research §23.8) | every editor reimplementing agent hosting against a private protocol (research §23.2) |
-| Plan-as-artifact: opt-in plan mode, approve/edit/reject before any write | Antigravity artifact-centric UX (research §21.2); JetBrains committed `.junie/plans` artifacts + Confirm gate (research §24) | skip-permissions surfaces auto-approving plans (Antigravity v1.3.2 receipt, task-16) |
-| Snapshot rewind: files and history restored together, search truncated to the restore point | Zed host-side uniform checkpoints — auto-update on repo change, terminal-kill on restore (research §23.8 ADOPT) | conversation-only rewind leaving worktree and history diverged |
-| Session cost governance: warning at 80%, typed stop at 100% | ANTI-RECEIPT: Zed's "cost HUD with zero budget/cap enforcement" (research §23.8 AVOID) — refused to recreate it; the micro-USD ledger is wired instead (task-33) | spend visibility without spend control — a HUD no mechanism bounds |
+| Third-party skills quarantined: content-hash scan, lock.json ledger, activation only through trust gates | hermes 5-mechanism loop gated by write_approval (research Â§27) | ClawHub ClawHavoc malicious-skill distribution (research Â§27) |
+| Model fallback asks, never substitutes; profile stickiness across resume | Plandex 9-role routing + per-task profile pinning (research Â§13) | Droid silent failover (research Â§16); Claude Code silent downgrades #40269 (research Â§2) |
+| Per-model protocol dialects + 400-trap feature-detection table (feature-detect per model, never per provider) | elicitation SET/PROMPT/THROTTLE constitution (research Â§33) | dsh thinkingFormat bug â€” 72k-char reasoning bloat from a wrong dialect (research Â§6) |
+| Unattended runs end through an adversarial completion gate with CONFIRMED / REFUTED / INCONCLUSIVE verdicts + evidence links | Grok /goal evidence-review pattern (research Â§15); Droid /verify (research Â§16) | prose-spiral "done" claims on autonomous runs (research Â§15) |
+| Evals publish austringer-matched rows only; unmatched rows render DO NOT PUBLISH | Qwen Code README exhaustive-disclosure discipline (research Â§18) | +10-25pt harness inflation in self-reported numbers (research Â§18) |
+| pass^k floors reported beside Mean@k; failure-fingerprint vectors | forge + harness-rs micro-harness discipline (research Â§26) | the 24pt Mean@k/Pass^k consistency gap read as quality (research Â§26) |
+| 10 ms frame budget with hang classification as a CI gate | Zed GPUI frame-budget discipline (research Â§23) | perf regressions landing as benchmark noise (research Â§23) |
+| Byte-stable prompt prefixes + cache-violation tracker make cache misses observable events | hermes cache-control engineering (research Â§27); jcode stable-prefix hash chain (research Â§32) | silent cache-miss cost spikes (research Â§32) |
+| Sandboxed runs report requested-vs-enforced isolation honestly | harness-rs isolation reporting (research Â§26) | vendor-escape domains hidden inside a "sandbox" proxy (research Â§16) |
+| Daemon + thin clients as the day-one shape | the fall-2026 convergence: OpenCode 2.0 daemon-by-default, Codex `/daemon` (rust-v0.163.0, 2026-10-15), Amp shared runners (2026-09-17â€“24), Cursor agent-host distribution (2026-10-01) (research Â§34.2) | rewriting the architecture mid-course under ecosystem pressure â€” OpenCode's plugin-API break cost (research Â§34.3) |
+| task(category) delegation with ask-first chains | OmO categories (research Â§35.2â€“35.3); our no-silent-substitution contract (research Â§2) | silent chain-walking fallbacks â€” the exact refusal of research Â§35.4 |
+| ACP stdio surface: austringer hostable as an editor-side agent | ACP as the LSP-of-agents â€” Claude Code E2E 2025-07-18, five SDKs, registry + JetBrains co-launch (research Â§23.3, research Â§23.8) | every editor reimplementing agent hosting against a private protocol (research Â§23.2) |
+| Plan-as-artifact: opt-in plan mode, approve/edit/reject before any write | Antigravity artifact-centric UX (research Â§21.2); JetBrains committed `.junie/plans` artifacts + Confirm gate (research Â§24) | skip-permissions surfaces auto-approving plans (Antigravity v1.3.2 receipt, task-16) |
+| Snapshot rewind: files and history restored together, search truncated to the restore point | Zed host-side uniform checkpoints â€” auto-update on repo change, terminal-kill on restore (research Â§23.8 ADOPT) | conversation-only rewind leaving worktree and history diverged |
+| Session cost governance: warning at 80%, typed stop at 100% | ANTI-RECEIPT: Zed's "cost HUD with zero budget/cap enforcement" (research Â§23.8 AVOID) â€” refused to recreate it; the micro-USD ledger is wired instead (task-33) | spend visibility without spend control â€” a HUD no mechanism bounds |
 
 The full receipts ledger (28 rows at last count, including the UI/UX pattern
 catalog adoptions) is indexed section-by-section by the
@@ -211,33 +211,33 @@ history lives in the [CHANGELOG](CHANGELOG.md).
 
 ## Built on post-mortems
 
-The research file — [.omo/research/harness-research.md](.omo/research/harness-research.md)
-— is the working artifact this project was designed from: a 40-section study of
+The research file â€” [.omo/research/harness-research.md](.omo/research/harness-research.md)
+â€” is the working artifact this project was designed from: a 40-section study of
 25+ harnesses (Claude Code, Codex, goose, opencode, aider, Gemini CLI, Qwen
 Code, crush, OpenHands, SWE-agent, Mentat, Plandex, Pi, Grok Build, Droid,
 Amp, Cursor, Copilot, Antigravity, Devin, Zed, JetBrains, Warp, forge,
 harness-rs, hermes, Continue, jcode, and more), each with a functionality
-matrix (research §1), git-history reversal lessons (research §2), and an ADOPT/AVOID/WATCH
-decisions ledger (research §3). It stays in the repository: every adopted or avoided
+matrix (research Â§1), git-history reversal lessons (research Â§2), and an ADOPT/AVOID/WATCH
+decisions ledger (research Â§3). It stays in the repository: every adopted or avoided
 decision remains traceable to its evidence. The docs-site companion page
 ([docs/research-companion.adoc](docs/research-companion.adoc)) indexes it.
 
 ## Honest comparison
 
 Factual rows only, quoted from the research file's matrix and reversal
-lessons; "austringer" column reflects this project's design (research §1
+lessons; "austringer" column reflects this project's design (research Â§1
 "Ours" column) and current status. All four comparators were studied at the
 cited sections.
 
 | Dimension | Claude Code | Codex CLI | goose | opencode | austringer |
 | --- | --- | --- | --- | --- | --- |
-| Language / runtime | TS (Bun), ~0.5-1 GiB steady RSS (research §1, research §2) | Rust (research §1) | Rust (research §1) | TS (Bun), heavy-ish (research §1) | Rust workspace; < 80 MB daemon RSS budget, CI-gated |
-| OS sandbox incl. Windows | partial — no Windows (research §1) | yes, 3 OS (research §1) | partial — mac + Docker (research §1) | none (research §1) | OS-native per backend incl. Windows restricted tokens + ACLs + Job Objects (research §1) |
-| Model substitution | silent downgrades, #40269 (research §2) | — (research §1 permission tiers) | — | — | fallback requires confirmation; ask-never-substitute |
-| Sessions store | JSONL (research §1) | rollouts (research §1) | SQLite (research §1) | SQLite (research §1) | SQLite + encryption at rest (XChaCha20-Poly1305) + lazy paging (research §1) |
-| Prefix-cache discipline | strong (research §1) | partial (research §1) | partial (research §1) | partial (research §1) | byte-stable prefix + violation tracker (research §27, research §32) |
-| Repo map (AST/PageRank) | partial (research §1) | none (research §1) | none (research §1) | partial (research §1) | CSR + SIMD PageRank repomap (research §1) |
-| Evals transparency | internal (research §1) | internal (research §1) | harbor (research §1) | none (research §1) | austringer-matched published tables; unmatched = DO NOT PUBLISH (research §18) |
+| Language / runtime | TS (Bun), ~0.5-1 GiB steady RSS (research Â§1, research Â§2) | Rust (research Â§1) | Rust (research Â§1) | TS (Bun), heavy-ish (research Â§1) | Rust workspace; < 80 MB daemon RSS budget, CI-gated |
+| OS sandbox incl. Windows | partial â€” no Windows (research Â§1) | yes, 3 OS (research Â§1) | partial â€” mac + Docker (research Â§1) | none (research Â§1) | OS-native per backend incl. Windows restricted tokens + ACLs + Job Objects (research Â§1) |
+| Model substitution | silent downgrades, #40269 (research Â§2) | â€” (research Â§1 permission tiers) | â€” | â€” | fallback requires confirmation; ask-never-substitute |
+| Sessions store | JSONL (research Â§1) | rollouts (research Â§1) | SQLite (research Â§1) | SQLite (research Â§1) | SQLite + encryption at rest (XChaCha20-Poly1305) + lazy paging (research Â§1) |
+| Prefix-cache discipline | strong (research Â§1) | partial (research Â§1) | partial (research Â§1) | partial (research Â§1) | byte-stable prefix + violation tracker (research Â§27, research Â§32) |
+| Repo map (AST/PageRank) | partial (research Â§1) | none (research Â§1) | none (research Â§1) | partial (research Â§1) | CSR + SIMD PageRank repomap (research Â§1) |
+| Evals transparency | internal (research Â§1) | internal (research Â§1) | harbor (research Â§1) | none (research Â§1) | austringer-matched published tables; unmatched = DO NOT PUBLISH (research Â§18) |
 
 ## Release transparency
 
@@ -252,7 +252,7 @@ an eval table, austringer-matched rows only:
 
 ## Status
 
-Pre-release 0.1.x. Everything below is **production-wired** — reachable
+Pre-release 0.1.x. Everything below is **production-wired** â€” reachable
 through the shipped binaries (daemon, CLI, TUI, web dashboard, VS Code
 extension), not merely implemented and tested inside a library crate. The
 per-task landing history is in the [CHANGELOG](CHANGELOG.md).
@@ -265,7 +265,7 @@ per-task landing history is in the [CHANGELOG](CHANGELOG.md).
   on timeout); `task(category)` delegation with curated read-only
   `explore` / `librarian` agents and team-status precedence.
 - Opt-in plan mode (write tools gated until approve/edit/reject);
-  `run_tests` with evidence bound into the completion gate — REFUTED
+  `run_tests` with evidence bound into the completion gate â€” REFUTED
   verdicts cite failing test ids.
 - Encrypted sessions store with cross-session search over `event_fts`
   (`austringer sessions search`), snapshot rewind, and history /
@@ -275,28 +275,28 @@ per-task landing history is in the [CHANGELOG](CHANGELOG.md).
   surface with nine adapter families; 2026-10 model catalog (20 models,
   fail-closed effort grids).
 - Session prompts composed through the core `PromptBuilder`/`ContextSpec`
-  surface at spawn — byte-identical to the frozen `SESSION_SYSTEM_PROMPT` +
-  `<repomap>` contract (test-pinned) — with the cache-violation tracker
+  surface at spawn â€” byte-identical to the frozen `SESSION_SYSTEM_PROMPT` +
+  `<repomap>` contract (test-pinned) â€” with the cache-violation tracker
   guarding recompositions: prefix drift on an eviction-resume surfaces as a
   typed `prompt_cache` transcript notice, never a silent cache bust
-  (research §32).
+  (research Â§32).
 
 Library-tested, not yet wired into the shipped binaries: the wasm plugin
 runtime (feature-gated, off by default), OAuth device-flow auth,
 orchestration best-of-N / plan-branch comparison (the spec-driven launch
 path and fork-join children **are** wired), the whole-tree VFS shadow
 workspace and `exec::preflight` deep pipeline (`austringer-vfs` +
-formatters/checkers — the in-process `edit_lines` path already commits
+formatters/checkers â€” the in-process `edit_lines` path already commits
 through the VFS drift contract and staged semantic hunks with
 `SessionEvent::Diff` surfacing; the full shadow-preflight mode is a
 future config-gated wave), sessions dream
 consolidation, the per-turn provider-report side of the cache-violation
-tracker (`CacheReportFeed` — provider adapters do not yet report
+tracker (`CacheReportFeed` â€” provider adapters do not yet report
 cache-read bytes; the composition-side epoch guard IS wired at session
 spawn), the rules/skills slot hydration and history/tail rendering of the
 seven-segment prompt layout (providers still receive the flat system
 string), and the worker
-(out-of-process executor) protocol — deliberately reserved.
+(out-of-process executor) protocol â€” deliberately reserved.
 `austringer-search` was removed outright: a Tantivy BM25 code index with
 zero dependents of any kind, duplicating the wired `event_fts` search
 surface (the no-embeddings scope decision stands; history: git log).
@@ -304,14 +304,14 @@ surface (the no-embeddings scope decision stands; history: git log).
 ## Migrating from another harness
 
 Coming from Claude Code, Codex, goose, or opencode? The manual's migration
-chapter maps what you already have onto austringer — API keys and env
+chapter maps what you already have onto austringer â€” API keys and env
 vars, first-run `doctor`, editor coexistence, transcript import status:
 [docs/partials/migrating.adoc](docs/partials/migrating.adoc).
 
 ## ACP: austringer as a guest agent
 
-austringer speaks the Agent Client Protocol over stdio, so any ACP host —
-Zed, JetBrains, Neovim plugins, orchestrating agents — can drive it like
+austringer speaks the Agent Client Protocol over stdio, so any ACP host â€”
+Zed, JetBrains, Neovim plugins, orchestrating agents â€” can drive it like
 any other guest agent:
 
 ```sh
@@ -342,11 +342,11 @@ roadmap: the registry currently requires agent-declared auth methods.)
 The public name is **austringer** (crates `austringer-*`, binaries
 `austringer` / `austringer-daemon`). An *austringer* is the falconer who
 flies short-winged hawks: the handler whose craft is letting a powerful,
-autonomous bird fly — while staying attached to it. That is this project's
+autonomous bird fly â€” while staying attached to it. That is this project's
 whole shape: the daemon keeps the attachment (permissions, budgets, sessions,
 ask-first fallback); the model does the flying.
 
-The name was chosen the way everything else here is — by receipt: 160+
+The name was chosen the way everything else here is â€” by receipt: 160+
 candidates across 14 metaphor families, live collision checks (two
 perfect-availability names, *creance* and *evener*, turned out to be already
 claimed by other agent projects and were rejected), and availability
@@ -364,7 +364,7 @@ decision time and stay parked until traffic justifies them.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — one command from clone to green
+See [CONTRIBUTING.md](CONTRIBUTING.md) â€” one command from clone to green
 tests, hermetic by construction (zero API keys, zero network). Good-first-
 issue candidates are the wave-map todos whose acceptance criteria are already
 written. Security reports: [SECURITY.md](SECURITY.md). Community standards:
