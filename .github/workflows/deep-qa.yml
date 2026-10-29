@@ -100,9 +100,11 @@
 #     avif_real_ffmpeg_decode_back_pixel_hash) moved to a path-targeted
 #     PR job because ffmpeg is not vendor-rare — it installs from the
 #     ubuntu archive in seconds. The remaining four (blender / freecad
-#     / gdal / gltf-validator) and the size canary STAY opt-in: no
-#     hosted runner has those binaries and the canary needs a release
-#     build; that part of the media contract is unchanged.
+#     / gdal / gltf-validator) STAY opt-in: no hosted runner has those
+#     binaries; that part of the media contract is unchanged. The size
+#     canary also left the opt-in tier (2026-10-29): it runs in its
+#     own weekly job (size-canary below) — it needs no vendor binary,
+#     only a release build.
 #
 # Accounting (corrects the prior header's "ubuntu 19" — the ubuntu list
 # above contains 18 tests):
@@ -111,6 +113,8 @@
 #   weekly windows: 8 (exec 7 + taskkill golden)
 #   weekly ubuntu: 18 + ollama 2 = 20 (union of weekly jobs = 28 ≥ 21
 #     target; neither job alone reaches it — the union is the contract)
+#   weekly size-canary: 1 (media binary-size canary; its own release
+#     build — too heavy for PRs, deterministic enough to schedule)
 #   path-targeted PR jobs (conditional, on surface change): exec 7
 #     (austringer-exec/**), kill9 1 (austringer-lsp/**), daemon PTY 1
 #     (austringer-daemon/**), media ffmpeg 2 (austringer-media/**)
@@ -552,6 +556,37 @@ jobs:
           --bench tui -- --warm-up-time 1 --measurement-time 2
           --sample-size 10
 
+  size-canary:
+    name: binary size canary (real release build of the daemon)
+    # Weekly lane for the one media test that is CI-feasible but too
+    # heavy for PRs: it shells its own `cargo build --release` of the
+    # daemon and asserts the size baseline/delta (assertions and
+    # receipts live in the test). Moves the canary from manual-only to
+    # weekly (2026-10-29); the four vendor-binary media tests stay
+    # opt-in by contract.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/lib/graalvm /opt/ghc
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Run the size canary
+        # The test performs its own release build internally; no env
+        # gating beyond the ignore this --run-ignored selects.
+        run: >-
+          cargo nextest run --locked -p austringer-media
+          --run-ignored only --test size_canary
+
   notify-failure:
     name: open tracking issue on weekly sweep failure
     # A failed SCHEDULED run is invisible unless someone goes looking —
@@ -560,7 +595,7 @@ jobs:
     # repeat failures) so it surfaces in the repo's issue list. PR-lane
     # failures need no notification: they already block their PR.
     if: failure() && github.event_name == 'schedule'
-    needs: [ignored-windows, ignored-ubuntu, bench-smoke]
+    needs: [ignored-windows, ignored-ubuntu, bench-smoke, size-canary]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

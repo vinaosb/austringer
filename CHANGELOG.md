@@ -9,7 +9,69 @@ task-N evidence lives in `.omo/evidence/`, internal).
 
 ## [Unreleased]
 
-(none yet)
+### Added — prevention-first CI over the deep-QA suite
+
+- **Two-lane deep-QA gating** (`65dead1`, `6273348`): the `#[ignore]`d
+  deep-QA suite no longer waits for the weekly sweep to detect breaks.
+  A `pr lane` job gates every PR to main with the 19 deterministic
+  ignored tests (13 hermetic QA/stress/bench-harness tests, the 3 lsp
+  goldens against a pinned rust-analyzer, the docker smoke, and the
+  ollama live pair); path-targeted jobs gate surface-owning PRs with
+  the timing-sensitive remainder (`austringer-exec/**` → pty_qa ×7 +
+  taskkill golden on windows; `austringer-daemon/**` → the ~90–150 s
+  real-binary PTY session; `austringer-media/**` → the ffmpeg pair,
+  apt-installable — the media contract is amended for the ffmpeg
+  family only). PTY-family targeted runs use nextest retries so
+  shared-runner load noise does not block merges while real failures
+  still fail. Branch protection requires the pr-lane check.
+- **Weekly sweep failure visibility** (`6273348`, `de088f0`): a failed
+  scheduled deep-qa or evals sweep now opens/updates a rolling
+  tracking issue instead of failing invisibly.
+- **Ollama live tier** (`745fa77`): `austringer-providers` gains an
+  env-gated `live_compat` pair run against a real docker-raised
+  ollama (`qwen2.5:1.5b`) in CI — the production
+  ReqwestTransport + CompatAdapter SSE path and the wire surfaces
+  (system prompt + declared tools), the one class cassettes cannot
+  cover. Image pinned by registry digest; model pinned by post-pull
+  digest assert (`de088f0`).
+- **rust-analyzer pin auto-bump** (`de088f0`): `ra-pin-bump.yml`
+  opens a bump PR weekly when upstream moves; the pr lane validates
+  the goldens against the new pin on the bump PR itself.
+- **e2e self-healing retry** (`de088f0`): the web e2e runner retries
+  the full run once with a fresh daemon (a partial retry would starve
+  — the fixture serves one echo turn per session); flakes report
+  `E2E FLAKY: passed on retry` instead of failing the check.
+- **MCP tools mount into sessions** (`00f6c4d`): session-scoped MCP
+  tool mounting reaches the daemon's per-session command surface.
+- **Storage engines wired end-to-end** (`9782a51`): SQLite
+  `VACUUM INTO` backup, FTS optimize, and the LRU snapshot cache are
+  wired into the sessions store (heap baseline re-recorded per the
+  documented procedure — the cache deliberately trades ~12.6%
+  scenario alloc-bytes for fewer, larger retained pages); provider
+  wire surfaces hardened; hot-path allocations removed across
+  engine and clients.
+
+### Changed
+
+- **`austringer-search` removed** (`feee4bb`): the Tantivy BM25 code
+  index had zero dependents of any kind and duplicated the wired
+  `event_fts` surface; deleted with a receipt rather than left
+  dormant.
+- **CI runs required checks on merge-group events** (`de088f0`),
+  pre-wiring the merge queue (org-gated on this repo today).
+
+### Fixed
+
+- The daemon executor-spill acceptance test no longer assumes
+  powershell exists (`2011c29`): ubuntu runners lack it (macOS images
+  ship it by luck), so the flood command is per-OS. Lsp provider fmt
+  drift cleaned; all 25 packages fmt-verified.
+
+### Tests
+
+- Cross-crate seam acceptance tests (`d717b7a`): executor spill
+  lands under the session dir, fallback cassettes pin ask-first
+  mediation end to end, and 9 integration tests pin the wave seams.
 
 ## [0.1.2] - 2026-10-27
 
