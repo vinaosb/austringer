@@ -279,9 +279,12 @@ Library-tested, not yet wired into the shipped binaries: `austringer-repomap`
 (zero daemon dependents today), the wasm plugin
 runtime (feature-gated, off by default), OAuth device-flow auth,
 orchestration best-of-N / plan-branch comparison (the spec-driven launch
-path and fork-join children **are** wired), the VFS shadow-preflight edit
-path (`austringer-vfs` + `exec::preflight`, no daemon caller yet), semantic
-hunk staging (`austringer-tools` hunks/staged-apply), sessions dream
+path and fork-join children **are** wired), the whole-tree VFS shadow
+workspace and `exec::preflight` deep pipeline (`austringer-vfs` +
+formatters/checkers — the in-process `edit_lines` path already commits
+through the VFS drift contract and staged semantic hunks with
+`SessionEvent::Diff` surfacing; the full shadow-preflight mode is a
+future config-gated wave), sessions dream
 consolidation, the core `PromptBuilder`/`ContextSpec` composition surface
 with its cache-violation tracker (the wire-level stable-prefix gate itself
 is perf-gate-wired), and the worker

@@ -61,6 +61,10 @@ austringer-mcp = { path = "../austringer-mcp", version = "0.1.0" }
 # view_window/edit_lines ride austringer-tools' bounded reader and anchored
 # edits (syntax gate, fringe-only results).
 austringer-tools = { path = "../austringer-tools", version = "0.1.0" }
+# Todo 21 join: the edit_lines write lane carries the VFS drift contract
+# (ShadowEdit expected-hash + typed VfsError vocabulary). Already in the
+# workspace graph via austringer-exec; zero new crates.
+austringer-vfs = { path = "../austringer-vfs", version = "0.1.0" }
 austringer-web = { path = "../austringer-web", version = "0.1.0" }
 # Session repomap: the bounded gitignore-aware walker + tag tables
 # (austringer-ast) and the PageRank token-budgeted map
