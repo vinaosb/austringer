@@ -37,7 +37,14 @@ pub fn compose_system_prompt(workspace_root: &Path, cache_dir: &Path, token_budg
     format!("{base}\n\n<repomap>\n{text}\n</repomap>")
 }
 
-fn map_text(workspace_root: &Path, cache_dir: &Path, token_budget: u32) -> String {
+/// The bounded map text for a workspace: the largest render fitting
+/// `token_budget`; budget 0, walk failure, or an empty map yield the
+/// empty string. Shared by [`compose_system_prompt`] (the byte
+/// contract) and [`crate::prompt`] (the builder-routed live path).
+pub(crate) fn map_text(workspace_root: &Path, cache_dir: &Path, token_budget: u32) -> String {
+    if token_budget == 0 {
+        return String::new();
+    }
     let files = match walk_workspace(workspace_root, &WalkLimits::default()) {
         Ok(files) => files,
         Err(error) => {
