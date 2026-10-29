@@ -141,8 +141,18 @@ async function runAll() {
         assert.equal(await page.textContent("[data-testid=stat-turns]"), "1", `${label}: one turn`);
         assert.match(await page.textContent("[data-testid=transcript]"), /echo/, `${label}: tool call rendered`);
       }
-      const eventsA = await a.page.textContent("[data-testid=stat-events]");
-      const eventsB = await b.page.textContent("[data-testid=stat-events]");
+      // Convergence is a WAIT, not an instant read: the two HUDs render
+      // on independent frames, so one can lag the other by a frame when
+      // read back-to-back (CI receipt: PRs #37/#43 frontends, '14' !==
+      // '15' twice). Poll until both counters agree, then assert.
+      let eventsA = "";
+      let eventsB = "";
+      for (const deadline = Date.now() + 10_000; Date.now() < deadline; ) {
+        eventsA = await a.page.textContent("[data-testid=stat-events]");
+        eventsB = await b.page.textContent("[data-testid=stat-events]");
+        if (eventsA === eventsB) break;
+        await a.page.waitForTimeout(250);
+      }
       assert.equal(eventsA, eventsB, "both browsers converged to identical event count");
       assert.deepEqual(a.errors, [], "no page errors A");
       assert.deepEqual(b.errors, [], "no page errors B");
