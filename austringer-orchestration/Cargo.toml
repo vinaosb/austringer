@@ -1,5 +1,6 @@
 [package]
 name = "austringer-orchestration"
+description = "Spec-driven launch, roles, and phases for austringer orchestration"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,7 +19,7 @@ workspace = true
 austringer-intel = { path = "../austringer-intel", version = "0.1.0" }
 # ModelIdentity is the resolved identity type carried by every ChildJob
 # knob bundle; default-features = false keeps reqwest out of this crate
-# (the orchestration layer never talks to providers directly — executors
+# (the orchestration layer never talks to providers directly â€” executors
 # and backends own transport).
 austringer-providers = { path = "../austringer-providers", version = "0.1.0", default-features = false }
 # Deny-only permission inheritance and escalation bubbling reuse the real

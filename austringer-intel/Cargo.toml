@@ -1,5 +1,6 @@
 [package]
 name = "austringer-intel"
+description = "Model catalog and routing intelligence for austringer: R2 grids, trap rows, bounded hydration"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +13,7 @@ workspace = true
 [dependencies]
 # Read-only consumption of the verified T9/T10 surfaces: ModelIdentity,
 # Usage, FinishReason. default-features = false keeps reqwest OUT of this
-# crate's tree — the profiles layer is catalog + analysis, never transport;
+# crate's tree â€” the profiles layer is catalog + analysis, never transport;
 # "must NOT share data externally" (plan todo 34) is enforced structurally
 # by zero network-capable dependencies.
 austringer-providers = { path = "../austringer-providers", version = "0.1.0", default-features = false }

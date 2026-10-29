@@ -1,5 +1,6 @@
 [package]
 name = "austringer-providers"
+description = "Provider adapters for austringer: Anthropic, OpenAI, Google, xAI, and compat transports"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

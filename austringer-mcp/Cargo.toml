@@ -1,5 +1,6 @@
 [package]
 name = "austringer-mcp"
+description = "MCP client, MCP server, and ACP stdio surfaces for austringer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -34,7 +35,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["net", "process", "io-std", "rt-multi-thread"] }
 tracing-subscriber = "0.3"
 
-# Reference server for MCP integration tests, not a release artifact —
+# Reference server for MCP integration tests, not a release artifact â€”
 # cargo-dist must skip it.
 [package.metadata.dist]
 dist = false

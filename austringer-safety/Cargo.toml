@@ -1,5 +1,6 @@
 [package]
 name = "austringer-safety"
+description = "OS-native sandbox backends and egress guards for austringer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -23,7 +24,7 @@ sha2.workspace = true
 base64ct.workspace = true
 getrandom.workspace = true
 # Todo-27 permission grammar URL targets: real URL parsing (scheme/host/
-# port normalization, IPv6 handling) — string prefixing is a security smell.
+# port normalization, IPv6 handling) â€” string prefixing is a security smell.
 url.workspace = true
 # Todo-27 permission grammar OPT-IN regex rules (off by default; prefix
 # matching is the default). Pure Rust.
@@ -43,6 +44,6 @@ tempfile.workspace = true
 name = "austringer-safety-probe"
 path = "src/bin/probe.rs"
 
-# Test-support probe binary, not a release artifact — cargo-dist must skip it.
+# Test-support probe binary, not a release artifact â€” cargo-dist must skip it.
 [package.metadata.dist]
 dist = false

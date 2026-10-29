@@ -1,5 +1,6 @@
 [package]
 name = "austringer-test-support"
+description = "Shared hermetic test kits for the austringer workspace"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -19,9 +20,9 @@ tokio = { version = "1", features = ["sync", "time"] }
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "test-util"] }
 
 # M15 mocktool: hermetic external-tool stand-in (argv-driven canned
-# outputs; golden files under golden/mocktool are real captures — see
+# outputs; golden files under golden/mocktool are real captures â€” see
 # golden/mocktool/capture.md). Test-support probe binary, not a release
-# artifact — cargo-dist must skip it.
+# artifact â€” cargo-dist must skip it.
 [[bin]]
 name = "mocktool"
 path = "src/bin/mocktool.rs"

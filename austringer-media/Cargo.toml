@@ -1,5 +1,6 @@
 [package]
 name = "austringer-media"
+description = "Media adapter surface for austringer: ffmpeg, Blender, FreeCAD, GDAL, glTF validation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
