@@ -20,8 +20,7 @@ use crate::error::{DegradeReason, LspError};
 /// Machine-readable hint carried by [`Answer::DegradedToSearch`] — the
 /// fallback seam points at plain lexical search (grep-style) without this
 /// crate depending on any search implementation.
-pub const SEARCH_FALLBACK_HINT: &str =
-    "LSP degraded: retry navigation with lexical search";
+pub const SEARCH_FALLBACK_HINT: &str = "LSP degraded: retry navigation with lexical search";
 
 /// Where a navigation question is asked: 1-based line and column.
 #[derive(Debug, Clone, PartialEq, Eq)]

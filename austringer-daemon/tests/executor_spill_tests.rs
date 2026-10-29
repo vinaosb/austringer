@@ -200,7 +200,15 @@ async fn executor_spill_lands_in_session_dir_not_global_temp() {
     // 64 KiB of 'x': far over IoCap::DEFAULT's 4096-byte inline cap, so
     // the PTY runner's RawSpool must stream the raw output to its spill
     // store. The windowed model text stays far under the cap, so this
-    // exercises exactly the runner's spill path.
+    // exercises exactly the runner's spill path. The flood command is
+    // per-OS: ubuntu CI runners have no powershell (receipt: PR #37
+    // check failure, 2026-10-29 — the spawn failed, nothing spilled,
+    // and the session-dir assertion found an empty dir). A const, not a
+    // let: the Factory closure is 'static and must not capture a local.
+    #[cfg(windows)]
+    const FLOOD_COMMAND: &str = "powershell -NoProfile -Command \"'x' * 65536\"";
+    #[cfg(unix)]
+    const FLOOD_COMMAND: &str = "sh -c \"head -c 65536 /dev/zero | tr '\\\\0' x\"";
     let script: Factory = Arc::new(|| {
         Box::new(ScriptedInference::from_steps(vec![
             text_turn(
@@ -209,7 +217,7 @@ async fn executor_spill_lands_in_session_dir_not_global_temp() {
                     "t1",
                     "execute_command",
                     serde_json::json!({
-                        "command": "powershell -NoProfile -Command \"'x' * 65536\"",
+                        "command": FLOOD_COMMAND,
                         "timeout_ms": 60000
                     }),
                 )],
