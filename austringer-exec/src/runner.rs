@@ -145,7 +145,7 @@ impl PtyRunner {
                 requested: spec.timeout,
             });
         }
-        let routing = match wsl::resolve_routing(spec, &wsl::SystemProbe) {
+        let routing = match wsl::resolve_routing_cached(spec) {
             Routing::Native => None,
             Routing::Wsl { exe, argv } => Some((exe, argv)),
             Routing::Unavailable(status) => return Err(ExecError::from(status)),

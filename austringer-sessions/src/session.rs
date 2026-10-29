@@ -1,10 +1,11 @@
 //! Lazy session handles: open reads metadata and index bounds only;
 //! appends are transactional and leased.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use austringer_core::event::{Event, RecordedEvent, Sequence};
 
+use crate::counters::SessionCounters;
 use crate::crypto::SessionKey;
 use crate::error::SessionError;
 use crate::index;
@@ -123,18 +124,21 @@ impl<'a> SessionHandle<'a> {
         self.assert_writable()?;
         let mut guard = self.store.lock_conn()?;
         let tx = guard.transaction().map_err(SessionError::sqlite)?;
+        let mut counters = SessionCounters::load(&tx, &self.meta.id)?;
         let seq = append_in_tx(
             &tx,
             &self.meta.id,
             self.key.as_ref(),
             &event,
             self.store.now(),
+            &mut counters,
         )?;
         tx.commit().map_err(SessionError::sqlite)?;
         Ok(seq)
     }
 
     /// Appends many events in one transaction; returns the last sequence.
+    /// Reads the counters row once for the whole batch.
     ///
     /// # Errors
     /// Same typed conditions as [`Self::append`].
@@ -142,6 +146,7 @@ impl<'a> SessionHandle<'a> {
         self.assert_writable()?;
         let mut guard = self.store.lock_conn()?;
         let tx = guard.transaction().map_err(SessionError::sqlite)?;
+        let mut counters = SessionCounters::load(&tx, &self.meta.id)?;
         let mut last = Sequence(0);
         for event in events {
             last = append_in_tx(
@@ -150,6 +155,7 @@ impl<'a> SessionHandle<'a> {
                 self.key.as_ref(),
                 event,
                 self.store.now(),
+                &mut counters,
             )?;
         }
         tx.commit().map_err(SessionError::sqlite)?;
@@ -188,27 +194,21 @@ fn unlock(
 }
 
 /// One append inside the caller's transaction: event row, turn index,
-/// counters, FTS row. Reads the live counters row first, so sequential
-/// appends through any handle continue the sequence correctly.
+/// counters row, FTS row. The caller owns `counters` for the whole
+/// transaction: they must match the `sessions` row when the transaction
+/// began, and this function advances them in memory — sequential
+/// appends continue the sequence without re-reading the row (inside
+/// one transaction SQLite is single-writer, so a re-read would return
+/// exactly what the previous append wrote).
 pub(crate) fn append_in_tx(
     conn: &Connection,
     session_id: &str,
     key: Option<&SessionKey>,
     event: &Event,
     now: u64,
+    counters: &mut SessionCounters,
 ) -> Result<Sequence, SessionError> {
-    let (last_seq, turn_count, encrypted): (i64, i64, bool) = conn
-        .query_row(
-            "SELECT last_seq, turn_count, encrypted FROM sessions WHERE id = ?1",
-            [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)? != 0)),
-        )
-        .optional()
-        .map_err(SessionError::sqlite)?
-        .ok_or_else(|| SessionError::NotFound {
-            id: session_id.to_owned(),
-        })?;
-    let seq = last_seq + 1;
+    let seq = counters.last_seq + 1;
     let recorded = RecordedEvent {
         seq: Sequence(seq as u64),
         event: event.clone(),
@@ -221,31 +221,36 @@ pub(crate) fn append_in_tx(
         None => json,
     };
     let kind = kind_name(event);
-    conn.execute(
+    conn.prepare_cached(
         "INSERT INTO events (session_id, seq, kind, payload) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![session_id, seq, kind, payload],
     )
+    .map_err(SessionError::sqlite)?
+    .execute(rusqlite::params![session_id, seq, kind, payload])
     .map_err(SessionError::sqlite)?;
-    let turns = index::update_on_append(
-        conn,
-        session_id,
-        kind,
-        seq as u64,
-        u32::try_from(turn_count).unwrap_or(u32::MAX),
-    )?;
-    if !encrypted && let Some(text) = extract_text(event) {
-        conn.execute(
-            "INSERT INTO event_fts (session_id, seq, text) VALUES (?1, ?2, ?3)",
-            rusqlite::params![session_id, seq, text],
-        )
-        .map_err(SessionError::sqlite)?;
+    let turns = index::update_on_append(conn, session_id, kind, seq as u64, counters.turn_count)?;
+    if !counters.encrypted
+        && let Some(text) = extract_text(event)
+    {
+        conn.prepare_cached("INSERT INTO event_fts (session_id, seq, text) VALUES (?1, ?2, ?3)")
+            .map_err(SessionError::sqlite)?
+            .execute(rusqlite::params![session_id, seq, text])
+            .map_err(SessionError::sqlite)?;
     }
-    conn.execute(
+    conn.prepare_cached(
         "UPDATE sessions SET last_seq = ?2, event_count = event_count + 1,
          payload_bytes = payload_bytes + ?3, turn_count = ?4, updated_at = ?5 WHERE id = ?1",
-        rusqlite::params![session_id, seq, payload.len() as i64, turns, now as i64],
     )
+    .map_err(SessionError::sqlite)?
+    .execute(rusqlite::params![
+        session_id,
+        seq,
+        payload.len() as i64,
+        turns,
+        now as i64
+    ])
     .map_err(SessionError::sqlite)?;
+    counters.last_seq = seq;
+    counters.turn_count = turns;
     Ok(Sequence(seq as u64))
 }
 

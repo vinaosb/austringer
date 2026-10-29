@@ -6,6 +6,7 @@
     "prompt.stable_prefix_bytes": 570837.0,
     "pty.observation_bytes": 10592.0,
     "repomap.tokens": 965.0,
-    "sessions.page_bytes": 103500.0
+    "sessions.page_bytes": 103500.0,
+    "wire.stable_surface_bytes": 262158.0
   }
 }

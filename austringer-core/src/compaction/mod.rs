@@ -53,6 +53,7 @@ pub mod telemetry;
 
 pub use condense::{CondenseRefusal, ModelId, ModelMismatch, SessionCondenser};
 pub use doctrine::{DoctrineConfig, DoctrineSummary};
+pub use engine::CompactionEngine;
 pub use segments::{PersistedCompaction, SegmentDetail, SegmentStore, StaleState};
 pub use telemetry::{SealBreach, SealGuard, SealStatus, TelemetryOutcome, TelemetryRecord};
 

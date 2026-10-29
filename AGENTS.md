@@ -14,13 +14,14 @@ austringer-cli/       # thin client: run/capture/REPL/attach/doctor, NDJSON for 
 austringer-tui/       # ratatui client: HUD, diffs accordion, modals, insta snapshots
 austringer-vscode/    # TS extension (NOT a cargo member), node --test with type stripping
 austringer-web/       # daemon-served SPA (no node server) + e2e runner
+austringer-launch/    # client-side daemon lifecycle: autospawn, socket handoff, TUI discovery (shared by cli+tui)
 austringer-sessions/  # SQLite + XChaCha20-Poly1305 store, event_fts, lazy paging
 austringer-intel/     # model catalog seed + routing surface (R2 grids, trap rows)
 docs/                 # AsciiDoc "depth layer"; manual.adoc composed from partials/ via include::; CI deploys Pages
 packs/                # skills data (11 packs + manifest.json) - runtime data, never compiled
 .omo/                 # orchestration state + research + task evidence (run-continuation/ gitignored)
 ```
-Smaller crates: exec (ConPTY/WSL2), safety (sandboxes), skills (quarantine+lock.json, vendor dir `.austringer`), mcp (client/server/acp), orchestration (launch/roles/phases), evals (run_sweep + scenario pack), bench (perf-gate + budgets.json baselines), snapshots (git refs under `refs/austringer/`), vfs, ast/repomap/search/lsp, media, tools, test-support, wasm (host module `"austringer"`).
+Smaller crates: exec (ConPTY/WSL2), safety (sandboxes), skills (quarantine+lock.json, vendor dir `.austringer`), mcp (client/server/acp), orchestration (launch/roles/phases), evals (run_sweep + scenario pack), bench (perf-gate + budgets.json baselines), snapshots (git refs under `refs/austringer/`), vfs, ast/repomap/lsp, media, tools, test-support, wasm (host module `"austringer"`).
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

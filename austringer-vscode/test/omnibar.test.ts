@@ -55,6 +55,7 @@ test("todo 23: every core command parses to a typed intent", () => {
     assert.deepEqual(parseOmnibar("/rewind"), { kind: "rewind", steps: 1 });
     assert.deepEqual(parseOmnibar("/rewind 3"), { kind: "rewind", steps: 3 });
     assert.deepEqual(parseOmnibar("/skill audit now"), { kind: "skill", text: "/skill audit now" });
+    assert.deepEqual(parseOmnibar("/condense"), { kind: "condense" });
 });
 
 test("todo 23: malformed commands surface the table usage; unknown ones the shared help string", () => {

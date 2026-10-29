@@ -25,6 +25,7 @@ export const COMMANDS: readonly SlashCommand[] = [
     { word: "mode", usage: "/mode plan|off", help: "enter or exit plan mode", local: false },
     { word: "rewind", usage: "/rewind [steps]", help: "rewind to a previous restore point (default 1)", local: false },
     { word: "skill", usage: "/skill <name> [args]", help: "run a trusted skill through the submit lane", local: false },
+    { word: "condense", usage: "/condense", help: "condense the session context now", local: false },
     { word: "exit", usage: "/exit", help: "quit this repl", local: true },
     { word: "image", usage: "/image <path>", help: "attach an image to the next submit", local: true },
 ];
@@ -106,6 +107,7 @@ export type GrammarIntent =
     | { kind: "mode"; name: string }
     | { kind: "rewind"; steps: number | null }
     | { kind: "skill"; text: string }
+    | { kind: "condense" }
     | { kind: "cli-only"; word: string }
     | { kind: "malformed"; usage: string }
     | { kind: "unknown"; word: string };
@@ -138,6 +140,8 @@ export function parseCommand(input: string): GrammarIntent {
         case "skill":
             if (argument === "") return { kind: "malformed", usage };
             return { kind: "skill", text: `/skill ${argument}` };
+        case "condense":
+            return { kind: "condense" };
         case "exit":
         case "image":
             return { kind: "cli-only", word };

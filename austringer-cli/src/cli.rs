@@ -230,7 +230,8 @@ pub struct AttachArgs {
 /// `doctor` arguments.
 #[derive(Debug, Args)]
 pub struct DoctorArgs {
-    /// Sessions store root override (default `.austringer/store` in cwd).
+    /// Sessions store root override (default `<cwd>/.austringer-daemon`,
+    /// the daemon data dir).
     #[arg(long)]
     pub sessions: Option<PathBuf>,
 }

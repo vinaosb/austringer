@@ -287,6 +287,8 @@ async fn text_only_session_prompt_contains_the_projection_text() {
     let request = InferenceRequest {
         events: &events,
         focus_block: "how many bands does the image have?",
+        system: "",
+        tools: &[],
     };
     let turn = inference
         .infer(&request, &CancelToken::new())

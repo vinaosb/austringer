@@ -95,6 +95,11 @@ pub struct AcpPrompt {
 pub(super) struct AgentState {
     pub(super) initialized: AtomicBool,
     pub(super) cancels: Mutex<HashSet<String>>,
+    /// Latest prompt generation per session (bumped at prompt start).
+    /// The token completion-time cleanup uses so it can never erase a
+    /// cancel aimed at a newer in-flight prompt. Multi-lock sites take
+    /// this lock before `cancels`, never the reverse.
+    pub(super) prompt_generations: Mutex<HashMap<String, u64>>,
     pub(super) pending_reads: Mutex<HashMap<i64, tokio::sync::oneshot::Sender<String>>>,
     pub(super) pending_permissions:
         Mutex<HashMap<i64, tokio::sync::oneshot::Sender<PermissionOutcome>>>,
@@ -117,6 +122,7 @@ impl AcpAgent {
             state: Arc::new(AgentState {
                 initialized: AtomicBool::new(false),
                 cancels: Mutex::new(HashSet::new()),
+                prompt_generations: Mutex::new(HashMap::new()),
                 pending_reads: Mutex::new(HashMap::new()),
                 pending_permissions: Mutex::new(HashMap::new()),
                 next_request_id: AtomicI64::new(1),
@@ -251,9 +257,22 @@ impl AcpAgent {
             })
             .unwrap_or_default();
         let prompt = AcpPrompt { blocks };
+        // Prompt-start hygiene stays: a cancel older than this prompt
+        // must not cancel it. Removing before the generation bump keeps
+        // a cancel interleaved into that window aimed at THIS prompt.
         if let Ok(mut cancels) = self.state.cancels.lock() {
             cancels.remove(&session_id);
         }
+        let generation = self
+            .state
+            .prompt_generations
+            .lock()
+            .map(|mut generations| {
+                let next = generations.entry(session_id.clone()).or_insert(0);
+                *next += 1;
+                *next
+            })
+            .unwrap_or(0);
         let engine = Arc::clone(&self.engine);
         let state = Arc::clone(&self.state);
         let wire = Arc::clone(wire);
@@ -271,6 +290,22 @@ impl AcpAgent {
             };
             if let Err(error) = wire.send(&payload) {
                 tracing::warn!(target: "austringer_mcp::acp", %error, "prompt response dropped");
+            }
+            // Completion hygiene: when this prompt is still the
+            // session's latest, drop its cancel entry (a mid-flight
+            // cancel must not outlive the prompt it stopped); then
+            // sweep cancel entries for sessions with nothing in
+            // flight, so idle cancels cannot accumulate over the
+            // daemon's lifetime. Dual-locked with the generation check
+            // so the clear is atomic against prompt starts.
+            if let (Ok(mut generations), Ok(mut cancels)) =
+                (state.prompt_generations.lock(), state.cancels.lock())
+            {
+                if generations.get(&session_for_channel) == Some(&generation) {
+                    cancels.remove(&session_for_channel);
+                    generations.remove(&session_for_channel);
+                }
+                cancels.retain(|session| generations.contains_key(session));
             }
         });
         Ok(())
@@ -322,4 +357,117 @@ fn ok_response(id: Value, result: Value) -> String {
 
 fn error_response(id: Value, code: i64, message: &str) -> String {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    // LOC-JUSTIFICATION: the cancel-drain tests below must observe the
+    // crate-private `cancels` set, which `tests/acp_agent.rs` cannot
+    // reach; this pushes the file past the 250-pure-LOC ceiling
+    // (already over before the drain fix landed).
+    use super::*;
+
+    /// Engine that ends immediately unless asked to honor a mid-flight
+    /// cancel, mirroring the `tests/acp_agent.rs` mocks.
+    struct StubEngine {
+        respect_cancel: bool,
+    }
+
+    #[async_trait]
+    impl AcpEngine for StubEngine {
+        async fn on_prompt(
+            &self,
+            _prompt: AcpPrompt,
+            ide: &dyn IdeChannel,
+        ) -> Result<StopReason, AcpError> {
+            if self.respect_cancel {
+                while !ide.is_cancelled() {
+                    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                }
+                return Ok(StopReason::Cancelled);
+            }
+            Ok(StopReason::EndTurn)
+        }
+    }
+
+    struct SinkWire {
+        lines: tokio::sync::mpsc::Sender<String>,
+    }
+
+    impl AcpWire for SinkWire {
+        fn send(&self, line: &str) -> Result<(), AcpError> {
+            self.lines
+                .try_send(line.to_owned())
+                .map_err(|error| AcpError::Transport(format!("wire: {error}")))
+        }
+    }
+
+    async fn run_prompt(agent: &AcpAgent, wire: &Arc<dyn AcpWire>, id: u64, session: &str) {
+        agent
+            .handle_line(
+                &format!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"method":"session/prompt","params":{{"sessionId":"{session}","prompt":[{{"type":"text","text":"go"}}]}}}}"#
+                ),
+                wire,
+            )
+            .await
+            .expect("prompt accepted");
+    }
+
+    /// Waits for the detached prompt task's completion-time cleanup.
+    async fn await_cancels_drained(agent: &AcpAgent) {
+        for _ in 0..500 {
+            let drained = agent
+                .state
+                .cancels
+                .lock()
+                .map(|cancels| cancels.is_empty())
+                .unwrap_or(false)
+                && agent
+                    .state
+                    .prompt_generations
+                    .lock()
+                    .map(|generations| generations.is_empty())
+                    .unwrap_or(false);
+            if drained {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+        panic!("cancel entries were never drained");
+    }
+
+    #[tokio::test]
+    async fn cancel_for_session_that_never_prompts_is_drained() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let agent = AcpAgent::new(Arc::new(StubEngine {
+            respect_cancel: false,
+        }));
+        let wire: Arc<dyn AcpWire> = Arc::new(SinkWire { lines: tx });
+        agent.mark_cancel("acp-ghost");
+        run_prompt(&agent, &wire, 1, "acp-live").await;
+        let line = rx.recv().await.expect("stop response");
+        assert!(line.contains("end_turn"), "{line}");
+        await_cancels_drained(&agent).await;
+    }
+
+    #[tokio::test]
+    async fn mid_flight_cancel_is_drained_when_the_prompt_completes() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let agent = Arc::new(AcpAgent::new(Arc::new(StubEngine {
+            respect_cancel: true,
+        })));
+        let wire: Arc<dyn AcpWire> = Arc::new(SinkWire { lines: tx });
+        let prompting = {
+            let agent = Arc::clone(&agent);
+            let wire = Arc::clone(&wire);
+            tokio::spawn(async move { run_prompt(&agent, &wire, 3, "acp-1").await })
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        agent.mark_cancel("acp-1");
+        let line = rx.recv().await.expect("stop response");
+        assert!(line.contains(r#""cancelled""#), "{line}");
+        prompting.await.expect("prompt task");
+        await_cancels_drained(&agent).await;
+    }
 }

@@ -64,7 +64,8 @@ impl SubagentExecutor for SessionChildExecutor {
             self.services.ask_timeout,
             None,
         );
-        let executor = (self.services.executor_factory)(&session_dir, host.event_sink());
+        let (executor, wire_tools) =
+            (self.services.executor_factory)(&session_dir, host.event_sink());
         let ComposedInference {
             inference,
             identity,
@@ -92,11 +93,17 @@ impl SubagentExecutor for SessionChildExecutor {
             }
             _ => inference,
         };
-        host.spawn_engine(
+        let loop_config = austringer_core::agent_loop::LoopConfig {
+            system: crate::engine::SESSION_SYSTEM_PROMPT.to_owned(),
+            tools: wire_tools,
+            ..austringer_core::agent_loop::LoopConfig::default()
+        };
+        host.spawn_engine_with_config(
             session_dir,
             host.standard_stages(executor),
             inference,
             cmd_rx,
+            loop_config,
         )
         .map_err(|e| {
             child_failure(

@@ -122,12 +122,15 @@ pub(super) async fn inference(agent: &mut AgentLoop) -> OpAction {
             events,
             focus,
             token,
+            config,
             ..
         } = agent;
         let rendered = focus.render();
         let request = InferenceRequest {
             events,
             focus_block: &rendered,
+            system: &config.system,
+            tools: &config.tools,
         };
         inference.infer(&request, token).await
     };

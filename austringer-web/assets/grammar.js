@@ -20,6 +20,7 @@ export const COMMANDS = [
     help: "run a trusted skill through the submit lane",
     local: false,
   },
+  { word: "condense", usage: "/condense", help: "condense the session context now", local: false },
   { word: "exit", usage: "/exit", help: "quit this repl", local: true },
   { word: "image", usage: "/image <path>", help: "attach an image to the next submit", local: true },
 ];
@@ -114,6 +115,8 @@ export function parseCommand(input) {
     case "skill":
       if (argument === "") return { kind: "malformed", usage };
       return { kind: "skill", text: `/skill ${argument}` };
+    case "condense":
+      return { kind: "condense" };
     case "exit":
     case "image":
       return { kind: "cli-only", word };
@@ -157,6 +160,10 @@ export function routeCommand(input, openAskIds) {
       // /skill rides the submit lane verbatim (the daemon-side trust
       // gate parses it there).
       return { sends: [{ type: "command", command: { type: "submit", text: intent.text } }], feedback: null };
+    case "condense":
+      // /condense rides the submit lane verbatim too: the daemon-side
+      // slash stage runs the compaction.
+      return { sends: [{ type: "command", command: { type: "submit", text: "/condense" } }], feedback: null };
     case "cli-only":
       return { sends: [], feedback: localOnlyNote(intent.word) };
     case "malformed":

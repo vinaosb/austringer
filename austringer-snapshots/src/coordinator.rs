@@ -193,8 +193,11 @@ impl CheckpointCoordinator {
     }
 
     fn reap_scratch_dirs(&self) {
-        let scratch = self.store.workdir().join(".austringer").join("scratch");
-        if let Err(error) = reap_scratch(&scratch, std::time::SystemTime::now(), RETENTION) {
+        if let Err(error) = reap_scratch(
+            &self.store.scratch_root(),
+            std::time::SystemTime::now(),
+            RETENTION,
+        ) {
             tracing::warn!(%error, "scratch reap failed");
         }
     }

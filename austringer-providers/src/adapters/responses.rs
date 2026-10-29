@@ -29,11 +29,17 @@ impl WireCodec for ResponsesCodec {
     }
 
     fn render_request(&self, request: &CompletionRequest, auth: &AccessToken) -> TransportRequest {
-        let body = json!({
+        let mut body = json!({
             "model": request.identity.model,
             "stream": true,
             "input": super::wire_media::responses_input(request),
         });
+        if let Some(instructions) = super::wire_media::responses_instructions(request) {
+            body["instructions"] = json!(instructions);
+        }
+        if let Some(tools) = super::wire_media::responses_tools(request) {
+            body["tools"] = tools;
+        }
         super::json_request(
             &self.url,
             &body,

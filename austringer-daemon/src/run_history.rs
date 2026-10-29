@@ -34,23 +34,44 @@ pub enum RunHistoryError {
     Io(String),
 }
 
+/// Default rotation cap for `runs.jsonl` (16 MiB); matches
+/// [`crate::config::DaemonConfig::runs_max_bytes`].
+pub const DEFAULT_RUNS_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
 /// Append-only JSONL run history.
 pub struct RunHistory {
     path: PathBuf,
+    max_bytes: u64,
 }
 
 impl RunHistory {
-    /// History at `{root}/runs.jsonl` (created on first append).
+    /// History at `{root}/runs.jsonl` (created on first append) with
+    /// the default rotation cap ([`DEFAULT_RUNS_MAX_BYTES`]).
     ///
     /// # Errors
     /// none at open; appends/list surface failures.
     pub fn open(root: &Path) -> Result<Self, RunHistoryError> {
+        Self::open_capped(root, DEFAULT_RUNS_MAX_BYTES)
+    }
+
+    /// History with an explicit rotation cap; `0` disables rotation
+    /// (unlimited growth, the pre-rotation behavior).
+    ///
+    /// # Errors
+    /// none at open; appends/list surface failures.
+    pub fn open_capped(root: &Path, max_bytes: u64) -> Result<Self, RunHistoryError> {
         Ok(Self {
             path: root.join("runs.jsonl"),
+            max_bytes,
         })
     }
 
-    /// Append one row.
+    /// Append one row. Size-capped rotation at a record boundary: when
+    /// the current file already exceeds `max_bytes`, it rotates to a
+    /// single forensic `.1` generation (replacing any prior one)
+    /// BEFORE this row is written. `list` reads the current file only,
+    /// so `.1` is forensic-only and correct: the LATEST rows always
+    /// live in current, only the OLDEST history is ever dropped.
     ///
     /// # Errors
     /// I/O failure.
@@ -58,6 +79,10 @@ impl RunHistory {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| RunHistoryError::Io(format!("{:?}: {e}", parent)))?;
+        }
+        if crate::rotation::exceeds_cap(&self.path, self.max_bytes) {
+            crate::rotation::rotate(&self.path)
+                .map_err(|e| RunHistoryError::Io(format!("{:?}: {e}", self.path)))?;
         }
         let mut line =
             serde_json::to_vec(record).map_err(|e| RunHistoryError::Io(e.to_string()))?;

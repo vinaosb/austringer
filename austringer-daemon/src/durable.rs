@@ -35,10 +35,28 @@ pub struct TurnWorkflow {
 }
 
 impl TurnWorkflow {
-    /// Open the workflow journal for `session`/`turn` under `root`.
+    /// Open the workflow journal for `session`/`turn` under `root`
+    /// with the default rotation cap.
     pub fn open(root: &Path, session: &str, turn: u64) -> Result<Self, DurableError> {
+        Self::open_capped(
+            root,
+            session,
+            turn,
+            crate::journal::DEFAULT_JOURNAL_MAX_BYTES,
+        )
+    }
+
+    /// Open with an explicit rotation cap (`0` disables rotation);
+    /// the seam the daemon's `journal_max_bytes` config threads
+    /// through.
+    pub fn open_capped(
+        root: &Path,
+        session: &str,
+        turn: u64,
+        max_bytes: u64,
+    ) -> Result<Self, DurableError> {
         Ok(Self {
-            journal: Journal::open(&turn_journal_path(root, session, turn))?,
+            journal: Journal::open_capped(&turn_journal_path(root, session, turn), max_bytes)?,
             turn,
             running: false,
         })

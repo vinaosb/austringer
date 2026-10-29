@@ -21,6 +21,8 @@ fn request<'a>(
     InferenceRequest {
         events,
         focus_block: focus,
+        system: "",
+        tools: &[],
     }
 }
 

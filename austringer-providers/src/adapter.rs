@@ -3,8 +3,10 @@
 //! The adapter keeps the seam's three invariants:
 //!
 //! (a) **llm-visible projection** — the model-context input is rendered from
-//!     the sanctioned [`austringer_core::event::llm_visible`] slice plus the
-//!     stable focus block, in the same format the todo-5 test kit renders
+//!     the sanctioned [`austringer_core::event::llm_visible`] slice, with the
+//!     focus block riding the volatile TAIL (the layout law: a todo
+//!     transition must never invalidate the history prefix), in the same
+//!     format the todo-5 test kit renders
 //!     (so scripts and cassettes stay interchangeable);
 //! (b) **cancel = abandon, not drain** — cancellation races the completion
 //!     future via `select!`; losing drops the future, which drops the
@@ -23,15 +25,17 @@
 //! seam, must never depend back on providers, and this binding lets the
 //! seam's contract be TESTED against the resilient stack today.
 
+mod render_cache;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use austringer_core::agent_loop::{
     AssistantTurn, Inference, InferenceError, InferenceRequest, PendingCall, TurnUsage,
 };
+use austringer_core::event::RecordedEvent;
 use austringer_core::event::content::{ContentBlock, MimeType};
 use austringer_core::event::media::MediaRef;
-use austringer_core::event::{Event, RecordedEvent};
 use austringer_core::media_delivery::{
     self, DeliveryCapabilities, EmptyCache, ProjectionCache, WireBlock,
 };
@@ -52,6 +56,7 @@ pub struct InferenceAdapter {
     jitter_seed: u64,
     caps: DeliveryCapabilities,
     media: Option<MediaDelivery>,
+    prefix: Option<render_cache::PrefixCache>,
 }
 
 impl InferenceAdapter {
@@ -66,6 +71,7 @@ impl InferenceAdapter {
             jitter_seed,
             caps: DeliveryCapabilities::default(),
             media: None,
+            prefix: None,
         }
     }
 
@@ -165,10 +171,23 @@ impl Inference for InferenceAdapter {
             delivery: self.media.as_ref(),
             allowlist: native_mimes(&family),
         };
-        let (rendered, media_blocks) = render_context(request.events, &context)?;
-        let prompt = format!("{}\n{}", request.focus_block, rendered);
+        let (rendered, media_blocks) = if context.delivery.is_none() {
+            // Pure render of the events (default delivery context): the prefix cache extends.
+            render_cache::render(request.events, &context, &mut self.prefix)?
+        } else {
+            // Renders consult live stores here — the cache is dropped, never consulted.
+            self.prefix = None;
+            render_context(request.events, &context)?
+        };
+        // Layout law (context/builder.rs): the volatile focus block rides the
+        // TAIL — its `status:` line churns on every todo transition, and head
+        // placement would invalidate the prefix cache for the whole history.
+        let (prompt, volatile_tail_bytes) = push_volatile_tail(rendered, request.focus_block);
         let completion = CompletionRequest::new(self.provider.identity().clone(), prompt)
-            .with_native_media(media_blocks);
+            .with_native_media(media_blocks)
+            .with_system(request.system)
+            .with_tools(request.tools.to_vec())
+            .with_volatile_tail(volatile_tail_bytes);
         let mut turn = ResumableTurn::start(
             self.provider.clone(),
             completion,
@@ -219,6 +238,40 @@ impl Inference for InferenceAdapter {
     }
 }
 
+/// Renders the llm-visible history in the adapter's wire line format,
+/// fail-closed (text-only): the exact bytes a media-less adapter puts on
+/// the wire. The measurement surface — the perf gate's wire scenario and
+/// [`InferenceAdapter::infer`] share [`render_context`], so the gated
+/// bytes are the production bytes (native delivery is an infer-time
+/// overlay that never alters this rendering: default capabilities plan
+/// no native blocks).
+pub fn render_wire_history(events: &[RecordedEvent]) -> Result<String, InferenceError> {
+    let context = DeliveryContext {
+        caps: DeliveryCapabilities::default(),
+        delivery: None,
+        allowlist: &[],
+    };
+    Ok(render_context(events, &context)?.0)
+}
+
+/// Assembles the provider-wire prompt (the layout law): the rendered
+/// history is the stable head, the focus block rides the volatile tail,
+/// joined by one newline. Returns the prompt and the volatile-tail byte
+/// length (the cache boundary every completion request surfaces).
+pub fn assemble_wire_prompt(rendered: &str, focus_block: &str) -> (String, usize) {
+    push_volatile_tail(rendered.to_owned(), focus_block)
+}
+
+/// The one implementation of the head/tail join: appends the volatile
+/// focus block in place onto an owned rendered history (the adapter's
+/// hot path; the pub seam above pays the one copy it always paid).
+fn push_volatile_tail(mut head: String, focus_block: &str) -> (String, usize) {
+    head.reserve(1 + focus_block.len());
+    head.push('\n');
+    head.push_str(focus_block);
+    (head, focus_block.len())
+}
+
 /// Renders the llm-visible events through the delivery planner — one
 /// line per event, deterministic, no internal kinds (the
 /// `Condensation`/`Snapshot` arms are unreachable through the filter and
@@ -229,22 +282,9 @@ fn render_context(
     context: &DeliveryContext<'_>,
 ) -> Result<(String, Vec<NativeMedia>), InferenceError> {
     let mut native = Vec::new();
-    let lines: Vec<String> = austringer_core::event::llm_visible(events)
-        .map(|event| match event {
-            Event::User { blocks } => Ok(format!(
-                "user: {}",
-                render_blocks(blocks, context, &mut native)?
-            )),
-            Event::Assistant { blocks } => Ok(format!(
-                "assistant: {}",
-                render_blocks(blocks, context, &mut native)?
-            )),
-            Event::ToolCall { call_id, tool, .. } => Ok(format!("tool-call {call_id} {tool}")),
-            Event::ToolResult { call_id, .. } => Ok(format!("tool-result {call_id}")),
-            Event::System { text } => Ok(format!("system: {text}")),
-            Event::Condensation { .. } | Event::Snapshot { .. } => Ok(String::new()),
-        })
-        .collect::<Result<_, _>>()?;
+    let lines = austringer_core::event::llm_visible(events)
+        .map(|event| render_cache::render_event_line(event, context, &mut native))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok((lines.join("\n"), native))
 }
 

@@ -33,6 +33,7 @@
 
 #![deny(missing_docs)]
 
+mod counters;
 mod export;
 mod fork;
 mod import;

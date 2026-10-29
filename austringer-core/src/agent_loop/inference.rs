@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use super::cancel::CancelToken;
 use crate::event::RecordedEvent;
 use crate::event::content::ContentBlock;
+use crate::tools::ToolSchema;
 
 /// One tool invocation requested by the assistant.
 #[derive(Debug, Clone, PartialEq)]
@@ -58,8 +59,9 @@ pub struct AssistantTurn {
 }
 
 /// What one inference call sees: the model-context events (the caller's
-/// sanctioned llm-visible slice of the log) plus the stable focus-chain
-/// environment block, re-injected every turn.
+/// sanctioned llm-visible slice of the log), the stable focus-chain
+/// environment block re-injected every turn, and the session-stable
+/// wire surfaces (system prompt + declared tools).
 #[derive(Debug)]
 pub struct InferenceRequest<'a> {
     /// Model-context events. Consumers MUST respect the event taxonomy's
@@ -67,6 +69,13 @@ pub struct InferenceRequest<'a> {
     pub events: &'a [RecordedEvent],
     /// The byte-stable focus-chain block for the current todo state.
     pub focus_block: &'a str,
+    /// The stable system prompt riding the provider's native system
+    /// surface (research §24.6 stable-first layout). Empty = none.
+    pub system: &'a str,
+    /// The declared tool surface for the provider's native tools shape
+    /// (research §33.1: declarations are required for tool calls to
+    /// fire). Empty = no tools ride the wire.
+    pub tools: &'a [ToolSchema],
 }
 
 /// Why an inference call failed.

@@ -240,6 +240,8 @@ pub async fn run(
             &InferenceRequest {
                 events,
                 focus_block: "<focus>todos</focus>",
+                system: "",
+                tools: &[],
             },
             &CancelToken::new(),
         )

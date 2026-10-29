@@ -51,7 +51,9 @@ pub enum CompactionCause {
 pub struct HookError(pub String);
 
 /// The T4 event-log seam the engine appends hook events through.
-pub trait CompactionSink {
+/// `Send` because the engine holds the sink across awaits inside
+/// pipeline stages (themselves boxed as `Send` futures).
+pub trait CompactionSink: Send {
     /// Appends one event, assigning its sequence.
     fn append(&mut self, event: Event) -> Result<Sequence, HookError>;
 }

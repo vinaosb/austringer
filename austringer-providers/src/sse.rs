@@ -51,12 +51,18 @@ impl SseFrameParser {
                 self.buffer.push(*byte);
             }
         }
-        while let Some(pos) = find_blank_line(&self.buffer) {
-            let block: Vec<u8> = self.buffer.drain(..pos).collect();
-            self.buffer.drain(..2);
-            if let Some(frame) = parse_block(&block) {
+        // Hot path: scan only unconsumed bytes, slice-borrow blocks
+        // (parse_block returns an owned frame), one trailing drain.
+        let mut consumed = 0usize;
+        while let Some(rel) = find_blank_line(&self.buffer[consumed..]) {
+            let end = consumed + rel;
+            if let Some(frame) = parse_block(&self.buffer[consumed..end]) {
                 self.frames.push_back(frame);
             }
+            consumed = end + 2;
+        }
+        if consumed > 0 {
+            self.buffer.drain(..consumed);
         }
         if self.buffer.len() > MAX_FRAME_BYTES {
             return Err(TransportFailure::Protocol(format!(
@@ -169,6 +175,55 @@ mod tests {
         assert_eq!(first.event.as_deref(), Some("a"));
         assert!(parser.next_frame().is_some(), "[DONE] frame");
         assert!(parser.next_frame().is_none());
+    }
+
+    #[test]
+    fn frame_split_across_three_feeds_emits_exactly_once() {
+        let mut parser = SseFrameParser::new();
+        parser.feed(b"event: delta\nda").expect("feed 1");
+        assert!(parser.next_frame().is_none(), "partial frame must not emit");
+        parser.feed(b"ta: {\"x\":").expect("feed 2");
+        assert!(parser.next_frame().is_none(), "still partial");
+        parser.feed(b"1}\n\n").expect("feed 3");
+        let frame = parser.next_frame().expect("complete after 3rd feed");
+        assert_eq!(frame.event.as_deref(), Some("delta"));
+        assert_eq!(frame.data, serde_json::json!({ "x": 1 }));
+        assert!(parser.next_frame().is_none(), "emitted exactly once");
+    }
+
+    #[test]
+    fn many_frames_in_one_feed_match_frame_by_frame_feeds() {
+        // Mirrors provider framing: many events per hyper chunk. Even
+        // indices use CRLF so normalization is pinned in the batch path.
+        let frame_text = |i: usize| {
+            let line_ending = if i.is_multiple_of(2) { "\r\n" } else { "\n" };
+            format!("event: delta\ndata: {{\"i\":{i}}}{line_ending}{line_ending}")
+        };
+        let batch_text: String = (0..200).map(frame_text).collect();
+        let batch = frames_of(&batch_text);
+        assert_eq!(batch.len(), 200, "every batched frame extracted");
+        for (i, frame) in batch.iter().enumerate() {
+            assert_eq!(frame.event.as_deref(), Some("delta"), "event at {i}");
+            assert_eq!(frame.data, serde_json::json!({ "i": i }), "data at {i}");
+        }
+
+        let mut parser = SseFrameParser::new();
+        for i in 0..200 {
+            parser.feed(frame_text(i).as_bytes()).expect("parse");
+        }
+        let mut one_by_one = Vec::new();
+        while let Some(frame) = parser.next_frame() {
+            one_by_one.push(frame);
+        }
+        assert_eq!(one_by_one.len(), 200);
+        for (i, (b, o)) in batch.iter().zip(&one_by_one).enumerate() {
+            assert_eq!(
+                b.event.as_deref(),
+                o.event.as_deref(),
+                "event mode mismatch at {i}"
+            );
+            assert_eq!(b.data, o.data, "data mode mismatch at {i}");
+        }
     }
 
     #[test]

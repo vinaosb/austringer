@@ -92,9 +92,15 @@ impl WireCodec for GeminiCodec {
     }
 
     fn render_request(&self, request: &CompletionRequest, auth: &AccessToken) -> TransportRequest {
-        let body = json!({
+        let mut body = json!({
             "contents": [{ "role": "user", "parts": super::wire_media::google_parts(request) }],
         });
+        if let Some(system) = super::wire_media::google_system(request) {
+            body["systemInstruction"] = system;
+        }
+        if let Some(tools) = super::wire_media::google_tools(request) {
+            body["tools"] = tools;
+        }
         json_request(
             &self.url,
             &body,

@@ -270,6 +270,63 @@ async fn session_cancel_stops_the_prompt_with_cancelled_reason() {
     assert_eq!(stop_reason.as_deref(), Some("cancelled"));
 }
 
+/// A `session/cancel` arriving while two prompts of one session are in
+/// flight stops both, and neither prompt is spuriously cancelled after
+/// the earlier one completes (the completion-time drain must not erase
+/// a cancel aimed at a still-running prompt).
+#[tokio::test]
+async fn cancel_during_concurrent_prompts_stops_both() {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+    let agent = Arc::new(agent_with(PanelEngine {
+        mention_seen: Arc::default(),
+        edits_seen: Arc::default(),
+        respect_cancel: true,
+    }));
+    let wire: Arc<dyn AcpWire> = Arc::new(MpscWire { to_ide: tx });
+    agent
+        .handle_line(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":null}}"#,
+            &wire,
+        )
+        .await
+        .expect("init");
+    let mut prompting = Vec::new();
+    for id in 2..4 {
+        let agent = Arc::clone(&agent);
+        let wire = Arc::clone(&wire);
+        prompting.push(tokio::spawn(async move {
+            agent
+                .handle_line(
+                    &format!(
+                        r#"{{"jsonrpc":"2.0","id":{id},"method":"session/prompt","params":{{"sessionId":"s-1","prompt":[{{"type":"text","text":"go"}}]}}}}"#
+                    ),
+                    &wire,
+                )
+                .await
+                .expect("prompt")
+        }));
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    agent
+        .handle_line(
+            r#"{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"s-1"}}"#,
+            &wire,
+        )
+        .await
+        .expect("cancel");
+    let mut cancelled = 0;
+    while cancelled < 2 {
+        let line = rx.recv().await.expect("stop response");
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+        if parsed["result"]["stopReason"] == "cancelled" {
+            cancelled += 1;
+        }
+    }
+    for task in prompting {
+        task.await.expect("prompt task");
+    }
+}
+
 #[tokio::test]
 async fn malformed_lines_and_unknown_methods_are_typed_errors() {
     let (tx, mut rx) = tokio::sync::mpsc::channel(8);

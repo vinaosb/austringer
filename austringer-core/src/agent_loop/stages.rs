@@ -50,6 +50,13 @@ impl StageCtx<'_> {
         self.mirror.push(RecordedEvent { seq, event });
         Ok(seq)
     }
+
+    /// The in-memory event mirror, read-only (the log is the durable
+    /// truth; stages append through [`Self::append`]). The compaction
+    /// stage reads this to build its engine input.
+    pub fn events(&self) -> &[RecordedEvent] {
+        self.mirror
+    }
 }
 
 /// Per-iteration entry hook. Default: no-op. Todo 28 implements real hooks.

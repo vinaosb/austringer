@@ -35,12 +35,15 @@ impl WireCodec for ChatCompletionsCodec {
     }
 
     fn render_request(&self, request: &CompletionRequest, auth: &AccessToken) -> TransportRequest {
-        let body = json!({
+        let mut body = json!({
             "model": request.identity.model,
             "stream": true,
             "stream_options": { "include_usage": true },
-            "messages": [{ "role": "user", "content": super::wire_media::chat_content(request) }],
+            "messages": super::wire_media::chat_messages(request),
         });
+        if let Some(tools) = super::wire_media::chat_tools(request) {
+            body["tools"] = tools;
+        }
         json_request(
             &self.url,
             &body,

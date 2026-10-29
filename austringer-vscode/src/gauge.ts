@@ -22,6 +22,27 @@ export type GaugeState = {
     kind: GaugeKind;
 };
 
+/**
+ * Memoizing gauge view: re-derives the projection per event but only
+ * calls `apply` when the visible state actually changed — the status
+ * bar sits on every ClientEvent's path, so unchanged text/kind must
+ * not touch it. Pure; the extension host injects the applying side.
+ */
+export function createGaugeView(apply: (state: GaugeState) => void): (inputs: GaugeInputs) => void {
+    let last: GaugeState | null = null;
+    return (inputs: GaugeInputs) => {
+        const state = gaugeState(inputs);
+        if (
+            last !== null && last.text === state.text && last.tooltip === state.tooltip
+            && last.kind === state.kind
+        ) {
+            return;
+        }
+        last = state;
+        apply(state);
+    };
+}
+
 export function gaugeState(inputs: GaugeInputs): GaugeState {
     if (inputs.pendingAsks > 0) {
         const plural = inputs.pendingAsks === 1 ? "ask" : "asks";

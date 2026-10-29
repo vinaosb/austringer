@@ -21,31 +21,44 @@ use async_trait::async_trait;
 use austringer_core::agent_loop::inference::PendingCall;
 use austringer_core::agent_loop::stages::{StageCtx, StageError, ToolExecutor, ToolOutcome};
 use austringer_core::tools::PinnedToolSet;
-use austringer_core::tools::{IoCap, ToolProvider, ToolRegistry};
+use austringer_core::tools::{IoCap, ToolProvider, ToolRegistry, ToolSchema};
 
 use providers::{EditLinesTool, ExecuteCommandTool, LspQueryTool, ViewWindowTool};
 
 use crate::protocol::SessionEvent;
 
-/// Builds one session's tool-execution stage (the daemon's injectable
-/// executor seam; see [`crate::server::DaemonState::executor_factory`]).
+/// Builds one session's tool-execution stage plus its declared wire
+/// surface: the session registry's pinned core schemas, what provider
+/// adapters declare natively (research §33.1). Backends without a
+/// registry (the worker protocol) surface an empty set.
 pub type ExecutorFactory = Arc<
-    dyn Fn(&Path, tokio::sync::mpsc::Sender<SessionEvent>) -> Box<dyn ToolExecutor> + Send + Sync,
+    dyn Fn(
+            &Path,
+            tokio::sync::mpsc::Sender<SessionEvent>,
+        ) -> (Box<dyn ToolExecutor>, Vec<ToolSchema>)
+        + Send
+        + Sync,
 >;
 
 /// The in-process executor set, constructed once at daemon startup and
-/// shared across every session's registry (one PTY runner, one LSP
-/// router per daemon — language servers spawn lazily on first use).
+/// shared across every session's registry. The `execute_command` PTY
+/// runner is NOT here: it is constructed per registry open (see
+/// [`CoreExecutors::open_registry`]) so its raw-output spill root is
+/// the opening session's own directory. One thing per daemon — the LSP
+/// router (language servers spawn lazily on first use).
 pub struct CoreExecutors {
     view_window: Arc<dyn ToolProvider>,
     edit_lines: Arc<dyn ToolProvider>,
-    execute_command: Arc<dyn ToolProvider>,
     lsp: LspQueryTool,
     run_tests: crate::tools::run_tests::RunTestsTool,
     /// The delegation services (todo 13); set once by the binary AFTER
     /// DaemonState exists — sessions open later, so every registry sees
     /// the bound services. Unbound = the `task` tool is absent.
     task: std::sync::OnceLock<Arc<crate::task::TaskServices>>,
+    /// The daemon-wide MCP mount surface (todo 12); set once by the
+    /// binary after the async startup scan/connect. Unbound = no MCP
+    /// tools in any registry (the worker-protocol default never binds).
+    mcp: std::sync::OnceLock<Arc<crate::mcp_mounts::McpMounts>>,
 }
 
 impl CoreExecutors {
@@ -57,9 +70,6 @@ impl CoreExecutors {
         Self {
             view_window: Arc::new(ViewWindowTool),
             edit_lines: Arc::new(EditLinesTool),
-            execute_command: Arc::new(ExecuteCommandTool {
-                runner: Arc::new(austringer_exec::PtyRunner::new()),
-            }),
             lsp: LspQueryTool {
                 router: austringer_lsp::LspRouter::new(austringer_lsp::LspConfig::new(
                     root.clone(),
@@ -68,6 +78,7 @@ impl CoreExecutors {
             },
             run_tests: crate::tools::run_tests::RunTestsTool::new(root, None),
             task: std::sync::OnceLock::new(),
+            mcp: std::sync::OnceLock::new(),
         }
     }
 
@@ -84,6 +95,12 @@ impl CoreExecutors {
     /// afterwards serves the `task` tool.
     pub fn bind_task_services(&self, services: Arc<crate::task::TaskServices>) {
         let _ = self.task.set(services);
+    }
+
+    /// Binds the MCP mount surface; every registry opened afterwards
+    /// mounts the enabled servers' cached tools (todo 12).
+    pub fn bind_mcp_mounts(&self, mounts: Arc<crate::mcp_mounts::McpMounts>) {
+        let _ = self.mcp.set(mounts);
     }
 
     /// Starts the RSS-sampled LSP server guard (must run inside a
@@ -111,7 +128,20 @@ impl CoreExecutors {
             .bind_executor("edit_lines", Arc::clone(&self.edit_lines))
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
-            .bind_executor("execute_command", Arc::clone(&self.execute_command))
+            .bind_executor(
+                "execute_command",
+                Arc::new(ExecuteCommandTool {
+                    // The PTY runner is per-session so its oversized
+                    // raw output spills under THIS session's directory
+                    // ({data}/sessions/{sid}/spill — the engine layout
+                    // the registry's own SpillStore already uses) and
+                    // is GC-able with the session, never the uncapped
+                    // global %TEMP% default.
+                    runner: Arc::new(austringer_exec::PtyRunner::with_spill_root(
+                        session_dir.to_path_buf(),
+                    )),
+                }),
+            )
             .map_err(|error| io::Error::other(error.to_string()))?;
         registry
             .bind_executor("lsp_query", Arc::new(self.lsp.clone()))
@@ -132,25 +162,40 @@ impl CoreExecutors {
                 )))
                 .map_err(|error| io::Error::other(error.to_string()))?;
         }
+        if let Some(mounts) = self.mcp.get() {
+            mounts.mount_into(&mut registry);
+        }
         Ok(registry)
     }
 
     /// The injectable executor factory: each session's stage opens a
-    /// registry over its own directory. A registry that cannot open
-    /// degrades loudly to the no-backend stage (tool results say so)
-    /// rather than failing the session.
+    /// registry over its own directory and surfaces its pinned core
+    /// schemas for the wire. A registry that cannot open degrades loudly
+    /// to the no-backend stage (tool results say so) rather than failing
+    /// the session — and declares nothing on the wire (an undeclared
+    /// tool cannot be called, which is the honest shape of a broken
+    /// registry, never a silently half-wired one).
     #[must_use]
     pub fn executor_factory(self: &Arc<Self>) -> ExecutorFactory {
         let executors = Arc::clone(self);
         Arc::new(
             move |session_dir, _event_sink| match executors.open_registry(session_dir) {
-                Ok(registry) => Box::new(RegistryToolExecutor::open(registry)),
+                Ok(registry) => {
+                    let tools = {
+                        let pinned = registry.pin_current();
+                        registry.pinned_wire_tools(&pinned)
+                    };
+                    (Box::new(RegistryToolExecutor::open(registry)), tools)
+                }
                 Err(error) => {
                     eprintln!(
                         "austringer-daemon: tool registry for {} unavailable: {error}",
                         session_dir.display()
                     );
-                    Box::new(austringer_core::agent_loop::stages::defaults::NoToolExecutor)
+                    (
+                        Box::new(austringer_core::agent_loop::stages::defaults::NoToolExecutor),
+                        Vec::new(),
+                    )
                 }
             },
         )

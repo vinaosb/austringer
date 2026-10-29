@@ -117,7 +117,8 @@ impl TaskServices {
             self.launch.ask_timeout,
             None,
         );
-        let executor = (self.launch.executor_factory)(&session_dir, child.event_sink());
+        let (executor, wire_tools) =
+            (self.launch.executor_factory)(&session_dir, child.event_sink());
         let crate::usage::ComposedInference {
             inference,
             identity,
@@ -146,8 +147,15 @@ impl TaskServices {
             Some(agent) => child.readonly_stages(executor, &agent.name, agent.tools.clone()),
             None => child.standard_stages(executor),
         };
+        // Children ride the same wire surfaces as parents: the stable
+        // system prompt plus their own registry's pinned core schemas.
+        let loop_config = austringer_core::agent_loop::LoopConfig {
+            system: crate::engine::SESSION_SYSTEM_PROMPT.to_owned(),
+            tools: wire_tools,
+            ..austringer_core::agent_loop::LoopConfig::default()
+        };
         child
-            .spawn_engine(session_dir, stages, inference, cmd_rx)
+            .spawn_engine_with_config(session_dir, stages, inference, cmd_rx, loop_config)
             .map_err(|e| TaskRefusal::Spawn(format!("engine spawn: {e}")))?;
         parent.publish(SessionEvent::ChildStarted {
             child: spawn.child_id.clone(),

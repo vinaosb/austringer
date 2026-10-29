@@ -10,6 +10,7 @@ use austringer_bench::gate::{Policy, evaluate_metric};
 use austringer_bench::report::MetricStatus;
 use austringer_bench::scenarios::{
     ScenarioContext, ScenarioError, eviction, idle, process, prompt, pty, repomap, sessions, tui,
+    wire_prefix,
 };
 
 fn ctx() -> ScenarioContext {
@@ -42,6 +43,22 @@ fn prompt_prefix_bytes_are_deterministic() {
         .expect("prefix metric");
     assert_eq!(pa, pb);
     assert!(pa > 0.0);
+}
+
+#[test]
+fn wire_prefix_surface_is_deterministic() {
+    let a = wire_prefix::run(&ctx()).expect("run a");
+    let b = wire_prefix::run(&ctx()).expect("run b");
+    let sa = a
+        .value("wire.stable_surface_bytes")
+        .expect("surface metric");
+    let sb = b
+        .value("wire.stable_surface_bytes")
+        .expect("surface metric");
+    assert_eq!(sa, sb, "same seed -> same stable surface");
+    assert!(sa > 0.0, "stable surface must be MEASURED, not zero");
+    let tail = a.value("wire.focus_tail_bytes").expect("tail metric");
+    assert!(tail > 0.0, "the focus tail must actually ride the prompt");
 }
 
 #[test]
@@ -184,6 +201,7 @@ fn gate_baseline_metric_names_are_exact() {
             "repomap.tokens",
             "eviction.projected_events",
             "prompt.stable_prefix_bytes",
+            "wire.stable_surface_bytes",
             "pty.observation_bytes",
             "sessions.page_bytes",
         ]

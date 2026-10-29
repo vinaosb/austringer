@@ -616,7 +616,7 @@ mod tests {
         app.bar.set_text("/help");
         app.step(UiEvent::Key(key(crossterm::event::KeyCode::Enter)));
         let notes: Vec<&String> = app.view.notes().iter().collect();
-        assert_eq!(notes.len(), 9, "one note per grammar command");
+        assert_eq!(notes.len(), 10, "one note per grammar command");
         assert_eq!(notes[0], "/help — show this command list");
         assert_eq!(
             notes[notes.len() - 1],

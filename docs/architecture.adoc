@@ -99,10 +99,6 @@ austringer-as-subagent backends.
 CSR, signature-only rendering inside a token budget.
 |context
 
-|austringer-search
-|Tantivy BM25 lexical index plus grep — no embeddings, by scope decision.
-|context
-
 |austringer-lsp
 |Headless LSP client with RSS-sampled bounded server supervision.
 |context
@@ -159,6 +155,11 @@ resolution.
 |The state owner: HTTP/WS/SSE + IPC protocol, multi-client attach with
 mediated permissions, scheduler, notifications, web SPA serving, hardened
 auth (token + Host-header checks).
+|surfaces
+
+|austringer-launch
+|Client-side daemon lifecycle shared by the CLI and TUI: autospawn,
+socket handoff on restart, TUI binary discovery.
 |surfaces
 
 |austringer-cli, austringer-tui, austringer-web, austringer-vscode

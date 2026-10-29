@@ -23,6 +23,26 @@ use crate::roots::Roots;
 use crate::stderr_bridge::spawn_stderr_drain;
 use tokio::sync::Semaphore;
 
+/// Base delay before the first Streamable HTTP connect retry (milliseconds).
+const CONNECT_RETRY_BASE_MS: u64 = 20;
+
+/// Ceiling for the exponential Streamable HTTP connect-retry delay
+/// (milliseconds).
+const CONNECT_RETRY_CAP_MS: u64 = 500;
+
+/// Delay before the next Streamable HTTP connect attempt after `attempt`
+/// failures (0-based): 20 ms doubling per attempt, capped at 500 ms. A
+/// dead endpoint sees a handful of dials inside the connect budget
+/// instead of one every 20 ms; the outer deadline still yields the typed
+/// [`McpClientError::ConnectTimeout`] on every OS.
+#[must_use]
+pub fn connect_retry_delay(attempt: u32) -> Duration {
+    // 20 << 5 = 640 ms already exceeds the cap; later attempts saturate
+    // there, which also keeps the shift overflow-free for any `attempt`.
+    let shift = attempt.min(5);
+    Duration::from_millis((CONNECT_RETRY_BASE_MS << shift).min(CONNECT_RETRY_CAP_MS))
+}
+
 pub(super) struct AustringerClientHandler {
     roots: Vec<String>,
 }
@@ -94,17 +114,27 @@ impl McpClient {
                     // on linux vs firewall-dropped SYNs on windows);
                     // re-attempt until the budget is spent so an
                     // unestablished endpoint surfaces as the typed
-                    // ConnectTimeout on every OS.
+                    // ConnectTimeout on every OS. The HTTP client (rustls
+                    // provider init + root store parse) is built once
+                    // before the loop and cloned per attempt (a cheap
+                    // Arc bump), and retries back off exponentially so a
+                    // dead endpoint is dialed a handful of times per
+                    // budget, not every 20 ms.
+                    let sse_client = ReqwestSseClient::new();
+                    let mut attempt = 0_u32;
                     loop {
                         let transport = StreamableHttpClientTransport::with_client(
-                            ReqwestSseClient::new(),
+                            sse_client.clone(),
                             StreamableHttpClientTransportConfig::with_uri(url.clone()),
                         );
                         // serve_client consumes the handler; rebuild it
                         // per attempt.
                         match serve_client(Self::handler_for(&entry), transport).await {
                             Ok(service) => break Ok(service),
-                            Err(_) => tokio::time::sleep(Duration::from_millis(20)).await,
+                            Err(_) => {
+                                tokio::time::sleep(connect_retry_delay(attempt)).await;
+                                attempt += 1;
+                            }
                         }
                     }
                 }

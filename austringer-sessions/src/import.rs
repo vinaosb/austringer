@@ -73,8 +73,9 @@ impl SessionStore {
             rusqlite::params![id, title, now as i64, origin.source, origin.unknown as i64],
         )
         .map_err(|error| constraint(error, id))?;
+        let mut counters = crate::counters::SessionCounters::load(&tx, id)?;
         for event in events {
-            crate::session::append_in_tx(&tx, id, None, event, now)?;
+            crate::session::append_in_tx(&tx, id, None, event, now, &mut counters)?;
         }
         state_bump(&tx, "sessions_since_dream", 1)?;
         tx.commit().map_err(SessionError::sqlite)?;

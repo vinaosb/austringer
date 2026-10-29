@@ -33,6 +33,9 @@ pub struct InvokedSkill {
 pub(crate) struct IndexEntry {
     pub(crate) meta: SkillMeta,
     pub(crate) skill_md: PathBuf,
+    /// blake3 hash of the SKILL.md bytes captured by the scan read (the
+    /// lock-pin source; the file is never re-read within one load).
+    pub(crate) content_hash: String,
 }
 
 /// The loaded skill index. Construct via
@@ -137,21 +140,21 @@ impl SkillIndex {
 
     /// Applies lock pinning: records pins for unseen skills, flags
     /// mismatches (never rewrites a mismatched pin), and shadows
-    /// mismatched skills out of routing.
+    /// mismatched skills out of routing. Pins reuse the scan-time
+    /// content hash; SKILL.md is read exactly once per load.
     pub(crate) fn apply_lock(&mut self, lock_path: &Path) -> Result<(), SkillError> {
-        let mut lock = SkillsLockFile::read(lock_path)?.unwrap_or_default();
+        let lock_on_disk = SkillsLockFile::read(lock_path)?;
+        let lock_existed = lock_on_disk.is_some();
+        let mut lock = lock_on_disk.unwrap_or_default();
         lock.version = 1;
         let mut changed = false;
         for entry in self.entries.values() {
-            let bytes = std::fs::read(&entry.skill_md)
-                .map_err(|e| SkillError::io("read SKILL.md for pin", &e))?;
-            let actual = SkillsLockFile::hash_bytes(&bytes);
             match lock.pins.get(entry.meta.name.as_str()) {
-                Some(pin) if pin.content_hash != actual => {
+                Some(pin) if pin.content_hash != entry.content_hash => {
                     self.report.lock_mismatches.push(LockMismatch {
                         name: entry.meta.name.clone(),
                         pinned_hash: pin.content_hash.clone(),
-                        actual_hash: actual,
+                        actual_hash: entry.content_hash.clone(),
                     });
                 }
                 Some(_) => {}
@@ -159,7 +162,7 @@ impl SkillIndex {
                     lock.pins.insert(
                         entry.meta.name.to_string(),
                         PinRecord {
-                            content_hash: actual,
+                            content_hash: entry.content_hash.clone(),
                             source: entry.meta.vendor.dir_name().to_string(),
                         },
                     );
@@ -167,7 +170,7 @@ impl SkillIndex {
                 }
             }
         }
-        if SkillsLockFile::read(lock_path)?.is_none() || changed {
+        if !lock_existed || changed {
             lock.write(lock_path)?;
         }
         let mismatched: Vec<String> = self
@@ -204,4 +207,47 @@ fn body_after_frontmatter(text: &str) -> String {
         }
     }
     trimmed.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(p: &Path, contents: &str) {
+        std::fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
+        std::fs::write(p, contents).expect("write");
+    }
+
+    #[test]
+    fn lock_pins_reuse_the_scan_time_hash() {
+        // SKILL.md removed after the scan: the pin must come from the
+        // bytes the scan already read, not from a re-read.
+        let tmp = tempfile::tempdir().expect("tmp");
+        let base = tmp.path();
+        let doc = "---\nname: carried\ndescription: d\n---\n\nbody of carried\n";
+        let skill_md = base
+            .join(".opencode")
+            .join("skills")
+            .join("carried")
+            .join("SKILL.md");
+        write(&skill_md, doc);
+        let mut index = crate::loader::SkillLoader::new()
+            .vendor_root(base)
+            .lock_mode(crate::loader::LockMode::Off)
+            .load()
+            .expect("scan load");
+        std::fs::remove_file(&skill_md).expect("remove SKILL.md");
+        let lock_path = base.join(".austringer").join("skills-lock.json");
+        index
+            .apply_lock(&lock_path)
+            .expect("pin comes from the scan-time read, not a re-read");
+        let lock = SkillsLockFile::read(&lock_path)
+            .expect("lock read")
+            .expect("lock written");
+        assert_eq!(
+            lock.pins["carried"].content_hash,
+            SkillsLockFile::hash_bytes(doc.as_bytes()),
+            "pin carries the hash of the bytes the scan read"
+        );
+    }
 }

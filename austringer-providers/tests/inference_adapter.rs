@@ -22,6 +22,8 @@ fn request<'a>(
     InferenceRequest {
         events,
         focus_block: focus,
+        system: "",
+        tools: &[],
     }
 }
 
@@ -65,7 +67,9 @@ async fn text_turn_maps_through_the_llm_visible_projection() {
     let served = bridge.served();
     assert_eq!(served.len(), 1);
     let prompt = &served[0].prompt;
-    assert!(prompt.starts_with("<focus-chain>todos</focus-chain>\n"));
+    // Layout law: the history region is the head, the focus block the tail.
+    assert!(prompt.starts_with("user: find the todos"));
+    assert!(prompt.ends_with("<focus-chain>todos</focus-chain>"));
     assert!(prompt.contains("user: find the todos"));
     assert!(prompt.contains("assistant: on it"));
     assert!(prompt.contains("tool-call prev1 view_window"));

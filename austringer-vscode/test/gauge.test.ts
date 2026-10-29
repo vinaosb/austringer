@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { gaugeState, type GaugeInputs } from "../src/gauge.ts";
+import { createGaugeView, gaugeState, type GaugeInputs } from "../src/gauge.ts";
 
 const base: GaugeInputs = {
     status: "connected",
@@ -37,4 +37,36 @@ test("disconnected says so plainly", () => {
     const gauge = gaugeState({ ...base, status: "disconnected" });
     assert.match(gauge.text, /disconnected|offline/i);
     assert.equal(gauge.kind, "error");
+});
+
+test("createGaugeView applies the first render even when inputs repeat", () => {
+    const applied: string[] = [];
+    const view = createGaugeView((state) => applied.push(state.text));
+    view(base);
+    view(base);
+    assert.equal(applied.length, 1, "identical inputs after the first render are swallowed");
+    assert.match(applied[0] ?? "", /connected/i);
+});
+
+test("createGaugeView early-returns while event churn keeps the state unchanged", () => {
+    let applications = 0;
+    const view = createGaugeView(() => applications++);
+    for (let attempt = 0; attempt <= 5; attempt++) {
+        view({ ...base, status: "connected", attempt });
+    }
+    assert.equal(applications, 1, "same text/kind at different attempt counts is one render");
+});
+
+test("createGaugeView re-applies when the visible state changes", () => {
+    const kinds: string[] = [];
+    const view = createGaugeView((state) => kinds.push(state.kind));
+    view(base);
+    view({ ...base, turn: 1 });
+    view({ ...base, turn: 1, pendingAsks: 1 });
+    view({ ...base, turn: 1, pendingAsks: 1 });
+    assert.deepEqual(
+        kinds,
+        ["ok", "ok", "action"],
+        "turn change alters text (re-applies), ask change alters kind, repeat is swallowed",
+    );
 });

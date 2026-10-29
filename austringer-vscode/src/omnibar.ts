@@ -16,6 +16,7 @@ export type OmnibarIntent =
     | { kind: "mode"; on: boolean }
     | { kind: "rewind"; steps: number }
     | { kind: "skill"; text: string }
+    | { kind: "condense" }
     | { kind: "help" }
     | { kind: "empty" }
     | { kind: "malformed"; usage: string }
@@ -47,6 +48,8 @@ export function parseOmnibar(input: string): OmnibarIntent {
             return { kind: "rewind", steps: parsed.steps ?? 1 };
         case "skill":
             return { kind: "skill", text: parsed.text };
+        case "condense":
+            return { kind: "condense" };
         case "cli-only":
             return { kind: "cli-only", word: parsed.word };
         case "malformed":
@@ -118,6 +121,11 @@ export async function runOmnibar(input: string, deps: OmnibarDeps): Promise<void
             // /skill rides the submit lane verbatim (the daemon-side
             // trust gate parses it there); no telemetry context.
             await report(await deps.submitVerbatim(intent.text), deps);
+            return;
+        case "condense":
+            // /condense rides the submit lane verbatim too: the
+            // daemon-side slash stage runs the compaction.
+            await report(await deps.submitVerbatim("/condense"), deps);
             return;
         case "help":
             deps.showInfo(cheatSheet());

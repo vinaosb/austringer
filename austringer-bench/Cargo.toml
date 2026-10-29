@@ -14,6 +14,7 @@ workspace = true
 austringer-core = { path = "../austringer-core", version = "0.1.0" }
 austringer-daemon = { path = "../austringer-daemon", version = "0.1.0" }
 austringer-exec = { path = "../austringer-exec", version = "0.1.0" }
+austringer-providers = { path = "../austringer-providers", version = "0.1.0" }
 austringer-repomap = { path = "../austringer-repomap", version = "0.1.0" }
 austringer-sessions = { path = "../austringer-sessions", version = "0.1.0" }
 austringer-tui = { path = "../austringer-tui", version = "0.1.0" }

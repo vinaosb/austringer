@@ -17,7 +17,7 @@ import * as vscode from "vscode";
 import { HarnessClient, type ClientEvent } from "./client.ts";
 import { AskDialogs } from "./askdialogs.ts";
 import type { AskPayload } from "./protocol.ts";
-import { gaugeState, type GaugeInputs } from "./gauge.ts";
+import { createGaugeView, type GaugeInputs } from "./gauge.ts";
 import { hunkAction, planDiff, gateHunkAccept, type HunkPlan, type HunkRange } from "./hunks.ts";
 import { nodeHttpIo } from "./nodehttp.ts";
 import { runOmnibar, type OmnibarDeps } from "./omnibar.ts";
@@ -36,6 +36,14 @@ export class HarnessSession {
     private readonly plans = new Map<string, HunkPlan>();
     private readonly pendingAsks = new Map<number, AskPayload>();
     private readonly transcript = new TranscriptPanel();
+    private readonly renderGaugeView = createGaugeView((state) => {
+        this.gauge.text = state.text;
+        this.gauge.tooltip = state.tooltip;
+        this.gauge.backgroundColor = state.kind === "action"
+            ? new vscode.ThemeColor("statusBarItem.warningBackground")
+            : undefined;
+        this.gauge.show();
+    });
     private gaugeInputs: GaugeInputs = { status: "disconnected", attempt: 0, turn: null, pendingAsks: 0 };
     private turn: number | null = null;
 
@@ -170,13 +178,7 @@ export class HarnessSession {
     }
 
     renderGauge(): void {
-        const state = gaugeState(this.gaugeInputs);
-        this.gauge.text = state.text;
-        this.gauge.tooltip = state.tooltip;
-        this.gauge.backgroundColor = state.kind === "action"
-            ? new vscode.ThemeColor("statusBarItem.warningBackground")
-            : undefined;
-        this.gauge.show();
+        this.renderGaugeView(this.gaugeInputs);
     }
 
     decorate(): void {

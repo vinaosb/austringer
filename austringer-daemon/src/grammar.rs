@@ -65,6 +65,12 @@ pub const COMMANDS: &[SlashCommand] = &[
         local: false,
     },
     SlashCommand {
+        word: "condense",
+        usage: "/condense",
+        help: "condense the session context now",
+        local: false,
+    },
+    SlashCommand {
         word: "exit",
         usage: "/exit",
         help: "quit this repl",
@@ -246,6 +252,7 @@ mod tests {
 /mode plan|off — enter or exit plan mode
 /rewind [steps] — rewind to a previous restore point (default 1)
 /skill <name> [args] — run a trusted skill through the submit lane
+/condense — condense the session context now
 /exit — quit this repl (cli only)
 /image <path> — attach an image to the next submit (cli only)";
         assert_eq!(cheat_sheet(), expected);
@@ -272,6 +279,7 @@ mod tests {
                 "/mode",
                 "/rewind",
                 "/skill",
+                "/condense",
             ]
         );
     }

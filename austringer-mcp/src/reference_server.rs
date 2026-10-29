@@ -181,3 +181,26 @@ pub fn write_fixture(root: &Path, name: &str, contents: &str) -> PathBuf {
     std::fs::write(&path, contents).ok();
     path
 }
+
+/// Serves one in-process server on a tokio duplex and returns the CLIENT
+/// end of the wire plus a flag set once the serve task finished (the
+/// wire closed and the server side dropped — the lifecycle observable
+/// for embedding crates' tests, which do not depend on rmcp directly).
+pub async fn serve_duplex<S: ServerHandler + 'static>(
+    server: S,
+) -> (
+    tokio::io::DuplexStream,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let finished = std::sync::Arc::new(AtomicBool::new(false));
+    let flag = std::sync::Arc::clone(&finished);
+    let (client_end, server_end) = tokio::io::duplex(8192);
+    tokio::spawn(async move {
+        if let Ok(service) = rmcp::service::serve_server(server, server_end).await {
+            let _ = service.waiting().await;
+        }
+        flag.store(true, Ordering::SeqCst);
+    });
+    (client_end, finished)
+}
