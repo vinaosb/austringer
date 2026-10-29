@@ -1,12 +1,18 @@
-# Deep QA — scheduled sweep of the workspace's `#[ignore]`d deep-QA tests
+# Deep QA — two lanes over the workspace's `#[ignore]`d deep-QA tests,
 # plus a criterion bench smoke (plan todo 27).
 #
-# WHY SCHEDULED-ONLY: these tests are heavy by design (100 MB through a
-# real ConPTY, a ~150 s full-session PTY capture, a 50k-node repomap
-# stress, real rust-analyzer indexing, a Docker container run) and none
-# of them should gate a PR. Triggers are `schedule` + `workflow_dispatch`
-# only — same policy as the evals sweep (goose discipline: deep checks
-# run on a cadence, PRs stay fast).
+# WHY TWO LANES: prevention beats detection. The PR lane gates every
+# pull request to main with the DETERMINISTIC subset of the ignored
+# suite — 13 hermetic QA/stress/bench-harness tests (measured 11.9 s
+# wall on the dev machine, 2026-10-29 evidence), the 3 lsp goldens
+# against a pinned rust-analyzer, the docker smoke, and the 2-test
+# ollama live tier; ~6–8 min with cache. The weekly lane sweeps the
+# FULL set including the heavy, timing-sensitive remainder (100 MB
+# through a real ConPTY, a ~150 s full-session PTY capture) that must
+# not block a merge on shared-runner load noise — those stay on a
+# cadence, per the original goose discipline. A break in the
+# deterministic tier now stops the PR that caused it, not the weekly
+# report up to 7 days later.
 #
 # WHY SPLIT BY RUNNER OS: a single-OS design is internally contradictory
 # — 3 of pty_qa's 7 tests are `#[cfg(windows)]` (they never even compile
@@ -80,8 +86,13 @@
 #     history. Scheduled CI must never execute it.
 #   austringer-media  7 real-tool tier tests — opt-in by design (above).
 #
-# Accounting: windows 8 + ubuntu 19 = 27 executed ≥ 21 target. Neither
-# job alone reaches it (8 < 21, 19 < 21) — the union is the contract.
+# Accounting (corrects the prior header's "ubuntu 19" — the ubuntu list
+# above contains 18 tests):
+#   PR lane (every PR to main): 19 = 13 hermetic (core 5, tools 4,
+#     vfs 3, repomap 1) + lsp goldens 3 + docker smoke 1 + ollama 2
+#   weekly windows: 8 (exec 7 + taskkill golden)
+#   weekly ubuntu: 18 + ollama 2 = 20 (union of weekly jobs = 28 ≥ 21
+#     target; neither job alone reaches it — the union is the contract)
 #
 # ── Failure modes (how this workflow fails LOUDLY) ─────────────────────
 #  * A golden drift (rust-analyzer behavior change on the pinned
@@ -131,11 +142,17 @@ on:
     # dodge the shared-runner contention spikes at :00/:30.
     - cron: '23 4 * * 1'
   workflow_dispatch:
+  # PR lane only: the heavy weekly jobs are guarded below and never run
+  # on pull_request events.
+  pull_request:
+    branches: [main]
 
-# Scheduled runs never cancel each other; a dispatch supersedes nothing.
+# Per-ref groups: a new PR push cancels that PR's own superseded run;
+# the weekly main run (refs/heads/main) can only collide with a manual
+# dispatch of the same workflow — identical work, safe to supersede.
 concurrency:
-  group: deep-qa
-  cancel-in-progress: false
+  group: deep-qa-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -154,8 +171,69 @@ env:
   RUST_ANALYZER_VERSION: '2026-10-12'
 
 jobs:
+  pr-lane:
+    name: pr lane (deterministic deep-QA subset — gates every PR)
+    # The prevention tier. Runs on pull_request AND workflow_dispatch
+    # (a dispatch exercises this lane too, so it can be tested on
+    # demand); the weekly schedule skips it.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/lib/graalvm /opt/ghc
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.98 (workspace MSRV)
+        run: rustup update 1.98 --no-self-update && rustup default 1.98
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.144
+      - name: Install pinned rust-analyzer (${{ env.RUST_ANALYZER_VERSION }})
+        # For the three golden tests (goto/hover/didChange) — they spawn
+        # `rust-analyzer` from PATH against a fixture crate.
+        run: |
+          set -euxo pipefail
+          curl -sSL "https://github.com/rust-lang/rust-analyzer/releases/download/${RUST_ANALYZER_VERSION}/rust-analyzer-x86_64-unknown-linux-gnu.gz" -o ra.gz
+          gunzip ra.gz
+          chmod +x ra
+          sudo mv ra /usr/local/bin/rust-analyzer
+          rust-analyzer --version
+      - name: Run pr-lane deep-QA tests (17 deterministic tests)
+        # The deterministic subset of the ignored suite, selected by
+        # package for the four hermetic crates plus the container-
+        # featured docker smoke, and by exact test name for the three
+        # lsp goldens (kill9 stays weekly-only: it taskkills, which is
+        # Windows-only by construction; the daemon PTY session stays
+        # weekly-only: ~90–150 s of timing-sensitive capture). The
+        # ollama pair runs in the dedicated step below.
+        run: >-
+          cargo nextest run --workspace --run-ignored only
+          --exclude austringer-media --locked
+          --features austringer-safety/container
+          -E "package(austringer-core) or package(austringer-tools) or package(austringer-vfs) or package(austringer-repomap) or package(austringer-safety) or test(golden_goto_definition_returns_the_exact_location) or test(golden_hover_is_bounded_and_names_the_symbol) or test(did_change_refreshes_positions_in_the_live_server)"
+      - name: Run ollama live tier (real OpenAI-compatible server)
+        # See the "Ollama live tier" header section. The 127.0.0.1 bind
+        # keeps the runner port unexposed; the rm keeps ephemeral-runners
+        # tidy anyway. The build cache from the step above is reused, so
+        # this step costs the image+model pull (~2 GB) plus seconds of
+        # test time.
+        env:
+          AUSTRINGER_OLLAMA_URL: http://127.0.0.1:11434/v1
+        run: |
+          set -euxo pipefail
+          docker run -d --name ollama-live -p 127.0.0.1:11434:11434 ollama/ollama
+          docker exec ollama-live ollama pull qwen2.5:1.5b
+          cargo nextest run --locked -p austringer-providers --run-ignored only -E 'test(live_compat)'
+          docker rm -f ollama-live
+
   ignored-windows:
     name: ignored deep-QA (windows — pty_qa + taskkill golden)
+    # Weekly/dispatch only — the PR lane covers pull_request events.
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -192,6 +270,8 @@ jobs:
 
   ignored-ubuntu:
     name: ignored deep-QA (ubuntu — docker + goldens + cross-platform remainder)
+    # Weekly/dispatch only — the PR lane covers pull_request events.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -219,7 +299,7 @@ jobs:
           chmod +x ra
           sudo mv ra /usr/local/bin/rust-analyzer
           rust-analyzer --version
-      - name: Run ignored deep-QA tests (ubuntu set — 19 tests)
+      - name: Run ignored deep-QA tests (ubuntu set — 18 tests)
         # Ubuntu assignment: everything ignored and cross-platform, on a
         # Docker-equipped runner (docker_daemon_smoke_run pulls alpine:3
         # — Docker is preinstalled on ubuntu-latest images), MINUS the
@@ -251,6 +331,8 @@ jobs:
 
   bench-smoke:
     name: criterion bench smoke (6 benches, tiny samples)
+    # Weekly/dispatch only — existence/plumbing check, not PR-gating.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
