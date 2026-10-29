@@ -7,7 +7,36 @@ it names the evidence (research §N in
 [.omo/research/harness-research.md](.omo/research/harness-research.md);
 task-N evidence lives in `.omo/evidence/`, internal).
 
-## [Unreleased]
+## [0.1.3] - 2026-10-29
+
+### Added — the three unwired surfaces become wired (Tier-1 waves)
+
+- **Repo map in every prompt** (`PR #43`): the daemon composes each
+  session's system prompt with a token-budgeted repo map (CSR + SIMD
+  PageRank, the README's headline feature, library-only since 0.1.0).
+  A bounded gitignore-aware walker (`austringer-ast::walk`,
+  WalkLimits: 2000 files / 1 MiB per file, sorted-then-truncated
+  determinism) feeds the analyzer with a per-daemon cache; the block
+  freezes for the session's lifetime. `AUSTRINGER_REPOMAP_TOKEN_BUDGET`
+  (default 1000; 0 disables and reproduces the plain prompt byte for
+  byte). Children and launch specs deliberately run plain.
+- **Staged edit lane** (`PR #44`): EditLinesTool routes through
+  staged_edit/commit_staged — in-memory apply, entity analysis,
+  semantic hunks, a real SyntaxGate pass over the final bytes, and a
+  single-file VFS transaction (blake3 re-read verify; mid-air drift
+  fails typed with the file intact; write failures restore). Session
+  edits now emit Diff events (unified hunks, relative paths) visible
+  in every frontend. Whole-tree ShadowStore rejected with receipts;
+  exec::preflight deep pipeline stays deliberately unwired.
+- **PromptBuilder + cache-violation tracker promoted** (`PR #45`):
+  session prompts compose through the core ContextSpec/PromptBuilder
+  surface (volatile scan gates frozen segments; blake3 stable-prefix
+  hash anchors the session epoch). The provider-facing string is
+  pinned byte-identical to the previous contract — no wire or golden
+  change. Per-session epochs (chain + last rendered prompt, surviving
+  host eviction like the cost ledgers, never persisted) make
+  recomposition drift an observable `prompt_cache` transcript notice,
+  never a silent prefix-cache churn.
 
 ### Added — prevention-first CI over the deep-QA suite
 
