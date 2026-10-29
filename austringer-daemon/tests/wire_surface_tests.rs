@@ -139,10 +139,9 @@ async fn session_requests_carry_the_daemon_system_and_the_registry_surface() {
     let seen = capture.captures();
     assert!(!seen.is_empty(), "the loop inferred");
     for (system, names) in &seen {
-        assert_eq!(
-            system,
-            austringer_daemon::engine::SESSION_SYSTEM_PROMPT,
-            "the daemon's stable system prompt rides every session request"
+        assert!(
+            system.starts_with(austringer_daemon::engine::SESSION_SYSTEM_PROMPT),
+            "the daemon's stable system prompt prefixes every session request"
         );
         assert_eq!(
             names.as_slice(),

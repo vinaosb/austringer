@@ -58,6 +58,7 @@ pub mod grammar;
 pub mod language;
 pub mod parse;
 pub mod tags;
+pub mod walk;
 
 pub use analyze::{Analysis, AnalyzeOutcome, Analyzer, CacheStatus};
 pub use error::AstError;

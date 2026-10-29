@@ -126,6 +126,10 @@ serde.workspace = true
 serde_json.workspace = true
 blake3.workspace = true
 tree-sitter.workspace = true
+# Bounded gitignore-aware workspace walker (walk.rs, the repomap file
+# feed): same walker posture as the TUI omnibar
+# (austringer-tui/src/complete.rs) — already in the workspace tree.
+ignore.workspace = true
 
 # Grammar crates: every one returns tree-sitter-language's `LanguageFn`
 # (version-independent ABI wrapper), so they cannot disagree with the
