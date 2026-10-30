@@ -50,7 +50,7 @@ allow = [
     "0BSD",
     "CC0-1.0",
     # Deliberate, reviewed addition (todo 43): dhat-rs (heap profiling for
-    # the perf gate) is MPL-2.0 �?" file-level copyleft, used as an OPTIONAL
+    # the perf gate) is MPL-2.0 ï¿½?" file-level copyleft, used as an OPTIONAL
     # dev/bin-only dependency of austringer-bench behind its `dhat` feature;
     # no dhat code ships in any default build or distributed binary.
     "MPL-2.0",
@@ -75,5 +75,5 @@ wildcards = "deny"
 # from packaged manifests, so austringer-web can publish before
 # austringer-daemon exists on the registry (receipt: the 0.1.3 publish
 # deadlock, 2026-10-30). Registry wildcards stay denied.
-allow-wildcard-path-deps = true
+allow-wildcard-paths = true
 highlight = "all"
