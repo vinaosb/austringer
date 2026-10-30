@@ -70,4 +70,10 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Path-only deps (no version key) are the crates.io publish escape for
+# the daemon<->web dev-cycle: cargo strips version-less PATH dev-deps
+# from packaged manifests, so austringer-web can publish before
+# austringer-daemon exists on the registry (receipt: the 0.1.3 publish
+# deadlock, 2026-10-30). Registry wildcards stay denied.
+allow-wildcard-path-deps = true
 highlight = "all"
