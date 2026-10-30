@@ -1,5 +1,6 @@
 [package]
 name = "austringer-exec"
+description = "Process execution for austringer: ConPTY and WSL2 lanes, kill trees, output caps"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +12,7 @@ workspace = true
 
 [dependencies]
 austringer-core = { path = "../austringer-core", version = "0.1.0" }
-# Todo-22 pre-flight (a): the AST gate — touched-file parse validation
+# Todo-22 pre-flight (a): the AST gate â€” touched-file parse validation
 # (is_error/is_missing diagnostics) over the default grammar set.
 austringer-ast = { path = "../austringer-ast", version = "0.1.0" }
 # Todo-22 pre-flight: gates run INSIDE a T21 shadow; the corrective cycle

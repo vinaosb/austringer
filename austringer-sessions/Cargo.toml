@@ -1,5 +1,6 @@
 [package]
 name = "austringer-sessions"
+description = "Encrypted SQLite session store for austringer with FTS search and lazy paging"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -32,7 +33,7 @@ getrandom.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 # Integration tests inject corruption (dropped index/event rows) through
-# a second connection to the store file — the crate itself never
+# a second connection to the store file â€” the crate itself never
 # exposes its connection. The `trace` feature is test-only (statement
 # counters for the bulk-append no-reread test); production builds of
 # this crate and its dependents never enable it.

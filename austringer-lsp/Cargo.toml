@@ -1,5 +1,6 @@
 [package]
 name = "austringer-lsp"
+description = "Language-server integration surface for austringer (rust-analyzer goldens, semantic context)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

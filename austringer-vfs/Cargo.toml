@@ -1,5 +1,6 @@
 [package]
 name = "austringer-vfs"
+description = "Shadow-preflight virtual filesystem with hash-verified single-file transactions for austringer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

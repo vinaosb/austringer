@@ -1,5 +1,6 @@
 [package]
 name = "austringer-wasm"
+description = "Wasm plugin runtime host module for austringer (feature-gated, off by default)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

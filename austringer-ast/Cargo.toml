@@ -1,5 +1,6 @@
 [package]
 name = "austringer-ast"
+description = "Bounded grammar-aware source analysis and deterministic file walking for austringer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,12 +12,12 @@ workspace = true
 
 [features]
 # Default grammar set: small (keeps cold builds ~4 C compilations) and covers
-# the file types a Rust agent austringer touches most — Cargo/config (toml),
+# the file types a Rust agent austringer touches most â€” Cargo/config (toml),
 # manifests/lockfiles/tool output (json), the austringer' own sources (rust),
 # and build scripts (bash). Swap-in of further grammars is `langs-extra`.
 default = ["lang-rust", "lang-toml", "lang-json", "lang-bash"]
 # Opt-in: extends coverage to 50 languages total (see lib.rs docs for the
-# full surface listing). Deliberately NOT default — compiling all 46 extra
+# full surface listing). Deliberately NOT default â€” compiling all 46 extra
 # grammars costs minutes of C compilation and is a one-time `--features`
 # choice for hosts that want breadth.
 langs-extra = [
@@ -128,7 +129,7 @@ blake3.workspace = true
 tree-sitter.workspace = true
 # Bounded gitignore-aware workspace walker (walk.rs, the repomap file
 # feed): same walker posture as the TUI omnibar
-# (austringer-tui/src/complete.rs) — already in the workspace tree.
+# (austringer-tui/src/complete.rs) â€” already in the workspace tree.
 ignore.workspace = true
 
 # Grammar crates: every one returns tree-sitter-language's `LanguageFn`

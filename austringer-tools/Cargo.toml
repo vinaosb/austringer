@@ -1,5 +1,6 @@
 [package]
 name = "austringer-tools"
+description = "Core tool implementations for austringer: semantic hunks, staged apply, anchors"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "austringer-evals"
+description = "Hermetic conformance and eval sweep runner for austringer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,7 +25,7 @@ tempfile.workspace = true
 
 # Hermetic conformance sweep driver (todo 26): runs the committed
 # scenario pack under the scripted fake provider. Dev/CI tooling, not
-# a release artifact — cargo-dist must skip it (austringer-bench
+# a release artifact â€” cargo-dist must skip it (austringer-bench
 # precedent).
 [[bin]]
 name = "run_sweep"

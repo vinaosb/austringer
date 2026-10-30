@@ -1,5 +1,6 @@
 [package]
 name = "austringer-core"
+description = "The austringer engine: agent loop, events, tool registry, autonomy, budgets, compaction"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

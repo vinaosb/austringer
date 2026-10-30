@@ -1,5 +1,6 @@
 [package]
 name = "austringer-bench"
+description = "Performance gate, budgets, and benchmarks for austringer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -33,7 +34,7 @@ serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 tempfile.workspace = true
-# Archived heap profiles (heap-profile bin; global allocator — mutually
+# Archived heap profiles (heap-profile bin; global allocator â€” mutually
 # exclusive with mimalloc by construction).
 dhat = { workspace = true, optional = true }
 # Allocation-discipline option for the gate binaries (default off: the
@@ -84,7 +85,7 @@ harness = false
 name = "heap-profile"
 required-features = ["dhat"]
 
-# Dev perf tooling, not a release artifact — cargo-dist must skip it
+# Dev perf tooling, not a release artifact â€” cargo-dist must skip it
 # (heap-profile is feature-gated, so dist's unconditional bin build fails).
 [package.metadata.dist]
 dist = false
