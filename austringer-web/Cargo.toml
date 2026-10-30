@@ -22,8 +22,12 @@ base64ct.workspace = true
 # Dev-cycle (cargo supports dev-dependency cycles): the daemon SERVES
 # these assets (austringer-daemon -> austringer-web regular dep); its web
 # module is exercised read-only here to prove SERVED CONTENT + headers.
-# version keys are required (cargo-deny bans wildcard requirements).
-austringer-daemon = { path = "../austringer-daemon", version = "0.1.0" }
+# Deliberately PATH-ONLY: a version key would become a registry
+# requirement in the packaged manifest and deadlock the first publish
+# (daemon needs web on crates.io; web would need daemon). cargo strips
+# version-less path dev-deps at package time; deny.toml's
+# allow-wildcard-path-deps permits exactly this shape.
+austringer-daemon = { path = "../austringer-daemon" }
 # E2E example: scripted inference + worker over the daemon router.
 austringer-core = { path = "../austringer-core", version = "0.1.0" }
 austringer-providers = { path = "../austringer-providers", version = "0.1.0" }
